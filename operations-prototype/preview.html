@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>平台员工登录 · 一通话运营后台</title>
+  <style>
+    :root{
+      color-scheme:light;
+      --brand:#315b88;--brand-strong:#24486e;--brand-soft:#eaf1f7;
+      --ink:#1f2b38;--muted:#667482;--line:#d8e0e7;--line-strong:#bac7d2;
+      --canvas:#f3f6f8;--panel:#fff;--sidebar:#162533;--sidebar-2:#20384d;
+      --success:#1f7656;--success-bg:#e9f5ef;--warning:#95610d;--warning-bg:#fff5dd;
+      --danger:#aa3d43;--danger-bg:#faecee;--info:#356b99;--info-bg:#eaf2f8;
+      --shadow:0 8px 24px rgba(29,49,67,.08);--radius:7px;
+      font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif;
+    }
+    *{box-sizing:border-box;letter-spacing:0}
+    html,body{margin:0;min-height:100%;background:var(--canvas);color:var(--ink)}
+    button,input,select,textarea{font:inherit;letter-spacing:0}
+    button{cursor:pointer}
+    button:disabled{cursor:not-allowed;opacity:.5}
+    svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none}
+    .hidden{display:none!important}.mono{font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace;font-variant-numeric:tabular-nums}
+    .muted{color:var(--muted)}.danger-text{color:var(--danger)}.success-text{color:var(--success)}
+    .btn{min-height:40px;border:1px solid var(--line-strong);border-radius:6px;background:#fff;color:var(--ink);padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600}
+    .btn:hover{border-color:var(--brand);color:var(--brand)}.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}.btn.primary:hover{background:var(--brand-strong)}
+    .btn.danger{border-color:#dfb3b6;color:var(--danger);background:#fff}.btn.ghost{border-color:transparent;background:transparent}
+    .icon-btn{width:40px;height:40px;border:1px solid var(--line);border-radius:6px;background:#fff;display:inline-flex;align-items:center;justify-content:center;color:var(--ink)}
+    .input,.select,textarea{width:100%;min-height:40px;border:1px solid var(--line-strong);border-radius:6px;background:#fff;color:var(--ink);padding:9px 11px;outline:none}
+    .input:focus,.select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(49,91,136,.12)}
+    textarea{min-height:88px;resize:vertical}.field{display:grid;gap:7px}.field label{font-size:13px;font-weight:700}.field-hint{font-size:12px;color:var(--muted);line-height:1.55}
+    .login-shell{min-height:100vh;display:grid;grid-template-columns:minmax(320px,560px) minmax(440px,1fr);background:#fff}
+    .login-brand{background:var(--sidebar);color:#fff;padding:48px;display:flex;flex-direction:column;justify-content:space-between;min-height:100vh}
+    .brand-lockup{display:flex;align-items:center;gap:14px}.brand-lockup img{width:44px;height:44px}.brand-lockup strong{font-size:21px}.brand-lockup span{display:block;margin-top:3px;color:#b8c9d7;font-size:13px}
+    .login-brand h1{max-width:460px;font-size:36px;line-height:1.28;margin:0 0 18px}.login-brand p{max-width:480px;line-height:1.8;color:#c8d6e1;margin:0}
+    .security-list{display:grid;gap:12px;margin-top:30px}.security-item{display:flex;align-items:flex-start;gap:10px;color:#d9e4ec;font-size:14px}.security-item svg{color:#8fb7d9;margin-top:2px}
+    .login-main{padding:40px clamp(36px,7vw,110px);display:flex;align-items:center;justify-content:center}.login-panel{width:min(430px,100%)}
+    .login-panel h2{font-size:26px;margin:0 0 8px}.login-panel>p{color:var(--muted);line-height:1.7;margin:0 0 28px}
+    .form-stack{display:grid;gap:17px}.login-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:8px}
+    .check-line{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:1.55;color:var(--muted)}.check-line input{margin-top:3px}
+    .review-box{margin-top:26px;border-top:1px solid var(--line);padding-top:18px}.review-box summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--muted)}
+    .review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+    .app{min-height:100vh}.topbar{height:64px;background:#fff;border-bottom:1px solid var(--line);position:fixed;left:252px;right:0;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:0 22px}
+    .sidebar{position:fixed;inset:0 auto 0 0;width:252px;background:var(--sidebar);color:#eaf0f4;z-index:30;display:flex;flex-direction:column;overflow:hidden}
+    .sidebar-brand{height:64px;display:flex;align-items:center;gap:11px;padding:0 18px;border-bottom:1px solid rgba(255,255,255,.1)}.sidebar-brand img{width:32px;height:32px}
+    .sidebar-brand strong{font-size:16px}.sidebar-brand small{display:block;color:#9eb1c0;margin-top:2px}
+    .nav{padding:14px 10px 30px;overflow:auto;flex:1}.nav-label{font-size:11px;color:#7991a5;text-transform:uppercase;padding:16px 10px 7px;font-weight:700}
+    .nav-item{width:100%;border:0;background:transparent;color:#c6d3dd;min-height:42px;padding:0 10px;border-radius:6px;display:flex;align-items:center;gap:11px;text-align:left;margin:2px 0}
+    .nav-item:hover{background:rgba(255,255,255,.06);color:#fff}.nav-item.active{background:var(--sidebar-2);color:#fff;box-shadow:inset 3px 0 0 #82acd0}
+    .nav-item .nav-copy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nav-item .count{margin-left:auto;background:#2e526e;border-radius:10px;padding:2px 7px;font-size:11px}
+    .sidebar-foot{padding:14px;border-top:1px solid rgba(255,255,255,.1);font-size:12px;color:#91a6b6;line-height:1.5}
+    .topbar .crumb{display:flex;align-items:center;gap:8px;min-width:0}.topbar .crumb strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .top-search{width:min(360px,34vw);position:relative;margin-left:12px}.top-search svg{position:absolute;left:11px;top:11px;color:var(--muted)}.top-search input{padding-left:38px}
+    .top-spacer{flex:1}.scope-chip{height:36px;border:1px solid var(--line);background:var(--brand-soft);color:var(--brand-strong);border-radius:6px;padding:0 11px;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
+    .avatar{width:34px;height:34px;background:var(--sidebar);color:#fff;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800}
+    .main{margin-left:252px;padding:88px 24px 36px;min-height:100vh}.content{max-width:1560px;margin:0 auto}
+    .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}.page-head h1{font-size:24px;line-height:1.25;margin:0 0 7px}.page-head p{margin:0;color:var(--muted);line-height:1.6;max-width:820px}
+    .head-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+    .banner{border:1px solid #b9cddd;background:#edf4f8;color:#244b6c;border-radius:var(--radius);padding:12px 15px;display:flex;align-items:flex-start;gap:10px;margin-bottom:16px;line-height:1.55;font-size:13px}.banner.warning{background:var(--warning-bg);border-color:#ecd39b;color:#744d0d}.banner.danger{background:var(--danger-bg);border-color:#e5b8bc;color:#7b2f34}.banner.success{background:var(--success-bg);border-color:#abd5c3;color:#155a41}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.metric{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:17px;min-height:112px}.metric-top{display:flex;justify-content:space-between;color:var(--muted);font-size:13px}.metric-value{font-size:27px;font-weight:750;margin:12px 0 4px}.metric-foot{font-size:12px;color:var(--muted)}
+    .grid-2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,.75fr);gap:18px}.grid-even{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 1px 2px rgba(20,39,55,.03);overflow:hidden}.panel+.panel{margin-top:16px}
+    .panel-head{min-height:58px;border-bottom:1px solid var(--line);padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:14px}.panel-head h2{font-size:16px;margin:0}.panel-head p{font-size:12px;color:var(--muted);margin:4px 0 0}.panel-body{padding:16px}
+    .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:14px}.toolbar .search{min-width:230px;flex:1}.toolbar .select{width:auto;min-width:140px}
+    .table-wrap{width:100%;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:var(--radius)}table{width:100%;border-collapse:collapse;min-width:780px}th,td{text-align:left;padding:12px 14px;border-bottom:1px solid #e7ecf0;font-size:13px;vertical-align:middle}th{background:#f6f8fa;color:#556574;font-size:12px;font-weight:750;white-space:nowrap}tr:last-child td{border-bottom:0}tbody tr:hover{background:#f9fbfc}.cell-title{font-weight:700;color:var(--ink)}.cell-sub{color:var(--muted);font-size:12px;margin-top:4px}
+    .status{display:inline-flex;align-items:center;gap:6px;min-height:25px;border-radius:4px;padding:3px 8px;font-size:12px;font-weight:700;white-space:nowrap;background:#eef2f5;color:#52616e}.status.success{background:var(--success-bg);color:var(--success)}.status.warning{background:var(--warning-bg);color:var(--warning)}.status.danger{background:var(--danger-bg);color:var(--danger)}.status.info{background:var(--info-bg);color:var(--info)}.status:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+    .link-button{border:0;background:transparent;color:var(--brand);padding:5px;font-weight:700}.link-button:hover{text-decoration:underline}
+    .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px;overflow:auto}.tab{border:0;background:transparent;padding:11px 14px;color:var(--muted);font-weight:700;white-space:nowrap;border-bottom:2px solid transparent}.tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+    .meta-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px}.meta{padding:11px 0;border-bottom:1px solid #edf0f2;display:grid;grid-template-columns:118px 1fr;gap:12px;font-size:13px}.meta dt{color:var(--muted)}.meta dd{margin:0;min-width:0;word-break:break-word}
+    .timeline{display:grid}.event{position:relative;padding:0 0 20px 28px;min-height:55px}.event:before{content:"";position:absolute;left:7px;top:6px;width:8px;height:8px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px var(--brand-soft)}.event:after{content:"";position:absolute;left:10px;top:18px;bottom:0;width:1px;background:var(--line)}.event:last-child:after{display:none}.event strong{display:block;font-size:13px}.event p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.55}.event time{display:block;margin-top:5px;color:#84919c;font-size:11px}
+    .split-state{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.state-track{border-left:3px solid var(--line);padding:3px 0 3px 12px}.state-track.success{border-color:var(--success)}.state-track.warning{border-color:var(--warning)}.state-track strong{font-size:12px}.state-track span{display:block;margin-top:6px;font-size:13px}
+    .empty{min-height:280px;display:grid;place-items:center;text-align:center;padding:35px}.empty svg{width:34px;height:34px;color:#91a0ad}.empty h2{font-size:18px;margin:13px 0 7px}.empty p{color:var(--muted);max-width:620px;line-height:1.7;margin:0}
+    .placeholder{border:1px dashed var(--line-strong);background:#f9fbfc;border-radius:var(--radius);padding:28px}.placeholder h2{margin:0 0 8px;font-size:18px}.placeholder ul{color:var(--muted);line-height:1.8;padding-left:20px}
+    .sensitive-session{border:1px solid #d2a2a7;background:#fff7f7;border-radius:var(--radius);padding:14px;position:relative;overflow:hidden}.sensitive-session:after{content:"原型虚构数据 · 临时访问";position:absolute;right:-40px;top:38px;transform:rotate(26deg);font-size:14px;color:rgba(170,61,67,.16);font-weight:800}.session-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}.revealed-value{font-family:"Cascadia Mono",Consolas,monospace;font-weight:700;position:relative;z-index:1}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(14,27,38,.54);z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}.modal{width:min(640px,100%);max-height:calc(100vh - 48px);overflow:auto;background:#fff;border-radius:8px;box-shadow:0 22px 60px rgba(0,0,0,.22)}.modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.modal-head h2{font-size:18px;margin:0}.modal-head p{font-size:13px;color:var(--muted);line-height:1.55;margin:5px 0 0}.modal-body{padding:20px;display:grid;gap:16px}.modal-actions{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px}.confirm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.confirm-item{background:#f6f8fa;border:1px solid var(--line);border-radius:6px;padding:11px}.confirm-item span{display:block;color:var(--muted);font-size:11px}.confirm-item strong{display:block;margin-top:5px;font-size:13px;word-break:break-word}
+    .toast{position:fixed;right:22px;bottom:22px;z-index:100;background:#1e3344;color:#fff;border-radius:6px;padding:13px 16px;box-shadow:var(--shadow);display:flex;align-items:center;gap:10px;max-width:390px;font-size:13px}
+    .review-strip{position:fixed;left:270px;bottom:16px;z-index:45;background:#fff;border:1px solid var(--line-strong);border-radius:7px;box-shadow:var(--shadow);padding:8px;display:flex;align-items:center;gap:8px}.review-strip label{font-size:11px;color:var(--muted);font-weight:700}.review-strip .select{width:auto;min-width:142px;min-height:34px;padding:5px 9px;font-size:12px}
+    .approval-chain{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.approval-node{padding:7px 9px;border:1px solid var(--line);border-radius:5px;font-size:12px}.approval-arrow{color:var(--muted)}
+    @media(max-width:1180px){
+      .sidebar{width:76px}.sidebar-brand{justify-content:center;padding:0}.sidebar-brand div,.nav-label,.nav-copy,.nav-item .count,.sidebar-foot{display:none}.nav-item{justify-content:center;padding:0}.topbar{left:76px}.main{margin-left:76px}.review-strip{left:92px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media(max-width:900px){.login-shell{grid-template-columns:1fr}.login-brand{display:none}.grid-2,.grid-even{grid-template-columns:1fr}.top-search{display:none}.meta-grid{grid-template-columns:1fr}.split-state{grid-template-columns:1fr}.review-strip{right:16px;left:auto}.scope-chip span{display:none}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script>
+  (function(){
+    "use strict";
+
+    var icons={
+      shield:'<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/><path d="m9 12 2 2 4-4"/>',
+      dashboard:'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+      queue:'<path d="M3 6h18M3 12h18M3 18h18"/><path d="M7 3v6M17 9v6M7 15v6"/>',
+      approval:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+      users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+      building:'<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M8 10h.01M16 10h.01M8 14h.01M16 14h.01"/>',
+      id:'<rect width="20" height="16" x="2" y="4" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M14 8h4M14 12h4M6 16h12"/>',
+      phone:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z"/>',
+      call:'<path d="m15.05 5 4.95 4.95-4.95 4.95"/><path d="M19.5 9.95H9.25a5.25 5.25 0 1 0 0 10.5h1.5"/><path d="M8.95 19 4 14.05 8.95 9.1"/>',
+      file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+      ticket:'<path d="M2 9a3 3 0 0 0 0 6v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a3 3 0 0 0 0-6V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
+      audit:'<path d="M3 3v18h18"/><path d="m7 16 4-5 4 3 5-7"/>',
+      lock:'<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+      bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+      chevron:'<path d="m9 18 6-6-6-6"/>',
+      arrow:'<path d="m12 19 7-7-7-7M5 12h14"/>',
+      retry:'<path d="M20 7h-5V2"/><path d="M20 7a9 9 0 1 0 2 5"/>',
+      eye:'<path d="M2.06 12.35a1 1 0 0 1 0-.7C3.73 7.6 7.67 5 12 5c4.33 0 8.27 2.6 9.94 6.65a1 1 0 0 1 0 .7C20.27 16.4 16.33 19 12 19c-4.33 0-8.27-2.6-9.94-6.65"/><circle cx="12" cy="12" r="3"/>',
+      x:'<path d="M18 6 6 18M6 6l12 12"/>',
+      info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+      alert:'<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
+      check:'<path d="M20 6 9 17l-5-5"/>',
+      logout:'<path d="M10 17l5-5-5-5M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-6"/>',
+      more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+      clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+    };
+    function icon(name){return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(icons[name]||icons.file)+'</svg>';}
+    function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+    function button(label,iconName,attrs,kind){return '<button class="btn '+(kind||'')+'" '+(attrs||'')+'>'+icon(iconName)+esc(label)+'</button>';}
+    function status(label,tone){return '<span class="status '+(tone||'')+'">'+esc(label)+'</span>';}
+    function meta(label,value){return '<div class="meta"><dt>'+esc(label)+'</dt><dd>'+value+'</dd></div>';}
+
+    var roles={
+      super:{label:'平台超级管理员',scope:'平台 IAM 与策略',areas:['all'],initial:'/dashboard'},
+      ops:{label:'运营协调',scope:'华东业务线 · 脱敏',areas:['home','customers','telecom','evidence','notary','trade','service','audit'],initial:'/dashboard'},
+      support:{label:'客服',scope:'客服二组 · 工单对象',areas:['home','customers','trade-read','service'],initial:'/work-queues'},
+      risk:{label:'实名与风控',scope:'华东风险队列',areas:['home','customers','telecom','service','audit'],initial:'/identity-cases'},
+      carrier:{label:'运营商渠道',scope:'渠道 A · 华东',areas:['home','telecom','service','vendor'],initial:'/provisioning-attempts'},
+      notary:{label:'证据与公证运营',scope:'豫章公证队列',areas:['home','evidence','notary','service','audit'],initial:'/evidence'},
+      finance:{label:'财务',scope:'上海结算主体',areas:['home','trade','service','audit'],initial:'/orders'},
+      product:{label:'商品配置',scope:'国内目录',areas:['home','catalog','service','audit'],initial:'/products'},
+      auditor:{label:'审计员',scope:'华东只读审计',areas:['home','audit'],initial:'/audit'},
+      security:{label:'安全管理员',scope:'安全域 · 业务内容隔离',areas:['home','security','audit','service','evidence-security'],initial:'/security-alerts'}
+    };
+
+    var routeDefs=[
+      ['/login','平台员工登录','session','lock','P0',false],
+      ['/access-denied','无权限','session','lock','P0',false],
+      ['/dashboard','运营总览','home','dashboard','P0',true],
+      ['/work-queues','我的工作队列','home','queue','P0',true],
+      ['/approvals','待我审批','home','approval','P0',true],
+      ['/users','用户','customers','users','P0',true],
+      ['/users/:id','用户详情','customers','users','P0',false],
+      ['/identity-cases','实名/风控案件','customers','id','P0',true],
+      ['/identity-cases/:id','案件详情','customers','id','P0',false],
+      ['/organizations','企业','customers','building','P0',true],
+      ['/organizations/:id','企业详情','customers','building','P0',false],
+      ['/numbers','主叫号码','telecom','phone','P0',true],
+      ['/numbers/:id','号码详情','telecom','phone','P0',false],
+      ['/provisioning-attempts','开通尝试','telecom','retry','P0',true],
+      ['/calls','通话会话','telecom','call','P0',true],
+      ['/calls/:id','通话详情','telecom','call','P0',false],
+      ['/call-reconciliation','匹配差异','telecom','alert','P0',true],
+      ['/evidence','证据','evidence','file','P0',true],
+      ['/evidence/:id','证据详情','evidence','file','P0',false],
+      ['/evidence-quarantine','证据隔离','evidence-security','shield','P0',true],
+      ['/ai-jobs','AI 任务','evidence','file','P1',true],
+      ['/ai-jobs/:id','AI 任务详情','evidence','file','P1',false],
+      ['/ai-versions/:id','AI 版本详情','evidence','file','P1',false],
+      ['/preservations','公证处存证','notary','shield','P1',true],
+      ['/preservations/:id','存证详情','notary','shield','P1',false],
+      ['/notary-reports','存证验证报告','notary','file','P1',true],
+      ['/notary-reports/:id','报告详情','notary','file','P1',false],
+      ['/offline-notary','线下公证申请','notary','building','P1',true],
+      ['/offline-notary/:id','线下公证详情','notary','building','P1',false],
+      ['/products','商品版本','catalog','file','P1',true],
+      ['/products/:id','商品版本详情','catalog','file','P1',false],
+      ['/catalog-releases','目录发布','catalog','approval','P1',true],
+      ['/catalog-releases/:id','目录发布详情','catalog','approval','P1',false],
+      ['/enterprise-quotes','企业报价与合同','trade','building','P1',true],
+      ['/orders','订单','trade-read','file','P1',true],
+      ['/orders/:id','订单详情','trade-read','file','P1',false],
+      ['/refunds','退款','trade','retry','P1',true],
+      ['/invoices','发票','trade-read','file','P1',true],
+      ['/invoices/:id','发票详情','trade-read','file','P1',false],
+      ['/entitlements','权益与用量','trade-read','audit','P1',true],
+      ['/compensations','权益补偿','trade','approval','P1',true],
+      ['/shares','受控分享','service','eye','P1',true],
+      ['/exports','下载与导出','service','file','P1',true],
+      ['/tickets','工单','service','ticket','P0',true],
+      ['/tickets/:id','工单详情','service','ticket','P0',false],
+      ['/vendors','供应商','vendor','building','P2',true],
+      ['/vendors/:id','供应商详情','vendor','building','P2',false],
+      ['/reconciliation','综合对账','service','retry','P2',true],
+      ['/staff','平台员工','security','users','P2',true],
+      ['/roles','角色与权限','security','lock','P2',true],
+      ['/access-grants','临时访问授权','audit','eye','P0',true],
+      ['/audit','审计中心','audit','audit','P0',true],
+      ['/security-alerts','安全告警','security','alert','P2',true],
+      ['/system-config','系统配置','security','shield','P2',true],
+      ['/jobs','任务与调度','security','queue','P2',true]
+    ].map(function(x){return {path:x[0],title:x[1],area:x[2],icon:x[3],stage:x[4],nav:x[5]};});
+
+    var groupOrder=[
+      ['home','工作台'],['customers','客户与组织'],['telecom','号码与通话'],
+      ['evidence','证据与智能'],['notary','公证与交付'],['catalog','商品配置'],
+      ['trade','交易与权益'],['trade-read','交易查询'],['service','服务运营'],
+      ['vendor','供应商'],['audit','审计治理'],['security','平台安全']
+    ];
+
+    var users=[
+      {id:'USR-2048',name:'林某甲',identity:'已核验',risk:'低',numbers:'2',orders:'3',ticket:'TKT-10428',updated:'今天 14:28'},
+      {id:'USR-2189',name:'周某乙',identity:'人工复核',risk:'中',numbers:'1',orders:'1',ticket:'TKT-10431',updated:'今天 13:12'},
+      {id:'USR-2271',name:'陈某丙',identity:'核验失败',risk:'高',numbers:'0',orders:'0',ticket:'TKT-10435',updated:'昨天 18:42'}
+    ];
+    var numbers=[
+      {id:'NUM-10082',masked:'138****4026',type:'手机号',verification:'VERIFIED',authorization:'GRANTED',provisioning:'ACTIVE',eligibility:'MATCHED',updated:'今天 14:18'},
+      {id:'NUM-10116',masked:'021-****7812',type:'独立固话',verification:'VERIFIED',authorization:'GRANTED',provisioning:'FAILED',eligibility:'NOT_CHECKED',updated:'今天 11:04'},
+      {id:'NUM-10137',masked:'186****2251',type:'手机号',verification:'VERIFIED',authorization:'RECONSENT_REQUIRED',provisioning:'SUSPENDED',eligibility:'EXPIRED',updated:'昨天 19:20'}
+    ];
+    var queueRows=[
+      {id:'TKT-10431',kind:'实名冲突',subject:'USR-2189 · 周某乙',risk:'中风险',sla:'剩余 1 小时 18 分',owner:'未领取'},
+      {id:'TKT-10435',kind:'主叫匹配差异',subject:'CALL-78421 · 021-****7812',risk:'高风险',sla:'已超时 22 分',owner:'赵运营'},
+      {id:'TKT-10438',kind:'证据隔离',subject:'EVI-99218 · 文件导入',risk:'高风险',sla:'剩余 38 分',owner:'安全队列'}
+    ];
+    var auditEvents=[
+      {time:'14:31:08',event:'SensitiveAccessRequested',actor:'risk.operator.02',object:'USR-2189',result:'待审批',ticket:'TKT-10431'},
+      {time:'14:26:44',event:'ProvisioningRetryExecuted',actor:'carrier.ops.01',object:'NUM-10116',result:'技术请求已受理',ticket:'TKT-10429'},
+      {time:'14:18:12',event:'RoleScopeEvaluated',actor:'policy-engine',object:'ORG-30018',result:'拒绝跨地域访问',ticket:'-'},
+      {time:'13:58:03',event:'EvidenceQuarantineOpened',actor:'malware-scanner',object:'EVI-99218',result:'已隔离',ticket:'TKT-10438'}
+    ];
+
+    var state={
+      loggedIn:false,role:'ops',scenario:'normal',route:'/login',deniedFrom:'',
+      tab:'overview',modal:null,toast:'',accessGrant:null,events:auditEvents.slice(),
+      attempts:[
+        {id:'PROV-9088',number:'NUM-10116',kind:'业务尝试 #2',transport:'HTTP 200',business:'明确失败',state:'FAILED',error:'线路地域暂不支持',time:'今天 11:04'},
+        {id:'PROV-9091',number:'NUM-10082',kind:'技术尝试 #1',transport:'响应无法解析',business:'未知，保持调用前状态',state:'ACTIVE',error:'响应格式异常',time:'今天 14:18'}
+      ],
+      correctionStatus:'待双人复核',quarantineStatus:'已隔离'
+    };
+
+    function roleAllows(route){
+      if(route.path==='/access-denied'||route.path==='/login') return true;
+      var list=roles[state.role].areas;
+      if(list.indexOf('all')>=0) return true;
+      if(list.indexOf(route.area)>=0) return true;
+      if(route.area==='trade-read'&&list.indexOf('trade')>=0) return true;
+      if(route.area==='evidence'&&list.indexOf('evidence-security')>=0) return false;
+      if(route.area==='evidence-security'&&list.indexOf('evidence')>=0&&state.role==='notary') return true;
+      return false;
+    }
+    function canSensitiveAccess(kind){
+      var allowed=['super','ops','risk','notary','security'];
+      return ['identity','recording','evidence'].indexOf(kind)>=0&&allowed.indexOf(state.role)>=0;
+    }
+    function sensitiveAccessButton(label,objectId,kind){
+      if(!canSensitiveAccess(kind)) return '';
+      return button(label,'eye','data-action="request-access" data-object="'+objectId+'" data-kind="'+kind+'"','primary');
+    }
+    function matchRoute(path){
+      for(var i=0;i<routeDefs.length;i++){
+        var pattern='^'+routeDefs[i].path.replace(/:[^/]+/g,'[^/]+')+'$';
+        if(new RegExp(pattern).test(path)) return routeDefs[i];
+      }
+      return routeDefs.filter(function(r){return r.path==='/dashboard';})[0];
+    }
+    function routeId(path){var p=path.split('/').filter(Boolean);return p.length>1?p[p.length-1]:'';}
+    function navPathFor(route){return route.path.replace('/:id','');}
+    function currentPath(){var hash=decodeURIComponent(location.hash.replace(/^#/,'')||'');return hash&&hash.charAt(0)==='/'?hash:'/login';}
+    function go(path){
+      if(state.accessGrant&&state.accessGrant.route!==path) state.accessGrant=null;
+      var target=matchRoute(path);
+      if(state.loggedIn&&!roleAllows(target)){
+        state.deniedFrom=path;path='/access-denied';
+      }
+      state.route=path;state.tab='overview';
+      if(location.hash!=='#'+path) location.hash=path;else render();
+    }
+    function stageAvailable(route){return route.stage==='P0';}
+    function roleOptions(){
+      return Object.keys(roles).map(function(k){return '<option value="'+k+'" '+(state.role===k?'selected':'')+'>'+esc(roles[k].label)+'</option>';}).join('');
+    }
+
+    function renderLogin(){
+      var scenarioMessage={
+        normal:'使用平台员工身份进入运营后台。',
+        sso:'身份源暂不可用，请联系 IT 值班人员。',
+        otp:'二次验证失败次数过多，请 15 分钟后重试。',
+        disabled:'该员工账户已停用，所有活动会话已撤销。'
+      }[state.scenario];
+      var blocked=state.scenario!=='normal';
+      return '<main class="login-shell">'+
+        '<section class="login-brand"><div class="brand-lockup"><img src="../logo/onecall-logo-b-icon-white.svg" alt=""><div><strong>一通话 ONECALL</strong><span>平台运营后台</span></div></div>'+
+        '<div><h1>让每一次人工处理都可授权、可解释、可追溯。</h1><p>平台员工身份与终端客户账户完全隔离。完整身份、原始录音和证据正文不会随角色自动开放。</p>'+
+        '<div class="security-list"><div class="security-item">'+icon('shield')+'<span>对象范围先于查询校验，跨范围访问不泄漏对象是否存在。</span></div><div class="security-item">'+icon('lock')+'<span>高敏内容访问绑定工单、目的、审批、二次验证和有效期。</span></div><div class="security-item">'+icon('audit')+'<span>人工命令、审批、执行结果和外部回执形成不可编辑审计链。</span></div></div></div>'+
+        '<small>仅供产品与安全评审 · 不连接生产数据</small></section>'+
+        '<section class="login-main"><div class="login-panel"><h2>平台员工登录</h2><p>'+esc(scenarioMessage)+'</p>'+
+        (blocked?'<div class="banner danger">'+icon('alert')+'<span>'+esc(scenarioMessage)+'</span></div>':'')+
+        '<div class="form-stack"><div class="field"><label for="staff-account">员工账号</label><input class="input" id="staff-account" value="ops.review@onecall.example" autocomplete="username"></div>'+
+        '<div class="field"><label for="staff-password">密码</label><input class="input" id="staff-password" type="password" value="prototype-only" autocomplete="current-password"></div>'+
+        '<div class="field"><label for="staff-otp">二次验证码</label><input class="input" id="staff-otp" inputmode="numeric" placeholder="输入身份源签发的验证码" value="482916"><span class="field-hint">原型输入仅用于交互评审，不代表生产验证方案。</span></div>'+
+        '<label class="check-line"><input type="checkbox" id="staff-agree" checked><span>我确认仅在授权范围内处理业务数据，所有访问和操作将被审计。</span></label>'+
+        '<div class="login-actions"><span class="muted" style="font-size:12px">独立员工身份源</span>'+button('安全登录','shield','data-action="login" '+(blocked?'disabled':''),'primary')+'</div></div>'+
+        '<details class="review-box" open><summary>原型评审工具</summary><div class="review-grid"><div class="field"><label>初始角色</label><select id="login-role" class="select">'+roleOptions()+'</select></div><div class="field"><label>登录场景</label><select id="login-scenario" class="select"><option value="normal" '+(state.scenario==='normal'?'selected':'')+'>正常</option><option value="sso" '+(state.scenario==='sso'?'selected':'')+'>身份源不可用</option><option value="otp" '+(state.scenario==='otp'?'selected':'')+'>二次验证锁定</option><option value="disabled" '+(state.scenario==='disabled'?'selected':'')+'>员工已停用</option></select></div></div></details>'+
+        '</div></section></main>';
+    }
+
+    function navHtml(){
+      var html='';
+      groupOrder.forEach(function(group){
+        var items=routeDefs.filter(function(r){return r.nav&&r.area===group[0]&&roleAllows(r);});
+        if(!items.length) return;
+        html+='<div class="nav-label">'+esc(group[1])+'</div>';
+        items.forEach(function(r){
+          var path=navPathFor(r);var active=state.route===path||state.route.indexOf(path+'/')===0;
+          html+='<button class="nav-item '+(active?'active':'')+'" data-route="'+path+'" title="'+esc(r.title)+'">'+icon(r.icon)+'<span class="nav-copy">'+esc(r.title)+'</span>'+(r.path==='/work-queues'?'<span class="count">8</span>':'')+'</button>';
+        });
+      });
+      return html;
+    }
+    function shell(content,route){
+      return '<div class="app"><aside class="sidebar"><div class="sidebar-brand"><img src="../logo/onecall-logo-b-icon-white.svg" alt=""><div><strong>一通话</strong><small>平台运营后台</small></div></div><nav class="nav" aria-label="平台导航">'+navHtml()+'</nav><div class="sidebar-foot">员工 IAM 与客户账户隔离<br>原型数据均为虚构</div></aside>'+
+        '<header class="topbar"><div class="crumb">'+icon(route.icon)+'<strong>'+esc(route.title)+'</strong></div><label class="top-search">'+icon('search')+'<input class="input" aria-label="全局检索" placeholder="业务 ID / 工单号 / recordNo"></label><div class="top-spacer"></div><div class="scope-chip" title="当前数据范围">'+icon('shield')+'<span>'+esc(roles[state.role].scope)+'</span></div><button class="icon-btn" aria-label="待办通知">'+icon('bell')+'</button><div class="avatar">OP</div></header>'+
+        '<main class="main"><div class="content" id="content">'+content+'</div></main>'+
+        '<div class="review-strip"><label>原型角色</label><select class="select" id="review-role">'+roleOptions()+'</select><button class="icon-btn" data-action="logout" title="退出登录" aria-label="退出登录">'+icon('logout')+'</button></div></div>';
+    }
+    function head(title,desc,actions){
+      return '<div class="page-head"><div><h1>'+esc(title)+'</h1><p>'+desc+'</p></div><div class="head-actions">'+(actions||'')+'</div></div>';
+    }
+    function toolbar(search,filters){
+      return '<div class="toolbar"><input class="input search" placeholder="'+esc(search||'搜索 ID、名称或工单')+'">'+(filters||'')+'<button class="icon-btn" aria-label="刷新">'+icon('retry')+'</button></div>';
+    }
+    function table(headers,rows){
+      return '<div class="table-wrap"><table><thead><tr>'+headers.map(function(h){return '<th>'+esc(h)+'</th>';}).join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';
+    }
+    function pageDashboard(){
+      return head('运营总览','只展示当前角色和数据范围内的脱敏指标。进入明细会再次执行对象级鉴权。',button('查看我的队列','queue','data-route="/work-queues"','primary'))+
+        '<div class="banner">'+icon('info')+'<span>当前以 <strong>'+esc(roles[state.role].label)+'</strong> 视角评审，范围为 '+esc(roles[state.role].scope)+'。角色选择器不会出现在生产导航中。</span></div>'+
+        '<div class="metrics"><div class="metric"><div class="metric-top"><span>我的待办</span>'+icon('queue')+'</div><div class="metric-value mono">8</div><div class="metric-foot danger-text">2 项将在 1 小时内超时</div></div>'+
+        '<div class="metric"><div class="metric-top"><span>待我审批</span>'+icon('approval')+'</div><div class="metric-value mono">3</div><div class="metric-foot">均已完成职责分离校验</div></div>'+
+        '<div class="metric"><div class="metric-top"><span>业务异常</span>'+icon('alert')+'</div><div class="metric-value mono">12</div><div class="metric-foot">较昨日减少 4 项</div></div>'+
+        '<div class="metric"><div class="metric-top"><span>供应商可用性</span>'+icon('shield')+'</div><div class="metric-value mono">99.92%</div><div class="metric-foot">口径延迟约 5 分钟</div></div></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><div><h2>优先处理</h2><p>按风险与 SLA 排序，不代表业务终态</p></div><button class="link-button" data-route="/work-queues">全部队列</button></div>'+queueTable(false)+'</section>'+
+        '<section class="panel"><div class="panel-head"><div><h2>外部依赖</h2><p>仅展示健康度，不暴露凭据</p></div></div><div class="panel-body"><div class="timeline"><div class="event"><strong>运营商渠道 A '+status('运行正常','success')+'</strong><p>同步开通 P95 1.8 秒，未知结果 1 项。</p><time>更新于 14:30</time></div><div class="event"><strong>公证处存证 '+status('轻微延迟','warning')+'</strong><p>报告任务 0 状态积压 6 项，未超过待确认阈值。</p><time>更新于 14:28</time></div><div class="event"><strong>AI 服务 '+status('运行正常','success')+'</strong><p>校验失败率 0.7%，逐字稿与摘要状态独立统计。</p><time>更新于 14:25</time></div></div></div></section></div>';
+    }
+    function queueTable(full){
+      var rows=queueRows.map(function(q){
+        return '<tr><td><button class="link-button mono" data-route="/tickets/'+q.id+'">'+q.id+'</button></td><td><span class="cell-title">'+q.kind+'</span><div class="cell-sub">'+q.subject+'</div></td><td>'+status(q.risk,q.risk==='高风险'?'danger':'warning')+'</td><td class="mono">'+q.sla+'</td><td>'+q.owner+'</td><td>'+button(q.owner==='未领取'?'领取':'查看','arrow','data-route="/tickets/'+q.id+'"','')+'</td></tr>';
+      });
+      return table(['工单','类型与对象','风险','SLA','负责人','操作'],full?rows:rows.slice(0,3));
+    }
+    function pageQueues(){
+      return head('我的工作队列','领取或转派只改变工单责任人，不推进关联业务对象状态。',button('批量领取','queue','data-action="batch-claim"','primary'))+
+        toolbar('搜索工单号或业务 ID','<select class="select"><option>全部业务域</option><option>实名与风控</option><option>号码与通话</option><option>证据与公证</option></select><select class="select"><option>全部风险</option><option>高风险</option><option>中风险</option></select>')+queueTable(true);
+    }
+    function pageApprovals(){
+      var rows=[
+        ['APR-7818','临时查看完整身份','USR-2189','risk.operator.02','待审批','TKT-10431'],
+        ['APR-7820','通话匹配修复','CALL-78421','carrier.ops.01','待第二复核人','TKT-10435'],
+        ['APR-7822','证据解除隔离','EVI-99218','evidence.ops.03','待安全审核','TKT-10438']
+      ].map(function(x){return '<tr><td class="mono">'+x[0]+'</td><td><span class="cell-title">'+x[1]+'</span><div class="cell-sub">'+x[2]+'</div></td><td>'+x[3]+'</td><td>'+status(x[4],'warning')+'</td><td class="mono">'+x[5]+'</td><td>'+button('审阅','eye','data-action="toast" data-message="审批详情已在原型中打开；审批人不能是申请人"','')+'</td></tr>';});
+      return head('待我审批','审批通过只签发一次执行授权，不直接把业务对象改成目标终态。')+
+        '<div class="banner warning">'+icon('alert')+'<span>系统已排除由申请人审批自己的操作。审批过期或撤回后，旧执行授权不可复用。</span></div>'+
+        toolbar('搜索审批号、对象或工单','<select class="select"><option>全部审批类型</option><option>敏感访问</option><option>状态修复</option><option>隔离解除</option></select>')+
+        table(['审批号','动作与对象','申请人','状态','工单','操作'],rows);
+    }
+    function pageUsers(){
+      var rows=users.map(function(u){return '<tr><td><button class="link-button mono" data-route="/users/'+u.id+'">'+u.id+'</button></td><td><span class="cell-title">'+u.name+'</span><div class="cell-sub">证件 110***********1234</div></td><td>'+status(u.identity,u.identity==='已核验'?'success':u.identity==='人工复核'?'warning':'danger')+'</td><td>'+status(u.risk+'风险',u.risk==='低'?'success':u.risk==='中'?'warning':'danger')+'</td><td class="mono">'+u.numbers+'</td><td class="mono">'+u.ticket+'</td><td>'+u.updated+'</td></tr>';});
+      return head('用户','常规查询只返回掩码、状态和工单上下文。完整身份原值需要独立临时授权。')+
+        toolbar('按用户 ID、工单号或 HMAC 精确匹配','<select class="select"><option>全部实名状态</option><option>已核验</option><option>人工复核</option><option>失败</option></select>')+
+        table(['用户 ID','用户','实名','风险','号码数','关联工单','更新时间'],rows);
+    }
+    function pageUserDetail(id){
+      var u=users.filter(function(x){return x.id===id;})[0]||users[0];
+      var grant=state.accessGrant&&state.accessGrant.objectId===u.id;
+      var actions=button('返回用户列表','arrow','data-route="/users"','')+sensitiveAccessButton('申请查看完整身份',u.id,'identity');
+      var sensitive=grant?'<div class="sensitive-session" data-sensitive-session><div class="session-head"><div><strong>临时访问会话</strong><div class="cell-sub">目的：实名冲突复核 · 工单 TKT-10431</div></div>'+status('策略时限内','danger')+'</div><div class="meta-grid">'+meta('完整姓名','<span class="revealed-value">林清和（原型虚构）</span>')+meta('完整证件','<span class="revealed-value">110101199001011234（原型虚构）</span>')+meta('完整号码','<span class="revealed-value">13800004026（原型虚构）</span>')+meta('授权范围','仅 '+u.id+' 的身份字段')+'</div></div>':'<div class="banner">'+icon('lock')+'<span>完整姓名、证件和号码未加载到当前页面。角色权限不会自动解锁原值。</span></div>';
+      return head('用户详情',u.id+' · '+u.name,actions)+sensitive+
+        '<div class="tabs"><button class="tab active">概览</button><button class="tab">实名记录</button><button class="tab">主叫号码</button><button class="tab">订单与权益</button><button class="tab">工单</button><button class="tab">访问审计</button></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>账户与实名摘要</h2>'+status(u.identity,u.identity==='已核验'?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('用户 ID','<span class="mono">'+u.id+'</span>')+meta('姓名',u.name)+meta('证件号','<span class="mono">110***********1234</span>')+meta('手机号','<span class="mono">138****4026</span>')+meta('账户状态',status('正常','success'))+meta('风险等级',status(u.risk+'风险',u.risk==='低'?'success':'warning'))+meta('实名供应商','身份核验服务 B')+meta('最近核验','2026-10-19 13:09:22')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>处理边界</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>历史核验不可覆盖</strong><p>复核只能追加新记录或创建解除错误关联申请。</p></div><div class="event"><strong>内容访问独立授权</strong><p>工单关闭、授权撤销或离开页面后原值清除。</p></div><div class="event"><strong>所有命令可审计</strong><p>申请人、审批人、执行结果与失败原因分别记录。</p></div></div></div></aside></div>';
+    }
+    function pageIdentityCases(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/identity-cases/IDC-3108">IDC-3108</button></td><td>同一身份关联冲突<div class="cell-sub">USR-2189 / 历史账户 1 个</div></td><td>'+status('人工复核','warning')+'</td><td>TKT-10431</td><td>今天 13:12</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/identity-cases/IDC-3112">IDC-3112</button></td><td>二要素不一致<div class="cell-sub">USR-2271 / 供应商明确失败</div></td><td>'+status('待补充核验','danger')+'</td><td>TKT-10436</td><td>昨天 18:42</td></tr>'
+      ];
+      return head('实名与风控案件','核验结果只追加，案件处理不会重写供应商历史响应。',button('查看用户','users','data-route="/users"',''))+
+        toolbar('搜索案件、用户或工单','<select class="select"><option>全部状态</option><option>人工复核</option><option>待补充</option></select>')+
+        table(['案件','类型与对象','状态','工单','更新时间'],rows);
+    }
+    function pageIdentityDetail(id){
+      return head('实名案件详情',id+' · 身份关联冲突',button('返回案件列表','arrow','data-route="/identity-cases"','')+sensitiveAccessButton('申请查看必要字段','USR-2189','identity'))+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>案件依据</h2>'+status('人工复核','warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('案件 ID','<span class="mono">'+id+'</span>')+meta('关联工单','<span class="mono">TKT-10431</span>')+meta('当前账户','USR-2189 · 周某乙')+meta('历史关联','已停用账户 1 个')+meta('证件索引','HMAC: 8fc2…91ad')+meta('供应商结论','二要素一致')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>允许的下一步</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>补充核验</strong><p>追加新的核验尝试，不覆盖既有成功或失败记录。</p></div><div class="event"><strong>解除错误关联申请</strong><p>需要工单、依据、二次验证和审批。</p></div><div class="event"><strong>暂停后续能力</strong><p>只影响新业务，不删除历史证据与流水。</p></div></div></div></aside></div>';
+    }
+    function pageOrganizations(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/organizations/ORG-30018">ORG-30018</button></td><td><span class="cell-title">华启数字服务有限公司</span><div class="cell-sub">统一社会信用代码 9131**********X8</div></td><td>'+status('服务中','success')+'</td><td>企业旗舰版 R3</td><td class="mono">24 / 30</td><td>华东</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/organizations/ORG-30027">ORG-30027</button></td><td><span class="cell-title">澄明咨询有限公司</span><div class="cell-sub">统一社会信用代码 9132**********F2</div></td><td>'+status('待合同生效','warning')+'</td><td>企业基础版 R2</td><td class="mono">8 / 10</td><td>华东</td></tr>'
+      ];
+      return head('企业','平台员工数据范围与企业成员权限互相独立；企业管理员不会自动获得平台后台权限。')+toolbar('搜索企业 ID、名称或工单')+table(['企业 ID','企业主体','状态','合同商品','坐席','地域'],rows);
+    }
+    function pageOrganizationDetail(id){
+      return head('企业详情',id+' · 华启数字服务有限公司',button('返回企业列表','arrow','data-route="/organizations"',''))+
+        '<div class="banner">'+icon('shield')+'<span>当前平台范围仅覆盖华东。成员身份与完整组织号码保持脱敏；跨地域查询会被服务端拒绝并审计。</span></div>'+
+        '<div class="grid-even"><section class="panel"><div class="panel-head"><h2>企业摘要</h2>'+status('服务中','success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('企业 ID','<span class="mono">'+id+'</span>')+meta('主体','华启数字服务有限公司')+meta('合同版本','ENT-FLAGSHIP-2026.10-R3')+meta('共享权益','录音 1,842 / 3,000 分钟')+meta('坐席','24 / 30')+meta('独立固话','3 / 5')+'</dl></div></section>'+
+        '<section class="panel"><div class="panel-head"><h2>权限说明</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>企业管理员</strong><p>管理本组织成员、坐席、号码和脱敏用量。</p></div><div class="event"><strong>平台运营人员</strong><p>仅按员工角色、地域、业务线和工单范围处理。</p></div><div class="event"><strong>证据内容</strong><p>两类管理员均不因管理身份自动取得录音播放权。</p></div></div></div></section></div>';
+    }
+    function pageNumbers(){
+      var rows=numbers.map(function(n){return '<tr><td><button class="link-button mono" data-route="/numbers/'+n.id+'">'+n.id+'</button></td><td><span class="cell-title mono">'+n.masked+'</span><div class="cell-sub">'+n.type+'</div></td><td>'+status(n.verification,n.verification==='VERIFIED'?'success':'warning')+'</td><td>'+status(n.authorization,n.authorization==='GRANTED'?'success':'warning')+'</td><td>'+status(n.provisioning,n.provisioning==='ACTIVE'?'success':n.provisioning==='FAILED'?'danger':'warning')+'</td><td>'+status(n.eligibility,n.eligibility==='MATCHED'?'success':'')+'</td><td>'+n.updated+'</td></tr>';});
+      return head('主叫号码','持有验证、授权、运营商开通和公证资格是四条独立轨道。')+toolbar('按号码 ID、工单或 HMAC 精确匹配','<select class="select"><option>全部号码类型</option><option>手机号</option><option>独立固话</option></select>')+table(['号码 ID','号码','持有验证','授权','开通','公证资格','更新时间'],rows);
+    }
+    function stateTracks(n){
+      return '<div class="split-state"><div class="state-track success"><strong>持有验证</strong><span>'+n.verification+'</span></div><div class="state-track '+(n.authorization==='GRANTED'?'success':'warning')+'"><strong>录音授权</strong><span>'+n.authorization+'</span></div><div class="state-track '+(n.provisioning==='ACTIVE'?'success':'warning')+'"><strong>运营商开通</strong><span>'+n.provisioning+'</span></div></div>';
+    }
+    function pageNumberDetail(id){
+      var n=numbers.filter(function(x){return x.id===id;})[0]||numbers[0];
+      var action=n.provisioning==='FAILED'?button('重新申请开通','retry','data-action="open-command" data-command="business-retry" data-object="'+n.id+'"','primary'):button('按原幂等键技术重试','retry','data-action="open-command" data-command="technical-retry" data-object="'+n.id+'"','primary');
+      return head('号码详情',n.id+' · '+n.masked,button('返回号码列表','arrow','data-route="/numbers"','')+action)+
+        '<div class="banner warning">'+icon('info')+'<span>网络结果未知不会生成 PENDING/TIMEOUT 业务状态，也不会把号码伪造为 ACTIVE。技术重试复用原请求；明确失败后的新业务尝试追加记录。</span></div>'+
+        '<section class="panel"><div class="panel-head"><h2>生命周期轨道</h2>'+status(n.type,'info')+'</div><div class="panel-body">'+stateTracks(n)+'<dl class="meta-grid" style="margin-top:15px">'+meta('号码 ID','<span class="mono">'+n.id+'</span>')+meta('号码掩码','<span class="mono">'+n.masked+'</span>')+meta('验证来源',n.type==='手机号'?'SMS_OTP':'CARRIER_ORIGINATING_CALL')+meta('接入方式',n.type==='手机号'?'MINI_PROGRAM_DIAL':'SERVICE_SHORT_CODE')+meta('授权版本','CARRIER-CONSENT-2026.10-R2')+meta('公证资格',n.eligibility)+'</dl></div></section>'+
+        '<section class="panel"><div class="panel-head"><h2>开通尝试</h2><button class="link-button" data-route="/provisioning-attempts">查看全部</button></div>'+attemptsTable(n.id)+'</section>';
+    }
+    function attemptsTable(numberId){
+      var rows=state.attempts.filter(function(a){return !numberId||a.number===numberId;}).map(function(a){return '<tr><td class="mono">'+a.id+'</td><td>'+a.kind+'</td><td>'+a.transport+'</td><td>'+a.business+'</td><td>'+status(a.state,a.state==='ACTIVE'?'success':'danger')+'</td><td>'+a.error+'</td><td>'+a.time+'</td></tr>';});
+      return table(['尝试','类型','传输结果','业务结果','号码状态','错误分类','时间'],rows.length?rows:['<tr><td colspan="7">暂无尝试</td></tr>']);
+    }
+    function pageProvisioning(){
+      return head('开通尝试','同步业务结果和网络/解析结果分开记录；历史尝试不可覆盖。')+
+        toolbar('搜索请求 ID、号码 ID 或工单','<select class="select"><option>全部结果</option><option>明确成功</option><option>明确失败</option><option>技术未知</option></select>')+attemptsTable();
+    }
+    function pageCalls(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/calls/CALL-78392">CALL-78392</button></td><td class="mono">138****4026</td><td class="mono">139****7781</td><td>小程序拨号</td><td>'+status('已匹配','success')+'</td><td>'+status('SOLIDIFIED','success')+'</td><td class="mono">08:42</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/calls/CALL-78421">CALL-78421</button></td><td class="mono">021-****7812</td><td class="mono">010-****9130</td><td>固话声讯短号</td><td>'+status('待复核','danger')+'</td><td>'+status('未形成证据','warning')+'</td><td class="mono">00:00</td></tr>'
+      ];
+      return head('通话会话','实际主叫只接受运营商网络侧事实；固话操作者不确定时保持为空。')+toolbar('搜索通话 ID、运营商会话或工单')+table(['通话','实际主叫','被叫','接入方式','匹配','证据','权威时长'],rows);
+    }
+    function pageCallDetail(id){
+      var mismatch=id==='CALL-78421';
+      var grant=state.accessGrant&&state.accessGrant.objectId===id;
+      var actions=button('返回通话列表','arrow','data-route="/calls"','')+(mismatch?button('进入匹配复核','alert','data-route="/call-reconciliation"','primary'):sensitiveAccessButton('申请临时播放',id,'recording'));
+      var media=grant?'<div class="sensitive-session" data-sensitive-session><div class="session-head"><div><strong>临时录音播放会话</strong><div class="cell-sub">仅限争议处理复核 · 不提供下载</div></div>'+status('策略时限内','danger')+'</div><div style="height:64px;display:flex;align-items:center;gap:4px" aria-label="录音波形">'+Array(28).fill(0).map(function(_,i){return '<span style="width:4px;height:'+(12+(i%7)*5)+'px;background:#a64c52;border-radius:2px"></span>';}).join('')+'</div><div class="revealed-value">虚构录音播放副本 · 02:18 / 08:42</div></div>':'<div class="banner">'+icon('lock')+'<span>录音媒体未加载。播放必须从关联工单发起临时授权，且不会暴露对象存储地址。</span></div>';
+      return head('通话详情',id+' · '+(mismatch?'主叫匹配差异':'有效录音会话'),actions)+media+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>网络侧事实</h2>'+status(mismatch?'CALLER_REJECTED':'SOLIDIFIED',mismatch?'danger':'success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('运营商会话','<span class="mono">CAR-20261019-84A2</span>')+meta('接入方式',mismatch?'SERVICE_SHORT_CODE':'MINI_PROGRAM_DIAL')+meta('预期主叫',mismatch?'未预选（固话）':'138****4026')+meta('实际主叫',mismatch?'021-****7812':'138****4026')+meta('匹配规则',mismatch?'唯一活动绑定未解析':'手机号预期/实际强一致')+meta('成员/坐席',mismatch?'保持为空':'MBR-881 / 坐席 12')+meta('权威时长',mismatch?'0 秒':'522 秒')+meta('用量结果',mismatch?'已释放预占':'确认 522 秒')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>处理时间线</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>运营商识别真实主叫</strong><p>原始回执哈希已归档，人工处理不能覆盖。</p><time>14:02:11</time></div><div class="event"><strong>'+(mismatch?'唯一绑定解析失败':'主叫强一致通过')+'</strong><p>'+(mismatch?'进入差异工单，未形成证据、未扣额度。':'允许进入录音接收与内部固证。')+'</p><time>14:02:12</time></div><div class="event"><strong>'+(mismatch?'等待双人复核':'内部固证完成')+'</strong><p>'+(mismatch?'任何纠正都追加关联事件。':'公证处存证是另一条独立状态。')+'</p><time>14:11:05</time></div></div></div></aside></div>';
+    }
+    function pageCallReconciliation(){
+      var action=state.correctionStatus==='待双人复核'?button('发起修复申请','approval','data-action="open-command" data-command="call-correction" data-object="CALL-78421"','primary'):status(state.correctionStatus,'success');
+      return head('主叫匹配差异','孤儿录音或主叫不一致不能由单人选择用户解决。',action)+
+        '<div class="banner danger">'+icon('alert')+'<span>当前差异未形成证据、未扣额度。原始运营商回执、候选绑定和冲突检查都必须保留。</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>CALL-78421</h2>'+status(state.correctionStatus,state.correctionStatus==='已追加纠正事件'?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('实际主叫','<span class="mono">021-****7812</span>')+meta('运营商会话','CAR-20261019-84A2')+meta('候选绑定','NUM-10116 · 华启数字服务')+meta('活动冲突','无其他活动绑定')+meta('原始结果','CALLER_REJECTED')+meta('当前关联','无')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>复核链</h2></div><div class="panel-body"><div class="approval-chain"><span class="approval-node">渠道申请人</span><span class="approval-arrow">→</span><span class="approval-node">证据运营复核</span><span class="approval-arrow">→</span><span class="approval-node">安全复核</span><span class="approval-arrow">→</span><span class="approval-node">领域命令执行</span></div><div class="banner warning" style="margin:16px 0 0">'+icon('info')+'<span>即使修复成功，也只追加 CallMatchCorrection，不改写运营商原始回执。</span></div></div></aside></div>';
+    }
+    function pageEvidence(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/evidence/EVI-99182">EVI-99182</button></td><td>运营商通话录音</td><td>'+status('SOLIDIFIED','success')+'</td><td>'+status('PRESERVED','success')+'</td><td>'+status('SUCCEEDED','success')+'</td><td>今天 14:14</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/evidence/EVI-99218">EVI-99218</button></td><td>微信会话文件</td><td>'+status('QUARANTINED','danger')+'</td><td>'+status('NOT_REQUESTED','')+'</td><td>'+status('NOT_REQUESTED','')+'</td><td>今天 13:58</td></tr>'
+      ];
+      return head('证据','内部固证、公证处存证和 AI 处理分别展示，任何一个状态都不替代另一个。')+
+        toolbar('搜索证据 ID、工单或哈希摘要','<select class="select"><option>全部来源</option><option>运营商通话</option><option>文件导入</option></select>')+table(['证据','来源','内部处理','公证处存证','AI','更新时间'],rows);
+    }
+    function pageEvidenceDetail(id){
+      var quarantined=id==='EVI-99218';
+      return head('证据详情',id+' · '+(quarantined?'文件导入':'运营商通话录音'),button('返回证据列表','arrow','data-route="/evidence"','')+(quarantined?button('查看隔离工单','shield','data-route="/evidence-quarantine"','primary'):sensitiveAccessButton('申请查看原始内容',id,'evidence')))+
+        '<div class="banner '+(quarantined?'danger':'success')+'">'+icon(quarantined?'alert':'shield')+'<span>'+(quarantined?'文件在隔离区，未进入哈希、公证处存证或 AI 链路。':'内部固证已完成；公证处存证状态单独以有效 recordNo 为准。')+'</span></div>'+
+        '<div class="tabs"><button class="tab active">元数据</button><button class="tab">对象版本</button><button class="tab">完整性清单</button><button class="tab">公证处存证</button><button class="tab">AI 版本</button><button class="tab">访问审计</button></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>对象与处理状态</h2>'+status(quarantined?'QUARANTINED':'SOLIDIFIED',quarantined?'danger':'success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('证据 ID','<span class="mono">'+id+'</span>')+meta('对象类型',quarantined?'ORIGINAL · application/pdf':'ORIGINAL · audio/wav')+meta('大小',quarantined?'18.4 MB':'8.7 MB')+meta('SHA-256',quarantined?'尚未进入正式清单':'9f2b…71d4')+meta('内部固证',quarantined?'未开始':'SOLIDIFIED')+meta('公证处存证',quarantined?'NOT_REQUESTED':'PRESERVED · REC-****8129')+meta('AI',quarantined?'NOT_REQUESTED':'SUCCEEDED · v3')+meta('永久存储地址','不向运营界面展示')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>不可变边界</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>原始对象不可覆盖</strong><p>预览、转码和 AI 内容使用独立派生版本。</p></div><div class="event"><strong>访问与下载分离</strong><p>临时查看不自动获得下载权限。</p></div><div class="event"><strong>状态所有权独立</strong><p>内部固证不代表公证处存证或报告完成。</p></div></div></div></aside></div>';
+    }
+    function pageQuarantine(){
+      var canRelease=state.role==='security'||state.role==='super';
+      return head('证据隔离','普通运营可补充上下文，只有安全审批链可以解除隔离。',canRelease?button('发起解除隔离','shield','data-action="open-command" data-command="release-quarantine" data-object="EVI-99218"','danger'):button('仅安全角色可处理','lock','disabled',''))+
+        '<div class="banner danger">'+icon('alert')+'<span>恶意或无法解析文件不会进入主处理链。解除操作只追加事件，不删除扫描结果。</span></div>'+
+        '<section class="panel"><div class="panel-head"><div><h2>EVI-99218</h2><p>微信会话文件 · application/pdf · 18.4 MB</p></div>'+status(state.quarantineStatus,state.quarantineStatus==='已解除并恢复处理'?'success':'danger')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('扫描结论','可疑嵌入脚本，需要人工分析')+meta('扫描引擎','SecureScan 4.8 · signatures 2026.10.19')+meta('隔离时间','2026-10-19 13:58:03')+meta('关联工单','TKT-10438')+meta('业务上下文','线下公证补件候选材料')+meta('原处理链','已阻断于 VALIDATING 前')+'</dl></div></section>';
+    }
+    function pageTickets(){
+      return head('工单','人工处理的统一上下文；沟通、命令、审批和审计仍分别鉴权。',button('查看我的队列','queue','data-route="/work-queues"',''))+toolbar('搜索工单号或关联对象')+queueTable(true);
+    }
+    function pageTicketDetail(id){
+      return head('工单详情',id+' · 实名冲突复核',button('返回工单列表','arrow','data-route="/tickets"','')+sensitiveAccessButton('申请临时访问','USR-2189','identity'))+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>处理上下文</h2>'+status('处理中','warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('工单','<span class="mono">'+id+'</span>')+meta('业务对象','USR-2189')+meta('队列','实名与风控')+meta('优先级','P1 · 中风险')+meta('负责人','risk.operator.02')+meta('SLA','剩余 1 小时 18 分')+'</dl><div class="timeline" style="margin-top:16px"><div class="event"><strong>客服创建工单</strong><p>用户反馈历史账户已停用，需要核对身份关联。</p><time>13:12</time></div><div class="event"><strong>风险人员领取</strong><p>当前仅可见掩码与供应商结论。</p><time>13:18</time></div><div class="event"><strong>等待必要字段访问审批</strong><p>申请尚未授予任何原值访问。</p><time>14:31</time></div></div></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>关联对象</h2></div><div class="panel-body"><button class="btn" style="width:100%;justify-content:flex-start" data-route="/users/USR-2189">'+icon('users')+'USR-2189 · 周某乙</button><button class="btn" style="width:100%;justify-content:flex-start;margin-top:9px" data-route="/identity-cases/IDC-3108">'+icon('id')+'IDC-3108 · 身份关联冲突</button></div></aside></div>';
+    }
+    function pageAccessGrants(){
+      var rows=[
+        '<tr><td class="mono">AGR-55018</td><td>USR-2189 · 身份字段</td><td>实名冲突复核</td><td>risk.operator.02</td><td>'+status('待审批','warning')+'</td><td>TKT-10431</td></tr>',
+        '<tr><td class="mono">AGR-55011</td><td>CALL-78392 · 录音播放</td><td>争议处理复核</td><td>notary.ops.03</td><td>'+status('已到期','')+'</td><td>TKT-10412</td></tr>',
+        '<tr><td class="mono">AGR-55004</td><td>EVI-99122 · 原始文件</td><td>公证材料核对</td><td>notary.ops.02</td><td>'+status('已撤销','danger')+'</td><td>TKT-10398</td></tr>'
+      ];
+      return head('临时访问授权','查看申请、审批、签发、使用、到期和撤销；审计员仍无内容访问权限。')+
+        '<div class="banner">'+icon('lock')+'<span>访问授权绑定对象 ID 集合和字段/媒体范围。工单关闭、离开页面、到期或撤销后不能续用。</span></div>'+
+        toolbar('搜索授权、对象或工单')+table(['授权','对象范围','目的','申请人','状态','工单'],rows);
+    }
+    function pageAudit(){
+      var rows=state.events.map(function(e){return '<tr><td class="mono">'+e.time+'</td><td><span class="cell-title">'+e.event+'</span></td><td>'+e.actor+'</td><td class="mono">'+e.object+'</td><td>'+status(e.result,e.result.indexOf('拒绝')>=0?'danger':e.result.indexOf('待')>=0?'warning':'success')+'</td><td class="mono">'+e.ticket+'</td></tr>';});
+      return head('审计中心','事件不可编辑或删除；导出默认聚合脱敏，审计权限不授予业务内容权限。')+
+        toolbar('搜索对象、工单、操作者或命令','<select class="select"><option>全部结果</option><option>成功</option><option>拒绝</option><option>待处理</option></select>')+
+        table(['时间','事件','操作者','对象','结果','工单'],rows);
+    }
+    function pageDenied(){
+      return '<div class="empty">'+icon('lock')+'<div><h2>没有访问权限</h2><p>当前角色和数据范围不能访问该对象或路由。系统不会确认目标对象是否存在，本次拒绝已写入安全审计。</p><div style="margin-top:18px">'+button('返回工作台','arrow','data-route="'+roles[state.role].initial+'"','primary')+'</div><div class="cell-sub mono" style="margin-top:14px">请求引用：DENY-20261019-143812</div></div></div>';
+    }
+    function pagePlaceholder(route){
+      var bullets={
+        P1:['状态与详情不会覆盖历史版本','写操作统一走受控命令与审批','失败、重试和部分成功纳入自动化'],
+        P2:['平台治理信息不暴露密钥','异常、降级与对账保持独立事实','最终阶段补齐键盘与长文本验收']
+      }[route.stage];
+      return head(route.title,route.stage+' 计划路由；当前里程碑不以占位页计为最终完成。')+
+        '<div class="placeholder"><div class="status info">'+route.stage+' 后续切片</div><h2>'+esc(route.title)+' 已纳入实施计划</h2><p class="muted">该路由已完成权限注册和导航边界，业务页面将在 '+route.stage+' 切片实现。</p><ul>'+bullets.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div>';
+    }
+
+    function renderPage(route){
+      if(!stageAvailable(route)) return pagePlaceholder(route);
+      var p=state.route,id=routeId(p);
+      if(p==='/dashboard')return pageDashboard();
+      if(p==='/work-queues')return pageQueues();
+      if(p==='/approvals')return pageApprovals();
+      if(p==='/users')return pageUsers();
+      if(route.path==='/users/:id')return pageUserDetail(id);
+      if(p==='/identity-cases')return pageIdentityCases();
+      if(route.path==='/identity-cases/:id')return pageIdentityDetail(id);
+      if(p==='/organizations')return pageOrganizations();
+      if(route.path==='/organizations/:id')return pageOrganizationDetail(id);
+      if(p==='/numbers')return pageNumbers();
+      if(route.path==='/numbers/:id')return pageNumberDetail(id);
+      if(p==='/provisioning-attempts')return pageProvisioning();
+      if(p==='/calls')return pageCalls();
+      if(route.path==='/calls/:id')return pageCallDetail(id);
+      if(p==='/call-reconciliation')return pageCallReconciliation();
+      if(p==='/evidence')return pageEvidence();
+      if(route.path==='/evidence/:id')return pageEvidenceDetail(id);
+      if(p==='/evidence-quarantine')return pageQuarantine();
+      if(p==='/tickets')return pageTickets();
+      if(route.path==='/tickets/:id')return pageTicketDetail(id);
+      if(p==='/access-grants')return pageAccessGrants();
+      if(p==='/audit')return pageAudit();
+      if(p==='/access-denied')return pageDenied();
+      return pagePlaceholder(route);
+    }
+    function accessModal(){
+      var m=state.modal;
+      if(m.step==='request'){
+        return modalFrame('申请临时敏感访问','访问不会因角色自动开放。请绑定工单、目的、对象和必要字段。',
+          '<div class="confirm-grid"><div class="confirm-item"><span>对象</span><strong class="mono">'+esc(m.objectId)+'</strong></div><div class="confirm-item"><span>内容范围</span><strong>'+(m.kind==='recording'?'录音受控播放':m.kind==='evidence'?'原始证据查看':'完整姓名/证件/号码')+'</strong></div></div>'+
+          '<div class="field"><label for="access-ticket">关联工单</label><input id="access-ticket" class="input" value="TKT-10431"></div><div class="field"><label for="access-purpose">访问目的</label><select id="access-purpose" class="select"><option>实名冲突复核</option><option>争议处理复核</option><option>公证材料核对</option></select></div><div class="field"><label for="access-reason">必要性说明</label><textarea id="access-reason">仅核对当前工单所需字段，不扩大到其他对象。</textarea></div>'+
+          '<div class="banner warning">'+icon('clock')+'<span>最长时限和水印策略尚待正式确认。原型默认禁止下载，并在离开页面后清除内容。</span></div>',
+          button('取消','x','data-action="close-modal"','')+button('提交审批','approval','data-action="access-submit"','primary'));
+      }
+      if(m.step==='approval'){
+        return modalFrame('等待独立审批','申请人不能审批自己的访问请求。',
+          '<div class="approval-chain"><span class="approval-node">申请已提交</span><span class="approval-arrow">→</span><span class="approval-node">独立审批人</span><span class="approval-arrow">→</span><span class="approval-node">操作者二次验证</span></div><div class="banner">'+icon('info')+'<span>原型可模拟审批通过；真实系统由审批策略和服务端签发结果驱动。</span></div>',
+          button('撤回申请','x','data-action="close-modal"','')+button('模拟独立审批通过','check','data-action="access-approve"','primary'));
+      }
+      return modalFrame('完成二次验证','审批通过只允许签发当前对象和内容范围的短期会话。',
+        '<div class="field"><label for="access-otp">二次验证码</label><input id="access-otp" class="input" inputmode="numeric" autocomplete="one-time-code" placeholder="输入验证码"></div><div id="otp-error"></div><label class="check-line"><input type="checkbox" id="access-confirm" checked><span>我确认仅为已批准目的访问，并知悉查看、播放、离开与失败均会记录审计。</span></label>',
+        button('取消','x','data-action="close-modal"','')+button('签发受控会话','shield','data-action="access-verify"','primary'));
+    }
+    function commandModal(){
+      var m=state.modal;
+      if(m.step==='approval'){
+        return modalFrame('双人复核','申请已冻结对象、依据和影响范围；审批不会直接改业务终态。',
+          '<div class="approval-chain"><span class="approval-node">申请人：carrier.ops.01</span><span class="approval-arrow">→</span><span class="approval-node">复核人：security.reviewer.02</span><span class="approval-arrow">→</span><span class="approval-node">一次执行授权</span></div><div class="banner warning">'+icon('alert')+'<span>原始运营商回执保持不变，成功后仅追加纠正事件。</span></div>',
+          button('拒绝','x','data-action="close-modal"','')+button('模拟复核并执行','check','data-action="command-approve"','primary'));
+      }
+      var labels={
+        'technical-retry':['按原幂等键技术重试','响应无法解析，业务状态保持调用前值','复用 PROV-9091 的请求与幂等键'],
+        'business-retry':['重新申请运营商开通','前次业务结果明确失败','创建新业务尝试并关联前次记录'],
+        'call-correction':['申请修复主叫匹配','唯一活动绑定候选已找到','追加 CallMatchCorrection，需双人复核'],
+        'release-quarantine':['申请解除证据隔离','安全人工分析确认允许恢复','追加隔离解除事件，恢复处理链']
+      }[m.command];
+      return modalFrame(labels[0],labels[1],
+        '<div class="confirm-grid"><div class="confirm-item"><span>业务对象</span><strong class="mono">'+esc(m.objectId)+'</strong></div><div class="confirm-item"><span>执行语义</span><strong>'+labels[2]+'</strong></div></div><div class="field"><label for="command-ticket">关联工单</label><input id="command-ticket" class="input" value="'+(m.command==='release-quarantine'?'TKT-10438':'TKT-10435')+'"></div><div class="field"><label for="command-reason">执行理由</label><textarea id="command-reason">已核对当前状态、失败原因、对象范围和历史记录。</textarea></div><label class="check-line"><input id="command-confirm" type="checkbox" checked><span>我确认该命令不会覆盖历史事实，执行结果可能失败并将单独记录。</span></label>',
+        button('取消','x','data-action="close-modal"','')+button(m.command==='call-correction'||m.command==='release-quarantine'?'提交复核':'确认执行','shield','data-action="command-submit"','primary'));
+    }
+    function modalFrame(title,desc,body,actions){
+      return '<div class="modal-backdrop" role="presentation"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><div><h2 id="modal-title">'+esc(title)+'</h2><p>'+esc(desc)+'</p></div><button class="icon-btn" data-action="close-modal" aria-label="关闭">'+icon('x')+'</button></div><div class="modal-body">'+body+'</div><div class="modal-actions">'+actions+'</div></section></div>';
+    }
+    function renderModal(){
+      document.getElementById('modal-root').innerHTML=!state.modal?'':state.modal.type==='access'?accessModal():commandModal();
+    }
+    function toast(message){
+      state.toast=message;document.getElementById('toast-root').innerHTML='<div class="toast">'+icon('check')+'<span>'+esc(message)+'</span></div>';
+      setTimeout(function(){state.toast='';var el=document.getElementById('toast-root');if(el)el.innerHTML='';},3200);
+    }
+    function render(){
+      var path=currentPath();
+      if(state.accessGrant&&state.accessGrant.route!==path){
+        addEvent('SensitiveAccessSessionEnded',state.accessGrant.objectId,'离开授权页面后清除','TKT-10431');
+        state.accessGrant=null;
+      }
+      if(!state.loggedIn){
+        state.route='/login';document.getElementById('root').innerHTML=renderLogin();document.title='平台员工登录 · 一通话运营后台';renderModal();return;
+      }
+      if(path==='/login') path=roles[state.role].initial;
+      var route=matchRoute(path);
+      if(!roleAllows(route)&&path!=='/access-denied'){state.deniedFrom=path;path='/access-denied';route=matchRoute(path);}
+      state.route=path;
+      document.getElementById('root').innerHTML=shell(renderPage(route),route);
+      document.title=route.title+' · 一通话运营后台';
+      renderModal();
+    }
+    function addEvent(event,object,result,ticket){
+      var now=new Date();var time=[now.getHours(),now.getMinutes(),now.getSeconds()].map(function(n){return String(n).padStart(2,'0');}).join(':');
+      state.events.unshift({time:time,event:event,actor:state.role+'.review',object:object,result:result,ticket:ticket||'-'});
+    }
+    function executeCommand(){
+      var m=state.modal;
+      if(m.command==='technical-retry'){
+        state.attempts.unshift({id:'PROV-9092',number:m.objectId,kind:'技术尝试 #2',transport:'请求已发送',business:'等待同请求收敛',state:'ACTIVE',error:'复用原幂等键',time:'刚刚'});
+        addEvent('ProvisioningTechnicalRetryRequested',m.objectId,'请求已受理','TKT-10435');toast('技术重试已按原幂等键提交，业务状态未被改写');
+      }else if(m.command==='business-retry'){
+        state.attempts.unshift({id:'PROV-9093',number:m.objectId,kind:'业务尝试 #3',transport:'HTTP 200',business:'同步成功',state:'ACTIVE',error:'无',time:'刚刚'});
+        numbers.forEach(function(n){if(n.id===m.objectId)n.provisioning='ACTIVE';});
+        addEvent('ProvisioningBusinessAttemptSucceeded',m.objectId,'ACTIVE','TKT-10435');toast('新业务尝试同步成功，历史失败记录已保留');
+      }else if(m.command==='call-correction'){
+        state.correctionStatus='已追加纠正事件';addEvent('CallMatchCorrectionAppended',m.objectId,'已双人复核','TKT-10435');toast('已追加匹配纠正事件，原始回执保持不变');
+      }else if(m.command==='release-quarantine'){
+        state.quarantineStatus='已解除并恢复处理';addEvent('EvidenceQuarantineReleased',m.objectId,'安全复核通过','TKT-10438');toast('隔离解除事件已追加，处理链从原阻断点恢复');
+      }
+      state.modal=null;render();
+    }
+
+    document.addEventListener('click',function(event){
+      var routeEl=event.target.closest('[data-route]');
+      if(routeEl){go(routeEl.getAttribute('data-route'));return;}
+      var actionEl=event.target.closest('[data-action]');
+      if(!actionEl)return;
+      var action=actionEl.getAttribute('data-action');
+      if(action==='login'){
+        var otp=document.getElementById('staff-otp');var agree=document.getElementById('staff-agree');
+        if(!agree.checked||otp.value!=='482916'){toast('请完成协议确认并输入有效二次验证码');return;}
+        state.loggedIn=true;go(roles[state.role].initial);return;
+      }
+      if(action==='logout'){state.loggedIn=false;state.accessGrant=null;state.modal=null;location.hash='/login';render();return;}
+      if(action==='close-modal'){state.modal=null;renderModal();return;}
+      if(action==='toast'){toast(actionEl.getAttribute('data-message')||'操作已记录');return;}
+      if(action==='batch-claim'){toast('已领取 2 个符合当前范围的工单，1 个因队列变更被跳过');return;}
+      if(action==='request-access'){
+        var accessKind=actionEl.getAttribute('data-kind');var accessObject=actionEl.getAttribute('data-object');
+        if(!canSensitiveAccess(accessKind)){
+          addEvent('SensitiveAccessDenied',accessObject||'unknown','角色无该内容权限','-');toast('当前角色无权申请该类敏感内容访问');return;
+        }
+        state.modal={type:'access',step:'request',objectId:accessObject,kind:accessKind,route:state.route};renderModal();return;
+      }
+      if(action==='access-submit'){
+        var ticket=document.getElementById('access-ticket').value.trim();var reason=document.getElementById('access-reason').value.trim();
+        if(!ticket||!reason){toast('工单和必要性说明不能为空');return;}
+        state.modal.step='approval';addEvent('SensitiveAccessRequested',state.modal.objectId,'待独立审批',ticket);renderModal();return;
+      }
+      if(action==='access-approve'){state.modal.step='otp';addEvent('SensitiveAccessApproved',state.modal.objectId,'一次签发授权','TKT-10431');renderModal();return;}
+      if(action==='access-verify'){
+        var code=document.getElementById('access-otp').value.trim();
+        if(code!=='482916'){document.getElementById('otp-error').innerHTML='<div class="banner danger">'+icon('alert')+'<span>二次验证失败，未签发访问会话。</span></div>';addEvent('SensitiveAccessVerificationFailed',state.modal.objectId,'拒绝','TKT-10431');return;}
+        var modal=state.modal;state.accessGrant={objectId:modal.objectId,kind:modal.kind,route:modal.route};state.modal=null;addEvent('SensitiveAccessSessionIssued',modal.objectId,'短期单用途会话','TKT-10431');render();toast('受控访问会话已签发，离开页面后自动清除');return;
+      }
+      if(action==='open-command'){
+        state.modal={type:'command',step:'request',command:actionEl.getAttribute('data-command'),objectId:actionEl.getAttribute('data-object')};renderModal();return;
+      }
+      if(action==='command-submit'){
+        if(state.modal.command==='call-correction'||state.modal.command==='release-quarantine'){state.modal.step='approval';renderModal();}else executeCommand();
+        return;
+      }
+      if(action==='command-approve'){executeCommand();return;}
+    });
+    document.addEventListener('change',function(event){
+      if(event.target.id==='login-role'){state.role=event.target.value;render();return;}
+      if(event.target.id==='login-scenario'){state.scenario=event.target.value;render();return;}
+      if(event.target.id==='review-role'){
+        state.role=event.target.value;state.accessGrant=null;state.modal=null;var next=roles[state.role].initial;location.hash=next;render();return;
+      }
+    });
+    window.addEventListener('hashchange',render);
+    window.__onecallOps={state:state,routes:routeDefs,roles:roles,go:go,render:render};
+    render();
+  })();
+  </script>
+</body>
+</html>
