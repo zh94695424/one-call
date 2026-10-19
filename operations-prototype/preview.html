@@ -233,11 +233,28 @@
         {id:'PROV-9088',number:'NUM-10116',kind:'业务尝试 #2',transport:'HTTP 200',business:'明确失败',state:'FAILED',error:'线路地域暂不支持',time:'今天 11:04'},
         {id:'PROV-9091',number:'NUM-10082',kind:'技术尝试 #1',transport:'响应无法解析',business:'未知，保持调用前状态',state:'ACTIVE',error:'响应格式异常',time:'今天 14:18'}
       ],
-      correctionStatus:'待双人复核',quarantineStatus:'已隔离'
+      correctionStatus:'待双人复核',quarantineStatus:'已隔离',
+      aiVersion:3,aiRetryState:'FAILED',
+      aiVersions:[
+        {version:3,label:'逐字稿可用，摘要失败',detail:'引用时间范围越界，摘要未发布。',time:'今天 14:20'},
+        {version:2,label:'已归档',detail:'旧模型生成，保持只读。',time:'昨天 19:12'},
+        {version:1,label:'已归档',detail:'初始版本，纠错建议独立保存。',time:'昨天 18:56'}
+      ],
+      preservationState:'MANUAL_REVIEW',preservationAttempts:2,
+      preservationHistory:[
+        {number:2,label:'重复存证错误 0015',detail:'请求哈希与首次一致，已查询本地和供应商差异。',time:'今天 14:33'},
+        {number:1,label:'网络错误',detail:'相同 dealId 和规范化请求哈希，未创建新业务标识。',time:'今天 14:17'}
+      ],
+      reportState:'PROCESSING',reportEvents:['轮询：供应商状态 0 · 14:22'],
+      notarySnapshot:2,notaryState:'MATERIAL_REQUIRED',
+      productState:'DRAFT',catalogState:'待审核',
+      orderGrantState:'发放失败 · 待补偿',compensationState:'待审批',
+      shareState:'ACTIVE',exportState:'部分失败'
     };
 
     function roleAllows(route){
       if(route.path==='/access-denied'||route.path==='/login') return true;
+      if(route.path==='/enterprise-quotes'&&['super','ops','finance','product'].indexOf(state.role)>=0) return true;
       var list=roles[state.role].areas;
       if(list.indexOf('all')>=0) return true;
       if(list.indexOf(route.area)>=0) return true;
@@ -249,6 +266,14 @@
     function canSensitiveAccess(kind){
       var allowed=['super','ops','risk','notary','security'];
       return ['identity','recording','evidence'].indexOf(kind)>=0&&allowed.indexOf(state.role)>=0;
+    }
+    function canCommand(command){
+      var commandRoles={
+        'order-grant-reconcile':['super','ops','finance'],
+        'share-revoke':['super','ops','notary'],
+        'export-reapply':['super','ops','notary']
+      };
+      return commandRoles[command]&&commandRoles[command].indexOf(state.role)>=0;
     }
     function sensitiveAccessButton(label,objectId,kind){
       if(!canSensitiveAccess(kind)) return '';
@@ -273,7 +298,7 @@
       state.route=path;state.tab='overview';
       if(location.hash!=='#'+path) location.hash=path;else render();
     }
-    function stageAvailable(route){return route.stage==='P0';}
+    function stageAvailable(route){return route.stage==='P0'||route.stage==='P1';}
     function roleOptions(){
       return Object.keys(roles).map(function(k){return '<option value="'+k+'" '+(state.role===k?'selected':'')+'>'+esc(roles[k].label)+'</option>';}).join('');
     }
@@ -496,6 +521,196 @@
         toolbar('搜索对象、工单、操作者或命令','<select class="select"><option>全部结果</option><option>成功</option><option>拒绝</option><option>待处理</option></select>')+
         table(['时间','事件','操作者','对象','结果','工单'],rows);
     }
+    function pageAIJobs(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/ai-jobs/AIJ-67018">AIJ-67018</button></td><td>EVI-99182</td><td>转写 + 摘要</td><td>'+status(state.aiRetryState,state.aiRetryState==='SUCCEEDED'?'success':'danger')+'</td><td>speech-cn-2026.09</td><td>v'+state.aiVersion+'</td><td>今天 14:20</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/ai-jobs/AIJ-67022">AIJ-67022</button></td><td>EVI-99195</td><td>摘要校验</td><td>'+status('TRANSCRIPT_ONLY','warning')+'</td><td>summary-cn-2026.10</td><td>v2</td><td>今天 14:08</td></tr>'
+      ];
+      return head('AI 任务','任务、逐字稿版本和摘要版本分别保留；重新处理不会覆盖旧结果。')+
+        toolbar('搜索任务、证据或模型版本','<select class="select"><option>全部状态</option><option>FAILED</option><option>TRANSCRIPT_ONLY</option><option>SUCCEEDED</option></select>')+
+        table(['任务','证据','类型','状态','模型','当前版本','更新时间'],rows);
+    }
+    function pageAIJobDetail(id){
+      if(id==='AIJ-67022'){
+        return head('AI 任务详情','AIJ-67022 · EVI-99195',button('返回任务列表','arrow','data-route="/ai-jobs"','')+button('查看逐字稿版本','eye','data-route="/ai-versions/AIV-2"',''))+
+          '<div class="banner warning">'+icon('alert')+'<span>逐字稿通过校验，摘要引用不完整，因此状态为 TRANSCRIPT_ONLY；默认未确认权益。</span></div><section class="panel"><div class="panel-head"><h2>执行事实</h2>'+status('TRANSCRIPT_ONLY','warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('任务 ID','AIJ-67022')+meta('证据','EVI-99195')+meta('模型','summary-cn-2026.10')+meta('当前版本','Transcript v2')+meta('摘要版本','未发布')+meta('权益结果','预占已释放')+'</dl></div></section>';
+      }
+      var failed=id==='AIJ-67018'&&state.aiRetryState==='FAILED';
+      var action=failed?button('重新处理并追加版本','retry','data-action="ai-retry"','primary'):button('查看当前版本','eye','data-route="/ai-versions/AIV-'+state.aiVersion+'"','primary');
+      var versionTimeline=state.aiVersions.map(function(v){return '<div class="event"><strong>v'+v.version+' · '+v.label+'</strong><p>'+v.detail+'</p><time>'+v.time+'</time></div>';}).join('');
+      return head('AI 任务详情',id+' · EVI-99182',button('返回任务列表','arrow','data-route="/ai-jobs"','')+action)+
+        '<div class="banner '+(failed?'danger':'success')+'">'+icon(failed?'alert':'check')+'<span>'+(failed?'摘要引用校验失败；旧逐字稿 v3 保持可用，权益预占尚未确认。':'新版本已完成 Schema 与引用校验，旧版本仍可回看。')+'</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>执行事实</h2>'+status(failed?'FAILED':'SUCCEEDED',failed?'danger':'success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('任务 ID','<span class="mono">'+id+'</span>')+meta('证据','EVI-99182')+meta('任务类型','转写 + 结构化摘要')+meta('模型','speech-cn-2026.09 / summary-cn-2026.10')+meta('输入版本','ORIGINAL v1 · SHA-256 9f2b…71d4')+meta('权益预占','RES-50128 · '+(failed?'未确认':'已确认 522 秒'))+meta('失败分类',failed?'引用时间范围越界':'无')+meta('幂等键','EVI-99182 / pipeline-v'+state.aiVersion)+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>版本记录</h2></div><div class="panel-body"><div class="timeline">'+versionTimeline+'</div></div></aside></div>';
+    }
+    function pageAIVersion(id){
+      if(id==='AIV-2'){
+        return head('AI 版本详情','AIV-2 · EVI-99195 逐字稿',button('返回 AI 任务','arrow','data-route="/ai-jobs/AIJ-67022"',''))+
+          '<div class="banner warning">'+icon('info')+'<span>该版本仅逐字稿通过校验，摘要未发布；版本本身保持只读。</span></div><section class="panel"><div class="panel-head"><h2>Transcript v2</h2>'+status('TRANSCRIPT_ONLY','warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('模型','speech-cn-2026.09')+meta('证据','EVI-99195')+meta('语言','zh-CN')+meta('录音范围','00:00 - 04:18')+meta('摘要版本','无')+meta('权益结果','预占已释放')+'</dl></div></section>';
+      }
+      return head('AI 版本详情',id+' · 不可变派生内容',button('返回 AI 任务','arrow','data-route="/ai-jobs/AIJ-67018"',''))+
+        '<div class="banner">'+icon('info')+'<span>该页面展示派生版本和引用完整性；人工纠错只新增建议，不修改证据或历史 AI 输出。</span></div>'+
+        '<div class="grid-even"><section class="panel"><div class="panel-head"><h2>逐字稿版本</h2>'+status('只读','info')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('版本','Transcript v'+state.aiVersion)+meta('模型','speech-cn-2026.09')+meta('语言','zh-CN')+meta('整体置信度','94.7%')+meta('录音范围','00:00 - 08:42')+meta('Utterance','128 条')+'</dl></div></section><section class="panel"><div class="panel-head"><h2>摘要版本</h2>'+status(state.aiRetryState==='SUCCEEDED'?'引用校验通过':'未发布',state.aiRetryState==='SUCCEEDED'?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('版本','Summary v'+state.aiVersion)+meta('引用集合','12 项')+meta('无引用结论','0 项')+meta('越界引用','0 项')+meta('基础逐字稿','Transcript v'+state.aiVersion)+meta('生成时间','2026-10-19 14:34:09')+'</dl></div></section></div>';
+    }
+    function pagePreservations(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/preservations/NPS-44018">NPS-44018</button></td><td>EVI-99182</td><td class="mono">DEAL-99182-R1</td><td>'+status(state.preservationState,state.preservationState==='PRESERVED'?'success':'danger')+'</td><td>'+(state.preservationState==='PRESERVED'?'REC-****8129':'-')+'</td><td class="mono">'+state.preservationAttempts+'</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/preservations/NPS-44011">NPS-44011</button></td><td>EVI-99176</td><td class="mono">DEAL-99176-R1</td><td>'+status('PRESERVED','success')+'</td><td>REC-****8044</td><td class="mono">1</td></tr>'
+      ];
+      return head('公证处存证','只有 code=\"200\"、有效唯一 recordNo 且本地事务完成才进入 PRESERVED。')+
+        toolbar('搜索记录、证据、dealId 或 recordNo')+table(['记录','证据','dealId','状态','recordNo','尝试'],rows);
+    }
+    function pagePreservationDetail(id){
+      if(id==='NPS-44011'){
+        return head('存证详情','NPS-44011 · DEAL-99176-R1',button('返回存证列表','arrow','data-route="/preservations"',''))+
+          '<div class="banner success">'+icon('check')+'<span>该记录一次提交成功并取得有效 recordNo；存证验证报告和公证书仍是独立对象。</span></div><section class="panel"><div class="panel-head"><h2>请求与回执</h2>'+status('PRESERVED','success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('证据','EVI-99176')+meta('dealId','DEAL-99176-R1')+meta('请求哈希','req: 183a…02f7')+meta('recordNo','REC-****8044')+meta('尝试次数','1')+meta('本地落库','已提交')+'</dl></div></section>';
+      }
+      var preserved=state.preservationState==='PRESERVED';
+      var attemptTimeline=state.preservationHistory.map(function(a){return '<div class="event"><strong>尝试 #'+a.number+' · '+a.label+'</strong><p>'+a.detail+'</p><time>'+a.time+'</time></div>';}).join('');
+      return head('存证详情',id+' · DEAL-99182-R1',button('返回存证列表','arrow','data-route="/preservations"','')+(preserved?'':button('按同一 dealId 重试','retry','data-action="preservation-retry"','primary')))+
+        '<div class="banner '+(preserved?'success':'warning')+'">'+icon(preserved?'check':'alert')+'<span>'+(preserved?'已取得有效 recordNo 并完成本地落库；这仍不代表公证书已出具。':'错误码 0015 已先完成 dealId 对账；禁止换 ID 绕过重复保护。')+'</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>请求与成功判定</h2>'+status(state.preservationState,preserved?'success':'danger')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('证据','EVI-99182')+meta('供应商','豫章公证处存证平台')+meta('dealId','<span class="mono">DEAL-99182-R1</span>')+meta('parentDealId','空（原始证据根记录）')+meta('请求哈希','<span class="mono">req: 70c2…11a8</span>')+meta('材料哈希','<span class="mono">sha256: 9f2b…71d4</span>')+meta('recordNo',preserved?'<span class="mono">REC-****8129</span>':'尚未绑定')+meta('供应商 timestamp','响应时间，不是可信存证时间')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>尝试与对账</h2></div><div class="panel-body"><div class="timeline">'+attemptTimeline+'</div></div></aside></div>';
+    }
+    function pageNotaryReports(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/notary-reports/NRT-55201">NRT-55201</button></td><td>REC-****8129</td><td class="mono">TASK-78028</td><td>'+status(state.reportState,state.reportState==='COMPLETED'?'success':'warning')+'</td><td>'+(state.reportState==='COMPLETED'?'BQ-****2081':'-')+'</td><td>今天 14:22</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/notary-reports/NRT-55184">NRT-55184</button></td><td>REC-****8044</td><td class="mono">TASK-77991</td><td>'+status('MANUAL_REVIEW','danger')+'</td><td>BQ-****1972</td><td>今天 12:46</td></tr>'
+      ];
+      return head('存证验证报告','供应商状态 0/1/2 映射为处理中/完成/失败；报告不是公证书。')+toolbar('搜索任务、recordNo、taskId 或 bqNo')+table(['报告任务','recordNo','taskId','状态','bqNo','更新时间'],rows);
+    }
+    function pageNotaryReportDetail(id){
+      if(id==='NRT-55184'){
+        return head('报告详情','NRT-55184 · TASK-77991',button('返回报告列表','arrow','data-route="/notary-reports"',''))+
+          '<div class="banner danger">'+icon('alert')+'<span>供应商返回完成，但报告材料哈希与申请快照不一致，已进入 MANUAL_REVIEW 且禁止交付。</span></div><section class="panel"><div class="panel-head"><h2>差异结果</h2>'+status('MANUAL_REVIEW','danger')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('recordNo','REC-****8044')+meta('taskId','TASK-77991')+meta('bqNo','BQ-****1972')+meta('供应商状态','1 · 完成')+meta('报告哈希','b117…c821')+meta('快照校验','材料标识不一致')+'</dl></div></section>';
+      }
+      var complete=state.reportState==='COMPLETED';
+      var events=state.reportEvents.map(function(x){return '<div class="event"><strong>'+esc(x)+'</strong><p>回调与轮询使用同一 taskId 幂等转换，终态不可回退。</p></div>';}).join('');
+      return head('报告详情',id+' · TASK-78028',button('返回报告列表','arrow','data-route="/notary-reports"','')+(complete?button('模拟旧回调','clock','data-action="report-old-callback"',''):button('模拟完成轮询','retry','data-action="report-complete"','primary')))+
+        '<div class="banner">'+icon('shield')+'<span>供应商 certificateUrl 仅由服务端安全下载。页面只展示内部对象和校验结果，不暴露供应商 URL。</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>任务与交付校验</h2>'+status(state.reportState,complete?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('recordNo','REC-****8129')+meta('taskId','TASK-78028')+meta('供应商状态',complete?'1 · 完成':'0 · 处理中')+meta('bqNo',complete?'BQ-****2081':'尚未返回')+meta('HTTPS/主机白名单',complete?'通过':'等待 URL')+meta('MIME/魔数/病毒',complete?'PDF · 通过':'未执行')+meta('报告 SHA-256',complete?'7a31…9d20':'未生成')+meta('内部对象',complete?'DEL-88021 · 加密存储':'未创建')+'</dl></div></section><aside class="panel"><div class="panel-head"><h2>回调与轮询事件</h2></div><div class="panel-body"><div class="timeline">'+events+'</div></div></aside></div>';
+    }
+    function pageOfflineNotary(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/offline-notary/ONA-61018">ONA-61018</button></td><td>USR-2048 · 3 份证据</td><td>材料快照 v'+state.notarySnapshot+'</td><td>'+status(state.notaryState,state.notaryState==='READY_FOR_SUBMISSION'?'success':'warning')+'</td><td>TKT-10442</td><td>待正式 SOP</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/offline-notary/ONA-60992">ONA-60992</button></td><td>ORG-30018 · 6 份证据</td><td>材料快照 v4</td><td>'+status('PROCESSING','info')+'</td><td>TKT-10381</td><td>凭据已登记</td></tr>'
+      ];
+      return head('线下公证申请','当前没有在线公证书受理接口；状态由线下凭据和受控命令推进。')+toolbar('搜索申请、用户、企业或工单')+table(['申请','主体与材料','快照','状态','工单','规则'],rows);
+    }
+    function pageOfflineNotaryDetail(id){
+      if(id==='ONA-60992'){
+        return head('线下公证申请详情','ONA-60992 · 材料快照 v4',button('返回申请列表','arrow','data-route="/offline-notary"',''))+
+          '<div class="banner">'+icon('info')+'<span>申请已凭可核验受理凭据进入 PROCESSING；完成仍需公证书编号、完成凭据和交付记录。</span></div><section class="panel"><div class="panel-head"><h2>办理状态</h2>'+status('PROCESSING','info')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('主体','ORG-30018')+meta('材料','6 份证据 · 快照 v4')+meta('受理号','YZ-2026-****118')+meta('受理凭据','RCPT-7818 · 已校验')+meta('完成凭据','尚未取得')+meta('退款状态','NOT_REQUESTED')+'</dl></div></section>';
+      }
+      var ready=state.notaryState==='READY_FOR_SUBMISSION';
+      return head('线下公证申请详情',id+' · 材料快照 v'+state.notarySnapshot,button('返回申请列表','arrow','data-route="/offline-notary"','')+(ready?button('登记线下提交','approval','data-action="notary-submit-blocked"','primary'):button('创建补件快照','file','data-action="notary-supplement"','primary')))+
+        '<div class="banner warning">'+icon('alert')+'<span>费用、时限、补件期限、拒绝/退款和交付方式待正式 SOP。缺少受理或完成凭据时不能推进相应状态。</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>材料与资格</h2>'+status(state.notaryState,ready?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('申请 ID','<span class="mono">'+id+'</span>')+meta('实名资格','VERIFIED')+meta('号码资格','手机号 MATCHED')+meta('材料快照','v'+state.notarySnapshot+' · '+(ready?'4 份材料':'3 份材料'))+meta('recordNo','3 / 3 已绑定')+meta('报告版本','NRT-55201 · '+(state.reportState==='COMPLETED'?'可用':'处理中'))+meta('受理号','未登记')+meta('费用/时限','待正式规则确认')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>申请时间线</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>材料快照 v'+state.notarySnapshot+'</strong><p>'+(ready?'补件已冻结，旧快照 v2 保留。':'公证运营要求补充主体授权材料。')+'</p><time>今天 14:08</time></div><div class="event"><strong>资格核验完成</strong><p>三要素 MATCHED，只用于本次申请快照。</p><time>今天 13:44</time></div><div class="event"><strong>申请创建</strong><p>支付状态和线下履约状态独立保存。</p><time>今天 13:30</time></div></div></div></aside></div>';
+    }
+    function pageProducts(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/products/PRD-PER-2026-R4">PRD-PER-2026-R4</button></td><td>个人进阶版 · 年付</td><td>'+status(state.productState,state.productState==='PUBLISHED'?'success':state.productState==='REVIEWED'?'warning':'')+'</td><td class="mono">¥1,188.00</td><td>12 期</td><td>国内小程序</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/products/PRD-ENT-2026-R3">PRD-ENT-2026-R3</button></td><td>企业旗舰版</td><td>'+status('PUBLISHED','success')+'</td><td>合同报价</td><td>按合同</td><td>企业 Web</td></tr>'
+      ];
+      return head('商品版本','已发布版本不可编辑；调价、周期或权益变化创建新版本。',button('新建草稿','file','data-action="toast" data-message="已创建空白商品草稿；未复制生产价格"','primary'))+
+        toolbar('搜索 SKU、名称或版本')+table(['商品版本','名称','状态','价格','权益周期','渠道'],rows);
+    }
+    function pageProductDetail(id){
+      if(id==='PRD-ENT-2026-R3'){
+        return head('商品版本详情','PRD-ENT-2026-R3 · 企业旗舰版',button('返回商品列表','arrow','data-route="/products"','')+button('基于此版本新建草稿','file','data-action="toast" data-message="将创建新版本，不修改已发布版本"',''))+
+          '<div class="banner success">'+icon('check')+'<span>已发布版本只读；正式价格、坐席和固话名额由合同报价快照决定。</span></div><section class="panel"><div class="panel-head"><h2>企业商品版本</h2>'+status('PUBLISHED','success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('SKU','ENTERPRISE-FLAGSHIP')+meta('定价方式','合同报价')+meta('坐席/固话名额','版本化规则，合同快照锁定')+meta('共享权益','组织范围')+meta('渠道','企业 Web')+meta('发布版本','2026.10-R3')+'</dl></div></section>';
+      }
+      var next=state.productState==='DRAFT'?button('提交独立审核','approval','data-action="product-review"','primary'):state.productState==='REVIEWED'?button('由发布人发布','shield','data-action="product-publish"','primary'):button('基于此版本新建草稿','file','data-action="toast" data-message="将创建新版本，不修改已发布版本"','');
+      return head('商品版本详情',id+' · 个人进阶版年付',button('返回商品列表','arrow','data-route="/products"','')+next)+
+        '<div class="banner '+(state.productState==='PUBLISHED'?'success':'warning')+'">'+icon('info')+'<span>草拟人、审核人和生产发布人分离。当前三人模型仅用于评审，最终制度仍待确认。</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>不可变商品快照</h2>'+status(state.productState,state.productState==='PUBLISHED'?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('SKU','PERSONAL-ADVANCED-ANNUAL')+meta('价格','118800 分（¥1,188.00）')+meta('购买周期','12 个月')+meta('权益期','12 期，按月发放')+meta('录音权益','300 分钟 / 期')+meta('AI 权益','300 分钟 / 期')+meta('存储','20 GB · 订阅期有效')+meta('微信支付映射','WX-PROD-ADV-ANNUAL-R4')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>职责分离</h2></div><div class="panel-body"><div class="approval-chain"><span class="approval-node">草拟：product.editor.01</span><span class="approval-arrow">→</span><span class="approval-node">审核：product.reviewer.02</span><span class="approval-arrow">→</span><span class="approval-node">发布：catalog.publisher.01</span></div><div class="banner" style="margin:16px 0 0">'+icon('shield')+'<span>发布校验价格单位、权益单位/有效期、支付映射、生效时间和完整目录差异。</span></div></div></aside></div>';
+    }
+    function pageCatalogs(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/catalog-releases/CAT-2026-10-R4">CAT-2026-10-R4</button></td><td>国内小程序</td><td>'+status(state.catalogState,state.catalogState==='已发布'?'success':'warning')+'</td><td>8 个商品版本</td><td>2026-10-21 00:00</td><td>product.editor.01</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/catalog-releases/CAT-2026-10-R3">CAT-2026-10-R3</button></td><td>国内小程序</td><td>'+status('当前有效','success')+'</td><td>7 个商品版本</td><td>2026-10-01 00:00</td><td>catalog.publisher.01</td></tr>'
+      ];
+      return head('目录发布','目录以完整快照原子替换，不让同一结算读取混合商品版本。')+toolbar('搜索目录版本或渠道')+table(['目录','渠道','状态','商品集合','生效时间','创建人'],rows);
+    }
+    function pageCatalogDetail(id){
+      return head('目录发布详情',id+' · 国内小程序',button('返回目录列表','arrow','data-route="/catalog-releases"','')+(state.catalogState==='已发布'?'':button('发布完整目录','shield','data-action="catalog-publish"','primary')))+
+        '<div class="grid-even"><section class="panel"><div class="panel-head"><h2>发布差异</h2>'+status(state.catalogState,state.catalogState==='已发布'?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('新增版本','PRD-PER-2026-R4')+meta('退役版本','无')+meta('价格变化','进阶版年付 + ¥120.00')+meta('权益变化','无')+meta('生效时间','2026-10-21 00:00')+meta('原子切换','完整 CatalogRelease')+'</dl></div></section><section class="panel"><div class="panel-head"><h2>校验结果</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>商品版本完整</strong><p>8 / 8 均为 REVIEWED 或 PUBLISHED。</p></div><div class="event"><strong>支付映射唯一</strong><p>未发现重复或缺失映射。</p></div><div class="event"><strong>折扣口径通过</strong><p>referenceTotalCents 与 savingCents 一致。</p></div></div></div></section></div>';
+    }
+    function pageEnterpriseQuotes(){
+      var rows=[
+        '<tr><td class="mono">QUOTE-82018</td><td>ORG-30027 · 企业旗舰版</td><td>25 坐席 / 5 固话名额</td><td>'+status('待客户确认','warning')+'</td><td>报价 v2</td><td>2026-10-26</td></tr>',
+        '<tr><td class="mono">QUOTE-81994</td><td>ORG-30018 · 续费扩容</td><td>30 坐席 / 5 固话名额</td><td>'+status('合同已生效','success')+'</td><td>合同 v4</td><td>2027-10-01</td></tr>'
+      ];
+      return head('企业报价与合同','需求、报价、合同和权益生效各自保留版本；报价确认不等于合同生效。')+toolbar('搜索报价、企业或合同')+table(['报价','企业与方案','容量','状态','版本','有效期'],rows);
+    }
+    function pageOrders(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/orders/ORD-20261019-028">ORD-20261019-028</button></td><td>个人进阶版 · 年付<div class="cell-sub">商品快照 R3</div></td><td>'+status('支付成功','success')+'</td><td>'+status(state.orderGrantState,state.orderGrantState.indexOf('成功')>=0?'success':'danger')+'</td><td class="mono">¥1,068.00</td><td>今天 13:52</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/orders/ORD-20261018-114">ORD-20261018-114</button></td><td>AI 加量包<div class="cell-sub">商品快照 A2</div></td><td>'+status('支付成功','success')+'</td><td>'+status('已发放','success')+'</td><td class="mono">¥36.00</td><td>昨天 19:20</td></tr>'
+      ];
+      return head('订单','支付、履约、权益发放、退款和发票状态独立保存。')+toolbar('搜索订单、支付单或用户')+table(['订单','商品快照','支付','权益','实付','时间'],rows);
+    }
+    function pageOrderDetail(id){
+      if(id==='ORD-20261018-114'){
+        return head('订单详情','ORD-20261018-114 · AI 加量包快照 A2',button('返回订单列表','arrow','data-route="/orders"',''))+
+          '<div class="banner success">'+icon('check')+'<span>支付和权益发放均已完成；加量包有效期和抵扣规则来自订单商品快照。</span></div><section class="panel"><div class="panel-head"><h2>订单结果</h2>'+status('已发放','success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('支付单','PAY-550114')+meta('商品版本','AI-ADDON-A2')+meta('实付','¥36.00')+meta('支付状态','SUCCESS')+meta('权益 Grant','GRT-76988')+meta('发放状态','GRANTED')+'</dl></div></section>';
+      }
+      var grantOk=state.orderGrantState.indexOf('成功')>=0;
+      return head('订单详情',id+' · 商品快照 PERSONAL-2026.10-R3',button('返回订单列表','arrow','data-route="/orders"','')+(grantOk||!canCommand('order-grant-reconcile')?'':button('执行幂等补发','retry','data-action="order-grant-reconcile"','primary')))+
+        '<div class="banner '+(grantOk?'success':'danger')+'">'+icon(grantOk?'check':'alert')+'<span>'+(grantOk?'补发已使用原权益期幂等键收敛，未产生第二组 grant。':'微信支付已成功，不因权益发放失败回退为未支付。')+'</span></div>'+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>订单与支付</h2>'+status('支付成功','success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('订单','<span class="mono">'+id+'</span>')+meta('支付单','PAY-550281')+meta('商品版本','PERSONAL-2026.10-R3')+meta('商品名称','个人进阶版 · 年付')+meta('订单金额','106800 分（¥1,068.00）')+meta('支付回调','已验签 · 幂等')+meta('退款状态','NOT_REQUESTED')+meta('发票状态','可申请')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>权益发放</h2>'+status(state.orderGrantState,grantOk?'success':'danger')+'</div><div class="panel-body"><div class="timeline"><div class="event"><strong>'+(grantOk?'第一期权益已补发':'第一期发放失败')+'</strong><p>幂等键 subscription-881 / period-1 / CALL_SECONDS。</p><time>今天 14:36</time></div><div class="event"><strong>支付回调已提交</strong><p>Outbox 事件 PAY_CONFIRMED-550281，仅处理一次。</p><time>今天 13:52</time></div><div class="event"><strong>订单快照创建</strong><p>后续目录调价不影响该订单。</p><time>今天 13:51</time></div></div></div></aside></div>';
+    }
+    function pageRefunds(){
+      var rows=['<tr><td class="mono">RFD-78018</td><td>ORD-20261017-204</td><td class="mono">¥99.00</td><td>'+status('规则待确认','warning')+'</td><td>未发起渠道退款</td><td><button class="btn" disabled>'+icon('lock')+'处理退款</button></td></tr>'];
+      return head('退款','退款、已消费权益处理和发票红冲规则尚未批准；当前仅展示状态骨架。')+
+        '<div class="banner warning">'+icon('lock')+'<span>运营人员不能输入任意退款金额或直接改支付状态。正式规则确认前所有执行动作保持阻断。</span></div>'+
+        table(['退款单','订单','申请金额','审批','渠道结果','操作'],rows);
+    }
+    function pageInvoices(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/invoices/INV-261019-006">INV-261019-006</button></td><td>ORD-20261019-028</td><td>个人 · 林某甲</td><td>'+status('待开票','warning')+'</td><td class="mono">¥1,068.00</td><td>l***@example.com</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/invoices/INV-261018-021">INV-261018-021</button></td><td>ORD-20261018-114</td><td>企业 · 华启数字服务</td><td>'+status('已开具','success')+'</td><td class="mono">¥36.00</td><td>f***@example.com</td></tr>'
+      ];
+      return head('发票','抬头使用申请时快照；作废/红冲与退款联动规则待财务确认。')+toolbar('搜索发票申请、订单或抬头')+table(['发票申请','订单','抬头快照','状态','金额','接收邮箱'],rows);
+    }
+    function pageInvoiceDetail(id){
+      if(id==='INV-261018-021'){
+        return head('发票详情','INV-261018-021 · 企业电子普通发票',button('返回发票列表','arrow','data-route="/invoices"',''))+
+          '<div class="banner success">'+icon('check')+'<span>发票已开具并交付；抬头和金额来自申请与订单快照。</span></div><section class="panel"><div class="panel-head"><h2>发票结果</h2>'+status('已开具','success')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('订单','ORD-20261018-114')+meta('抬头','华启数字服务有限公司')+meta('税号','9131**********X8')+meta('金额','¥36.00')+meta('交付邮箱','f***@example.com')+meta('开具时间','2026-10-18 19:38')+'</dl></div></section>';
+      }
+      return head('发票详情',id+' · 订单 ORD-20261019-028',button('返回发票列表','arrow','data-route="/invoices"',''))+
+        '<div class="grid-even"><section class="panel"><div class="panel-head"><h2>申请快照</h2>'+status('待开票','warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('申请编号','<span class="mono">'+id+'</span>')+meta('订单','ORD-20261019-028')+meta('抬头类型','个人')+meta('抬头','林某甲')+meta('可开票金额','¥1,068.00')+meta('接收邮箱','l***@example.com')+'</dl></div></section><section class="panel"><div class="panel-head"><h2>财税边界</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>开票请求待执行</strong><p>不会修改原订单商品或支付快照。</p></div><div class="event"><strong>退款尚未发生</strong><p>作废/红冲规则待财务正式确认。</p></div></div></div></section></div>';
+    }
+    function pageEntitlements(){
+      var rows=[
+        '<tr><td class="mono">GRT-77018</td><td>USR-2048</td><td>CALL_SECONDS</td><td>订阅第 1 期</td><td class="mono">18,000 秒</td><td class="mono">17,478 秒</td><td>'+status('ACTIVE','success')+'</td></tr>',
+        '<tr><td class="mono">GRT-76992</td><td>ORG-30018</td><td>AI_SECONDS</td><td>人工补偿</td><td class="mono">3,600 秒</td><td class="mono">3,600 秒</td><td>'+status('ACTIVE','success')+'</td></tr>'
+      ];
+      return head('权益与用量','grant、预占和 ledger 分开展示；任何人工补偿都新增流水。',button('查看补偿单','approval','data-route="/compensations"',''))+
+        toolbar('搜索 grant、所有者或业务对象')+table(['Grant','所有者','权益类型','来源','总量','剩余','状态'],rows);
+    }
+    function pageCompensations(){
+      var done=state.compensationState==='已发放';
+      return head('权益补偿','补偿不会修改既有余额字段或删除历史消费流水。',done?'':button('模拟独立审批并发放','approval','data-action="compensation-approve"','primary'))+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>CMP-51018</h2>'+status(state.compensationState,done?'success':'warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('所有者','USR-2189')+meta('权益类型','AI_SECONDS')+meta('补偿数量','1,800 秒')+meta('有效期','30 天')+meta('原因','平台处理延迟补偿')+meta('工单','TKT-10444')+meta('审批阈值','正式策略待确认')+meta('结果',done?'GRT-CMP-51018 / LED-88031':'尚未创建 grant')+'</dl></div></section><aside class="panel"><div class="panel-head"><h2>不变量</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>新增补偿 Grant</strong><p>来源标记为 COMPENSATION。</p></div><div class="event"><strong>新增 Ledger</strong><p>记录数量、原因、对象、审批与幂等键。</p></div><div class="event"><strong>原余额历史不变</strong><p>读模型从不可变流水重新计算。</p></div></div></div></aside></div>';
+    }
+    function pageShares(){
+      var active=state.shareState==='ACTIVE';
+      var rows=['<tr><td class="mono">SHR-78018</td><td>CALL-78392 · 录音播放</td><td>提取码 + 指定手机号</td><td>'+status(state.shareState,active?'success':'danger')+'</td><td class="mono">2 / 5</td><td>'+(active&&canCommand('share-revoke')?button('撤销','x','data-action="share-revoke"','danger'):active?'只读':'旧会话不可续签')+'</td></tr>'];
+      return head('受控分享','不展示提取码明文、原始存储地址或永久媒体 URL。')+table(['分享','内容范围','验证','状态','访问次数','操作'],rows);
+    }
+    function pageExports(){
+      var rows=[
+        '<tr><td class="mono">EXP-90218</td><td>证据列表 · 12 项</td><td>争议处理</td><td>字段脱敏</td><td>'+status(state.exportState,state.exportState==='可下载'?'success':'warning')+'</td><td>'+(canCommand('export-reapply')?button('重新申请','retry','data-action="export-reapply"',''):'只读')+'</td></tr>',
+        '<tr><td class="mono">EXP-90177</td><td>订单凭证 · 1 项</td><td>内部审计</td><td>固定脱敏</td><td>'+status('已失效','')+'</td><td>旧链接不可恢复</td></tr>'
+      ];
+      return head('下载与导出','范围、用途、脱敏和二次验证绑定到每个任务；重新申请创建新任务。')+
+        '<div class="banner">'+icon('lock')+'<span>部分失败不会扩大导出范围，失效链接不会被重新激活。申请、生成、下载和失败均写入审计。</span></div>'+
+        table(['任务','对象范围','目的','脱敏','状态','操作'],rows);
+    }
     function pageDenied(){
       return '<div class="empty">'+icon('lock')+'<div><h2>没有访问权限</h2><p>当前角色和数据范围不能访问该对象或路由。系统不会确认目标对象是否存在，本次拒绝已写入安全审计。</p><div style="margin-top:18px">'+button('返回工作台','arrow','data-route="'+roles[state.role].initial+'"','primary')+'</div><div class="cell-sub mono" style="margin-top:14px">请求引用：DENY-20261019-143812</div></div></div>';
     }
@@ -533,6 +748,29 @@
       if(route.path==='/tickets/:id')return pageTicketDetail(id);
       if(p==='/access-grants')return pageAccessGrants();
       if(p==='/audit')return pageAudit();
+      if(p==='/ai-jobs')return pageAIJobs();
+      if(route.path==='/ai-jobs/:id')return pageAIJobDetail(id);
+      if(route.path==='/ai-versions/:id')return pageAIVersion(id);
+      if(p==='/preservations')return pagePreservations();
+      if(route.path==='/preservations/:id')return pagePreservationDetail(id);
+      if(p==='/notary-reports')return pageNotaryReports();
+      if(route.path==='/notary-reports/:id')return pageNotaryReportDetail(id);
+      if(p==='/offline-notary')return pageOfflineNotary();
+      if(route.path==='/offline-notary/:id')return pageOfflineNotaryDetail(id);
+      if(p==='/products')return pageProducts();
+      if(route.path==='/products/:id')return pageProductDetail(id);
+      if(p==='/catalog-releases')return pageCatalogs();
+      if(route.path==='/catalog-releases/:id')return pageCatalogDetail(id);
+      if(p==='/enterprise-quotes')return pageEnterpriseQuotes();
+      if(p==='/orders')return pageOrders();
+      if(route.path==='/orders/:id')return pageOrderDetail(id);
+      if(p==='/refunds')return pageRefunds();
+      if(p==='/invoices')return pageInvoices();
+      if(route.path==='/invoices/:id')return pageInvoiceDetail(id);
+      if(p==='/entitlements')return pageEntitlements();
+      if(p==='/compensations')return pageCompensations();
+      if(p==='/shares')return pageShares();
+      if(p==='/exports')return pageExports();
       if(p==='/access-denied')return pageDenied();
       return pagePlaceholder(route);
     }
@@ -651,6 +889,46 @@
         var code=document.getElementById('access-otp').value.trim();
         if(code!=='482916'){document.getElementById('otp-error').innerHTML='<div class="banner danger">'+icon('alert')+'<span>二次验证失败，未签发访问会话。</span></div>';addEvent('SensitiveAccessVerificationFailed',state.modal.objectId,'拒绝','TKT-10431');return;}
         var modal=state.modal;state.accessGrant={objectId:modal.objectId,kind:modal.kind,route:modal.route};state.modal=null;addEvent('SensitiveAccessSessionIssued',modal.objectId,'短期单用途会话','TKT-10431');render();toast('受控访问会话已签发，离开页面后自动清除');return;
+      }
+      if(action==='ai-retry'){
+        state.aiVersion+=1;state.aiRetryState='SUCCEEDED';state.aiVersions.unshift({version:state.aiVersion,label:'转写与摘要成功',detail:'Schema 与引用校验通过，引用同版本逐字稿。',time:'刚刚'});addEvent('AIVersionAppended','AIJ-67018','v'+state.aiVersion+' 校验通过','TKT-10446');render();toast('新 AI 版本已追加，历史版本保持只读');return;
+      }
+      if(action==='preservation-retry'){
+        state.preservationAttempts+=1;state.preservationState='PRESERVED';state.preservationHistory.unshift({number:state.preservationAttempts,label:'成功',detail:'code=200，recordNo 唯一，本地事务已提交。',time:'刚刚'});addEvent('NotaryPreservationRetried','DEAL-99182-R1','同 dealId 取得 recordNo','TKT-10447');render();toast('存证已按同一 dealId 收敛，未创建重复业务标识');return;
+      }
+      if(action==='report-complete'){
+        state.reportState='COMPLETED';state.reportEvents.unshift('轮询：供应商状态 1，报告校验通过 · 14:35');addEvent('NotaryReportCompleted','TASK-78028','内部交付物已创建','TKT-10448');render();toast('报告已安全入库并完成哈希校验');return;
+      }
+      if(action==='report-old-callback'){
+        state.reportEvents.unshift('旧回调：供应商状态 0，已作为乱序事件忽略 · 14:36');addEvent('NotaryReportStaleCallbackIgnored','TASK-78028','终态未回退','TKT-10448');render();toast('旧回调已记录并忽略，COMPLETED 未回退');return;
+      }
+      if(action==='notary-supplement'){
+        state.notarySnapshot+=1;state.notaryState='READY_FOR_SUBMISSION';addEvent('OfflineNotarySnapshotCreated','ONA-61018','材料快照 v'+state.notarySnapshot,'TKT-10442');render();toast('补件已冻结为新快照，旧版本继续保留');return;
+      }
+      if(action==='notary-submit-blocked'){toast('缺少正式线下提交凭据，不能推进为 SUBMITTED_OFFLINE');return;}
+      if(action==='product-review'){
+        state.productState='REVIEWED';addEvent('ProductVersionReviewed','PRD-PER-2026-R4','独立审核通过','TKT-10450');render();toast('审核已由独立角色完成，尚未发布');return;
+      }
+      if(action==='product-publish'){
+        state.productState='PUBLISHED';addEvent('ProductVersionPublished','PRD-PER-2026-R4','新版本已发布','TKT-10450');render();toast('商品新版本已发布，历史版本未修改');return;
+      }
+      if(action==='catalog-publish'){
+        state.catalogState='已发布';addEvent('CatalogReleasePublished','CAT-2026-10-R4','完整目录原子切换','TKT-10451');render();toast('完整目录已原子发布');return;
+      }
+      if(action==='order-grant-reconcile'){
+        if(!canCommand(action)){addEvent('CommandAccessDenied','ORD-20261019-028','角色无补发权限','-');toast('当前角色无权执行权益补发');return;}
+        state.orderGrantState='补发成功 · 幂等收敛';addEvent('EntitlementGrantReconciled','ORD-20261019-028','未生成重复 grant','TKT-10452');render();toast('权益补发成功，支付状态始终保持成功');return;
+      }
+      if(action==='compensation-approve'){
+        state.compensationState='已发放';addEvent('CompensationGrantCreated','CMP-51018','新 grant 与 ledger','TKT-10444');render();toast('补偿权益已追加，既有余额历史未修改');return;
+      }
+      if(action==='share-revoke'){
+        if(!canCommand(action)){addEvent('CommandAccessDenied','SHR-78018','角色无撤销权限','-');toast('当前角色无权撤销分享');return;}
+        state.shareState='REVOKED';addEvent('EvidenceShareRevoked','SHR-78018','旧会话不可续签','TKT-10453');render();toast('分享已撤销，旧播放会话和分片凭证失效');return;
+      }
+      if(action==='export-reapply'){
+        if(!canCommand(action)){addEvent('CommandAccessDenied','EXP-90218','角色无重申请权限','-');toast('当前角色无权重新申请导出');return;}
+        state.exportState='可下载';addEvent('ExportJobRecreated','EXP-90219','新任务，固定原范围','TKT-10454');render();toast('已创建新导出任务，旧链接保持失效');return;
       }
       if(action==='open-command'){
         state.modal={type:'command',step:'request',command:actionEl.getAttribute('data-command'),objectId:actionEl.getAttribute('data-object')};renderModal();return;

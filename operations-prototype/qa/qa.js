@@ -167,8 +167,103 @@ async function go(page, route) {
     await go(page, '/calls/CALL-78392');
     await expectText(page, '#content', '没有访问权限');
 
-    const responsiveRoutes = ['/dashboard', '/users', '/numbers/NUM-10082', '/call-reconciliation', '/evidence/EVI-99182', '/audit'];
+    await setRole(page, 'notary');
+    await go(page, '/ai-jobs/AIJ-67018');
+    await expectText(page, '#content', '摘要引用校验失败');
+    await page.click('[data-action="ai-retry"]');
+    await expectText(page, '#content', 'SUCCEEDED');
+    await expectText(page, '#content', 'v4');
+    await expectText(page, '#content', 'v3 · 逐字稿可用，摘要失败');
+
+    await go(page, '/preservations/NPS-44018');
+    await expectText(page, '#content', 'MANUAL_REVIEW');
+    await page.click('[data-action="preservation-retry"]');
+    await expectText(page, '#content', 'PRESERVED');
+    await expectText(page, '#content', 'REC-****8129');
+    await expectText(page, '#content', '尝试 #2 · 重复存证错误 0015');
+    await shot(page, 'p1-preservation-detail', 1280);
+
+    await go(page, '/notary-reports/NRT-55201');
+    await page.click('[data-action="report-complete"]');
+    await expectText(page, '#content', 'COMPLETED');
+    await page.click('[data-action="report-old-callback"]');
+    await expectText(page, '#content', '旧回调');
+    await expectText(page, '#content', 'COMPLETED');
+
+    await go(page, '/offline-notary/ONA-61018');
+    await expectText(page, '#content', '材料快照 v2');
+    await page.click('[data-action="notary-supplement"]');
+    await expectText(page, '#content', '材料快照 v3');
+    await page.click('[data-action="notary-submit-blocked"]');
+    await expectText(page, '#toast-root', '缺少正式线下提交凭据');
+    await shot(page, 'p1-offline-notary', 1280);
+
+    await setRole(page, 'product');
+    await go(page, '/products/PRD-PER-2026-R4');
+    await page.click('[data-action="product-review"]');
+    await expectText(page, '#content', 'REVIEWED');
+    await page.click('[data-action="product-publish"]');
+    await expectText(page, '#content', 'PUBLISHED');
+    await go(page, '/catalog-releases/CAT-2026-10-R4');
+    await page.click('[data-action="catalog-publish"]');
+    await expectText(page, '#content', '已发布');
+    await go(page, '/orders');
+    await expectText(page, '#content', '没有访问权限');
+
+    await setRole(page, 'support');
+    await go(page, '/orders/ORD-20261019-028');
+    expect((await page.locator('[data-action="order-grant-reconcile"]').count()) === 0, 'Support must not see entitlement reconcile action');
+    await go(page, '/shares');
+    expect((await page.locator('[data-action="share-revoke"]').count()) === 0, 'Support must not see share revoke action');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'share-revoke';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    await expectText(page, '#toast-root', '无权撤销分享');
+    await go(page, '/exports');
+    expect((await page.locator('[data-action="export-reapply"]').count()) === 0, 'Support must not see export reapply action');
+
+    await setRole(page, 'finance');
+    await go(page, '/orders/ORD-20261019-028');
+    await expectText(page, '#content', '发放失败');
+    await page.click('[data-action="order-grant-reconcile"]');
+    await expectText(page, '#content', '补发成功');
+    await go(page, '/refunds');
+    expect(await page.locator('button:has-text("处理退款")').isDisabled(), 'Refund execution must stay blocked while policy is unresolved');
+    await go(page, '/compensations');
+    await page.click('[data-action="compensation-approve"]');
+    await expectText(page, '#content', 'GRT-CMP-51018');
+    await shot(page, 'p1-order-entitlement', 1440);
+
+    await setRole(page, 'ops');
+    await go(page, '/shares');
+    await page.click('[data-action="share-revoke"]');
+    await expectText(page, '#content', 'REVOKED');
+    await go(page, '/exports');
+    await page.click('[data-action="export-reapply"]');
+    await expectText(page, '#content', '可下载');
+
     await setRole(page, 'super');
+    const secondaryDetails = [
+      ['/ai-jobs/AIJ-67022', 'EVI-99195', 'TRANSCRIPT_ONLY'],
+      ['/preservations/NPS-44011', 'DEAL-99176-R1', 'REC-****8044'],
+      ['/notary-reports/NRT-55184', 'TASK-77991', 'MANUAL_REVIEW'],
+      ['/offline-notary/ONA-60992', '材料快照 v4', 'PROCESSING'],
+      ['/products/PRD-ENT-2026-R3', '企业旗舰版', 'PUBLISHED'],
+      ['/orders/ORD-20261018-114', 'AI 加量包快照 A2', 'GRT-76988'],
+      ['/invoices/INV-261018-021', '企业电子普通发票', '华启数字服务有限公司'],
+    ];
+    for (const [route, identity, fact] of secondaryDetails) {
+      await go(page, route);
+      await expectText(page, '#content', identity);
+      await expectText(page, '#content', fact);
+      expect((await page.locator('.placeholder').count()) === 0, `${route} must be implemented in P1`);
+    }
+
+    const responsiveRoutes = ['/dashboard', '/users', '/numbers/NUM-10082', '/call-reconciliation', '/evidence/EVI-99182', '/ai-jobs/AIJ-67018', '/preservations/NPS-44018', '/notary-reports/NRT-55201', '/offline-notary/ONA-61018', '/products/PRD-PER-2026-R4', '/orders/ORD-20261019-028', '/audit'];
     for (const width of [1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 });
       for (const route of responsiveRoutes) {
@@ -182,7 +277,7 @@ async function go(page, route) {
     await shot(page, 'p0-call-detail', 1440);
 
     expect(errors.length === 0, `Browser errors: ${errors.join(' | ')}`);
-    console.log('Operations prototype P0 QA passed: login, 55-route registry, role isolation, sensitive access, controlled commands, audit, and 1024/1280/1440 responsive checks.');
+    console.log('Operations prototype P0/P1 QA passed: identity isolation, controlled commands, append-only versions, notary/report ordering, product publication, payment/entitlement separation, and responsive checks.');
   } finally {
     await browser.close();
   }
