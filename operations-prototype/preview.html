@@ -75,12 +75,12 @@
     .sensitive-session{border:1px solid #d2a2a7;background:#fff7f7;border-radius:var(--radius);padding:14px;position:relative;overflow:hidden}.sensitive-session:after{content:"原型虚构数据 · 临时访问";position:absolute;right:-40px;top:38px;transform:rotate(26deg);font-size:14px;color:rgba(170,61,67,.16);font-weight:800}.session-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}.revealed-value{font-family:"Cascadia Mono",Consolas,monospace;font-weight:700;position:relative;z-index:1}
     .modal-backdrop{position:fixed;inset:0;background:rgba(14,27,38,.54);z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}.modal{width:min(640px,100%);max-height:calc(100vh - 48px);overflow:auto;background:#fff;border-radius:8px;box-shadow:0 22px 60px rgba(0,0,0,.22)}.modal-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-between;gap:15px}.modal-head h2{font-size:18px;margin:0}.modal-head p{font-size:13px;color:var(--muted);line-height:1.55;margin:5px 0 0}.modal-body{padding:20px;display:grid;gap:16px}.modal-actions{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px}.confirm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.confirm-item{background:#f6f8fa;border:1px solid var(--line);border-radius:6px;padding:11px}.confirm-item span{display:block;color:var(--muted);font-size:11px}.confirm-item strong{display:block;margin-top:5px;font-size:13px;word-break:break-word}
     .toast{position:fixed;right:22px;bottom:22px;z-index:100;background:#1e3344;color:#fff;border-radius:6px;padding:13px 16px;box-shadow:var(--shadow);display:flex;align-items:center;gap:10px;max-width:390px;font-size:13px}
-    .review-strip{position:fixed;left:270px;bottom:16px;z-index:45;background:#fff;border:1px solid var(--line-strong);border-radius:7px;box-shadow:var(--shadow);padding:8px;display:flex;align-items:center;gap:8px}.review-strip label{font-size:11px;color:var(--muted);font-weight:700}.review-strip .select{width:auto;min-width:142px;min-height:34px;padding:5px 9px;font-size:12px}
+    .review-strip{position:fixed;left:194px;bottom:12px;z-index:45}.review-strip>summary{list-style:none;width:44px;height:44px;border:1px solid #8ba1b3;border-radius:7px;background:#fff;color:var(--brand-strong);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer}.review-strip>summary::-webkit-details-marker{display:none}.review-controls{position:absolute;left:52px;bottom:0;width:430px;background:#fff;border:1px solid var(--line-strong);border-radius:7px;box-shadow:var(--shadow);padding:8px;display:flex;align-items:center;gap:8px}.review-controls label{font-size:11px;color:var(--muted);font-weight:700}.review-controls .select{width:auto;min-width:142px;min-height:34px;padding:5px 9px;font-size:12px}
     .approval-chain{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.approval-node{padding:7px 9px;border:1px solid var(--line);border-radius:5px;font-size:12px}.approval-arrow{color:var(--muted)}
     @media(max-width:1180px){
-      .sidebar{width:76px}.sidebar-brand{justify-content:center;padding:0}.sidebar-brand div,.nav-label,.nav-copy,.nav-item .count,.sidebar-foot{display:none}.nav-item{justify-content:center;padding:0}.topbar{left:76px}.main{margin-left:76px}.review-strip{left:92px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .sidebar{width:76px}.sidebar-brand{justify-content:center;padding:0}.sidebar-brand div,.nav-label,.nav-copy,.nav-item .count,.sidebar-foot{display:none}.nav-item{justify-content:center;padding:0}.topbar{left:76px}.main{margin-left:76px}.review-strip{left:16px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
     }
-    @media(max-width:900px){.login-shell{grid-template-columns:1fr}.login-brand{display:none}.grid-2,.grid-even{grid-template-columns:1fr}.top-search{display:none}.meta-grid{grid-template-columns:1fr}.split-state{grid-template-columns:1fr}.review-strip{right:16px;left:auto}.scope-chip span{display:none}}
+    @media(max-width:900px){.login-shell{grid-template-columns:1fr}.login-brand{display:none}.grid-2,.grid-even{grid-template-columns:1fr}.top-search{display:none}.meta-grid{grid-template-columns:1fr}.split-state{grid-template-columns:1fr}.review-controls{width:360px;flex-wrap:wrap}.scope-chip span{display:none}}
     @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
   </style>
 </head>
@@ -227,7 +227,7 @@
     ];
 
     var state={
-      loggedIn:false,role:'ops',scenario:'normal',route:'/login',deniedFrom:'',
+      loggedIn:false,role:'ops',scenario:'normal',dataMode:'normal',route:'/login',deniedFrom:'',
       tab:'overview',modal:null,toast:'',accessGrant:null,events:auditEvents.slice(),
       attempts:[
         {id:'PROV-9088',number:'NUM-10116',kind:'业务尝试 #2',transport:'HTTP 200',business:'明确失败',state:'FAILED',error:'线路地域暂不支持',time:'今天 11:04'},
@@ -249,7 +249,9 @@
       notarySnapshot:2,notaryState:'MATERIAL_REQUIRED',
       productState:'DRAFT',catalogState:'待审核',
       orderGrantState:'发放失败 · 待补偿',compensationState:'待审批',
-      shareState:'ACTIVE',exportState:'部分失败'
+      shareState:'ACTIVE',exportState:'部分失败',
+      vendorState:'轻微延迟',reconciliationState:'OPEN',staffState:'ACTIVE',
+      policyVersion:12,configVersion:8,jobState:'DEAD_LETTER'
     };
 
     function roleAllows(route){
@@ -271,7 +273,8 @@
       var commandRoles={
         'order-grant-reconcile':['super','ops','finance'],
         'share-revoke':['super','ops','notary'],
-        'export-reapply':['super','ops','notary']
+        'export-reapply':['super','ops','notary'],
+        'reconcile-query':['super','ops','finance','carrier','notary']
       };
       return commandRoles[command]&&commandRoles[command].indexOf(state.role)>=0;
     }
@@ -298,9 +301,17 @@
       state.route=path;state.tab='overview';
       if(location.hash!=='#'+path) location.hash=path;else render();
     }
-    function stageAvailable(route){return route.stage==='P0'||route.stage==='P1';}
+    function stageAvailable(route){return route.stage==='P0'||route.stage==='P1'||route.stage==='P2';}
     function roleOptions(){
       return Object.keys(roles).map(function(k){return '<option value="'+k+'" '+(state.role===k?'selected':'')+'>'+esc(roles[k].label)+'</option>';}).join('');
+    }
+    function setReviewRole(role){
+      if(!roles[role]) return false;
+      state.role=role;state.accessGrant=null;state.modal=null;var next=roles[state.role].initial;location.hash=next;render();return true;
+    }
+    function setReviewDataMode(mode){
+      if(['normal','empty','delayed','unavailable','long'].indexOf(mode)<0) return false;
+      state.dataMode=mode;render();return true;
     }
 
     function renderLogin(){
@@ -344,7 +355,7 @@
       return '<div class="app"><aside class="sidebar"><div class="sidebar-brand"><img src="../logo/onecall-logo-b-icon-white.svg" alt=""><div><strong>一通话</strong><small>平台运营后台</small></div></div><nav class="nav" aria-label="平台导航">'+navHtml()+'</nav><div class="sidebar-foot">员工 IAM 与客户账户隔离<br>原型数据均为虚构</div></aside>'+
         '<header class="topbar"><div class="crumb">'+icon(route.icon)+'<strong>'+esc(route.title)+'</strong></div><label class="top-search">'+icon('search')+'<input class="input" aria-label="全局检索" placeholder="业务 ID / 工单号 / recordNo"></label><div class="top-spacer"></div><div class="scope-chip" title="当前数据范围">'+icon('shield')+'<span>'+esc(roles[state.role].scope)+'</span></div><button class="icon-btn" aria-label="待办通知">'+icon('bell')+'</button><div class="avatar">OP</div></header>'+
         '<main class="main"><div class="content" id="content">'+content+'</div></main>'+
-        '<div class="review-strip"><label>原型角色</label><select class="select" id="review-role">'+roleOptions()+'</select><button class="icon-btn" data-action="logout" title="退出登录" aria-label="退出登录">'+icon('logout')+'</button></div></div>';
+        '<details class="review-strip"><summary title="打开原型评审工具" aria-label="打开原型评审工具">'+icon('more')+'</summary><div class="review-controls"><label>原型角色</label><select class="select" id="review-role">'+roleOptions()+'</select><label>数据状态</label><select class="select" id="review-data-mode"><option value="normal" '+(state.dataMode==='normal'?'selected':'')+'>正常</option><option value="empty" '+(state.dataMode==='empty'?'selected':'')+'>空数据</option><option value="delayed" '+(state.dataMode==='delayed'?'selected':'')+'>统计延迟</option><option value="unavailable" '+(state.dataMode==='unavailable'?'selected':'')+'>依赖不可用</option><option value="long" '+(state.dataMode==='long'?'selected':'')+'>超长文本</option></select><button class="icon-btn" data-action="logout" title="退出登录" aria-label="退出登录">'+icon('logout')+'</button></div></details></div>';
     }
     function head(title,desc,actions){
       return '<div class="page-head"><div><h1>'+esc(title)+'</h1><p>'+desc+'</p></div><div class="head-actions">'+(actions||'')+'</div></div>';
@@ -711,6 +722,86 @@
         '<div class="banner">'+icon('lock')+'<span>部分失败不会扩大导出范围，失效链接不会被重新激活。申请、生成、下载和失败均写入审计。</span></div>'+
         table(['任务','对象范围','目的','脱敏','状态','操作'],rows);
     }
+    function pageVendors(){
+      var rows=[
+        '<tr><td><button class="link-button mono" data-route="/vendors/VND-CARRIER-A">VND-CARRIER-A</button></td><td>运营商渠道 A</td><td>开通 / 通话 / 录音回执</td><td>'+status('运行正常','success')+'</td><td>华东</td><td>14:36</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/vendors/VND-NOTARY-YZ">VND-NOTARY-YZ</button></td><td>豫章公证处存证平台</td><td>哈希存证 / 验证报告</td><td>'+status(state.vendorState,state.vendorState==='运行正常'?'success':'warning')+'</td><td>国内</td><td>14:34</td></tr>',
+        '<tr><td><button class="link-button mono" data-route="/vendors/VND-AI-CN">VND-AI-CN</button></td><td>AI 服务 C</td><td>转写 / 摘要</td><td>'+status('运行正常','success')+'</td><td>境内区域</td><td>14:35</td></tr>'
+      ];
+      return head('供应商','能力、环境、健康度和升级路径可见；密钥、token 和连接串永不进入运营表单。')+
+        toolbar('搜索供应商、能力或地域')+table(['供应商','名称','能力','健康度','范围','更新'],rows);
+    }
+    function pageVendorDetail(id){
+      var vendor={
+        'VND-CARRIER-A':{name:'运营商渠道 A',cap:'开通 / 通话 / 录音回执',health:'运行正常',tone:'success',env:'生产 · 华东',issue:'未知开通结果 1 项'},
+        'VND-NOTARY-YZ':{name:'豫章公证处存证平台',cap:'哈希存证 / 存证验证报告',health:state.vendorState,tone:state.vendorState==='运行正常'?'success':'warning',env:'生产 · 国内',issue:'报告状态 0 积压 6 项'},
+        'VND-AI-CN':{name:'AI 服务 C',cap:'转写 / 结构化摘要',health:'运行正常',tone:'success',env:'境内部署',issue:'引用校验失败率 0.7%'}
+      }[id]||{name:'未知供应商',cap:'无',health:'未配置',tone:'warning',env:'-',issue:'-'};
+      return head('供应商详情',id+' · '+vendor.name,button('返回供应商列表','arrow','data-route="/vendors"','')+button('创建升级工单','ticket','data-action="vendor-escalate" data-object="'+id+'"','primary'))+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>能力与运行状态</h2>'+status(vendor.health,vendor.tone)+'</div><div class="panel-body"><dl class="meta-grid">'+meta('供应商 ID','<span class="mono">'+id+'</span>')+meta('环境',vendor.env)+meta('已验证能力',vendor.cap)+meta('当前异常',vendor.issue)+meta('SLA','正式协议待确认')+meta('升级路径','技术值班 → 渠道负责人 → 供应商')+meta('凭据版本','credential-v5 · ACTIVE')+meta('凭据原值','不展示、不导出')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>最近健康事件</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>健康检查完成</strong><p>签名请求和最小业务探针均通过。</p><time>14:34</time></div><div class="event"><strong>配置版本 v8 生效</strong><p>只记录版本和责任人，不记录 secret 明文。</p><time>昨天 22:10</time></div></div></div></aside></div>';
+    }
+    function pageReconciliation(){
+      var resolved=state.reconciliationState==='RESOLVED';
+      var rows=[
+        '<tr><td class="mono">DIF-88018</td><td>公证处存证</td><td>DEAL-99182-R1</td><td>供应商重复 / 本地无 recordNo</td><td>'+status(state.reconciliationState,resolved?'success':'danger')+'</td><td>'+(resolved?'关闭证据已关联':canCommand('reconcile-query')?button('执行幂等查询','retry','data-action="reconcile-query"','primary'):'只读')+'</td></tr>',
+        '<tr><td class="mono">DIF-88012</td><td>微信支付</td><td>PAY-550244</td><td>支付成功 / 权益事件延迟</td><td>'+status('ASSIGNED','warning')+'</td><td>TKT-10440</td></tr>',
+        '<tr><td class="mono">DIF-87998</td><td>运营商录音</td><td>CAR-20261019-77C1</td><td>录音到达 / 无唯一主叫绑定</td><td>'+status('MANUAL_REVIEW','warning')+'</td><td>TKT-10435</td></tr>'
+      ];
+      return head('综合对账','对账只能查询、重试或创建差异工单，不能用“以某方为准”覆盖事实。')+
+        '<div class="banner warning">'+icon('alert')+'<span>每个差异都有负责人、截止时间和关闭证据。外部结果与本地状态分别保留。</span></div>'+
+        toolbar('搜索差异、业务对象或工单','<select class="select"><option>全部来源</option><option>运营商</option><option>公证处</option><option>微信支付</option></select>')+
+        table(['差异','来源','对象','事实差异','状态','下一步'],rows);
+    }
+    function pageStaff(){
+      var rows=[
+        '<tr><td class="mono">STF-00128</td><td><span class="cell-title">赵运营</span><div class="cell-sub">ops.zhao@onecall.example</div></td><td>运营协调</td><td>华东业务线</td><td>'+status(state.staffState,state.staffState==='ACTIVE'?'success':'danger')+'</td><td>'+(state.staffState==='ACTIVE'?button('停用并撤销会话','lock','data-action="staff-disable"','danger'):'活动会话已撤销')+'</td></tr>',
+        '<tr><td class="mono">STF-00142</td><td><span class="cell-title">钱审计</span><div class="cell-sub">audit.qian@onecall.example</div></td><td>审计员</td><td>华东只读审计</td><td>'+status('ACTIVE','success')+'</td><td>只读</td></tr>'
+      ];
+      return head('平台员工','员工状态、角色和范围按版本变更；停用立即撤销活动会话和临时授权。',button('提交角色变更申请','approval','data-action="toast" data-message="角色变更已创建版本化申请，审批前旧策略继续有效"','primary'))+
+        toolbar('搜索员工 ID、姓名或账号')+table(['员工','身份','角色','范围','状态','操作'],rows);
+    }
+    function pageRoles(){
+      var rows=Object.keys(roles).map(function(key){
+        var r=roles[key];return '<tr><td><span class="cell-title">'+esc(r.label)+'</span><div class="cell-sub mono">'+key+'</div></td><td>'+esc(r.scope)+'</td><td>'+esc(r.areas.join(', '))+'</td><td>'+status('策略 v'+state.policyVersion,'info')+'</td><td>服务端强制</td></tr>';
+      });
+      return head('角色与权限','角色策略版本化发布；高角色不自动继承业务内容原值。',button('发布策略新版本','shield','data-action="policy-publish"','primary'))+
+        '<div class="banner">'+icon('shield')+'<span>前端导航仅用于可用性。服务端在检索、详情和每个领域命令入口分别校验角色、范围和临时授权。</span></div>'+
+        table(['角色','默认范围','业务域','当前版本','执行位置'],rows);
+    }
+    function pageSecurityAlerts(){
+      var rows=[
+        '<tr><td class="mono">ALT-92018</td><td>高频敏感字段申请</td><td>risk.operator.04</td><td>8 个不同对象 / 10 分钟</td><td>'+status('调查中','danger')+'</td><td>'+button('撤销相关会话','lock','data-action="security-revoke"','danger')+'</td></tr>',
+        '<tr><td class="mono">ALT-92011</td><td>跨地域对象访问</td><td>ops.review</td><td>ORG-41028 · 华南</td><td>'+status('已拒绝','warning')+'</td><td>审计已固化</td></tr>',
+        '<tr><td class="mono">ALT-91997</td><td>隔离文件重复提交</td><td>USR-2271</td><td>相同文件哈希 4 次</td><td>'+status('已处置','success')+'</td><td>TKT-10438</td></tr>'
+      ];
+      return head('安全告警','安全人员可撤销会话和复核隔离，但默认不能读取业务内容。')+toolbar('搜索告警、操作者或对象')+table(['告警','类型','主体','触发事实','状态','处置'],rows);
+    }
+    function pageSystemConfig(){
+      return head('系统配置','只管理可向运营界面公开的非密钥配置版本；密钥和连接串不进入该页面。',button('发布配置 v'+(state.configVersion+1),'shield','data-action="config-publish"','primary'))+
+        '<div class="grid-2"><section class="panel"><div class="panel-head"><h2>待发布配置差异</h2>'+status('DRAFT','warning')+'</div><div class="panel-body"><dl class="meta-grid">'+meta('当前版本','v'+state.configVersion)+meta('目标版本','v'+(state.configVersion+1))+meta('开通技术重试次数','3 → 4')+meta('报告轮询间隔','10 分钟 → 15 分钟')+meta('生效方式','审批后原子发布')+meta('回滚','恢复上一完整版本')+meta('密钥变化','不在此系统管理')+meta('审批','安全管理员 + 业务负责人')+'</dl></div></section>'+
+        '<aside class="panel"><div class="panel-head"><h2>发布检查</h2></div><div class="panel-body"><div class="timeline"><div class="event"><strong>Schema 校验通过</strong><p>无未知字段或非法枚举。</p></div><div class="event"><strong>影响范围已生成</strong><p>存证报告轮询与开通适配器。</p></div><div class="event"><strong>凭据未进入差异</strong><p>secretKey、token、连接串均未加载。</p></div></div></div></aside></div>';
+    }
+    function pageJobs(){
+      var recovered=state.jobState==='RETRY_PENDING';
+      var rows=[
+        '<tr><td class="mono">JOB-77018</td><td>NotaryReportPoller</td><td>TASK-78028</td><td>'+status(state.jobState,recovered?'warning':'danger')+'</td><td class="mono">report/TASK-78028</td><td>'+(recovered?'等待调度器领取':button('按幂等键重试','retry','data-action="job-retry"','primary'))+'</td></tr>',
+        '<tr><td class="mono">JOB-77012</td><td>EntitlementGrantWorker</td><td>SUB-881 / period-1</td><td>'+status('SUCCEEDED','success')+'</td><td class="mono">sub-881/1/CALL_SECONDS</td><td>完成</td></tr>',
+        '<tr><td class="mono">JOB-76998</td><td>EvidenceSolidifyWorker</td><td>EVI-99182</td><td>'+status('SUCCEEDED','success')+'</td><td class="mono">evidence/EVI-99182</td><td>完成</td></tr>'
+      ];
+      return head('任务与调度','重试沿用业务幂等键，死信恢复不会制造第二个业务对象。')+
+        toolbar('搜索任务、业务对象或幂等键','<select class="select"><option>全部状态</option><option>DEAD_LETTER</option><option>RETRY_PENDING</option><option>SUCCEEDED</option></select>')+
+        table(['任务','Worker','业务对象','状态','幂等键摘要','操作'],rows);
+    }
+    function dataModePage(route){
+      if(state.dataMode==='empty'){
+        return head(route.title,'当前筛选和授权范围内没有记录。')+'<div class="empty">'+icon('search')+'<div><h2>暂无可处理数据</h2><p>请调整筛选条件或返回工作台。空状态不会被描述为加载失败或权限不足。</p></div></div>';
+      }
+      if(state.dataMode==='unavailable'){
+        return head(route.title,'依赖服务暂时不可用，既有事实未被改写。')+'<div class="banner danger">'+icon('alert')+'<span>无法取得最新数据。系统未使用缓存值伪造成功状态，最近可靠更新时间为 14:20。</span></div><div class="empty">'+icon('retry')+'<div><h2>依赖服务不可用</h2><p>稍后重试或创建技术工单。已经完成的业务记录仍安全保留。</p></div></div>';
+      }
+      return '';
+    }
     function pageDenied(){
       return '<div class="empty">'+icon('lock')+'<div><h2>没有访问权限</h2><p>当前角色和数据范围不能访问该对象或路由。系统不会确认目标对象是否存在，本次拒绝已写入安全审计。</p><div style="margin-top:18px">'+button('返回工作台','arrow','data-route="'+roles[state.role].initial+'"','primary')+'</div><div class="cell-sub mono" style="margin-top:14px">请求引用：DENY-20261019-143812</div></div></div>';
     }
@@ -725,6 +816,8 @@
 
     function renderPage(route){
       if(!stageAvailable(route)) return pagePlaceholder(route);
+      var modePage=dataModePage(route);
+      if(modePage&&route.path!=='/access-denied') return modePage;
       var p=state.route,id=routeId(p);
       if(p==='/dashboard')return pageDashboard();
       if(p==='/work-queues')return pageQueues();
@@ -771,6 +864,14 @@
       if(p==='/compensations')return pageCompensations();
       if(p==='/shares')return pageShares();
       if(p==='/exports')return pageExports();
+      if(p==='/vendors')return pageVendors();
+      if(route.path==='/vendors/:id')return pageVendorDetail(id);
+      if(p==='/reconciliation')return pageReconciliation();
+      if(p==='/staff')return pageStaff();
+      if(p==='/roles')return pageRoles();
+      if(p==='/security-alerts')return pageSecurityAlerts();
+      if(p==='/system-config')return pageSystemConfig();
+      if(p==='/jobs')return pageJobs();
       if(p==='/access-denied')return pageDenied();
       return pagePlaceholder(route);
     }
@@ -832,7 +933,10 @@
       var route=matchRoute(path);
       if(!roleAllows(route)&&path!=='/access-denied'){state.deniedFrom=path;path='/access-denied';route=matchRoute(path);}
       state.route=path;
-      document.getElementById('root').innerHTML=shell(renderPage(route),route);
+      var body=renderPage(route);
+      if(state.dataMode==='delayed'&&route.path!=='/access-denied') body='<div class="banner warning">'+icon('clock')+'<span>统计读模型延迟约 12 分钟；详情中的业务状态仍以最近可靠事件为准。</span></div>'+body;
+      if(state.dataMode==='long'&&route.path!=='/access-denied') body='<div class="banner">'+icon('info')+'<span style="overflow-wrap:anywhere">长文本测试：供应商返回的诊断说明 VERY-LONG-CORRELATION-ID-20261019-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789 不得覆盖操作区或造成页面级横向滚动。</span></div>'+body;
+      document.getElementById('root').innerHTML=shell(body,route);
       document.title=route.title+' · 一通话运营后台';
       renderModal();
     }
@@ -930,6 +1034,30 @@
         if(!canCommand(action)){addEvent('CommandAccessDenied','EXP-90218','角色无重申请权限','-');toast('当前角色无权重新申请导出');return;}
         state.exportState='可下载';addEvent('ExportJobRecreated','EXP-90219','新任务，固定原范围','TKT-10454');render();toast('已创建新导出任务，旧链接保持失效');return;
       }
+      if(action==='vendor-escalate'){
+        var vendorId=actionEl.getAttribute('data-object');
+        if(!vendorId||vendorId.indexOf('VND-')!==0){addEvent('VendorEscalationRejected',vendorId||'unknown','对象标识无效','-');toast('供应商对象无效，未创建工单');return;}
+        addEvent('VendorEscalationTicketCreated',vendorId,'TKT-10458','TKT-10458');toast('供应商升级工单已创建，未修改任何业务状态');return;
+      }
+      if(action==='reconcile-query'){
+        if(!canCommand(action)){addEvent('CommandAccessDenied','DIF-88018','角色无对账命令权限','-');toast('当前角色无权执行综合对账命令');return;}
+        state.reconciliationState='RESOLVED';addEvent('ReconciliationQueryCompleted','DIF-88018','同 dealId 找回 recordNo','TKT-10447');render();toast('差异已通过幂等查询关闭，双方原始事实均保留');return;
+      }
+      if(action==='staff-disable'){
+        state.staffState='DISABLED';addEvent('StaffDisabled','STF-00128','活动会话与临时授权已撤销','TKT-10459');render();toast('员工已停用，历史审计继续保留');return;
+      }
+      if(action==='policy-publish'){
+        state.policyVersion+=1;addEvent('RolePolicyVersionPublished','POLICY-'+state.policyVersion,'旧策略版本已归档','TKT-10460');render();toast('新权限策略版本已发布，旧会话将重新求值');return;
+      }
+      if(action==='security-revoke'){
+        addEvent('SecuritySessionsRevoked','ALT-92018','关联会话全部撤销','TKT-10461');toast('关联临时访问会话已撤销，业务内容未被读取');return;
+      }
+      if(action==='config-publish'){
+        state.configVersion+=1;addEvent('SystemConfigPublished','CONFIG-v'+state.configVersion,'完整版本原子生效','TKT-10462');render();toast('非密钥配置新版本已原子发布');return;
+      }
+      if(action==='job-retry'){
+        state.jobState='RETRY_PENDING';addEvent('DeadLetterRetryScheduled','JOB-77018','复用原业务幂等键','TKT-10463');render();toast('死信任务已按原幂等键进入重试队列');return;
+      }
       if(action==='open-command'){
         state.modal={type:'command',step:'request',command:actionEl.getAttribute('data-command'),objectId:actionEl.getAttribute('data-object')};renderModal();return;
       }
@@ -943,11 +1071,14 @@
       if(event.target.id==='login-role'){state.role=event.target.value;render();return;}
       if(event.target.id==='login-scenario'){state.scenario=event.target.value;render();return;}
       if(event.target.id==='review-role'){
-        state.role=event.target.value;state.accessGrant=null;state.modal=null;var next=roles[state.role].initial;location.hash=next;render();return;
+        setReviewRole(event.target.value);return;
+      }
+      if(event.target.id==='review-data-mode'){
+        setReviewDataMode(event.target.value);return;
       }
     });
     window.addEventListener('hashchange',render);
-    window.__onecallOps={state:state,routes:routeDefs,roles:roles,go:go,render:render};
+    window.__onecallOps={state:state,routes:routeDefs,roles:roles,go:go,render:render,setReviewRole:setReviewRole,setReviewDataMode:setReviewDataMode};
     render();
   })();
   </script>

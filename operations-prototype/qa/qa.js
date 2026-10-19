@@ -51,8 +51,13 @@ async function login(page, role = 'ops') {
 }
 
 async function setRole(page, role) {
-  await page.selectOption('#review-role', role);
+  await page.evaluate((value) => window.__onecallOps.setReviewRole(value), role);
   await page.waitForTimeout(80);
+}
+
+async function setDataMode(page, mode) {
+  await page.evaluate((value) => window.__onecallOps.setReviewDataMode(value), mode);
+  await page.waitForTimeout(60);
 }
 
 async function go(page, route) {
@@ -263,6 +268,117 @@ async function go(page, route) {
       expect((await page.locator('.placeholder').count()) === 0, `${route} must be implemented in P1`);
     }
 
+    await setRole(page, 'support');
+    await go(page, '/reconciliation');
+    expect((await page.locator('[data-action="reconcile-query"]').count()) === 0, 'Support must not see reconciliation command');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'reconcile-query';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    await expectText(page, '#toast-root', '无权执行综合对账命令');
+    await setRole(page, 'super');
+
+    await go(page, '/vendors/VND-CARRIER-A');
+    await page.click('[data-action="vendor-escalate"]');
+    const vendorAuditObject = await page.evaluate(() => window.__onecallOps.state.events[0].object);
+    expect(vendorAuditObject === 'VND-CARRIER-A', `Vendor escalation must bind current vendor, received ${vendorAuditObject}`);
+    await go(page, '/vendors/VND-NOTARY-YZ');
+    await expectText(page, '#content', '凭据原值');
+    expect(!(await page.locator('#content').innerText()).includes('secretKey='), 'Vendor details must not expose secret values');
+    await page.click('[data-action="vendor-escalate"]');
+    await expectText(page, '#toast-root', '升级工单已创建');
+
+    await go(page, '/reconciliation');
+    await page.click('[data-action="reconcile-query"]');
+    await expectText(page, '#content', 'RESOLVED');
+
+    await go(page, '/staff');
+    await page.click('[data-action="staff-disable"]');
+    await expectText(page, '#content', 'DISABLED');
+    await expectText(page, '#content', '活动会话已撤销');
+
+    await go(page, '/roles');
+    await expectText(page, '#content', '策略 v12');
+    await page.click('[data-action="policy-publish"]');
+    await expectText(page, '#content', '策略 v13');
+    await shot(page, 'p2-role-policy', 1440);
+    const lastRoleBox = await page.locator('tbody tr').last().boundingBox();
+    const reviewToggleBox = await page.locator('.review-strip > summary').boundingBox();
+    const overlaps = lastRoleBox && reviewToggleBox && !(
+      lastRoleBox.x + lastRoleBox.width <= reviewToggleBox.x ||
+      reviewToggleBox.x + reviewToggleBox.width <= lastRoleBox.x ||
+      lastRoleBox.y + lastRoleBox.height <= reviewToggleBox.y ||
+      reviewToggleBox.y + reviewToggleBox.height <= lastRoleBox.y
+    );
+    expect(!overlaps, 'Collapsed review control must not cover the role matrix');
+
+    await go(page, '/security-alerts');
+    await page.click('[data-action="security-revoke"]');
+    await expectText(page, '#toast-root', '业务内容未被读取');
+    await go(page, '/system-config');
+    await page.click('[data-action="config-publish"]');
+    await expectText(page, '#content', '当前版本');
+    await expectText(page, '#content', 'v9');
+    await go(page, '/jobs');
+    await page.click('[data-action="job-retry"]');
+    await expectText(page, '#content', 'RETRY_PENDING');
+    await shot(page, 'p2-jobs', 1280);
+
+    await setRole(page, 'auditor');
+    await go(page, '/security-alerts');
+    await expectText(page, '#content', '没有访问权限');
+    await setRole(page, 'super');
+
+    await go(page, '/dashboard');
+    await setDataMode(page, 'empty');
+    await expectText(page, '#content', '暂无可处理数据');
+    await setDataMode(page, 'unavailable');
+    await expectText(page, '#content', '依赖服务不可用');
+    await setDataMode(page, 'delayed');
+    await expectText(page, '#content', '统计读模型延迟约 12 分钟');
+    await setDataMode(page, 'long');
+    await expectText(page, '#content', 'VERY-LONG-CORRELATION-ID');
+    await page.setViewportSize({ width: 720, height: 800 });
+    await assertNoPageOverflow(page, 720);
+    await setDataMode(page, 'normal');
+
+    const routeSamples = {
+      '/users/:id': '/users/USR-2048',
+      '/identity-cases/:id': '/identity-cases/IDC-3108',
+      '/organizations/:id': '/organizations/ORG-30018',
+      '/numbers/:id': '/numbers/NUM-10082',
+      '/calls/:id': '/calls/CALL-78392',
+      '/evidence/:id': '/evidence/EVI-99182',
+      '/ai-jobs/:id': '/ai-jobs/AIJ-67018',
+      '/ai-versions/:id': '/ai-versions/AIV-4',
+      '/preservations/:id': '/preservations/NPS-44018',
+      '/notary-reports/:id': '/notary-reports/NRT-55201',
+      '/offline-notary/:id': '/offline-notary/ONA-61018',
+      '/products/:id': '/products/PRD-PER-2026-R4',
+      '/catalog-releases/:id': '/catalog-releases/CAT-2026-10-R4',
+      '/orders/:id': '/orders/ORD-20261019-028',
+      '/invoices/:id': '/invoices/INV-261019-006',
+      '/tickets/:id': '/tickets/TKT-10431',
+      '/vendors/:id': '/vendors/VND-NOTARY-YZ',
+    };
+    const registeredRoutes = await page.evaluate(() => window.__onecallOps.routes.map((route) => route.path));
+    await page.setViewportSize({ width: 1280, height: 800 });
+    for (const registered of registeredRoutes.filter((route) => route !== '/login')) {
+      await go(page, routeSamples[registered] || registered);
+      expect((await page.locator('.placeholder').count()) === 0, `${registered} must not remain a final placeholder`);
+      const content = await page.locator('#content').innerText();
+      expect(content.trim().length > 20, `${registered} must render meaningful content`);
+    }
+
+    await go(page, '/dashboard');
+    await page.locator('body').focus();
+    await page.keyboard.press('Tab');
+    const focusTag = await page.evaluate(() => document.activeElement && document.activeElement.tagName);
+    expect(['BUTTON', 'INPUT', 'SELECT'].includes(focusTag), `Keyboard focus should reach an interactive control, received ${focusTag}`);
+
     const responsiveRoutes = ['/dashboard', '/users', '/numbers/NUM-10082', '/call-reconciliation', '/evidence/EVI-99182', '/ai-jobs/AIJ-67018', '/preservations/NPS-44018', '/notary-reports/NRT-55201', '/offline-notary/ONA-61018', '/products/PRD-PER-2026-R4', '/orders/ORD-20261019-028', '/audit'];
     for (const width of [1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 });
@@ -277,7 +393,7 @@ async function go(page, route) {
     await shot(page, 'p0-call-detail', 1440);
 
     expect(errors.length === 0, `Browser errors: ${errors.join(' | ')}`);
-    console.log('Operations prototype P0/P1 QA passed: identity isolation, controlled commands, append-only versions, notary/report ordering, product publication, payment/entitlement separation, and responsive checks.');
+    console.log('Operations prototype final QA passed: all 55 routes, role and command isolation, append-only histories, P2 governance, empty/degraded/long states, keyboard focus, and responsive checks.');
   } finally {
     await browser.close();
   }
