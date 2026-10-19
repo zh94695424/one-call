@@ -31,19 +31,47 @@ async function assertNoPageOverflow(page, width) {
   );
 }
 
+async function assertActiveNavVisible(page) {
+  const navBox = await page.locator('.nav').boundingBox();
+  const activeNavBox = await page.locator('.nav-item.active').boundingBox();
+  const scroll = await page.locator('.nav').evaluate((nav) => ({ scrollTop: nav.scrollTop, scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight }));
+  expect(
+    navBox && activeNavBox && activeNavBox.y >= navBox.y && activeNavBox.y + activeNavBox.height <= navBox.y + navBox.height,
+    `Active navigation item must be fully visible inside the scrollable sidebar: ${JSON.stringify({ navBox, activeNavBox, scroll })}`,
+  );
+}
+
 async function shot(page, name, width, height = 900) {
   await page.setViewportSize({ width, height });
-  await page.screenshot({ path: path.join(screenshotDir, `${name}-${width}.png`), fullPage: true });
+  const activeNav = page.locator('.nav-item.active');
+  if ((await activeNav.count()) > 0) await activeNav.evaluate((element) => {
+    const nav = element.closest('.nav');
+    const navBox = nav.getBoundingClientRect();
+    const itemBox = element.getBoundingClientRect();
+    nav.scrollTop += itemBox.top - navBox.top - (nav.clientHeight - itemBox.height) / 2;
+  });
+  await page.screenshot({ path: path.join(screenshotDir, `${name}-${width}.png`) });
 }
 
 async function openFresh(page) {
-  await page.goto(previewUrl);
-  await page.evaluate(() => { location.hash = '/login'; location.reload(); });
-  await page.waitForSelector('.login-panel');
+  const bootstrapErrors = [];
+  const captureError = (error) => bootstrapErrors.push(error.message);
+  page.on('pageerror', captureError);
+  await page.goto('about:blank');
+  await page.goto(`${previewUrl}#/login`, { waitUntil: 'load' });
+  try {
+    await page.waitForSelector('.login-panel');
+  } catch (error) {
+    console.error('Login bootstrap diagnostic:', bootstrapErrors.join(' | '), (await page.locator('body').innerText()).slice(0, 500));
+    throw error;
+  } finally {
+    page.off('pageerror', captureError);
+  }
 }
 
 async function login(page, role = 'ops') {
-  await openFresh(page);
+  if ((await page.locator('.login-panel').count()) === 0) await openFresh(page);
+  await page.selectOption('#login-scenario', 'normal');
   await page.selectOption('#login-role', role);
   await page.fill('#staff-otp', '482916');
   await page.click('[data-action="login"]');
@@ -62,6 +90,15 @@ async function setDataMode(page, mode) {
 
 async function go(page, route) {
   await page.evaluate((target) => window.__onecallOps.go(target), route);
+  await page.waitForTimeout(60);
+}
+
+async function executeAction(page, selector) {
+  await page.click(selector);
+  await expectText(page, '.modal', '确认执行');
+  const commandObject = await page.locator('.confirm-item strong.mono').first().innerText();
+  expect(/^[A-Z]+[-/]/.test(commandObject), `Controlled command must freeze a business object, received ${commandObject}`);
+  await page.click('[data-action="action-confirm"]');
   await page.waitForTimeout(60);
 }
 
@@ -85,6 +122,24 @@ async function go(page, route) {
     const routeCount = await page.evaluate(() => window.__onecallOps.routes.length);
     expect(routeCount === 55, `Expected 55 registered routes, received ${routeCount}`);
     await shot(page, 'p0-dashboard', 1440);
+    await go(page, '/work-queues');
+    await executeAction(page, '[data-action="batch-claim"]');
+    await expectText(page, '#content', 'ops.review');
+
+    await setRole(page, 'super');
+    await go(page, '/numbers/NUM-10116');
+    expect((await page.locator('[data-command="business-retry"]').count()) === 0, 'Super administrator must not inherit telecom business commands');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'open-command';
+      forged.dataset.command = 'business-retry';
+      forged.dataset.object = 'NUM-10116';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    expect((await page.locator('.modal').count()) === 0, 'Forged super administrator business command must be rejected');
+    await expectText(page, '#toast-root', '无权执行该受控命令');
 
     await setRole(page, 'support');
     await go(page, '/users/USR-2048');
@@ -106,10 +161,24 @@ async function go(page, route) {
     await shot(page, 'p0-access-denied', 1024, 768);
 
     await setRole(page, 'risk');
-    await go(page, '/users/USR-2048');
+    await go(page, '/dashboard');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'request-access';
+      forged.dataset.kind = 'identity';
+      forged.dataset.object = 'USR-2189';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    expect((await page.locator('.modal').count()) === 0, 'Sensitive access must reject a valid object from an unrelated page context');
+    await expectText(page, '#toast-root', '页面上下文无权申请');
+    await go(page, '/users/USR-2189');
     expect((await page.locator('.revealed-value').count()) === 0, 'Sensitive identity must be absent before a grant');
     await page.click('[data-action="request-access"]');
     await expectText(page, '.modal', '关联工单');
+    await page.fill('#access-ticket', 'TKT-10431');
+    await page.selectOption('#access-purpose', { label: '争议处理复核' });
     await page.click('[data-action="access-submit"]');
     await expectText(page, '.modal', '申请人不能审批自己');
     await page.click('[data-action="access-approve"]');
@@ -119,12 +188,34 @@ async function go(page, route) {
     await page.fill('#access-otp', '482916');
     await page.click('[data-action="access-verify"]');
     await expectText(page, '[data-sensitive-session]', '原型虚构');
+    await expectText(page, '[data-sensitive-session]', 'TEST-IDENTITY-USR-2189');
+    await expectText(page, '[data-sensitive-session]', 'TKT-10431');
+    await expectText(page, '[data-sensitive-session]', '争议处理复核');
+    expect(!(await page.locator('[data-sensitive-session]').innerText()).includes('TEST-IDENTITY-USR-2048'), 'Sensitive session must not reveal another user fixture');
+    const accessEventTickets = await page.evaluate(() => window.__onecallOps.state.events
+      .filter((event) => ['SensitiveAccessRequested', 'SensitiveAccessApproved', 'SensitiveAccessSessionIssued'].includes(event.event))
+      .slice(0, 3)
+      .map((event) => event.ticket));
+    expect(accessEventTickets.every((ticket) => ticket === 'TKT-10431'), `Access ticket must survive every workflow step: ${accessEventTickets.join(', ')}`);
     await shot(page, 'p0-sensitive-session', 1280);
     await page.evaluate(() => { location.hash = '/users'; });
     await page.waitForSelector('h1');
-    await page.evaluate(() => { location.hash = '/users/USR-2048'; });
+    await page.evaluate(() => { location.hash = '/users/USR-2189'; });
     await page.waitForTimeout(80);
     expect((await page.locator('[data-sensitive-session]').count()) === 0, 'Sensitive content must clear after leaving the route');
+
+    await setRole(page, 'notary');
+    await go(page, '/evidence/EVI-99182');
+    expect((await page.locator('[data-sensitive-session]').count()) === 0, 'Evidence content must be absent before a grant');
+    await page.click('[data-action="request-access"]');
+    await page.click('[data-action="access-submit"]');
+    await page.click('[data-action="access-approve"]');
+    await page.fill('#access-otp', '482916');
+    await page.click('[data-action="access-verify"]');
+    await expectText(page, '[data-sensitive-session]', '原型证据内容片段');
+    await go(page, '/evidence');
+    await go(page, '/evidence/EVI-99182');
+    expect((await page.locator('[data-sensitive-session]').count()) === 0, 'Evidence content must clear after leaving the route');
 
     await setRole(page, 'carrier');
     await go(page, '/numbers/NUM-10116');
@@ -134,6 +225,17 @@ async function go(page, route) {
     await page.click('[data-action="command-submit"]');
     await expectText(page, '#content', '业务尝试 #3');
     await expectText(page, '#content', '同步成功');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'open-command';
+      forged.dataset.command = 'business-retry';
+      forged.dataset.object = 'NUM-10116';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    expect((await page.locator('.modal').count()) === 0, 'Terminal provisioning state must reject a repeated business retry');
+    await expectText(page, '#toast-root', '当前对象或状态不允许执行该受控命令');
 
     await go(page, '/numbers/NUM-10082');
     await page.click('[data-command="technical-retry"]');
@@ -175,29 +277,33 @@ async function go(page, route) {
     await setRole(page, 'notary');
     await go(page, '/ai-jobs/AIJ-67018');
     await expectText(page, '#content', '摘要引用校验失败');
-    await page.click('[data-action="ai-retry"]');
+    await executeAction(page, '[data-action="ai-retry"]');
     await expectText(page, '#content', 'SUCCEEDED');
     await expectText(page, '#content', 'v4');
     await expectText(page, '#content', 'v3 · 逐字稿可用，摘要失败');
+    await go(page, '/ai-versions/AIV-3');
+    await expectText(page, '#content', 'Transcript v3');
+    await expectText(page, '#content', '逐字稿可用，摘要失败');
+    expect(!(await page.locator('#content').innerText()).includes('Transcript v4'), 'Historical AI version route must not display the current version');
 
     await go(page, '/preservations/NPS-44018');
     await expectText(page, '#content', 'MANUAL_REVIEW');
-    await page.click('[data-action="preservation-retry"]');
+    await executeAction(page, '[data-action="preservation-retry"]');
     await expectText(page, '#content', 'PRESERVED');
     await expectText(page, '#content', 'REC-****8129');
     await expectText(page, '#content', '尝试 #2 · 重复存证错误 0015');
     await shot(page, 'p1-preservation-detail', 1280);
 
     await go(page, '/notary-reports/NRT-55201');
-    await page.click('[data-action="report-complete"]');
+    await executeAction(page, '[data-action="report-complete"]');
     await expectText(page, '#content', 'COMPLETED');
-    await page.click('[data-action="report-old-callback"]');
+    await executeAction(page, '[data-action="report-old-callback"]');
     await expectText(page, '#content', '旧回调');
     await expectText(page, '#content', 'COMPLETED');
 
     await go(page, '/offline-notary/ONA-61018');
     await expectText(page, '#content', '材料快照 v2');
-    await page.click('[data-action="notary-supplement"]');
+    await executeAction(page, '[data-action="notary-supplement"]');
     await expectText(page, '#content', '材料快照 v3');
     await page.click('[data-action="notary-submit-blocked"]');
     await expectText(page, '#toast-root', '缺少正式线下提交凭据');
@@ -205,12 +311,23 @@ async function go(page, route) {
 
     await setRole(page, 'product');
     await go(page, '/products/PRD-PER-2026-R4');
-    await page.click('[data-action="product-review"]');
+    await executeAction(page, '[data-action="product-review"]');
     await expectText(page, '#content', 'REVIEWED');
-    await page.click('[data-action="product-publish"]');
+    await executeAction(page, '[data-action="product-publish"]');
+    await expectText(page, '#content', 'PUBLISHED');
+    await executeAction(page, '[data-action="product-draft"]');
+    await expectText(page, '#toast-root', '独立商品草稿');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'product-review';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    await expectText(page, '#toast-root', '不允许重复执行');
     await expectText(page, '#content', 'PUBLISHED');
     await go(page, '/catalog-releases/CAT-2026-10-R4');
-    await page.click('[data-action="catalog-publish"]');
+    await executeAction(page, '[data-action="catalog-publish"]');
     await expectText(page, '#content', '已发布');
     await go(page, '/orders');
     await expectText(page, '#content', '没有访问权限');
@@ -227,31 +344,50 @@ async function go(page, route) {
       forged.click();
       forged.remove();
     });
-    await expectText(page, '#toast-root', '无权撤销分享');
+    await expectText(page, '#toast-root', '无权执行该受控动作');
     await go(page, '/exports');
     expect((await page.locator('[data-action="export-reapply"]').count()) === 0, 'Support must not see export reapply action');
 
     await setRole(page, 'finance');
     await go(page, '/orders/ORD-20261019-028');
     await expectText(page, '#content', '发放失败');
-    await page.click('[data-action="order-grant-reconcile"]');
+    await executeAction(page, '[data-action="order-grant-reconcile"]');
     await expectText(page, '#content', '补发成功');
     await go(page, '/refunds');
     expect(await page.locator('button:has-text("处理退款")').isDisabled(), 'Refund execution must stay blocked while policy is unresolved');
     await go(page, '/compensations');
-    await page.click('[data-action="compensation-approve"]');
+    await executeAction(page, '[data-action="compensation-approve"]');
     await expectText(page, '#content', 'GRT-CMP-51018');
     await shot(page, 'p1-order-entitlement', 1440);
 
     await setRole(page, 'ops');
     await go(page, '/shares');
-    await page.click('[data-action="share-revoke"]');
+    await executeAction(page, '[data-action="share-revoke"]');
     await expectText(page, '#content', 'REVOKED');
     await go(page, '/exports');
-    await page.click('[data-action="export-reapply"]');
+    await executeAction(page, '[data-action="export-reapply"]');
     await expectText(page, '#content', '可下载');
 
     await setRole(page, 'super');
+
+    const p0SecondaryDetails = [
+      ['/users/USR-2271', '陈某丙', '186****2251'],
+      ['/identity-cases/IDC-3112', '二要素不一致', 'USR-2271'],
+      ['/organizations/ORG-30027', '澄明咨询有限公司', 'ENT-BASE-2026.10-R2'],
+      ['/tickets/TKT-10435', '主叫匹配差异', 'CALL-78421'],
+      ['/tickets/TKT-10438', '证据隔离复核', 'EVI-99218'],
+      ['/catalog-releases/CAT-2026-10-R3', '当前有效目录', '7 个已发布版本'],
+    ];
+    for (const [route, identity, fact] of p0SecondaryDetails) {
+      await go(page, route);
+      await expectText(page, '#content', identity);
+      await expectText(page, '#content', fact);
+    }
+    await go(page, '/users/USR-UNKNOWN');
+    await expectText(page, '#content', '没有访问权限');
+    await go(page, '/not-a-registered-route');
+    await expectText(page, '#content', '没有访问权限');
+
     const secondaryDetails = [
       ['/ai-jobs/AIJ-67022', 'EVI-99195', 'TRANSCRIPT_ONLY'],
       ['/preservations/NPS-44011', 'DEAL-99176-R1', 'REC-****8044'],
@@ -278,33 +414,53 @@ async function go(page, route) {
       forged.click();
       forged.remove();
     });
-    await expectText(page, '#toast-root', '无权执行综合对账命令');
-    await setRole(page, 'super');
-
+    await expectText(page, '#toast-root', '无权执行该受控动作');
+    await setRole(page, 'carrier');
+    await go(page, '/vendors');
+    await expectText(page, '#content', 'VND-CARRIER-A');
+    expect(!(await page.locator('#content').innerText()).includes('VND-NOTARY-YZ'), 'Carrier vendor list must be filtered to its object scope');
     await go(page, '/vendors/VND-CARRIER-A');
-    await page.click('[data-action="vendor-escalate"]');
+    await executeAction(page, '[data-action="vendor-escalate"]');
     const vendorAuditObject = await page.evaluate(() => window.__onecallOps.state.events[0].object);
     expect(vendorAuditObject === 'VND-CARRIER-A', `Vendor escalation must bind current vendor, received ${vendorAuditObject}`);
+    expect((await page.locator('[data-action="vendor-escalate"]').count()) === 0, 'Existing vendor escalation ticket must prevent duplicate creation');
+    await go(page, '/vendors/VND-NOTARY-YZ');
+    await expectText(page, '#content', '没有访问权限');
+    await page.evaluate(() => {
+      const forged = document.createElement('button');
+      forged.dataset.action = 'vendor-escalate';
+      forged.dataset.object = 'VND-NOTARY-YZ';
+      document.body.appendChild(forged);
+      forged.click();
+      forged.remove();
+    });
+    await expectText(page, '#toast-root', '超出范围');
+
+    await setRole(page, 'super');
     await go(page, '/vendors/VND-NOTARY-YZ');
     await expectText(page, '#content', '凭据原值');
     expect(!(await page.locator('#content').innerText()).includes('secretKey='), 'Vendor details must not expose secret values');
-    await page.click('[data-action="vendor-escalate"]');
-    await expectText(page, '#toast-root', '升级工单已创建');
+    expect((await page.locator('[data-action="vendor-escalate"]').count()) === 0, 'Super administrator must not inherit vendor business commands');
 
+    await setRole(page, 'ops');
     await go(page, '/reconciliation');
-    await page.click('[data-action="reconcile-query"]');
+    await executeAction(page, '[data-action="reconcile-query"]');
     await expectText(page, '#content', 'RESOLVED');
 
+    await setRole(page, 'super');
     await go(page, '/staff');
-    await page.click('[data-action="staff-disable"]');
+    await executeAction(page, '[data-action="staff-role-request"]');
+    await expectText(page, '#toast-root', '版本化申请');
+    await executeAction(page, '[data-action="staff-disable"]');
     await expectText(page, '#content', 'DISABLED');
     await expectText(page, '#content', '活动会话已撤销');
 
     await go(page, '/roles');
     await expectText(page, '#content', '策略 v12');
-    await page.click('[data-action="policy-publish"]');
+    await executeAction(page, '[data-action="policy-publish"]');
     await expectText(page, '#content', '策略 v13');
     await shot(page, 'p2-role-policy', 1440);
+    await assertActiveNavVisible(page);
     const lastRoleBox = await page.locator('tbody tr').last().boundingBox();
     const reviewToggleBox = await page.locator('.review-strip > summary').boundingBox();
     const overlaps = lastRoleBox && reviewToggleBox && !(
@@ -315,19 +471,23 @@ async function go(page, route) {
     );
     expect(!overlaps, 'Collapsed review control must not cover the role matrix');
 
+    await setRole(page, 'security');
     await go(page, '/security-alerts');
-    await page.click('[data-action="security-revoke"]');
+    await executeAction(page, '[data-action="security-revoke"]');
     await expectText(page, '#toast-root', '业务内容未被读取');
     await go(page, '/system-config');
-    await page.click('[data-action="config-publish"]');
+    await executeAction(page, '[data-action="config-publish"]');
     await expectText(page, '#content', '当前版本');
     await expectText(page, '#content', 'v9');
     await go(page, '/jobs');
-    await page.click('[data-action="job-retry"]');
+    await executeAction(page, '[data-action="job-retry"]');
     await expectText(page, '#content', 'RETRY_PENDING');
     await shot(page, 'p2-jobs', 1280);
+    await assertActiveNavVisible(page);
 
     await setRole(page, 'auditor');
+    await go(page, '/audit');
+    await expectText(page, '#content', '已核对对象、当前状态、影响范围和幂等语义');
     await go(page, '/security-alerts');
     await expectText(page, '#content', '没有访问权限');
     await setRole(page, 'super');
@@ -335,15 +495,25 @@ async function go(page, route) {
     await go(page, '/dashboard');
     await setDataMode(page, 'empty');
     await expectText(page, '#content', '暂无可处理数据');
+    await setDataMode(page, 'loading');
+    await expectText(page, '#content', '正在加载授权范围内的数据');
     await setDataMode(page, 'unavailable');
     await expectText(page, '#content', '依赖服务不可用');
     await setDataMode(page, 'delayed');
     await expectText(page, '#content', '统计读模型延迟约 12 分钟');
+    await setDataMode(page, 'partial');
+    await expectText(page, '#content', '部分来源加载失败');
     await setDataMode(page, 'long');
     await expectText(page, '#content', 'VERY-LONG-CORRELATION-ID');
     await page.setViewportSize({ width: 720, height: 800 });
     await assertNoPageOverflow(page, 720);
     await setDataMode(page, 'normal');
+
+    const zoomEquivalentRoutes = ['/dashboard', '/users', '/numbers/NUM-10082', '/roles', '/jobs'];
+    for (const route of zoomEquivalentRoutes) {
+      await go(page, route);
+      await assertNoPageOverflow(page, 720);
+    }
 
     const routeSamples = {
       '/users/:id': '/users/USR-2048',
@@ -393,7 +563,7 @@ async function go(page, route) {
     await shot(page, 'p0-call-detail', 1440);
 
     expect(errors.length === 0, `Browser errors: ${errors.join(' | ')}`);
-    console.log('Operations prototype final QA passed: all 55 routes, role and command isolation, append-only histories, P2 governance, empty/degraded/long states, keyboard focus, and responsive checks.');
+    console.log('Operations prototype final QA passed: all 55 routes, role, object and command isolation, append-only histories, complete P2 data states, keyboard focus, 200% equivalent layout, and responsive checks.');
   } finally {
     await browser.close();
   }
