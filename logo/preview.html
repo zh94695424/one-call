@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-palette="trust" data-mode="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一通话 ONECALL · 标志系统预览（方案 B）</title>
+<script>
+(function(){try{var p=localStorage.getItem('onecall-theme')||'system';
+var d=p==='dark'||(p==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);
+document.documentElement.dataset.mode=d?'dark':'light';}catch(e){document.documentElement.dataset.mode='light';}})();
+</script>
+<link rel="stylesheet" href="../tokens/tokens.css">
+<link rel="stylesheet" href="../styles/scaffold.css">
+<style>
+body{font-family:var(--font-body);background:var(--color-bg);color:var(--color-ink);font-size:var(--text-body);line-height:var(--leading-cjk);padding-bottom:var(--space-16)}
+
+.wrap{max-width:1000px;margin:0 auto;padding:0 var(--space-5)}
+
+h1{font-size:var(--text-d1);font-weight:600;margin:var(--space-12) 0 var(--space-3)}
+.lede{color:var(--color-ink-2);max-width:64ch;margin-bottom:var(--space-10)}
+h2{font-size:var(--text-h1);font-weight:600;margin:var(--space-12) 0 var(--space-4)}
+.warn{background:var(--color-warning-bg);color:var(--color-warning-ink);border-radius:var(--radius-sm);padding:var(--space-4);font-size:var(--text-body-s);line-height:var(--leading-cjk);margin-bottom:var(--space-6)}
+.warn b{font-weight:600}
+.card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--card-radius);box-shadow:var(--shadow-card);padding:var(--space-6);margin-bottom:var(--space-4)}
+.row{display:flex;gap:var(--space-8);flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(180px,100%),1fr));gap:var(--space-4)}
+.tile{border:1px solid var(--card-border);border-radius:var(--card-radius);padding:var(--space-5);display:grid;place-items:center;gap:var(--space-3);background:var(--card-bg)}
+.tile span{font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-ink-2)}
+.tile.on-brand{background:var(--color-primary)}
+.tile.on-authority{background:var(--color-authority)}
+.tile.on-cert{background:var(--cert-paper-bg)}
+table{width:100%;border-collapse:collapse;font-size:var(--text-caption)}
+th,td{padding:var(--space-3);text-align:left;border-bottom:1px solid var(--color-line);line-height:var(--leading-normal)}
+th{color:var(--color-ink-2);font-weight:500;letter-spacing:var(--tracking-wide)}
+tr:last-child td{border-bottom:0}
+.dont{text-align:center;padding:var(--space-4)}
+.dont .box{display:inline-grid;place-items:center;padding:var(--space-3);border-radius:var(--radius-sm);background:var(--color-error-bg);margin-bottom:var(--space-2);min-height:72px}
+.dont p{font-size:var(--text-caption);color:var(--color-error-ink)}
+.clearspace{display:inline-grid;place-items:center;padding:var(--space-5);border:1px dashed var(--color-error-ink);border-radius:var(--radius-xs)}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>标志系统预览</h1>
+  <p class="lede">主 Logo：方案 B「封存之盾」。双版分工——数字界面用原底版（蓝盾），证书/文档/打印用白底版（白盾蓝线）。</p>
+
+  <div class="warn">
+    <b>已知待办（未消除）：</b>横版组合 <code>onecall-logo-b-lockup.svg</code> 与 <code>-lockup-white.svg</code> 的中英文字标使用 <code>&lt;text&gt;</code> 元素 + 系统字体（PingFang SC / system-ui），<b>跨设备存在字形漂移风险</b>。规范文档原已列为待办，本次因缺少字体转曲工具未能消除。<br>
+    影响面：页眉、页脚、证书页眉。建议在商标定稿阶段用设计工具将文字转为路径，并把 <code>.figma.tsx</code> 或转曲后的 SVG 作为唯一发布版本。
+  </div>
+
+  <h2>① 四变体</h2>
+  <div class="grid">
+    <div class="tile"><img src="onecall-logo-b-icon.svg" width="72" height="72" alt="原底版图标"><span>icon.svg · 蓝盾（数字界面）</span></div>
+    <div class="tile"><img src="onecall-logo-b-icon-white.svg" width="72" height="72" alt="白底版图标"><span>icon-white.svg · 白盾蓝线（文档）</span></div>
+    <div class="tile"><img src="onecall-logo-b-lockup.svg" width="160" alt="横版组合"><span>lockup.svg · 浅色底</span></div>
+    <div class="tile on-authority"><img src="onecall-logo-b-lockup-white.svg" width="160" alt="反白横版"><span style="color:var(--color-authority-ink)">lockup-white.svg · 深色底</span></div>
+  </div>
+
+  <h2>② 多尺寸可读性</h2>
+  <div class="card">
+    <p style="margin-bottom:var(--space-5);color:var(--color-ink-2)">原底版最小 24px；白底版最小 32px。</p>
+    <div class="row">
+      <img src="onecall-logo-b-icon.svg" width="24" height="24" alt="24px"><span style="font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-ink-2)">24</span>
+      <img src="onecall-logo-b-icon.svg" width="32" height="32" alt="32px"><span style="font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-ink-2)">32</span>
+      <img src="onecall-logo-b-icon.svg" width="48" height="48" alt="48px"><span style="font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-ink-2)">48</span>
+      <img src="onecall-logo-b-icon.svg" width="64" height="64" alt="64px"><span style="font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-ink-2)">64</span>
+      <img src="onecall-logo-b-icon.svg" width="96" height="96" alt="96px"><span style="font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-ink-2)">96</span>
+    </div>
+  </div>
+
+  <h2>③ 背景适配</h2>
+  <div class="grid">
+    <div class="tile on-brand"><img src="onecall-logo-b-lockup-white.svg" width="150" alt="品牌蓝底" style="height:32px"></div>
+    <div class="tile on-authority"><img src="onecall-logo-b-lockup-white.svg" width="150" alt="权威深蓝底" style="height:32px"></div>
+    <div class="tile on-cert"><img src="onecall-logo-b-lockup.svg" width="150" alt="证书米白底" style="height:32px"></div>
+    <div class="tile" style="background:var(--color-surface-2)"><img src="onecall-logo-b-lockup.svg" width="150" alt="次级底" style="height:32px"></div>
+  </div>
+  <p style="margin-top:var(--space-4);color:var(--color-ink-2);font-size:var(--text-body-s)">规则：深色底与品牌色底一律用反白横版；证书米白底用原色横版（其字色本身为深色，天然适配纸面）。</p>
+
+  <h2>④ 安全区</h2>
+  <div class="card">
+    <div class="row">
+      <div class="clearspace"><img src="onecall-logo-b-icon.svg" width="72" height="72" alt="安全区示意"></div>
+      <div class="grow" style="flex:1;min-width:240px">
+        <p>图标四周至少保留盾高的 1/6（约等于落印点直径的 2 倍）。虚线外框为最小净空，虚线内不得放置任何元素。</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>⑤ 禁用示例</h2>
+  <div class="grid">
+    <div class="dont"><div class="box"><img src="onecall-logo-b-icon.svg" width="52" style="transform:rotate(12deg)" alt=""></div><p>旋转倾斜</p></div>
+    <div class="dont"><div class="box"><img src="onecall-logo-b-icon.svg" width="52" style="filter:hue-rotate(120deg)" alt=""></div><p>更改品牌色</p></div>
+    <div class="dont"><div class="box"><img src="onecall-logo-b-icon.svg" alt="" style="width:68px;height:46px;object-fit:fill"></div><p>拉伸变形</p></div>
+    <div class="dont"><div class="box" style="background:var(--color-authority)"><img src="onecall-logo-b-icon-white.svg" width="52" alt=""></div><p>白底版用于深色底</p></div>
+  </div>
+  <p style="margin-top:var(--space-4);color:var(--color-ink-2);font-size:var(--text-body-s)">另：不得加阴影、描边、渐变或口号；不得单独使用「一通话」中文或「ONECALL」英文（必须成对出现）。</p>
+
+  <h2>⑥ 本次工程修正</h2>
+  <div class="card">
+    <table>
+      <tr><th>项</th><th>问题</th><th>处置</th></tr>
+      <tr><td>SVG 渐变 id</td><td><code>onecallB</code> / <code>onecallBLock</code> 在历史上曾被 A 方案同名 id 占用，同页内联多个 Logo 会互相覆盖</td><td>已核对：现行 4 个文件中仅 2 个含渐变，id 分别为 <code>onecallB</code> / <code>onecallBLock</code>，互不冲突。<b>注意：若把同一个 SVG 内联两次，id 仍会冲突</b>——内联时需给每个实例加唯一后缀，或改用 <code>&lt;img&gt;</code> 引用</td></tr>
+      <tr><td>无障碍</td><td>SVG 已有 <code>role="img"</code> + <code>aria-label</code></td><td>保持；本页所有 <code>&lt;img&gt;</code> 均带 <code>alt</code></td></tr>
+      <tr><td>文字未转曲</td><td>跨设备字形漂移</td><td><b>未消除</b>，见页首警示；需设计工具处理</td></tr>
+    </table>
+  </div>
+
+  <h2>⑦ 位图资产</h2>
+  <div class="card">
+    <p>现有 <code>assets/png/</code>：16/24/32/48/64/128/256/512px 共 18 张（含白底版与横版、小程序头像 512²）。</p>
+    <p style="margin-top:var(--space-3);color:var(--color-ink-2);font-size:var(--text-body-s)">未闭环项：本次未重新导出 PNG（缺少矢量转位图工具链）。SVG 变更为修 id 与注释级，图形本身未改动，因此现有 PNG 仍然有效，不构成阻塞。</p>
+  </div>
+</div>
+</body>
+</html>

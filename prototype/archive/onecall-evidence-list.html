@@ -1,0 +1,717 @@
+<div id="onecall-list-preview" class="viz-dotted-background">
+  <style>
+    #onecall-list-preview {
+      --oc-blue: #2468f2;
+      --oc-blue-soft: #edf4ff;
+      --oc-ink: #1a1a1a;
+      --oc-body: #667085;
+      --oc-soft: #98a2b3;
+      --oc-line: #dce4ee;
+      --oc-page: #f7f9fc;
+      --oc-surface: #ffffff;
+      --oc-success: #16845b;
+      --oc-warning: #9a6700;
+      min-height: 940px;
+      padding: 56px 18px 32px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    #onecall-list-preview * {
+      box-sizing: border-box;
+    }
+
+    #onecall-list-preview button {
+      font-family: inherit;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .phone {
+      width: min(393px, 100%);
+      height: 852px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: var(--oc-page);
+      color: var(--oc-ink);
+      border: 1px solid #e5eaf0;
+      border-radius: 8px;
+    }
+
+    #onecall-list-preview .top-shell {
+      flex: 0 0 auto;
+      background: var(--oc-surface);
+    }
+
+    #onecall-list-preview .status-bar {
+      height: 44px;
+      padding: 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: 600;
+    }
+
+    #onecall-list-preview .status-icons,
+    #onecall-list-preview .capsule,
+    #onecall-list-preview .card-source,
+    #onecall-list-preview .card-status,
+    #onecall-list-preview .summary-label,
+    #onecall-list-preview .new-matter,
+    #onecall-list-preview .tab-item {
+      display: flex;
+      align-items: center;
+    }
+
+    #onecall-list-preview .status-icons {
+      gap: 5px;
+      color: #273445;
+    }
+
+    #onecall-list-preview .status-icons svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 2;
+    }
+
+    #onecall-list-preview .app-bar {
+      height: 52px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #onecall-list-preview .app-title {
+      margin: 0;
+      font-size: 17px;
+      line-height: 24px;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .capsule {
+      width: 86px;
+      height: 32px;
+      justify-content: space-evenly;
+      border: 1px solid #dbe1e8;
+      border-radius: 16px;
+      color: #1f2937;
+    }
+
+    #onecall-list-preview .capsule-divider {
+      width: 1px;
+      height: 18px;
+      background: #e4e8ee;
+    }
+
+    #onecall-list-preview .capsule svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2;
+    }
+
+    #onecall-list-preview .view-controls {
+      padding: 8px 16px 12px;
+    }
+
+    #onecall-list-preview .segmented {
+      height: 40px;
+      padding: 3px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px;
+      background: #f0f3f7;
+      border-radius: 10px;
+    }
+
+    #onecall-list-preview .segment {
+      min-width: 0;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--oc-body);
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .segment[aria-pressed="true"] {
+      background: var(--oc-blue);
+      color: #ffffff;
+    }
+
+    #onecall-list-preview .filters {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    #onecall-list-preview .filter {
+      min-width: 0;
+      height: 34px;
+      padding: 0 2px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--oc-body);
+      font-size: 12px;
+      line-height: 18px;
+      font-weight: 400;
+    }
+
+    #onecall-list-preview .filter[aria-pressed="true"] {
+      border-color: #b7cdf9;
+      background: var(--oc-blue-soft);
+      color: var(--oc-blue);
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .list-shell {
+      min-height: 0;
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #onecall-list-preview .list-toolbar {
+      height: 46px;
+      flex: 0 0 46px;
+      padding: 0 17px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--oc-body);
+      font-size: 12px;
+      line-height: 18px;
+      font-weight: 400;
+    }
+
+    #onecall-list-preview .new-matter {
+      min-height: 36px;
+      gap: 5px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--oc-blue);
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .new-matter svg {
+      width: 16px;
+      height: 16px;
+      stroke-width: 1.8;
+    }
+
+    #onecall-list-preview .evidence-list {
+      min-height: 0;
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 12px 16px;
+      scrollbar-width: none;
+    }
+
+    #onecall-list-preview .evidence-list::-webkit-scrollbar {
+      display: none;
+    }
+
+    #onecall-list-preview .group + .group {
+      margin-top: 16px;
+    }
+
+    #onecall-list-preview .group-title {
+      margin: 0 4px 8px;
+      color: #596579;
+      font-size: 13px;
+      line-height: 20px;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .evidence-card {
+      width: 100%;
+      margin: 0 0 10px;
+      padding: 13px 13px 12px;
+      display: block;
+      position: relative;
+      text-align: left;
+      border: 1px solid var(--oc-line);
+      border-radius: 8px;
+      background: var(--oc-surface);
+      color: var(--oc-ink);
+    }
+
+    #onecall-list-preview .card-hit {
+      position: absolute;
+      z-index: 2;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+    }
+
+    #onecall-list-preview .card-content {
+      position: relative;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    #onecall-list-preview .evidence-card:last-child {
+      margin-bottom: 0;
+    }
+
+    #onecall-list-preview .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    #onecall-list-preview .card-source {
+      min-width: 0;
+      gap: 6px;
+      color: var(--oc-body);
+      font-size: 12px;
+      line-height: 18px;
+      font-weight: 400;
+    }
+
+    #onecall-list-preview .card-source svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px;
+      color: var(--oc-blue);
+      stroke-width: 1.8;
+    }
+
+    #onecall-list-preview .card-status {
+      flex: 0 0 auto;
+      gap: 4px;
+      color: var(--oc-success);
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .card-status.processing {
+      color: var(--oc-warning);
+    }
+
+    #onecall-list-preview .card-status svg {
+      width: 13px;
+      height: 13px;
+      stroke-width: 2;
+    }
+
+    #onecall-list-preview .card-title {
+      margin: 9px 26px 0 0;
+      overflow: hidden;
+      color: var(--oc-ink);
+      font-size: 15px;
+      line-height: 21px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .card-time {
+      margin: 4px 0 0;
+      color: var(--oc-soft);
+      font-size: 11px;
+      line-height: 17px;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .card-chevron {
+      position: absolute;
+      right: 11px;
+      top: 47px;
+      color: #a5afbd;
+    }
+
+    #onecall-list-preview .card-chevron svg {
+      width: 17px;
+      height: 17px;
+      stroke-width: 1.6;
+    }
+
+    #onecall-list-preview .summary {
+      margin-top: 10px;
+      padding-top: 9px;
+      border-top: 1px solid #edf0f4;
+    }
+
+    #onecall-list-preview .summary-label {
+      gap: 5px;
+      color: #56657a;
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .summary-label svg {
+      width: 13px;
+      height: 13px;
+      color: var(--oc-blue);
+      stroke-width: 1.8;
+    }
+
+    #onecall-list-preview .summary-text,
+    #onecall-list-preview .integrity-text {
+      margin: 5px 0 0;
+      color: #445064;
+      font-size: 12px;
+      line-height: 18px;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .facts {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    #onecall-list-preview .fact {
+      padding: 3px 7px;
+      border-radius: 5px;
+      background: #f1f5fa;
+      color: #607087;
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .integrity-text {
+      color: var(--oc-body);
+    }
+
+    #onecall-list-preview .filtered-empty {
+      min-height: 330px;
+      padding: 74px 24px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      color: var(--oc-soft);
+    }
+
+    #onecall-list-preview .filtered-empty svg {
+      width: 44px;
+      height: 44px;
+      color: #b8c6d6;
+      stroke-width: 1.3;
+    }
+
+    #onecall-list-preview .filtered-empty strong {
+      margin-top: 14px;
+      color: var(--oc-ink);
+      font-size: 15px;
+      line-height: 22px;
+      font-weight: 600;
+    }
+
+    #onecall-list-preview .filtered-empty span {
+      margin-top: 5px;
+      font-size: 13px;
+      line-height: 19px;
+      font-weight: 400;
+    }
+
+    #onecall-list-preview .clear-filter {
+      min-height: 44px;
+      margin-top: 10px;
+      padding: 0 14px;
+      border: 0;
+      background: transparent;
+      color: var(--oc-blue);
+      font-size: 13px;
+      line-height: 20px;
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .tab-bar {
+      height: 76px;
+      flex: 0 0 76px;
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      align-items: start;
+      padding: 9px 10px 18px;
+      border-top: 1px solid #e8edf3;
+      background: var(--oc-surface);
+    }
+
+    #onecall-list-preview .tab-item {
+      min-width: 0;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+      color: #7b8ba1;
+      font-size: 11px;
+      line-height: 15px;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    #onecall-list-preview .tab-item.active {
+      color: var(--oc-blue);
+      font-weight: 500;
+    }
+
+    #onecall-list-preview .tab-item svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 1.7;
+    }
+
+    #onecall-list-preview .home-indicator {
+      position: absolute;
+      left: 50%;
+      bottom: 6px;
+      width: 116px;
+      height: 4px;
+      transform: translateX(-50%);
+      border-radius: 2px;
+      background: #1f2937;
+    }
+
+    @media (max-width: 430px) {
+      #onecall-list-preview {
+        min-height: auto;
+        padding: 0;
+      }
+
+      #onecall-list-preview .phone {
+        width: 100%;
+        height: 812px;
+        border: 0;
+        border-radius: 0;
+      }
+
+      #onecall-list-preview .evidence-list {
+        padding-right: 10px;
+        padding-left: 10px;
+      }
+    }
+  </style>
+
+  <section class="phone" aria-label="一通话证据箱列表视图预览">
+    <div class="top-shell">
+      <div class="status-bar" aria-hidden="true">
+        <span>9:41</span>
+        <span class="status-icons">
+          <i data-lucide="signal"></i>
+          <i data-lucide="wifi"></i>
+          <i data-lucide="battery-full"></i>
+        </span>
+      </div>
+
+      <header class="app-bar">
+        <h1 class="app-title">证据箱</h1>
+        <div class="capsule" aria-label="微信小程序菜单">
+          <i data-lucide="ellipsis" aria-hidden="true"></i>
+          <span class="capsule-divider" aria-hidden="true"></span>
+          <i data-lucide="circle" aria-hidden="true"></i>
+        </div>
+      </header>
+
+      <section class="view-controls" aria-label="证据箱视图与类型筛选">
+        <div class="segmented" role="group" aria-label="证据组织方式">
+          <button class="segment" type="button" data-mode="time" aria-pressed="true">按时间</button>
+          <button class="segment" type="button" data-mode="matter" aria-pressed="false">按事情</button>
+        </div>
+        <div class="filters" aria-label="证据类型">
+          <button class="filter" type="button" data-filter="all" aria-pressed="true">全部</button>
+          <button class="filter" type="button" data-filter="call" aria-pressed="false">通话</button>
+          <button class="filter" type="button" data-filter="photo" aria-pressed="false">照片</button>
+          <button class="filter" type="button" data-filter="video" aria-pressed="false">录像</button>
+          <button class="filter" type="button" data-filter="audio" aria-pressed="false">录音</button>
+          <button class="filter" type="button" data-filter="file" aria-pressed="false">文件</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="list-shell" aria-label="证据列表">
+      <div class="list-toolbar">
+        <span id="oc-result-count">共 3 份证据</span>
+        <button class="new-matter" type="button"><i data-lucide="folder-plus" aria-hidden="true"></i><span>新建事情</span></button>
+      </div>
+      <div id="oc-evidence-list" class="evidence-list" aria-live="polite"></div>
+    </section>
+
+    <nav class="tab-bar" aria-label="主导航">
+      <span class="tab-item"><i data-lucide="phone-call" aria-hidden="true"></i><span>取证</span></span>
+      <span class="tab-item active" aria-current="page"><i data-lucide="archive" aria-hidden="true"></i><span>证据箱</span></span>
+      <span class="tab-item"><i data-lucide="file-check-2" aria-hidden="true"></i><span>出证</span></span>
+      <span class="tab-item"><i data-lucide="user-round" aria-hidden="true"></i><span>我的</span></span>
+      <span class="home-indicator" aria-hidden="true"></span>
+    </nav>
+  </section>
+
+  <script>
+    (function () {
+      const root = document.getElementById("onecall-list-preview");
+      const list = root.querySelector("#oc-evidence-list");
+      const count = root.querySelector("#oc-result-count");
+      const records = [
+        {
+          id: "call-1",
+          type: "call",
+          source: "通话 · 05:42",
+          icon: "phone-call",
+          status: "已存证",
+          statusIcon: "shield-check",
+          statusClass: "",
+          title: "小李与张哥｜5万元借款确认",
+          time: "今天 14:32",
+          dateGroup: "今天",
+          matterGroup: "借款纠纷 · 2份",
+          summary: "张哥确认收到 5 万元借款，承诺 10 月 20 日前归还。",
+          facts: ["金额 5 万元", "日期 10 月 20 日", "承诺归还"]
+        },
+        {
+          id: "photo-1",
+          type: "photo",
+          source: "照片 · 现场拍摄",
+          icon: "camera",
+          status: "已存证",
+          statusIcon: "shield-check",
+          statusClass: "",
+          title: "借条原件 · 现场照片",
+          time: "今天 10:18",
+          dateGroup: "今天",
+          matterGroup: "借款纠纷 · 2份",
+          integrity: "拍摄时间、设备信息和文件哈希已记录"
+        },
+        {
+          id: "file-1",
+          type: "file",
+          source: "文件 · 微信导入",
+          icon: "file-text",
+          status: "存证中",
+          statusIcon: "clock-3",
+          statusClass: "processing",
+          title: "借款转账回单.pdf",
+          time: "10 月 11 日 09:06",
+          dateGroup: "10 月 11 日",
+          matterGroup: "未归档 · 1份",
+          integrity: "原始文件已加密保存，正在获取存证回执"
+        }
+      ];
+
+      let mode = "time";
+      let filter = "all";
+
+      function esc(value) {
+        return String(value).replace(/[&<>"']/g, function (char) {
+          return {"&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"}[char];
+        });
+      }
+
+      function card(record) {
+        const detail = record.summary
+          ? '<div class="summary"><div class="summary-label"><i data-lucide="sparkles" aria-hidden="true"></i><span>AI 要点</span></div><p class="summary-text">' + esc(record.summary) + '</p><div class="facts">' + record.facts.map(function (fact) { return '<span class="fact">' + esc(fact) + '</span>'; }).join("") + '</div></div>'
+          : '<div class="summary"><p class="integrity-text">' + esc(record.integrity) + '</p></div>';
+
+        return '<article class="evidence-card"><button class="card-hit" type="button" aria-label="查看' + esc(record.title) + '"></button><div class="card-content">' +
+          '<div class="card-top"><span class="card-source"><i data-lucide="' + esc(record.icon) + '" aria-hidden="true"></i><span>' + esc(record.source) + '</span></span>' +
+          '<span class="card-status ' + esc(record.statusClass) + '"><i data-lucide="' + esc(record.statusIcon) + '" aria-hidden="true"></i><span>' + esc(record.status) + '</span></span></div>' +
+          '<h3 class="card-title">' + esc(record.title) + '</h3><p class="card-time">' + esc(record.time) + '</p>' +
+          '<span class="card-chevron" aria-hidden="true"><i data-lucide="chevron-right"></i></span>' + detail + '</div></article>';
+      }
+
+      function render() {
+        const visible = records.filter(function (record) { return filter === "all" || record.type === filter; });
+        count.textContent = visible.length ? "共 " + visible.length + " 份证据" : "暂无此类证据";
+
+        if (!visible.length) {
+          const label = root.querySelector('.filter[data-filter="' + filter + '"]').textContent;
+          list.innerHTML = '<div class="filtered-empty"><i data-lucide="list-filter" aria-hidden="true"></i><strong>没有' + esc(label) + '证据</strong><span>其他证据仍安全保存在证据箱中</span><button class="clear-filter" type="button">查看全部</button></div>';
+          list.querySelector(".clear-filter").addEventListener("click", function () { setFilter("all"); });
+        } else {
+          const groupKey = mode === "time" ? "dateGroup" : "matterGroup";
+          const groups = [];
+          visible.forEach(function (record) {
+            let group = groups.find(function (entry) { return entry.name === record[groupKey]; });
+            if (!group) {
+              group = {name: record[groupKey], items: []};
+              groups.push(group);
+            }
+            group.items.push(record);
+          });
+          list.innerHTML = groups.map(function (group) {
+            return '<section class="group"><h2 class="group-title">' + esc(group.name) + '</h2>' + group.items.map(card).join("") + '</section>';
+          }).join("");
+        }
+
+        if (window.lucide) {
+          window.lucide.createIcons({attrs: {"aria-hidden": "true"}});
+        }
+      }
+
+      function remember() {
+        if (window.openai && window.openai.setWidgetState) {
+          window.openai.setWidgetState({modelContent: {mode: mode, filter: filter}, privateContent: null}).catch(function () {});
+        }
+      }
+
+      function setMode(nextMode, persist) {
+        mode = nextMode;
+        root.querySelectorAll(".segment").forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+        });
+        render();
+        if (persist !== false) remember();
+      }
+
+      function setFilter(nextFilter, persist) {
+        filter = nextFilter;
+        root.querySelectorAll(".filter").forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.filter === filter));
+        });
+        render();
+        if (persist !== false) remember();
+      }
+
+      const saved = window.openai && window.openai.widgetState && window.openai.widgetState.modelContent;
+      if (saved && ["time", "matter"].includes(saved.mode)) mode = saved.mode;
+      if (saved && ["all", "call", "photo", "video", "audio", "file"].includes(saved.filter)) filter = saved.filter;
+
+      root.querySelectorAll(".segment").forEach(function (button) {
+        button.addEventListener("click", function () { setMode(button.dataset.mode); });
+      });
+      root.querySelectorAll(".filter").forEach(function (button) {
+        button.addEventListener("click", function () { setFilter(button.dataset.filter); });
+      });
+      window.addEventListener("openai:set_globals", function (event) {
+        const next = event.detail && event.detail.globals && event.detail.globals.widgetState && event.detail.globals.widgetState.modelContent;
+        if (!next) return;
+        if (["time", "matter"].includes(next.mode)) mode = next.mode;
+        if (["all", "call", "photo", "video", "audio", "file"].includes(next.filter)) filter = next.filter;
+        setMode(mode, false);
+        setFilter(filter, false);
+      });
+
+      setMode(mode, false);
+      setFilter(filter, false);
+    })();
+  </script>
+</div>

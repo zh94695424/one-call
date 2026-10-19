@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 236 64" role="img" aria-label="一通话 ONECALL 横版组合 · 方案B">
+  <defs>
+    <linearGradient id="onecallBLock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2143FF"/>
+      <stop offset="1" stop-color="#1A36CC"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 6 C37.5 9.5 43.6 11.5 50 12.6 L50 28.7 C50 38.6 42.3 46.4 32 51.3 C21.7 46.4 14 38.6 14 28.7 L14 12.6 C20.4 11.5 26.5 9.5 32 6 Z" fill="url(#onecallBLock)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round">
+    <path d="M23.4 22.8 C24.7 30.3 29.9 35.5 37.4 36.9" stroke-width="3.8"/>
+    <path d="M36.7 19.1 a5.7 5.7 0 0 1 5.7 5.7" stroke-width="2.4"/>
+    <path d="M34.8 14 a10.9 10.9 0 0 1 10.9 10.9" stroke-width="2.4"/>
+  </g>
+  <circle cx="32" cy="41.2" r="1.75" fill="#FFFFFF"/>
+  <text x="62" y="33" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif" font-size="24" font-weight="600" fill="#1F2937" letter-spacing="1">一通话</text>
+  <text x="63" y="52" font-family="system-ui,'Segoe UI',sans-serif" font-size="12.5" font-weight="500" fill="#5F6B80" letter-spacing="4">ONECALL</text>
+</svg>
