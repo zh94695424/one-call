@@ -5,8 +5,8 @@
 - work unit：`cross-channel-alignment`，类型：feature（本地产品原型同步）。
 - design_doc：`docs/09-business-activation-and-lean-admin.md`。
 - control_doc：`docs/gateflow/cross-channel-alignment-control.md`。
-- 当前未完成 gate / next entry point：`re-review`（aggregate deepreview，第 3 轮）。
-- 状态：S1、S2、S3 均已接受并提交；第 3 轮窄修复已明确完成，四条企业授权撤销、权限与缺失/歧义原子拒绝、跨端导入回归均报告 PASS，controller 已读取完整 handoff 并接受为独立复审输入。C-02 仍待独立裁决，final closeout 尚未完成。
+- 当前未完成 gate / next entry point：`push`（ready-to-open-draft-PR 已完成本地检查）。
+- 状态：S1、S2、S3 均已接受并提交；aggregate deepreview 第 3 轮独立复审 PASS，A-01/A-02/A-03/B-01/C-01/C-02/N-01/N-02 全部已修复。accepted deepreview commit 为 `538d12d`；本地 readiness 已完成，因无 Git remote 在 push gate 停止。draft PR、远端 review、final closeout 尚未完成。
 - 派发协议：用户在默认 runner 重试仍不可用后，明确回复“继续”，授权改用当前会话内置子 Agent；这是用户明确覆盖，不是静默切换。后续本 work unit 统一使用内置子 Agent。
 - 用户已确认业务顺序与文档路径，并于本轮明确回复“开始”；不再要求重复确认相同业务范围。
 
@@ -90,8 +90,9 @@
 | aggregate re-review（第 2 轮） | `docs/reviews/code-review-20261020-225338.md`；FAIL；A-01/A-02/A-03/B-01/C-01/N-01/N-02 已修复，C-02 部分修复。shared 27/27、runner 1/1、三端完整 QA、最终 cross-channel、generator/syntax/diff PASS；四个企业管理员授权撤销真实点击仍返回 NOT_FOUND；Agent 明确完成 |
 | aggregate fix（第 3 轮） | `docs/gateflow/cross-channel-alignment-aggregate-fix.md:321`；仅修改 Web 源/preview/QA、cross-channel QA 与 fix artifact；四条企业管理员授权及成员/证据本人、权限、缺失/歧义原子拒绝与跨端导入均报告 PASS。shared 27/27、runner 1/1、Web full、最终 cross-channel、generator/syntax/11 inline scripts/diff PASS；4 新增/19 刷新图片，13 张目检，0 删除；Agent 明确完成，accepted as re-review input |
 | aggregate re-review（第 3 轮） | `docs/reviews/code-review-20261020-235705.md`；PASS；C-02 已修复，无新增 finding。四条企业管理员授权、成员/证据管理员/审计员权限、缺失/歧义原子拒绝、Mini 同号复用及 Ops/Mini 导入均独立通过；shared 27/27、runner 1/1、generator/syntax/inline、Web full、最终 cross-channel PASS；4 新增/19 changed/0 deleted 图片，4 张新增图原分辨率目检 |
-| accepted deepreview commit | 待创建；全部 aggregate findings 已完成独立复审，准备 stage/commit |
-| 后续 gates | `ready-to-open-draft-PR`；无 Git remote，push/draft PR/远端 review 仍为外部阻断 |
+| accepted deepreview commit | `538d12d` (`gateflow: accept deepreview for cross-channel-alignment`)；74 files，包含全部 aggregate fixes、三端规则/原型/QA、复审 artifacts 与 alignment screenshots；`git diff --cached --check` 已通过 |
+| ready-to-open-draft-PR | `docs/gateflow/cross-channel-alignment-readiness.md`；本地 branch/status/commit range、validation、docs、risks、拟定 PR title/body 已记录；ready 条件满足 |
+| push | **blocked**；`git remote -v` 无输出，无法执行 push / create draft PR / PR review |
 
 ### Plan review finding 裁决
 
@@ -168,4 +169,4 @@ Re-review open questions 裁决：transition `channel` 增加 `OPERATIONS`，继
 
 ## 下一步
 
-Aggregate 第 3 轮独立 re-review 已通过。下一步由 controller 创建 accepted deepreview local commit，再进入 ready-to-open-draft-PR；生产能力、正式配置、视觉证据限制及旧企业号码展示分支按 owner/destination 记录。
+Aggregate 第 3 轮独立 re-review 与 accepted deepreview commit 已完成；ready-to-open-draft-PR 本地检查已完成，当前停在 push gate，等待仓库维护者配置 remote。生产能力、正式配置、视觉证据限制及旧企业号码展示分支按 owner/destination 记录。
