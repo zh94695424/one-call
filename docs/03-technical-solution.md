@@ -1,5 +1,7 @@
 # 一通话 ONECALL 技术方案
 
+> 2026-10-20 架构覆盖：以 [09 当前业务基线](09-business-activation-and-lean-admin.md) 的自建 IVR、稳定 BusinessSubject、ConsentRecord、内部 ServiceActivation、一次 TrialGrant 和追加 SubjectClaim 为准。下文 CarrierProvisioning/运营商订购开通接口与全局实名前置状态机属旧稿，已被覆盖；IVR 负责通信采集与控制，后台负责开通/订购/权益，运营商仅提供基础通信承载。支付仍需可信服务端确认；未实名 IVR 可试用产证，但不等于公证资格。
+
 > 状态：技术评审稿  
 > 版本：v0.4  
 > 基线日期：2026-10-19  

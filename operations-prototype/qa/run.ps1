@@ -6,4 +6,7 @@ $previewPath = Join-Path $prototypeRoot 'preview.html'
 
 Copy-Item -LiteralPath $sourcePath -Destination $previewPath -Force
 node (Join-Path $PSScriptRoot 'qa.js')
+if ($LASTEXITCODE -ne 0) {
+    throw "Operations prototype QA failed (exit $LASTEXITCODE)"
+}
 
