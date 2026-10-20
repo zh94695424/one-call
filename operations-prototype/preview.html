@@ -14,6 +14,8 @@
 .login-shell{min-height:100vh;display:grid;grid-template-columns:1fr 1fr;background:#fff}.login-brand{background:var(--nav);color:white;display:flex;flex-direction:column;justify-content:space-between;padding:52px}.login-brand h1{font-size:36px;line-height:1.5}.login-brand p{color:#bdcdd9;line-height:1.9}.login-brand img{width:180px}.login-main{display:grid;place-items:center;padding:40px}.login-panel{max-width:390px;width:100%}.login-panel h2{font-size:26px;margin:0 0 12px}.login-panel p{color:var(--muted);line-height:1.8}.field{display:grid;gap:7px;font-size:13px;font-weight:600}.field small{font-weight:400;color:var(--muted);line-height:1.6}.login-panel .btn{width:100%;margin-top:8px}.review{position:fixed;left:16px;bottom:14px;z-index:20}.review summary{cursor:pointer;border:1px solid #4c6578;background:#203a50;color:#d7e3ed;border-radius:5px;padding:7px 11px;font-size:11px}.review-body{position:absolute;bottom:38px;left:0;width:300px;max-height:65vh;overflow:auto;background:white;border:1px solid var(--line);padding:18px;border-radius:7px;box-shadow:0 8px 30px #10283928}.review-body select,.review-body button{width:100%}.review-body p{font-size:11px;color:var(--muted);line-height:1.6}.modal-backdrop{position:fixed;inset:0;background:#10253688;z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}.modal{background:white;border-radius:8px;max-width:620px;width:100%;max-height:calc(100vh - 48px);overflow:auto;box-shadow:0 20px 60px #10253644}.modal-head{display:flex;justify-content:space-between;gap:16px;padding:20px;border-bottom:1px solid var(--line)}.modal h2{font-size:18px;margin:0}.modal-body{padding:20px;display:grid;gap:16px}.modal-body p{margin:0;line-height:1.8;font-size:13px}.modal-actions{display:flex;justify-content:flex-end;gap:10px;padding:16px 20px;border-top:1px solid var(--line)}.error{color:#a33e46;line-height:1.7;font-size:12px;min-height:20px}.toast{position:fixed;bottom:24px;right:24px;background:#203c50;color:white;border-radius:6px;padding:14px 20px;font-size:13px;z-index:100;max-width:calc(100vw - 48px);line-height:1.7}.hidden{display:none!important}
 @media(max-width:1180px){.sidebar{width:76px}.brand{justify-content:center;padding:16px}.brand div,.nav-copy,.nav-label,.sidebar-foot{display:none}.nav-item{justify-content:center;padding:10px}.main{margin-left:76px;padding:84px 20px 50px}.topbar{left:76px}.review summary{font-size:0;padding:10px}.review summary:after{content:"演示";font-size:11px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:860px){.grid{grid-template-columns:1fr}.topbar{padding:12px 18px}.topbar .staff-copy{display:none}.steps{grid-template-columns:1fr}.page-head{flex-wrap:wrap}.login-shell{grid-template-columns:1fr}.login-brand{display:none}.modal-backdrop{padding:12px}.modal{max-height:calc(100vh - 24px)}.meta{grid-template-columns:105px minmax(0,1fr)}.review-body{width:min(300px,calc(100vw - 36px))}}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.form-wide{grid-column:1/-1}.modal:has(.form-grid){max-width:880px}.login-hints{margin-top:22px;border-top:1px solid var(--line);padding-top:16px;font-size:12px;color:var(--muted)}.login-hints summary{cursor:pointer;color:var(--brand)}.login-hints p{margin:8px 0}.credential-code{font:32px Consolas,monospace;color:var(--brand);letter-spacing:6px}.nav-symbol{font-size:21px;width:22px;text-align:center;flex:none}.subnav .link{padding:4px 10px}.meta,.table-wrap,.panel,.content{min-width:0}.panel-body>.table-wrap:last-child{margin-bottom:0}.table-wrap td{overflow-wrap:anywhere;max-width:400px}.modal-actions{position:sticky;bottom:0;background:white}.sidebar-foot .link{color:#b9d3e8}.form-grid input[type="checkbox"]{width:auto}
+@media(max-width:860px){.form-grid{grid-template-columns:1fr}.form-wide{grid-column:auto}}
 </style>
 </head>
 <body>
@@ -894,196 +896,276 @@
 <script>
 (() => {
 'use strict';
-const $ = s => document.querySelector(s);
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const clone = v => JSON.parse(JSON.stringify(v));
-const money = cents => '¥' + (cents / 100).toFixed(2);
-const channel = c => ({MINIAPP:'微信小程序',WEB:'Web',IVR:'IVR 声讯'}[c] || c);
-const ivrLabel = c => ({RECEIVED:'等待确认',CONFIRMED:'已按键确认',ABANDONED:'未确认退出',REJECTED:'呼入被拒绝'}[c] || c);
-const saleLabel = c => ({ACTIVE:'在售',DRAFT:'待发布',OFFSALE:'已下架'}[c] || c);
-const paymentLabel = c => ({PAID:'支付成功',UNPAID:'未支付',UNKNOWN:'结果待核实',CLOSED:'已关闭'}[c] || c);
-const pill = (v,t='') => '<span class="pill '+t+'">'+esc(v)+'</span>';
-const link = (r,v) => '<button class="link" data-route="'+esc(r)+'">'+esc(v)+'</button>';
-const btn = (v,a,id='',style='') => '<button class="btn '+style+'" data-action="'+a+'" data-id="'+esc(id)+'">'+esc(v)+'</button>';
-const meta = (k,v) => '<dl class="meta"><dt>'+esc(k)+'</dt><dd>'+v+'</dd></dl>';
-const panel = (title,body) => '<section class="panel"><div class="panel-head"><h2>'+esc(title)+'</h2></div><div class="panel-body">'+body+'</div></section>';
-const head = (title,sub,actions='') => '<div class="page-head"><div><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p></div><div class="actions">'+actions+'</div></div>';
-const table = (cols,rows,compact=false) => rows.length ? '<div class="table-wrap"><table'+(compact?' style="min-width:0"':'')+'><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>' : '<div class="empty"><h2>暂无符合条件的记录</h2><p>调整筛选条件后重试。</p></div>';
-const icon = () => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><path d="M3 16h18M3 21h18"/></svg>';
-const routes = [
-['/dashboard','运营概览','工作台'],['/users','用户管理','业务运营'],['/users/:id','用户详情',''],
-['/activations','业务开通','业务运营'],['/ivr-sessions','IVR 呼入','业务运营'],['/ivr-sessions/:id','IVR 会话详情',''],
-['/catalog','套餐设置','商品与交易'],['/catalog/:id','套餐版本详情',''],['/trial-settings','试用规则','商品与交易'],
-['/orders','订单查询','商品与交易'],['/orders/:id','订单详情',''],['/audit','操作记录','管理'],['/roadmap','后续规划','管理']
-].map(([path,title,group])=>({path,title,group}));
-const roles = {admin:'管理员',ops:'运营人员'};
-const state = {loggedIn:false,role:'admin',route:'/dashboard',dataMode:'normal',filter:{},modal:null,toastTimer:null,seq:100,
-  rule:{version:1,seconds:300,days:30,enabled:true,campaign:'FIRST-TRIAL'},
-  subjects:[
-    {id:'SUB-1001',name:'林某甲',phone:'138****4026',type:'手机号',source:'MINIAPP',account:'USR-2048',identity:'已实名',active:true,version:1,trial:{seconds:300,used:120,rule:1,expires:Date.now()+20*86400000},history:['小程序验证号码并确认服务协议 v1','首次领取 300 秒试用','已完成身份核验']},
-    {id:'SUB-1002',name:'IVR 试用用户',phone:'139****5137',type:'手机号',source:'IVR',account:null,identity:'未实名',active:true,version:1,trial:{seconds:300,used:60,rule:1,expires:Date.now()+25*86400000},history:['IVR IVR-8001 可信主叫呼入','播放 IVR-CONSENT-v1，按 1 明确同意','内部业务开通，首次发放 300 秒','未实名试用录音 60 秒，证据已固证']},
-    {id:'SUB-1003',name:'周某乙',phone:'186****2251',type:'手机号',source:'WEB',account:'USR-2271',identity:'已实名',active:true,version:1,trial:{seconds:300,used:300,rule:1,expires:Date.now()+10*86400000},history:['Web 验证号码并开通','试用 300 秒已耗尽，未再次发放']},
-    {id:'SUB-1004',name:'IVR 固话用户',phone:'021-****7812',type:'独立固话',source:'IVR',account:null,identity:'未实名',active:false,version:1,trial:{seconds:300,used:300,rule:1,expires:Date.now()-86400000},history:['自建 IVR 主叫挑战验证','按键同意开通并领取试用','试用已耗尽，线下确认暂停新取证']},
-    {id:'SUB-1005',name:'试用到期用户',phone:'137****1086',type:'手机号',source:'IVR',account:null,identity:'未实名',active:true,version:1,trial:{seconds:300,used:60,rule:1,expires:Date.now()-86400000},history:['IVR 明确按键开通并领取试用','试用已到期，剩余 240 秒不可使用']}
-  ],
-  sessions:[{id:'IVR-8001',subject:'SUB-1002',caller:'139****5137',status:'CONFIRMED',key:'1',consent:'IVR-CONSENT-v1',outcome:'已开通 · 首次试用 300 秒',guided:true,time:'样例 · 09:16'},
-    {id:'IVR-8002',subject:'SUB-1004',caller:'021-****7812',status:'CONFIRMED',key:'1',consent:'IVR-CONSENT-v1',outcome:'已开通 · 首次试用 300 秒',guided:true,time:'样例 · 昨天'},
-    {id:'IVR-8003',subject:null,caller:'无法识别',status:'REJECTED',key:'—',consent:'未播放',outcome:'主叫缺失，未开通、未发试用',guided:false,time:'样例 · 09:22'}],
-  evidence:[{id:'EVI-9901',subject:'SUB-1002',session:'IVR-8001',seconds:60,identityAtCapture:'未实名',status:'已固证'}],
-  activations:[{id:'ACT-7001',subject:'SUB-1001',source:'MINIAPP',basis:'服务协议 v1 / 显式勾选',result:'ACTIVE'},
-    {id:'ACT-7002',subject:'SUB-1002',source:'IVR',basis:'IVR-8001 / 语音 v1 / 按 1',result:'ACTIVE'},
-    {id:'ACT-7003',subject:'SUB-1003',source:'WEB',basis:'服务协议 v1 / 显式勾选',result:'ACTIVE'},
-    {id:'ACT-7004',subject:'SUB-1004',source:'IVR',basis:'IVR-8002 / 语音 v1 / 按 1',result:'ACTIVE'}],
-  catalog:[{id:'PKG-PER-1',sku:'PERSONAL',version:1,name:'个人基础套餐',price:2900,minutes:100,days:30,status:'ACTIVE'},
-    {id:'PKG-PLUS-1',sku:'PLUS',version:1,name:'个人进阶套餐',price:5900,minutes:300,days:30,status:'ACTIVE'},
-    {id:'PKG-TEAM-1',sku:'TEAM',version:1,name:'团队套餐（示例）',price:19900,minutes:1000,days:30,status:'OFFSALE'}],
-  orders:[{id:'ORD-601',subject:'SUB-1001',source:'MINIAPP',payment:'PAID',entitlement:'已到账',snapshot:{id:'PKG-PER-1',name:'个人基础套餐',price:2900,minutes:100,days:30}},
-    {id:'ORD-602',subject:'SUB-1003',source:'WEB',payment:'PAID',entitlement:'发放中',snapshot:{id:'PKG-PLUS-1',name:'个人进阶套餐',price:5900,minutes:300,days:30}},
-    {id:'ORD-603',subject:'SUB-1003',source:'WEB',payment:'UNPAID',entitlement:'未发放',snapshot:{id:'PKG-PER-1',name:'个人基础套餐',price:2900,minutes:100,days:30}},
-    {id:'ORD-604',subject:'SUB-1001',source:'MINIAPP',payment:'UNKNOWN',entitlement:'未发放',snapshot:{id:'PKG-PER-1',name:'个人基础套餐',price:2900,minutes:100,days:30}}],
-  audit:[{id:'LOG-1',actor:'ivr-service',object:'SUB-1002',event:'试用发放',detail:'0 → 300 秒 / FIRST-TRIAL / 规则 v1',reason:'IVR-8001 按 1 确认',time:'样例 · 09:16'}]
-};
-const getSubject = id => state.subjects.find(s=>s.id===id);
-const getProduct = id => state.catalog.find(p=>p.id===id);
-const rest = s => s.trial ? Math.max(0,s.trial.seconds-s.trial.used) : 0;
-const trialText = s => !s.trial ? '未领取' : s.trial.expires<=Date.now() ? '已到期' : rest(s)===0 ? '已耗尽' : rest(s)+' 秒可用';
-function log(event,object,detail,reason,actor=roles[state.role]){state.audit.unshift({id:'LOG-'+(++state.seq),actor,object,event,detail,reason,time:new Date().toLocaleTimeString('zh-CN',{hour12:false})});}
+const B=window.OnecallBusiness;
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clone=v=>JSON.parse(JSON.stringify(v));
+const money=c=>c===null?'咨询报价（待确认）':'¥'+(c/100).toFixed(2);
+const channel=c=>({MINIAPP:'微信小程序',WEB:'Web',IVR:'IVR 声讯'}[c]||c);
+const roles={admin:'管理员',ops:'运营人员'};
+const label=(group,value)=>B.labels[group]?.[value]||value;
+const pill=(v,t='')=>'<span class="pill '+t+'">'+esc(v)+'</span>';
+const link=(r,v)=>'<button class="link" data-route="'+esc(r)+'">'+esc(v)+'</button>';
+const btn=(v,a,id='',style='')=>'<button class="btn '+style+'" data-action="'+a+'" data-id="'+esc(id)+'">'+esc(v)+'</button>';
+const meta=(k,v)=>'<dl class="meta"><dt>'+esc(k)+'</dt><dd>'+v+'</dd></dl>';
+const panel=(title,body)=>'<section class="panel"><div class="panel-head"><h2>'+esc(title)+'</h2></div><div class="panel-body">'+body+'</div></section>';
+const head=(title,sub,actions='')=>'<div class="page-head"><div><h1>'+esc(title)+'</h1><p>'+esc(sub)+'</p></div><div class="actions">'+actions+'</div></div>';
+const table=(cols,rows)=>rows.length?'<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>':'<div class="empty"><h2>暂无符合条件的记录</h2><p>调整筛选条件后重试。</p></div>';
+const select=(id,items,value)=>'<select id="'+id+'">'+items.map(([v,l])=>'<option value="'+v+'" '+(String(value)===String(v)?'selected':'')+'>'+esc(l)+'</option>').join('')+'</select>';
+const field=(title,id,value='',extra='')=>'<label class="field">'+title+'<input id="'+id+'" value="'+esc(value)+'" '+extra+'></label>';
+const reasonField=()=>'<label class="field">操作理由<textarea id="reason" maxlength="200" placeholder="至少 4 个字，说明本次变更原因"></textarea></label>';
+const routeDefs=[
+['/dashboard','运营概览',true],['/users','用户管理',true],['/catalog','套餐设置',true],['/orders','订单查询',true],['/employees','员工账号',true],['/audit','操作记录',true],
+['/users/:id','用户详情'],['/activations','业务开通'],['/ivr-sessions','IVR 呼入'],['/ivr-sessions/:id','IVR 会话详情'],['/catalog/:id','套餐版本详情'],['/trial-settings','试用规则'],['/orders/:id','订单详情'],['/employees/:id','员工详情'],['/roadmap','线下客服说明']
+].map(([path,title,primary=false])=>({path,title,primary}));
+const now=Date.now(),day=86400000,at=new Date(now).toISOString();
+const business=B.createDemoState(new Date(now));
+// These pre-alignment facts retain their original money, quota, IDs and capture facts.
+const oldOffers=[['PER','PERSONAL','个人基础套餐',2900,100],['PLUS','PLUS','个人进阶套餐',5900,300],['TEAM','TEAM','团队套餐（示例）',19900,1000]].map(([code,sku,name,priceCents,minutes])=>({
+ productCode:'HISTORY_'+code,sku:'HISTORY_'+sku,versionId:'PKG-'+code+'-1',version:1,name,description:'历史演示版本；保留旧记录，不作为当前新购推荐',type:'ONE_TIME',audience:'PERSONAL',priceCents,validDays:30,billingCycle:'ONCE',installments:1,grantIntervalMonths:0,rights:{recordingMinutes:minutes,aiMinutes:0,evidenceCount:0,storageGB:0,seats:0,fixedLines:0},channels:['MINIAPP','WEB'],sortOrder:9000,saleStatus:'OFFSALE',demo:true,policyStatus:'DEMO_NOT_APPROVED',includedFeatures:['历史快照'],revision:1,historical:true
+}));
+business.catalog.push(...oldOffers);
+business.catalog.forEach(p=>{p.revision=1;});
+const subjectNames={'SUB-1001':'林某甲','SUB-1002':'IVR 试用用户','SUB-1003':'周某乙','SUB-1004':'IVR 固话用户','SUB-1005':'试用到期用户'};
+[
+['SUB-1001','138****4026','MOBILE','MINIAPP','USR-2048','VERIFIED','ACTIVE',120,20],
+['SUB-1002','139****5137','MOBILE','IVR',null,'UNVERIFIED','ACTIVE',60,25],
+['SUB-1003','186****2251','MOBILE','WEB','USR-2271','VERIFIED','ACTIVE',300,10],
+['SUB-1004','021-****7812','LANDLINE','IVR',null,'UNVERIFIED','SUSPENDED',300,-1],
+['SUB-1005','137****1086','MOBILE','IVR',null,'UNVERIFIED','ACTIVE',60,-1]
+].forEach(([id,maskedNumber,numberType,source,accountId,identity,activation,used,days])=>{
+ business.subjects.push({id,maskedNumber,numberType,source,accountId,identity,activation,revision:1,claimRisk:'NONE'});
+ business.trialGrants.push({id:'TRIAL-HISTORY-'+id,subjectId:id,campaignId:'FIRST-TRIAL',ruleVersion:1,grantedSeconds:300,usedSeconds:used,grantedAt:new Date(now-30*day).toISOString(),expiresAt:new Date(now+days*day).toISOString()});
+});
+[['IVR-8001','SUB-1002','139****5137'],['IVR-8002','SUB-1004','021-****7812']].forEach(([id,subjectId,maskedCaller])=>{
+ business.sessions.push({id,subjectId,confirmedSubjectId:subjectId,maskedCaller,trustedCaller:true,status:'CONFIRMED',consentVersion:'IVR-CONSENT-v1',key:'1',guidanceStatus:'GUIDED',scenario:'REPEAT_CALL',createdAt:at});
+});
+business.sessions.push({id:'IVR-8003',subjectId:null,confirmedSubjectId:null,maskedCaller:null,trustedCaller:false,status:'REJECTED',consentVersion:'IVR-CONSENT-v1',key:null,guidanceStatus:'NOT_GUIDED',scenario:'MISSING_CALLER',createdAt:at});
+business.evidence.push({id:'EVI-9901',subjectId:'SUB-1002',sessionId:'IVR-8001',recordedSeconds:60,identityAtCapture:'UNVERIFIED',consentVersion:'IVR-CONSENT-v1',createdAt:at,preservationStatus:'PRESERVED'});
+[['ACT-7001','SUB-1001','MINIAPP'],['ACT-7002','SUB-1002','IVR','IVR-8001'],['ACT-7003','SUB-1003','WEB'],['ACT-7004','SUB-1004','IVR','IVR-8002']].forEach(([id,subjectId,channel,sessionId])=>{
+ const a={id,subjectId,channel,consentVersion:channel==='IVR'?'IVR-CONSENT-v1':'服务协议 v1',confirmation:channel==='IVR'?'KEY_1':'EXPLICIT',eventId:'HISTORY-'+id,at};
+ if(sessionId)a.sessionId=sessionId;business.activations.push(a);
+});
+[['ORD-601','SUB-1001','MINIAPP','PAID','ISSUED',0],['ORD-602','SUB-1003','WEB','PAID','PENDING',1],['ORD-603','SUB-1003','WEB','UNPAID','NOT_ISSUED',0],['ORD-604','SUB-1001','MINIAPP','UNKNOWN','NOT_ISSUED',0]].forEach(([id,subjectId,channel,payment,entitlement,index])=>{
+ const snapshot=clone(oldOffers[index]);snapshot.saleStatus='ACTIVE';
+ const order={id,subjectId,accountId:business.subjects.find(s=>s.id===subjectId).accountId,channel,payment,entitlement,snapshot,createdAt:at,idempotencyKey:'HISTORY-'+id,consentVersion:'服务协议 v1'};business.orders.push(order);
+ if(entitlement==='ISSUED')business.entitlements.push({id:'ENT-HISTORY-'+id,orderId:id,subjectId,ownerAccountId:order.accountId,snapshot:clone(snapshot),issuedAt:at});
+});
+if(!B.snapshot(business).ok)throw Error('历史事实迁移校验失败');
+const employees=[
+{id:'EMP-001',loginName:'admin.lin',displayName:'林管理员',role:'admin',status:'ACTIVE',revision:1,credentialVersion:1},
+{id:'EMP-002',loginName:'admin.chen',displayName:'陈管理员',role:'admin',status:'ACTIVE',revision:1,credentialVersion:1},
+{id:'EMP-003',loginName:'ops.zhou',displayName:'周运营',role:'ops',status:'ACTIVE',revision:1,credentialVersion:1},
+{id:'EMP-004',loginName:'ops.wu',displayName:'吴运营',role:'ops',status:'ACTIVE',revision:1,credentialVersion:1},
+{id:'EMP-005',loginName:'disabled.li',displayName:'李同事（停用）',role:'ops',status:'DISABLED',revision:1,credentialVersion:1}
+];
+const credentials=new Map([['EMP-001','482916'],['EMP-002','593027'],['EMP-003','604138'],['EMP-004','715249'],['EMP-005','826350']]);
+const hints=[['admin.lin','482916','管理员'],['admin.chen','593027','管理员'],['ops.zhou','604138','运营'],['ops.wu','715249','运营'],['disabled.li','826350','已停用']];
+const state={business,employees,session:null,route:'/dashboard',filter:{},dataMode:'normal',reviewScenario:'new',modal:null,toastTimer:null,seq:100,audit:[{id:'LOG-1',actorEmployeeId:'SERVICE:ivr',actorDisplayNameAtAction:'IVR 服务',roleAtAction:'service',event:'试用发放',object:'SUB-1002',before:null,after:'300 秒 / FIRST-TRIAL / 规则 v1',reason:'IVR-8001 按 1 确认',time:'历史样例'}]};
+const one=(rows,key,id)=>{const list=rows.filter(x=>x[key]===id);return list.length===1?list[0]:null;};
+const subject=id=>one(business.subjects,'id',id);
+const product=id=>one(business.catalog,'versionId',id);
+const employee=id=>one(employees,'id',id);
+function actor(){const s=state.session,e=s&&employee(s.employeeId);return e&&e.status==='ACTIVE'&&e.credentialVersion===s.credentialVersion&&e.role===s.role?e:null;}
+const isAdmin=()=>actor()?.role==='admin';
+const trial=id=>B.trialStatus(business,id,new Date()).value;
+function trialText(s){const t=trial(s.id);return t?label('trial',t.status)+(t.status==='AVAILABLE'?' · '+t.remainingSeconds+' 秒可用':''):'试用状态异常';}
+function audit(event,object,before,after,reason,service){const a=actor();if(!a&&!service)throw Error('无效员工会话');state.audit.unshift({id:'LOG-'+(++state.seq),actorEmployeeId:service?'SERVICE:'+service:a.id,actorDisplayNameAtAction:service||a.displayName,roleAtAction:service?'service':a.role,event,object,before:clone(before),after:clone(after),reason,time:new Date().toLocaleString('zh-CN',{hour12:false})});}
 function dismissToast(){clearTimeout(state.toastTimer);state.toastTimer=null;$('#toast-root').innerHTML='';}
 function notify(message){dismissToast();$('#toast-root').innerHTML='<div class="toast">'+esc(message)+'</div>';state.toastTimer=setTimeout(dismissToast,4500);}
-function resolve(route){return routes.find(r=>r.path===route || (r.path.endsWith('/:id')&&route.startsWith(r.path.slice(0,-4)+'/')&&route.split('/').length===3));}
-function go(route){if(typeof route!=='string'||!route.startsWith('/'))return;closeModal();dismissToast();state.filter={};state.route=route;location.hash=route;render();}
-function loginView(){return '<div class="login-shell"><div class="login-brand"><img src="../logo/onecall-logo-b-lockup-white.svg" alt="一通话 ONECALL"><div><h1>把业务看清楚，<br>把运营做简单。</h1><p>统一管理三端用户、业务开通与套餐。<br>IVR 试用与小程序、Web 购买在同一后台汇总。</p></div><p class="small">ONECALL · 平台员工工作空间</p></div><div class="login-main"><section class="login-panel"><h2>运营后台登录</h2><p>平台员工使用。客户请从微信小程序或 Web 登录。</p><form id="login-form" class="stack"><label class="field">演示员工角色<select id="login-role"><option value="admin">管理员</option><option value="ops">运营人员</option></select></label><label class="field">演示验证码<input id="login-code" autocomplete="off" placeholder="输入 482916" maxlength="6"><small>本地原型，不连接真实员工身份服务。</small></label><button class="btn primary" type="submit">进入运营后台</button></form></section></div></div>';}
-function nav(){let group='';return routes.filter(r=>r.group).map(r=>{const label=r.group!==group?'<div class="nav-label">'+esc(r.group)+'</div>':'';group=r.group;const active=state.route===r.path||(r.path!=='/dashboard'&&state.route.startsWith(r.path+'/'));return label+'<button class="nav-item '+(active?'active':'')+'" data-route="'+r.path+'" title="'+r.title+'">'+icon()+'<span class="nav-copy">'+r.title+'</span></button>';}).join('');}
+function closeModal(){const focus=state.modal?.focus;state.modal=null;$('#modal-root').innerHTML='';if(focus?.isConnected)focus.focus();}
+function logout(message){closeModal();state.session=null;state.filter={};state.dataMode='normal';state.route='/dashboard';location.hash='/dashboard';render();if(message)notify(message);}
+function resolve(r){return routeDefs.find(x=>x.path===r||(x.path.endsWith('/:id')&&r.startsWith(x.path.slice(0,-4)+'/')&&r.split('/').length===3));}
+function go(r){if(typeof r!=='string'||!r.startsWith('/'))return;closeModal();dismissToast();state.route=r;state.filter={};location.hash=r;render();}
+function loginView(){return '<div class="login-shell"><div class="login-brand"><img src="../logo/onecall-logo-b-lockup-white.svg" alt="一通话 ONECALL"><div><h1>把业务看清楚，<br>把运营做简单。</h1><p>独立员工账号，操作留有依据。<br>统一查看用户、试用、套餐与订单。</p></div><p class="small">ONECALL · 平台员工工作空间</p></div><div class="login-main"><section class="login-panel"><h2>运营后台登录</h2><p>使用独立员工账号。角色由当前账号决定。</p><form id="login-form" class="stack">'+field('员工登录名','login-name','','autocomplete="username" maxlength="40" placeholder="admin.lin"')+field('六位 DEMO 登录码','login-code','','autocomplete="off" maxlength="6" placeholder="482916"')+'<button class="btn primary" type="submit">进入运营后台</button></form><details class="login-hints"><summary>本地 DEMO 账号</summary>'+hints.map(([n,c,r])=>'<p class="mono">'+n+' / '+c+' · '+r+'</p>').join('')+'<p class="small">仅本地评审；重置后的新码只在结果中展示一次。刷新恢复样例，不连接真实员工身份服务。</p></details></section></div></div>';}
+function ownerPath(){if(['/activations','/ivr-sessions'].some(p=>state.route.startsWith(p)))return '/users';if(state.route==='/trial-settings')return '/catalog';return '/'+state.route.split('/')[1];}
+function subnav(){const owner=ownerPath();return owner==='/users'?'<div class="toolbar subnav">'+link('/users','业务用户')+link('/activations','业务开通')+link('/ivr-sessions','IVR 呼入')+'</div>':owner==='/catalog'?'<div class="toolbar subnav">'+link('/catalog','套餐版本')+link('/trial-settings','试用设置')+'</div>':'';}
 function render(){
-  document.title=(resolve(state.route)?.title||'运营后台')+' · 一通话';
-  if(!state.loggedIn){$('#root').innerHTML=loginView();return;}
-  const route=resolve(state.route);
-  $('#root').innerHTML='<aside class="sidebar"><div class="brand"><img src="../logo/onecall-logo-b-icon-white.svg" alt=""><div><strong>一通话</strong><small>精简运营后台</small></div></div><nav class="nav" aria-label="主导航">'+nav()+'</nav><div class="sidebar-foot">本期以用户与套餐管理为主<br>工单 / 退款 / 发票由线下客服支持<br>本地原型 · 虚构数据</div></aside><header class="topbar"><strong>'+(route?esc(route.title):'页面未纳入本期')+'</strong><div class="actions"><span class="staff-copy">'+esc(roles[state.role])+' · 脱敏工作空间</span>'+btn('退出','logout')+'</div></header><main class="main"><div class="content" id="content">'+page(route)+'</div></main>'+reviewControls();
-  $('.nav-item.active')?.scrollIntoView({block:'nearest'});
+ if(state.session&&!actor()){logout('员工会话已失效，请重新登录');return;}
+ document.title=(resolve(state.route)?.title||'运营后台')+' · 一通话';
+ if(!actor()){$('#root').innerHTML=loginView();return;}
+ const a=actor(),r=resolve(state.route);
+ $('#root').innerHTML='<aside class="sidebar"><div class="brand"><img src="../logo/onecall-logo-b-icon-white.svg" alt=""><div><strong>一通话</strong><small>精简运营后台</small></div></div><nav class="nav" aria-label="主导航">'+routeDefs.filter(x=>x.primary).map(x=>'<button class="nav-item '+(ownerPath()===x.path?'active':'')+'" data-route="'+x.path+'" title="'+x.title+'" aria-label="'+x.title+'"><span class="nav-symbol" aria-hidden="true">'+({ '/dashboard':'◫','/users':'◉','/catalog':'▤','/orders':'▣','/employees':'♙','/audit':'☷'}[x.path])+'</span><span class="nav-copy">'+x.title+'</span></button>').join('')+'</nav><div class="sidebar-foot">5 人团队 · 脱敏工作空间<br>本地原型 / 虚构数据<br>'+link('/roadmap','线下客服说明')+'</div></aside><header class="topbar"><strong>'+esc(r?.title||'页面未纳入本期')+'</strong><div class="actions"><span class="staff-copy">'+esc(a.displayName)+' · '+esc(roles[a.role])+'</span>'+btn('退出','logout')+'</div></header><main class="main"><div class="content" id="content">'+subnav()+page(r)+'</div></main>'+reviewControls();
 }
-function reviewControls(){return '<details class="review"><summary>原型评审</summary><div class="review-body stack"><label class="field">员工角色<select id="review-role">'+Object.entries(roles).map(([v,l])=>'<option value="'+v+'" '+(state.role===v?'selected':'')+'>'+l+'</option>').join('')+'</select></label><label class="field">数据状态<select id="data-mode">'+[['normal','正常'],['empty','空数据'],['loading','加载中'],['unavailable','服务不可用']].map(([v,l])=>'<option value="'+v+'" '+(state.dataMode===v?'selected':'')+'>'+l+'</option>').join('')+'</select></label>'+btn('IVR 流程演示','demo')+'<p>演示呼入、按键、试用录音与验证认领。不会真实拨号、支付或发送消息。</p></div></details>';}
-function page(route){
-  if(!route)return head('页面未纳入本期','工单、退款、发票和完整业务中台留作后续规划。',link('/roadmap','查看后续规划'));
-  if(state.dataMode!=='normal')return head(route.title,'当前处于原型评审数据状态。')+'<div class="empty"><h2>'+({empty:'暂无业务数据',loading:'正在加载',unavailable:'服务暂不可用'}[state.dataMode])+'</h2><p>通过原型评审切回正常状态；此状态不执行任何写操作。</p></div>';
-  const id=state.route.split('/')[2];
-  switch(route.path){
-    case '/dashboard':return dashboard();
-    case '/users':return usersPage();
-    case '/users/:id':return getSubject(id)?userPage(getSubject(id)):missing();
-    case '/activations':return head('业务开通','三个入口使用同一套内部业务开通服务，与运营商订购系统无关。')+table(['开通记录','业务主体','来源','明确同意依据','当次开通结果'],state.activations.map(a=>[esc(a.id),link('/users/'+a.subject,a.subject),channel(a.source),esc(a.basis),pill(a.result==='ACTIVE'?'开通成功':a.result,'good')]));
-    case '/ivr-sessions':return head('IVR 呼入','自建 IVR：可信主叫、语音告知、按键确认、内部开通；购买引导至微信小程序。')+sessionsTable(state.sessions);
-    case '/ivr-sessions/:id':return sessionPage(state.sessions.find(s=>s.id===id));
-    case '/catalog':return catalogPage();
-    case '/catalog/:id':return productPage(getProduct(id));
-    case '/trial-settings':return trialPage();
-    case '/orders':return ordersPage();
-    case '/orders/:id':return orderPage(state.orders.find(o=>o.id===id));
-    case '/audit':return head('操作记录','只追加记录，追踪人员、对象、前后值及操作理由。')+table(['时间','操作人','事件 / 对象','变化','理由'],state.audit.map(e=>[esc(e.time),esc(e.actor),esc(e.event)+'<small class="mono">'+esc(e.object)+'</small>',esc(e.detail),esc(e.reason)]));
-    case '/roadmap':return roadmap();
-  }
+function reviewControls(){return '<details class="review"><summary>原型评审</summary><div class="review-body stack"><p>仅本地演示 / 评审。切换员工请退出并用另一账号登录。</p><label class="field">数据状态'+select('data-mode',[['normal','正常'],['empty','空数据'],['loading','加载中'],['unavailable','服务不可用']],state.dataMode)+'</label>'+btn('IVR 流程演示','demo')+'<p>模拟呼入、试用和认领；无真实线路、支付或短信。</p></div></details>';}
+function missing(){return head('记录不存在','请返回列表选择有效对象。未知 ID 不回退到其他用户、套餐、员工或订单。');}
+function page(r){
+ if(!r)return head('页面未纳入本期','请使用本期六个主入口。')+supportPage();
+ if(state.route.startsWith('/employees')&&!isAdmin())return head('无权访问员工账号','员工管理仅管理员可查看；请联系当前管理员。');
+ if(state.dataMode!=='normal')return head(r.title,'当前处于原型评审数据状态。')+'<div class="empty"><h2>'+({empty:'暂无业务数据',loading:'正在加载',unavailable:'服务暂不可用'}[state.dataMode])+'</h2><p>此状态不执行写操作。</p></div>';
+ const id=state.route.split('/')[2];
+ switch(r.path){
+ case '/dashboard':return dashboard();
+ case '/users':return usersPage();
+ case '/users/:id':return subject(id)?userPage(subject(id)):missing();
+ case '/activations':return head('业务开通','ONECALL 内部开通；同意记录保留当次快照。')+table(['开通记录','主体','渠道','同意依据','确认'],business.activations.map(a=>[esc(a.id),link('/users/'+a.subjectId,a.subjectId),channel(a.channel),esc(a.consentVersion)+(a.sessionId?'<small>'+esc(a.sessionId)+'</small>':''),esc(a.confirmation)]));
+ case '/ivr-sessions':return head('IVR 呼入','自建 IVR 明确告知、可信主叫、按键确认；IVR 仅引导购买。')+sessionsTable(business.sessions);
+ case '/ivr-sessions/:id':return sessionPage(one(business.sessions,'id',id));
+ case '/catalog':return catalogPage();
+ case '/catalog/:id':return product(id)?productPage(product(id)):missing();
+ case '/trial-settings':return trialPage();
+ case '/orders':return ordersPage();
+ case '/orders/:id':return orderPage(one(business.orders,'id',id));
+ case '/employees':return employeesPage();
+ case '/employees/:id':return employee(id)?employeePage(employee(id)):missing();
+ case '/audit':return head('操作记录','员工身份与当时角色保留快照；无凭据与登录码。')+table(['时间','操作员工','事件 / 对象','变更前 → 变更后','理由'],state.audit.map(e=>[esc(e.time),esc(e.actorDisplayNameAtAction)+'<small>'+esc(e.actorEmployeeId)+' / '+esc(e.roleAtAction)+'</small>',esc(e.event)+'<small class="mono">'+esc(e.object)+'</small>','<span class="mono">'+esc(JSON.stringify(e.before))+' → '+esc(JSON.stringify(e.after))+'</span>',esc(e.reason)]));
+ case '/roadmap':return supportPage();
+ }
 }
-function missing(){return head('记录不存在','请返回列表选择有效对象。未知 ID 不回退到其他用户、会话或订单。');}
-function dashboard(){const pending=state.subjects.filter(s=>!s.account).length;return head('运营概览','围绕用户、试用与套餐，查看三端业务的当前状态。')+'<div class="banner">业务由 ONECALL 后台开通。自建 IVR 支持未实名试用并产生录音证据；购买在小程序或 Web 完成。</div><div class="metrics">'+[
-  ['业务用户',state.subjects.length,'含 IVR 未登录、待认领的号码级主体'],['IVR 待认领',pending,'账户关联与实名认证分别管理'],['可用试用',state.subjects.filter(s=>s.active&&rest(s)>0&&s.trial.expires>Date.now()).length,'业务有效、未到期且剩余额度大于零'],['已支付订单',state.orders.filter(o=>o.payment==='PAID').length,'支付成功不等于权益已到账']
-].map(([label,v,sub])=>'<div class="metric"><span>'+label+'</span><strong>'+v+'</strong><small>'+sub+'</small></div>').join('')+'</div><div class="grid">'+panel('最近 IVR 呼入',table(['会话 / 主叫','确认状态','处理结果'],state.sessions.slice(0,3).map(s=>[link('/ivr-sessions/'+s.id,s.id)+'<small>'+esc(s.caller)+'</small>',pill(ivrLabel(s.status),s.status==='CONFIRMED'?'good':'warn'),esc(s.outcome)]),true))+panel('本期常用管理','<div class="stack">'+link('/users','用户、号码与认领状态')+link('/catalog','套餐版本与上下架')+link('/trial-settings','免费试用额度和有效期')+link('/orders','订单支付与权益查询')+'</div>')+'</div>'+panel('三入口，共用业务与权益','<div class="steps"><div class="step"><strong>微信小程序</strong><span class="small muted">登录 / 验证认领 / 开通 / 购买支付</span></div><div class="step"><strong>Web</strong><span class="small muted">登录 / 开通 / 订购支付，与小程序共享账户业务</span></div><div class="step"><strong>IVR 声讯</strong><span class="small muted">呼入 / 按键开通 / 未实名试用 / 小程序购买引导</span></div></div>');}
-function usersPage(){const f=state.filter;const rows=state.subjects.filter(s=>(!f.q||[s.id,s.name,s.phone,s.account||'待认领'].join(' ').toLowerCase().includes(f.q.toLowerCase()))&&(!f.source||s.source===f.source)&&(!f.status||(f.status==='pending'?!s.account:f.status==='active'?s.active:!s.active)));
-return head('用户管理','号码业务主体与平台注册账户分开管理，未实名 IVR 用户也能试用和产生证据。')+'<form class="toolbar" id="user-filter"><input aria-label="搜索用户" name="q" placeholder="业务主体、账户或号码掩码" value="'+esc(f.q||'')+'"><select aria-label="来源" name="source"><option value="">全部来源</option>'+['MINIAPP','WEB','IVR'].map(c=>'<option value="'+c+'" '+(f.source===c?'selected':'')+'>'+channel(c)+'</option>').join('')+'</select><select aria-label="用户状态" name="status">'+[['','全部状态'],['pending','待认领'],['active','业务已开通'],['suspended','业务已暂停']].map(([v,l])=>'<option value="'+v+'" '+(f.status===v?'selected':'')+'>'+l+'</option>').join('')+'</select><button class="btn" type="submit">查询</button></form>'+table(['业务用户 / 主体','号码 / 来源','平台账户','实名状态','业务状态','免费试用'],rows.map(s=>[link('/users/'+s.id,s.name)+'<small class="mono">'+s.id+'</small>',esc(s.phone)+'<small>'+channel(s.source)+'</small>',s.account?esc(s.account):pill('待认领','warn'),pill(s.identity,s.identity==='已实名'?'good':''),pill(s.active?'已开通':'已暂停',s.active?'good':'warn'),esc(trialText(s))]));}
-function userPage(s){const trial=s.trial;return head(s.name,s.id+' · '+s.phone+' · '+channel(s.source),btn(s.active?'暂停业务':'恢复业务',s.active?'suspend':'resume',s.id,s.active?'danger':'primary'))+'<div class="grid">'+panel('用户与业务状态',meta('业务主体','<span class="mono">'+s.id+'</span>')+meta('平台注册账户',s.account?esc(s.account):pill('待认领','warn'))+meta('实名认证',pill(s.identity,s.identity==='已实名'?'good':''))+meta('号码 / 类型',esc(s.phone)+' / '+esc(s.type))+meta('业务开通',pill(s.active?'已开通':'已暂停',s.active?'good':'warn'))+meta('公证资格','独立核验；开通、主叫验证和试用均不代表公证资格'))+panel('免费试用与付费',meta('试用状态',esc(trialText(s)))+meta('发放 / 已用',trial?trial.seconds+' / '+trial.used+' 秒':'未领取')+meta('原规则版本',trial?'v'+trial.rule:'—')+meta('有效期',trial?esc(new Date(trial.expires).toLocaleDateString('zh-CN')):'—')+meta('付费订单',state.orders.filter(o=>o.subject===s.id).map(o=>link('/orders/'+o.id,o.id)).join('　')||'暂无')+meta('试用资格','同一主体仅首次发放，认领和更换入口不重置'))+'</div>'+panel('业务时间线',s.history.map(t=>'<div class="event"><strong>'+esc(t)+'</strong></div>').join(''))+panel('录音证据元数据',table(['证据 ID','产生时业务主体','来源会话','有效录音','采集时实名','固证'],state.evidence.filter(e=>e.subject===s.id).map(e=>[esc(e.id),esc(e.subject),link('/ivr-sessions/'+e.session,e.session),e.seconds+' 秒',esc(e.identityAtCapture),pill(e.status,'good')]))+'<p class="small muted">认领只追加账户关联，证据主体与采集事实不改写。本期后台不提供原始录音播放或下载。</p>');}
-function sessionsTable(rows){return table(['IVR 会话','主叫 / 主体','确认','结果','购买引导'],rows.map(s=>[link('/ivr-sessions/'+s.id,s.id)+'<small>'+esc(s.time)+'</small>',esc(s.caller)+(s.subject?'<small>'+s.subject+'</small>':''),pill(ivrLabel(s.status),s.status==='CONFIRMED'?'good':'warn'),esc(s.outcome),s.guided?'已提示微信小程序':'未引导']));}
-function sessionPage(s){if(!s)return missing();const subject=getSubject(s.subject);return head(s.id,'自建 IVR 会话。运营商提供通信承载，业务结果由 ONECALL 后台负责。')+'<div class="grid">'+panel('呼入与明确同意',meta('可信主叫',esc(s.caller))+meta('会话状态',pill(ivrLabel(s.status)))+meta('语音提示版本',esc(s.consent))+meta('按键确认',esc(s.key))+meta('结果',esc(s.outcome)))+panel('业务关联',meta('业务主体',subject?link('/users/'+subject.id,subject.id):'未建立')+meta('账户认领',subject?esc(subject.account||'待认领'):'—')+meta('实名状态',subject?esc(subject.identity):'—')+meta('试用状态',subject?esc(trialText(subject)):'未发放')+meta('付费引导',s.guided?'已提示到微信小程序登录购买；不表示已购买':'未引导'))+'</div><div class="banner">未实名可完成 IVR 试用并产生录音证据。电话内不创建付费订单，不代扣支付；用户验证认领后再在小程序购买。</div>'+(subject?panel('关联证据',table(['证据','业务主体','时长','采集时实名'],state.evidence.filter(e=>e.session===s.id).map(e=>[esc(e.id),esc(e.subject),e.seconds+' 秒',esc(e.identityAtCapture)]))):'');}
-function catalogPage(){return head('套餐设置','发布新版本调整价格和额度；历史订单保留购买时快照。所有金额均为演示。')+table(['套餐','版本','价格','录音额度','有效期','上架状态','操作'],state.catalog.map(p=>[link('/catalog/'+p.id,p.name),esc(p.id)+'<small>v'+p.version+'</small>',money(p.price),p.minutes+' 分钟',p.days+' 天',pill(saleLabel(p.status),p.status==='ACTIVE'?'good':p.status==='DRAFT'?'blue':''),state.role==='admin'?p.status==='DRAFT'?btn('确认发布','publish',p.id):btn('编辑新版本','edit-product',p.id):'只读']))+'<div class="banner">管理员可编辑套餐和试用规则；运营人员查询用户与交易数据。套餐购买流程不在运营台执行。</div>';}
-function productPage(p){if(!p)return missing();let actions='';if(state.role==='admin')actions=p.status==='DRAFT'?btn('确认发布','publish',p.id,'primary'):btn('编辑新版本','edit-product',p.id)+btn(p.status==='ACTIVE'?'下架':'上架',p.status==='ACTIVE'?'off-sale':'on-sale',p.id);
-return head(p.name,p.id+' · v'+p.version,actions)+panel('当前版本',meta('状态',pill(saleLabel(p.status),p.status==='ACTIVE'?'good':''))+meta('价格',money(p.price))+meta('录音额度',p.minutes+' 分钟')+meta('有效期',p.days+' 天')+meta('支持渠道','微信小程序 / Web；IVR 仅引导购买')+meta('版本规则','已发布内容不可覆盖。编辑生成新草稿，发布时同商品的原在售版本退市。'));}
-function trialPage(){const r=state.rule;return head('试用规则','规则发布只影响后续首次领取，不增加已发额度、不重置已用记录。',state.role==='admin'?btn('修改试用规则','edit-trial','','primary'):'')+panel('当前生效规则 · v'+r.version,meta('活动',esc(r.campaign))+meta('新领取',pill(r.enabled?'启用':'关闭',r.enabled?'good':'warn'))+meta('累计录音额度',r.seconds+' 秒')+meta('领取后有效期',r.days+' 天')+meta('适用入口','微信小程序、Web、IVR 共用首次领取资格')+meta('实名要求','IVR 未实名用户可试用并产生证据')+meta('消费方式','按有效录音秒数扣减；耗尽结束取证通话')+meta('购买方式','小程序 / Web 完成支付，IVR 引导微信小程序'))+'<div class="banner warn">关闭新领取后，已发试用仍按原额度和有效期使用；仅有“已开通”状态而没有可用权益时，不能继续免费取证。</div>';}
-function ordersPage(){const filter=state.filter.payment||'';return head('订单查询','小程序和 Web 订单汇总。支付、权益独立展示；退款和发票由线下客服支持。')+'<form class="toolbar" id="order-filter"><select name="payment" aria-label="支付状态">'+[['','全部支付状态'],['PAID','已支付'],['UNPAID','未支付'],['UNKNOWN','结果待核实']].map(([v,l])=>'<option value="'+v+'" '+(filter===v?'selected':'')+'>'+l+'</option>').join('')+'</select><button class="btn" type="submit">查询</button></form>'+table(['订单','用户主体','渠道','套餐快照','实付 / 应付','支付','权益'],state.orders.filter(o=>!filter||o.payment===filter).map(o=>[link('/orders/'+o.id,o.id),link('/users/'+o.subject,o.subject),channel(o.source),esc(o.snapshot.name)+'<small>'+o.snapshot.id+'</small>',money(o.snapshot.price),pill(paymentLabel(o.payment),o.payment==='PAID'?'good':'warn'),pill(o.entitlement,o.entitlement==='已到账'?'good':'warn')]));}
-function orderPage(o){if(!o)return missing();return head(o.id,'只读查询。IVR 不创建付费订单；任何入口的购买都需在小程序或 Web 完成支付。')+'<div class="grid">'+panel('订单与支付',meta('用户主体',link('/users/'+o.subject,o.subject))+meta('来源',channel(o.source))+meta('支付状态',pill(paymentLabel(o.payment),o.payment==='PAID'?'good':'warn'))+meta('权益状态',pill(o.entitlement,o.entitlement==='已到账'?'good':'warn'))+meta('金额',money(o.snapshot.price)))+panel('购买时套餐快照',meta('套餐',esc(o.snapshot.name))+meta('版本 ID',esc(o.snapshot.id))+meta('录音额度',o.snapshot.minutes+' 分钟')+meta('有效期',o.snapshot.days+' 天')+meta('历史保护','后台调价、下架或发布新版本均不改变该快照'))+'</div><div class="banner">退款、发票等售后需求请联系线下人工客服。本期不提供人工改支付状态、退款执行或开票功能。</div>';}
-function roadmap(){return head('后续规划','当前团队 5 人，本期聚焦基础用户与套餐运营；以下流程由线下人工客服承接。')+table(['能力','本期处理方式','后续建设方向'],[
-['客服工单','通过已有客服渠道登记与跟进，不在后台建单','工单分类、受理、协作和处理记录'],['退款','客服核对原订单，财务按线下流程办理','退款申请、审核、支付渠道执行与对账'],['发票','客服收集抬头和订单，财务线下开具','发票申请、开具、交付与红冲'],['复杂权限 / 供应商治理','按最小员工权限维护，技术问题线下协作','在业务规模需要时再建设'],['公证与异常证据处理','沿用线下协作，不在本期搭建运营中台','材料审核、机构协作和受控调取']
-]);}
-function openModal(title,body,action,id='',payload=null){state.modal={action,id,payload,route:state.route,role:state.role,version:getSubject(id)?.version,focus:document.activeElement};$('#modal-root').innerHTML='<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">'+esc(title)+'</h2>'+btn('关闭','close-modal')+'</div><div class="modal-body">'+body+'<div class="error" id="modal-error" role="alert"></div></div><div class="modal-actions">'+btn('取消','close-modal')+btn(action==='demo'?'模拟呼入':'确认','confirm','','primary')+'</div></section></div>';$('.modal input,.modal select,.modal textarea,.modal button')?.focus();}
-function closeModal(){const previous=state.modal?.focus;state.modal=null;$('#modal-root').innerHTML='';if(previous?.isConnected)previous.focus();}
+function dashboard(){return head('运营概览','统一查看业务主体、试用和订单；数据为本地演示。')+'<div class="banner">未实名 IVR 用户可试用并产生证据。支付成功与权益到账分别记录；新下单只采用当前在售套餐。</div><div class="metrics">'+[['业务主体',business.subjects.length],['IVR 待认领',business.subjects.filter(s=>s.source==='IVR'&&!s.accountId).length],['可用试用',business.subjects.filter(s=>s.activation==='ACTIVE'&&trial(s.id)?.status==='AVAILABLE').length],['已支付订单',business.orders.filter(o=>o.payment==='PAID').length]].map(([k,v])=>'<div class="metric"><span>'+k+'</span><strong>'+v+'</strong><small>按当前演示业务状态统计</small></div>').join('')+'</div><div class="grid">'+panel('最近 IVR 呼入',sessionsTable(business.sessions.slice(-3)))+panel('常用入口','<div class="stack">'+link('/users','用户与业务状态')+link('/catalog','套餐版本及试用设置')+link('/orders','支付与权益查询')+link('/roadmap','线下人工客服说明')+'</div>')+'</div>';}
+function usersPage(){const f=state.filter,rows=business.subjects.filter(s=>(!f.q||[s.id,subjectNames[s.id],s.maskedNumber,s.accountId||'待认领'].join(' ').toLowerCase().includes(f.q.toLowerCase()))&&(!f.source||s.source===f.source)&&(!f.status||(f.status==='pending'?!s.accountId:s.activation===f.status)));
+ return head('用户管理','业务主体、平台账户、实名和业务状态分别展示。')+'<form class="toolbar" id="user-filter"><input name="q" aria-label="搜索用户" placeholder="业务主体、账户或号码掩码" value="'+esc(f.q||'')+'"><select name="source" aria-label="来源">'+[['','全部来源'],['MINIAPP','微信小程序'],['WEB','Web'],['IVR','IVR']].map(([v,l])=>'<option value="'+v+'" '+(f.source===v?'selected':'')+'>'+l+'</option>').join('')+'</select><select name="status" aria-label="用户状态">'+[['','全部状态'],['pending','待认领'],['ACTIVE','已开通'],['SUSPENDED','已停用']].map(([v,l])=>'<option value="'+v+'" '+(f.status===v?'selected':'')+'>'+l+'</option>').join('')+'</select><button class="btn">查询</button></form>'+table(['业务用户 / 主体','号码 / 来源','平台账户','实名','业务状态','免费试用'],rows.map(s=>[link('/users/'+s.id,subjectNames[s.id]||s.id)+'<small class="mono">'+esc(s.id)+'</small>',esc(s.maskedNumber)+'<small>'+channel(s.source)+'</small>',esc(s.accountId||'待认领'),pill(label('identity',s.identity)),pill(label('activation',s.activation),s.activation==='ACTIVE'?'good':'warn'),esc(trialText(s))]));}
+function userPage(s){const t=trial(s.id),g=t?.grant;return head(subjectNames[s.id]||'业务主体',s.id+' · '+s.maskedNumber,s.activation==='INACTIVE'?'':btn(s.activation==='ACTIVE'?'暂停业务':'恢复业务',s.activation==='ACTIVE'?'suspend':'resume',s.id,s.activation==='ACTIVE'?'danger':'primary'))+'<div class="grid">'+panel('用户与业务状态',meta('业务主体',esc(s.id))+meta('平台注册账户',esc(s.accountId||'待认领'))+meta('实名认证',pill(label('identity',s.identity)))+meta('号码类型',s.numberType==='LANDLINE'?'独立固话':'手机号')+meta('业务开通',pill(label('activation',s.activation)))+meta('公证资格','独立核验，试用和开通不代表公证资格'))+panel('试用发放快照',meta('试用状态',esc(trialText(s)))+meta('发放 / 已用',g?g.grantedSeconds+' / '+g.usedSeconds+' 秒':'未领取')+meta('原规则版本',g?'v'+g.ruleVersion:'—')+meta('有效期',g?esc(new Date(g.expiresAt).toLocaleString('zh-CN')):'—')+meta('试用资格','同一主体和 FIRST-TRIAL 永久一次')+meta('付费订单',business.orders.filter(o=>o.subjectId===s.id).map(o=>link('/orders/'+o.id,o.id)).join('　')||'暂无'))+'</div>'+panel('业务同意时间线',business.activations.filter(a=>a.subjectId===s.id).map(a=>'<div class="event"><strong>'+esc(a.id)+' / '+channel(a.channel)+'</strong><p>'+esc(a.consentVersion)+' / '+esc(a.confirmation)+'</p></div>').join('')||'暂无开通记录')+evidencePanel(business.evidence.filter(e=>e.subjectId===s.id));}
+function evidencePanel(rows){return panel('录音证据元数据',table(['证据 ID','采集时主体','来源会话','有效录音','采集时实名','固证'],rows.map(e=>[esc(e.id),esc(e.subjectId),link('/ivr-sessions/'+e.sessionId,e.sessionId),e.recordedSeconds+' 秒',label('identity',e.identityAtCapture),pill('已固证','good')]))+'<p class="small muted">认领只追加账户关联，证据主体和采集事实不改写。不提供原始录音播放或下载。</p>');}
+function sessionsTable(rows){return table(['IVR 会话','主叫 / 主体','确认状态','购买引导'],rows.map(s=>[link('/ivr-sessions/'+s.id,s.id),esc(s.maskedCaller||'无法识别')+'<small>'+esc(s.subjectId||'尚未建立主体')+'</small>',pill(({RECEIVED:'等待确认',CONFIRMED:'已按键确认',REJECTED:'呼入被拒绝',ABANDONED:'未确认退出'})[s.status]),s.guidanceStatus==='GUIDED'?'已提示微信小程序':'未引导']));}
+function sessionPage(s){if(!s)return missing();const u=subject(s.subjectId);return head(s.id,'运营商提供通信承载，业务开通和试用由 ONECALL 负责。')+'<div class="grid">'+panel('呼入与明确同意',meta('主叫',esc(s.maskedCaller||'无法识别'))+meta('会话状态',esc(s.status))+meta('同意版本',esc(s.consentVersion))+meta('按键确认',esc(s.key||'—')))+panel('业务关联',meta('主体',u?link('/users/'+u.id,u.id):'尚未建立')+meta('账户',esc(u?.accountId||'待认领'))+meta('实名',u?label('identity',u.identity):'—')+meta('试用',u?esc(trialText(u)):'未发放')+meta('购买引导',s.guidanceStatus==='GUIDED'?'已提示小程序；未创建付费订单':'未引导'))+'</div>'+evidencePanel(business.evidence.filter(e=>e.sessionId===s.id));}
+const typeItems=[['SUBSCRIPTION','订阅'],['ONE_TIME','单次'],['ADD_ON','加量包'],['QUOTE','企业咨询']];
+const audienceItems=[['PERSONAL','个人'],['ENTERPRISE','企业（仅咨询）']];
+const termItems=[['ONCE','单次 · 1 期 / 间隔 0 月'],['MONTHLY','月付 · 1 期 / 间隔 1 月'],['QUARTERLY','季付 · 3 期 / 间隔 1 月'],['ANNUAL','年付 · 12 期 / 间隔 1 月'],['QUOTE','咨询 · 1 期 / 间隔 0 月']];
+const rightsLabels={recordingMinutes:'录音分钟',aiMinutes:'AI 分钟',evidenceCount:'证据份数',storageGB:'存储 GB',seats:'企业席位',fixedLines:'企业固话'};
+function catalogPage(){const f=state.filter;let rows=business.catalog.filter(p=>(!f.status||p.saleStatus===f.status)&&(!f.channel||p.channels.includes(f.channel))&&(!f.audience||p.audience===f.audience));rows.sort((a,b)=>f.sort==='name'?a.name.localeCompare(b.name):f.sort==='version'?b.version-a.version:a.sortOrder-b.sortOrder||a.sku.localeCompare(b.sku));
+ const groups=[...new Set(rows.map(p=>p.productCode))];
+ return head('套餐设置','DEMO 参数待确认。当前在售用于新下单；历史订单保留购买时快照。',isAdmin()?btn('新增套餐','create-product','','primary'):'')+'<form id="catalog-filter" class="toolbar">'+[['status',[['','全部状态'],['ACTIVE','在售'],['DRAFT','草稿'],['OFFSALE','已下架']]],['channel',[['','全部渠道'],['MINIAPP','微信小程序'],['WEB','Web']]],['audience',[['','全部范围'],...audienceItems]],['sort',[['','展示顺序'],['name','名称'],['version','版本倒序']]]].map(([key,items])=>'<label class="field">'+({status:'状态',channel:'渠道',audience:'适用范围',sort:'排序'})[key]+'<select name="'+key+'">'+items.map(([v,l])=>'<option value="'+v+'" '+(f[key]===v?'selected':'')+'>'+l+'</option>').join('')+'</select></label>').join('')+'<button class="btn">查询</button></form>'+(groups.length?groups.map(code=>panel(code,table(['套餐 / SKU','版本 / 修订','价格 / 有效期','权益摘要','渠道','状态'],rows.filter(p=>p.productCode===code).map(p=>[link('/catalog/'+p.versionId,p.name)+'<small class="mono">'+esc(p.sku)+'</small>',esc(p.versionId)+'<small>v'+p.version+' / r'+p.revision+'</small>',money(p.priceCents)+'<small>'+p.validDays+' 天</small>',p.rights.recordingMinutes+' 录音 / '+p.rights.aiMinutes+' AI 分钟',p.channels.map(channel).join(' / '),pill(label('catalog',p.saleStatus),p.saleStatus==='ACTIVE'?'good':'')])))).join(''):table([],[]))+'<div class="banner">运营人员只读。试用配置在本页子导航中；正式定价、续购叠加及自动续费待确认。</div>';}
+function offerDetails(p){return meta('产品编码 / SKU',esc(p.productCode)+' / '+esc(p.sku))+meta('版本 / 修订',esc(p.versionId)+' / r'+p.revision)+meta('名称与说明',esc(p.name)+'<br>'+esc(p.description))+meta('类型 / 范围',esc(typeItems.find(x=>x[0]===p.type)?.[1])+' / '+esc(audienceItems.find(x=>x[0]===p.audience)?.[1]))+meta('价格',money(p.priceCents))+meta('有效期 / 周期',p.validDays+' 天 / '+esc(p.billingCycle))+meta('分期 / 发放间隔',p.installments+' 期 / '+p.grantIntervalMonths+' 月')+Object.entries(rightsLabels).map(([k,l])=>meta(l,String(p.rights[k]))).join('')+meta('附加权益',p.includedFeatures.map(esc).join('；')||'无')+meta('购买 / 展示渠道',p.channels.map(channel).join(' / '))+meta('展示排序',String(p.sortOrder))+meta('参数状态','DEMO · 待确认，未批准生产使用');}
+function productPage(p){const draft=business.catalog.find(x=>x.sku===p.sku&&x.saleStatus==='DRAFT');let actions='';if(isAdmin()&&!p.historical)actions=p.saleStatus==='DRAFT'?btn('编辑草稿','edit-draft',p.versionId)+btn('确认发布','publish',p.versionId,'primary'):(draft?link('/catalog/'+draft.versionId,'查看已有草稿'):btn('复制新版本','edit-product',p.versionId))+btn(p.saleStatus==='ACTIVE'?'下架':'上架',p.saleStatus==='ACTIVE'?'off-sale':'on-sale',p.versionId);
+ return head(p.name,p.versionId+' · '+label('catalog',p.saleStatus),actions)+'<div class="banner warn">发布只改变新购目录，旧订单、已发试用及证据保持原快照。企业方案只供咨询；叠加、抵扣和自动续费待确认。</div>'+panel('完整套餐配置',offerDetails(p))+panel('同 SKU 版本历史',table(['版本','状态','价格','修订','内容规则'],business.catalog.filter(x=>x.sku===p.sku).sort((a,b)=>b.version-a.version).map(x=>[link('/catalog/'+x.versionId,x.versionId),label('catalog',x.saleStatus),money(x.priceCents),'r'+x.revision,x.saleStatus==='DRAFT'?'同草稿可编辑':'已发布内容不可覆盖'])))+panel('关联历史订单',table(['订单','下单时版本','快照价格'],business.orders.filter(o=>o.snapshot.sku===p.sku).map(o=>[link('/orders/'+o.id,o.id),esc(o.snapshot.versionId),money(o.snapshot.priceCents)])));}
+function trialPage(){const r=business.rule;return head('试用设置','只影响新主体的首次领取；已发试用、历史订单和证据不变。',isAdmin()?btn('修改试用规则','edit-trial','','primary'):'')+panel('当前规则 · v'+r.version,meta('活动',r.campaignId)+meta('新领取',pill(r.enabled?'启用':'关闭',r.enabled?'good':'warn'))+meta('累计录音额度',r.seconds+' 秒')+meta('领取后有效期',r.validDays+' 天')+meta('适用入口','微信小程序 / Web / IVR 共用首次资格')+meta('实名要求','IVR 未实名可试用并产生录音证据')+meta('扣量','按有效录音秒数；耗尽结束取证')+meta('生产状态','演示参数，正式规则待确认'))+'<div class="banner warn">关闭只停止新领取；已发试用仍按原额度和有效期使用。已开通不等于有可用权益。</div>';}
+function ordersPage(){return head('订单查询','支付和权益独立。退款、发票由线下人工客服承接。')+'<form id="order-filter" class="toolbar"><select name="payment" aria-label="支付状态">'+[['','全部支付状态'],...Object.entries(B.labels.payment)].map(([v,l])=>'<option value="'+v+'" '+(state.filter.payment===v?'selected':'')+'>'+l+'</option>').join('')+'</select><button class="btn">查询</button></form>'+table(['订单','用户主体','渠道','购买时快照','金额','支付','权益'],business.orders.filter(o=>!state.filter.payment||o.payment===state.filter.payment).map(o=>[link('/orders/'+o.id,o.id),link('/users/'+o.subjectId,o.subjectId),channel(o.channel),esc(o.snapshot.name)+'<small>'+esc(o.snapshot.versionId)+'</small>',money(o.snapshot.priceCents),pill(label('payment',o.payment)),pill(label('entitlement',o.entitlement))]));}
+function orderPage(o){if(!o)return missing();return head(o.id,'只读历史快照；当前目录价格和状态不改变已下单事实。')+'<div class="grid">'+panel('支付与权益',meta('业务主体',link('/users/'+o.subjectId,o.subjectId))+meta('来源',channel(o.channel))+meta('支付',pill(label('payment',o.payment)))+meta('权益',pill(label('entitlement',o.entitlement)))+meta('应付金额',money(o.snapshot.priceCents)))+panel('购买时配置',offerDetails(o.snapshot))+'</div>'+supportBlock();}
+function supportBlock(){return '<div class="banner">'+esc(B.support.contactLabel)+'。'+esc(B.support.instructions.refund)+'<br>'+esc(B.support.instructions.invoice)+'</div>';}
+function supportPage(){return head('线下人工客服','工单、退款、发票本期由人工线下支持。')+panel(B.support.contactLabel,Object.entries(B.support.instructions).map(([key,value])=>meta(({consultation:'业务咨询',refund:'退款',invoice:'发票',claim:'认领核验'})[key],esc(value))).join(''))+'<p class="small muted">联系方式及工作时间尚未配置；本原型不发送请求、不创建在线回执或处理进度。</p>';}
+function employeesPage(){return head('员工账号','独立员工身份，两类权限；登录码仅用于本地 DEMO。',btn('新增员工','create-employee','','primary'))+table(['员工 / ID','登录名','权限','状态','修订'],employees.map(e=>[link('/employees/'+e.id,e.displayName)+'<small>'+e.id+'</small>',esc(e.loginName),roles[e.role],pill(e.status==='ACTIVE'?'启用':'停用',e.status==='ACTIVE'?'good':'warn'),'r'+e.revision]));}
+function employeePage(e){return head(e.displayName,e.id+' · '+e.loginName,btn('编辑姓名 / 角色','edit-employee',e.id)+btn(e.status==='ACTIVE'?'停用员工':'启用员工',e.status==='ACTIVE'?'disable-employee':'enable-employee',e.id,e.status==='ACTIVE'?'danger':'')+btn('重置 DEMO 登录码','reset-credential',e.id))+panel('员工详情',meta('员工 ID',esc(e.id))+meta('登录名',esc(e.loginName))+meta('显示姓名',esc(e.displayName))+meta('角色',roles[e.role])+meta('账号状态',e.status==='ACTIVE'?'启用':'停用')+meta('修订 / 凭据版本','r'+e.revision+' / v'+e.credentialVersion)+meta('最少管理员','最后一个启用管理员不能停用或降级')+meta('当前登录影响','停用、重置或改变当前员工角色将撤销本地会话并返回登录'));}
+function targetFingerprint(action,id){
+ if(action==='create-product')return JSON.stringify(business.catalog);
+ if(action.includes('product')||['edit-draft','publish','off-sale','on-sale'].includes(action)){const p=product(id);return JSON.stringify(p?business.catalog.filter(x=>x.sku===p.sku):null);}
+ if(action==='edit-trial')return JSON.stringify(business.rule);
+ if(action.includes('employee')||action==='reset-credential')return JSON.stringify(employees);
+ return JSON.stringify(subject(id));
+}
+function allowed(action,id){
+ const a=actor();if(!a||state.dataMode!=='normal')return false;
+ if(['suspend','resume'].includes(action)){const s=subject(id);return state.route==='/users/'+id&&!!s&&s.activation===(action==='suspend'?'ACTIVE':'SUSPENDED');}
+ if(a.role!=='admin')return false;
+ if(action==='create-employee')return state.route==='/employees';
+ if(['edit-employee','disable-employee','enable-employee','reset-credential'].includes(action)){const e=employee(id);return !!e&&state.route==='/employees/'+id&&(action!=='disable-employee'||e.status==='ACTIVE')&&(action!=='enable-employee'||e.status==='DISABLED');}
+ if(action==='edit-trial')return state.route==='/trial-settings';
+ if(action==='create-product')return state.route==='/catalog';
+ const p=product(id),onPage=state.route==='/catalog/'+id;
+ if(!p||p.historical||!onPage)return false;
+ return action==='edit-draft'?p.saleStatus==='DRAFT':action==='edit-product'?p.saleStatus!=='DRAFT'&&!business.catalog.some(x=>x.sku===p.sku&&x.saleStatus==='DRAFT'):action==='publish'?p.saleStatus==='DRAFT':action==='off-sale'?p.saleStatus==='ACTIVE':action==='on-sale'?p.saleStatus==='OFFSALE':false;
+}
+function openModal(title,body,action,id='',payload=null){
+ const a=actor();if(!a)return;
+ state.modal={action,id,payload,route:state.route,session:JSON.stringify(state.session),actorRevision:a.revision,fingerprint:targetFingerprint(action,id),focus:document.activeElement,submitted:false};
+ $('#modal-root').innerHTML='<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title">'+esc(title)+'</h2>'+btn('关闭','close-modal')+'</div><div class="modal-body">'+body+'<div class="error" id="modal-error" role="alert"></div></div><div class="modal-actions">'+btn('取消','close-modal')+btn(action==='demo'?'模拟呼入':action==='result'?'完成':'确认','confirm','','primary')+'</div></section></div>';
+ $('.modal-body input,.modal-body select,.modal-body textarea,.modal button')?.focus();
+}
 function fail(message){if($('#modal-error'))$('#modal-error').textContent=message;else notify(message);return false;}
-function allowed(action,id){if(!state.loggedIn||state.dataMode!=='normal')return false;if(['suspend','resume'].includes(action)){const s=getSubject(id);return !!s&&state.route==='/users/'+id&&s.active===(action==='suspend');}if(state.role!=='admin')return false;if(['edit-product','publish','off-sale','on-sale'].includes(action)){const p=getProduct(id);const onPage=state.route==='/catalog'||state.route==='/catalog/'+id;return !!p&&onPage&&(action==='publish'?p.status==='DRAFT':action==='off-sale'?p.status==='ACTIVE':action==='on-sale'?p.status==='OFFSALE':p.status!=='DRAFT');}return action==='edit-trial'&&state.route==='/trial-settings';}
-const reasonField = () => '<label class="field">操作理由<textarea id="reason" maxlength="200" placeholder="至少 4 个字，说明本次变更原因"></textarea></label>';
+function offerForm(p,fresh){return '<p>所有修改先保存草稿。确认后不影响已购权益；产品参数均为待确认 DEMO。</p><div class="form-grid">'+field('产品编码','pkg-code',p.productCode,'maxlength="40" '+(!fresh?'readonly':''))+field('SKU','pkg-sku',p.sku,'maxlength="40" '+(!fresh?'readonly':''))+field('名称','pkg-name',p.name,'maxlength="40"')+'<label class="field">说明<textarea id="pkg-description" maxlength="300">'+esc(p.description)+'</textarea></label><label class="field">类型'+select('pkg-type',typeItems,p.type)+'</label><label class="field">适用范围'+select('pkg-audience',audienceItems,p.audience)+'</label>'+field('价格（元；企业咨询留空）','pkg-price',p.priceCents===null?'':(p.priceCents/100).toFixed(2),'inputmode="decimal"')+field('有效天数','pkg-days',p.validDays,'inputmode="numeric"')+'<label class="field">周期 / 分期 / 发放间隔'+select('pkg-term',termItems,p.billingCycle)+'</label>'+field('展示排序','pkg-sort',p.sortOrder,'inputmode="numeric"')+Object.entries(rightsLabels).map(([k,l])=>field(l,'pkg-'+k,p.rights[k],'inputmode="numeric"')).join('')+'<label class="field form-wide">附加权益（每行一项，最多 20 项）<textarea id="pkg-features">'+esc(p.includedFeatures.join('\n'))+'</textarea></label><div class="field">购买 / 展示渠道<div class="actions">'+['MINIAPP','WEB'].map(c=>'<label><input type="checkbox" name="pkg-channel" value="'+c+'" '+(p.channels.includes(c)?'checked':'')+'> '+channel(c)+'</label>').join('')+'</div><small>IVR 仅引导购买，不是购买渠道。</small></div></div>';}
+function emptyOffer(){return {...clone(B.demoCatalog[6]),productCode:'',sku:'',name:'',description:'',priceCents:100,sortOrder:200,rights:{recordingMinutes:0,aiMinutes:0,evidenceCount:1,storageGB:0,seats:0,fixedLines:0},includedFeatures:[],saleStatus:'DRAFT',revision:1};}
+function employeeForm(e,fresh){return (fresh?field('员工登录名（不可重复）','employee-login','','maxlength="40"'):'<p>对象：'+esc(e.id)+' / '+esc(e.loginName)+'。原姓名：'+esc(e.displayName)+' / '+roles[e.role]+'</p>')+field('显示姓名','employee-name',e?.displayName||'','maxlength="30"')+'<label class="field">角色'+select('employee-role',Object.entries(roles),e?.role||'ops')+'</label>'+(fresh?'<label class="field">初始状态'+select('employee-status',[['ACTIVE','启用'],['DISABLED','停用']],'ACTIVE')+'</label><p>确认后展示一次新六位 DEMO 码，请记录后用于登录验证。</p>':'<p>登录名不变。角色变化会撤销该员工现有本地会话。</p>');}
 function openAction(action,id){
- if(!allowed(action,id))return notify('当前角色、页面或对象状态不允许该操作');
- const s=getSubject(id),p=getProduct(id);
- if(['suspend','resume'].includes(action))return openModal(action==='suspend'?'暂停用户业务':'恢复用户业务','<p>对象：'+esc(s.id)+' / '+esc(s.phone)+'</p><p>'+(action==='suspend'?'暂停后禁止新的试用取证，历史证据和已发权益继续保留。':'只恢复业务开通状态，不重发试用，不改变实名或历史证据。')+'</p>'+reasonField(),action,id);
- if(action==='edit-product')return openModal('编辑套餐新版本','<p>基于 '+esc(p.id)+' 创建独立草稿，原版本与订单快照不变。</p><label class="field">套餐名称<input id="pkg-name" maxlength="40" value="'+esc(p.name)+'"></label><label class="field">价格（元）<input id="pkg-price" inputmode="decimal" value="'+(p.price/100).toFixed(2)+'"></label><label class="field">录音额度（分钟）<input id="pkg-minutes" inputmode="numeric" value="'+p.minutes+'"></label><label class="field">有效期（天）<input id="pkg-days" inputmode="numeric" value="'+p.days+'"></label>'+reasonField(),action,id,{status:p.status,catalogFingerprint:JSON.stringify(state.catalog.filter(x=>x.sku===p.sku))});
- if(action==='edit-trial')return openModal('发布试用规则新版本','<p>现有试用额度、用量和有效期保持原快照。关闭后不发新试用。</p><label class="field">新领取状态<select id="trial-enabled"><option value="true" '+(state.rule.enabled?'selected':'')+'>启用</option><option value="false" '+(!state.rule.enabled?'selected':'')+'>关闭</option></select></label><label class="field">累计试用秒数<input id="trial-seconds" value="'+state.rule.seconds+'"></label><label class="field">领取后有效天数<input id="trial-days" value="'+state.rule.days+'"></label>'+reasonField(),action,'',{version:state.rule.version});
- openModal(action==='publish'?'确认发布套餐':action==='off-sale'?'确认下架套餐':'确认上架套餐','<p>对象：'+esc(p.id)+' / '+esc(p.name)+' / '+money(p.price)+' / '+p.minutes+' 分钟 / '+p.days+' 天</p><p>'+(action==='off-sale'?'仅停止新购买，已购买权益及历史订单不变。':'同商品其他在售版本将退市；已购买权益及历史订单不变。')+'</p>'+reasonField(),action,id,{status:p.status,catalogFingerprint:JSON.stringify(state.catalog.filter(x=>x.sku===p.sku))});
+ if(!allowed(action,id))return notify('当前员工、页面或对象状态不允许该操作');
+ const p=product(id),e=employee(id),s=subject(id);
+ let title='',body='',payload=null;
+ if(['create-product','edit-draft','edit-product'].includes(action)){title=action==='create-product'?'新增套餐草稿':action==='edit-draft'?'编辑同一草稿':'复制为新版本草稿';body=offerForm(p||emptyOffer(),action==='create-product');}
+ else if(action==='edit-trial'){const r=business.rule;title='发布试用规则新版本';body='<p>变更前：v'+r.version+' / '+r.seconds+' 秒 / '+r.validDays+' 天 / '+(r.enabled?'启用':'关闭')+'。旧发放快照不变。</p><label class="field">新领取'+select('trial-enabled',[['true','启用'],['false','关闭']],r.enabled)+'</label>'+field('累计试用秒数','trial-seconds',r.seconds)+field('领取后有效天数','trial-days',r.validDays);}
+ else if(['create-employee','edit-employee'].includes(action)){title=action==='create-employee'?'新增员工账号':'编辑员工';body=employeeForm(e,action==='create-employee');}
+ else if(e){title=action==='reset-credential'?'重置 DEMO 登录码':action==='disable-employee'?'停用员工':'启用员工';body='<p>对象：'+esc(e.id)+' / '+esc(e.displayName)+' / '+esc(e.loginName)+'</p><p>变更前：'+roles[e.role]+' / '+e.status+' / 凭据版本 v'+e.credentialVersion+'。变更后：'+(action==='reset-credential'?'新六位 DEMO 码；旧码立即失效':action==='disable-employee'?'DISABLED（停用）':'ACTIVE（启用）')+'</p>';}
+ else if(s){title=action==='suspend'?'暂停用户业务':'恢复用户业务';body='<p>对象：'+esc(s.id)+' / '+esc(s.maskedNumber)+'</p><p>变更前：'+label('activation',s.activation)+'；变更后：'+(action==='suspend'?'已停用':'已开通')+'。历史证据、试用及订单不变；恢复不重发试用。</p>';}
+ else if(p){title=action==='publish'?'确认发布套餐':action==='off-sale'?'确认下架套餐':'确认上架套餐';body='<p>对象：'+esc(p.versionId)+' / '+esc(p.name)+' / '+money(p.priceCents)+'</p><p>变更前：'+label('catalog',p.saleStatus)+'；变更后：'+(action==='off-sale'?'已下架':'在售（同 SKU 原在售版本退市）')+'。仅影响新下单，完整历史快照不变。</p>';}
+ openModal(title,body+reasonField(),action,id,payload);
 }
-function integer(value,min,max){return /^\d+$/.test(value)&&Number.isSafeInteger(+value)&&+value>=min&&+value<=max;}
+function integer(v,min,max){return /^\d+$/.test(v)&&Number.isSafeInteger(+v)&&+v>=min&&+v<=max;}
+function readOffer(m){
+ const base=product(m.id)||emptyOffer(),fresh=m.action==='create-product';
+ const version=m.action==='edit-product'?Math.max(...business.catalog.filter(x=>x.sku===base.sku).map(x=>x.version))+1:fresh?1:base.version;
+ const value={...clone(base),productCode:$('#pkg-code').value.trim(),sku:$('#pkg-sku').value.trim(),name:$('#pkg-name').value.trim(),description:$('#pkg-description').value.trim(),type:$('#pkg-type').value,audience:$('#pkg-audience').value,billingCycle:$('#pkg-term').value,saleStatus:'DRAFT',version,revision:m.action==='edit-draft'?base.revision+1:1,demo:true,policyStatus:'DEMO_NOT_APPROVED'};
+ const price=$('#pkg-price').value.trim();if(value.audience==='ENTERPRISE'){if(price!=='')return null;value.priceCents=null;}else{if(!/^\d+(\.\d{1,2})?$/.test(price)||+price<.01||+price>99999.99)return null;value.priceCents=Math.round(+price*100);}
+ for(const [field,key,min,max] of [['pkg-days','validDays',1,3650],['pkg-sort','sortOrder',0,9999]]){const v=$('#'+field).value.trim();if(!integer(v,min,max))return null;value[key]=+v;}
+ value.rights={};for(const key of Object.keys(rightsLabels)){const v=$('#pkg-'+key).value.trim();if(!integer(v,0,key==='evidenceCount'?1000000:100000))return null;value.rights[key]=+v;}
+ value.includedFeatures=$('#pkg-features').value.split('\n').map(x=>x.trim()).filter(Boolean);if(value.includedFeatures.length>20)return null;
+ value.channels=[...document.querySelectorAll('[name="pkg-channel"]:checked')].map(x=>x.value);
+ const term={ONCE:[1,0],MONTHLY:[1,1],QUARTERLY:[3,1],ANNUAL:[12,1],QUOTE:[1,0]}[value.billingCycle];if(!term)return null;[value.installments,value.grantIntervalMonths]=term;
+ if(value.type==='SUBSCRIPTION'?!['MONTHLY','QUARTERLY','ANNUAL'].includes(value.billingCycle):value.type==='QUOTE'?value.billingCycle!=='QUOTE':value.billingCycle!=='ONCE')return null;
+ if(!fresh&&(value.productCode!==base.productCode||value.sku!==base.sku))return null;
+ if(fresh&&business.catalog.some(x=>x.productCode===value.productCode||x.sku===value.sku))return null;
+ value.versionId=m.action==='edit-draft'?base.versionId:value.sku+'-V'+version;
+ if(business.catalog.some(x=>x.versionId===value.versionId&&x.versionId!==m.id))return null;
+ return B.validateCatalogVersion(value).ok?value:null;
+}
+function commitBusiness(candidate){const result=B.loadReviewSnapshot(business,candidate);if(!result.ok)fail('业务校验拒绝变更，请检查当前对象与字段');return result.ok;}
+function newCode(id){const old=credentials.get(id);let code;do{const bytes=new Uint32Array(1);crypto.getRandomValues(bytes);code=String(100000+bytes[0]%900000);}while(code===old);return code;}
+function showCredential(e,code,revoked){if(revoked){logout('当前员工会话已撤销，请使用新状态重新登录');}else render();$('#modal-root').innerHTML='<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="credential-title"><div class="modal-head"><h2 id="credential-title">DEMO 登录码（仅本次展示）</h2></div><div class="modal-body"><p>'+esc(e.id)+' / '+esc(e.loginName)+'</p><p class="credential-code" id="credential-result">'+esc(code)+'</p><p>请记录后关闭。旧码失效；不是真实凭据机制，刷新恢复演示数据。</p></div><div class="modal-actions">'+btn('完成','close-modal')+'</div></section></div>';state.modal={action:'credential-result',focus:null};$('#modal-root button').focus();}
 function confirm(){
- const m=state.modal;if(!m)return;
- if(!state.loggedIn||m.route!==state.route||m.role!==state.role||state.dataMode!=='normal')return fail('页面、角色或数据状态已变化，请关闭后重试');
+ const m=state.modal;if(!m||m.submitted)return;
+ const a=actor();if(!a){logout('员工会话已失效，请重新登录');return;}
+ if(m.action==='credential-result'){closeModal();return;}
+ if(m.route!==state.route||m.session!==JSON.stringify(state.session)||m.actorRevision!==a.revision||state.dataMode!=='normal')return fail('员工会话、页面或修订已变化，请重新打开操作');
  if(m.action==='demo')return demoStart();
  if(!allowed(m.action,m.id))return fail('当前状态已变化，操作被拒绝');
- const reason=$('#reason')?.value.trim()||'';if(reason.length<4)return fail('请填写至少 4 个字的操作理由');
- const s=getSubject(m.id),p=getProduct(m.id);
- if(s&&s.version!==m.version)return fail('用户状态已更新，请重新打开操作');
- if(p&&(p.status!==m.payload.status||m.payload.catalogFingerprint!==JSON.stringify(state.catalog.filter(x=>x.sku===p.sku))))return fail('套餐版本已变化，请重新打开操作');
- if(['suspend','resume'].includes(m.action)){s.active=m.action==='resume';s.version++;s.history.push((s.active?'恢复业务':'暂停业务')+'：'+reason);log(s.active?'恢复业务':'暂停业务',s.id,!s.active+' → '+s.active,reason);}
- else if(m.action==='edit-product'){
-   const name=$('#pkg-name').value.trim(),price=$('#pkg-price').value.trim(),minutes=$('#pkg-minutes').value.trim(),days=$('#pkg-days').value.trim();
-   if(!name||name.length>40||!/^\d+(\.\d{1,2})?$/.test(price)||+price<.01||+price>99999.99||!integer(minutes,1,100000)||!integer(days,1,3650))return fail('请检查名称、价格（0.01—99999.99 元）、分钟数（1—100000）和天数（1—3650）');
-   const version=Math.max(...state.catalog.filter(x=>x.sku===p.sku).map(x=>x.version))+1;
-   const draft={...p,id:'PKG-'+p.sku+'-'+version,version,name,price:Math.round(+price*100),minutes:+minutes,days:+days,status:'DRAFT'};
-   state.catalog.push(draft);log('创建套餐草稿',draft.id,p.id+' → '+draft.id,reason);closeModal();go('/catalog/'+draft.id);notify('新版本草稿已创建，确认发布后才生效');return;
- }else if(m.action==='edit-trial'){
-   if(m.payload.version!==state.rule.version)return fail('试用规则已更新，请重新打开操作');
-   const seconds=$('#trial-seconds').value.trim(),days=$('#trial-days').value.trim(),enabled=$('#trial-enabled').value;
-   if(!integer(seconds,1,3600)||!integer(days,1,365)||!['true','false'].includes(enabled))return fail('试用额度需为 1—3600 整数秒，有效期为 1—365 整数天');
-   const before=clone(state.rule);state.rule={...state.rule,version:state.rule.version+1,seconds:+seconds,days:+days,enabled:enabled==='true'};log('发布试用规则',state.rule.campaign,JSON.stringify(before)+' → '+JSON.stringify(state.rule),reason);
- }else{const before=p.status;if(m.action==='off-sale')p.status='OFFSALE';else{state.catalog.filter(x=>x.sku===p.sku&&x.status==='ACTIVE').forEach(x=>x.status='OFFSALE');p.status='ACTIVE';}log(m.action==='publish'?'发布套餐':m.action==='off-sale'?'下架套餐':'上架套餐',p.id,before+' → '+p.status,reason);}
- closeModal();render();notify('操作已完成，历史记录保持不变');
+ if(m.fingerprint!==targetFingerprint(m.action,m.id))return fail('对象修订或配置已变化，请重新打开操作');
+ const reason=$('#reason')?.value.trim()||'';if(reason.length<4||reason.length>200)return fail('请填写至少 4 个字、最多 200 字的操作理由');
+ const p=product(m.id),e=employee(m.id),s=subject(m.id);
+ if(['create-employee','edit-employee','disable-employee','enable-employee','reset-credential'].includes(m.action)){
+  let next=e?clone(e):{id:'',loginName:$('#employee-login').value.trim().toLowerCase(),displayName:'',role:'ops',status:$('#employee-status').value,revision:1,credentialVersion:1};
+  if(m.action==='create-employee'||m.action==='edit-employee'){next.displayName=$('#employee-name').value.trim();next.role=$('#employee-role').value;if(!next.displayName||next.displayName.length>30||!roles[next.role])return fail('请检查显示姓名（1—30 字）与角色');}
+  if(m.action==='create-employee'&&(!/^[a-z0-9._-]{3,40}$/.test(next.loginName)||employees.some(x=>x.loginName===next.loginName)||!['ACTIVE','DISABLED'].includes(next.status)))return fail('登录名需为 3—40 位字母、数字、点、下划线或短横线，且不能重复');
+  if(m.action==='disable-employee')next.status='DISABLED';if(m.action==='enable-employee')next.status='ACTIVE';
+  if(e&&e.status==='ACTIVE'&&e.role==='admin'&&(next.status!=='ACTIVE'||next.role!=='admin')&&employees.filter(x=>x.status==='ACTIVE'&&x.role==='admin').length<=1)return fail('最后一个启用管理员不能停用或降级');
+  const invalidates=e&&(next.status!=='ACTIVE'||next.role!==e.role||m.action==='reset-credential');
+  let code=null;if(m.action==='create-employee'){let n=employees.length+1;while(employee('EMP-'+String(n).padStart(3,'0')))n++;next.id='EMP-'+String(n).padStart(3,'0');code=newCode(next.id);}
+  if(e){next.revision++;if(m.action==='reset-credential'){next.credentialVersion++;code=newCode(e.id);}}
+  m.submitted=true;audit(({ 'create-employee':'新增员工','edit-employee':'编辑员工','disable-employee':'停用员工','enable-employee':'启用员工','reset-credential':'重置 DEMO 凭据'})[m.action],next.id,e?clone(e):null,clone(next),reason);
+  if(e)Object.assign(e,next);else employees.push(next);if(code)credentials.set(next.id,code);
+  const selfRevoked=invalidates&&state.session.employeeId===next.id;
+  closeModal();if(code){showCredential(next,code,selfRevoked);return;}if(selfRevoked){logout('当前员工状态或角色已变化，会话已撤销');return;}render();notify('员工变更已完成');return;
+ }
+ const candidate=clone(business);let object=m.id,before=null,after=null,event='';
+ if(['suspend','resume'].includes(m.action)){const target=candidate.subjects.find(x=>x.id===s.id);before=clone(s);target.activation=m.action==='resume'?'ACTIVE':'SUSPENDED';target.revision++;after=clone(target);event=m.action==='resume'?'恢复业务':'暂停业务';}
+ else if(['create-product','edit-draft','edit-product'].includes(m.action)){const value=readOffer(m);if(!value)return fail('请检查编码唯一性、名称说明、价格、整数权益、渠道及类型/周期组合；个人不能携带企业席位或固话');before=p?clone(p):null;after=value;object=value.versionId;event=m.action==='edit-draft'?'保存同一草稿':'创建套餐草稿';if(m.action==='edit-draft')candidate.catalog[candidate.catalog.findIndex(x=>x.versionId===m.id)]=value;else candidate.catalog.push(value);}
+ else if(m.action==='edit-trial'){const seconds=$('#trial-seconds').value.trim(),days=$('#trial-days').value.trim(),enabled=$('#trial-enabled').value;if(!integer(seconds,1,3600)||!integer(days,1,365)||!['true','false'].includes(enabled))return fail('试用额度需为 1—3600 整数秒，有效期为 1—365 整数天');before=clone(business.rule);candidate.rule={...candidate.rule,version:candidate.rule.version+1,seconds:+seconds,validDays:+days,enabled:enabled==='true'};after=clone(candidate.rule);object='FIRST-TRIAL';event='发布试用规则';}
+ else {before=clone(candidate.catalog.filter(x=>x.sku===p.sku));if(m.action==='off-sale'){const target=candidate.catalog.find(x=>x.versionId===p.versionId);target.saleStatus='OFFSALE';target.revision++;}else{candidate.catalog.filter(x=>x.sku===p.sku&&x.saleStatus==='ACTIVE').forEach(x=>{x.saleStatus='OFFSALE';x.revision++;});const target=candidate.catalog.find(x=>x.versionId===p.versionId);target.saleStatus='ACTIVE';target.revision++;}after=clone(candidate.catalog.filter(x=>x.sku===p.sku));event=m.action==='publish'?'发布套餐':m.action==='off-sale'?'下架套餐':'上架套餐';}
+ if(!commitBusiness(candidate))return;m.submitted=true;audit(event,object,before,after,reason);closeModal();if(['create-product','edit-product'].includes(m.action))go('/catalog/'+object);else render();notify('操作已完成，历史快照保持不变');
 }
-function demoModal(){if(!state.loggedIn||state.dataMode!=='normal')return notify('请先切回正常业务数据');openModal('IVR 流程演示','<p>只模拟自建 IVR 与后台交互，所有数据为虚构。新主叫无需实名即可按键开通试用。</p><label class="field">呼入场景<select id="demo-case"><option value="new">新主叫 · 未实名未登录</option><option value="repeat">重复呼入 · 已有试用主体</option><option value="expired">试用到期 · 仍有剩余额度</option><option value="no-consent">未按确认键</option><option value="no-caller">无法识别可信主叫</option><option value="conflict">认领冲突 · 号码已关联其他账户</option></select></label>','demo');}
-function demoStart(){
- const scenario=$('#demo-case').value;if(!['new','repeat','expired','no-consent','no-caller','conflict'].includes(scenario))return fail('未知场景');
- let s=scenario==='repeat'||scenario==='no-consent'?getSubject('SUB-1002'):scenario==='conflict'?getSubject('SUB-1001'):scenario==='expired'?getSubject('SUB-1005'):null;
- const id='IVR-DEMO-'+(++state.seq);
- const session={id,subject:s?.id||null,caller:scenario==='no-caller'?'无法识别':s?.phone||'135****'+String(state.seq).padStart(4,'0').slice(-4),status:scenario==='no-caller'?'REJECTED':scenario==='no-consent'?'ABANDONED':'RECEIVED',key:'—',consent:scenario==='no-caller'?'未播放':'IVR-CONSENT-v1',outcome:scenario==='no-caller'?'主叫缺失，未开通、未发试用':scenario==='no-consent'?'未明确同意，本次未新开通、未发试用':'等待明确按键确认',guided:false,time:'演示 · 刚刚',scenario};
- state.sessions.unshift(session);closeModal();go('/ivr-sessions/'+id);openDemoSession(id);
-}
-function openDemoSession(id){const session=state.sessions.find(x=>x.id===id);if(!session||!session.scenario)return;
- openModal('演示当前会话',demoBody(session),'demo-flow',id);$('.modal-actions').innerHTML=btn('关闭演示','close-modal');}
-function demoBody(session){const s=getSubject(session.subject);return '<p><strong>'+esc(session.id)+' · '+esc(session.caller)+'</strong></p><p id="demo-outcome">'+esc(session.outcome)+'</p><p>业务主体：'+esc(s?.id||'尚未建立')+'；账户：'+esc(s?.account||'待认领')+'；实名：'+esc(s?.identity||'未实名')+'；试用：'+esc(s?trialText(s):'未领取')+'</p><div class="actions">'+btn('按 1 确认开通','demo-confirm',session.id)+btn('试用录音 60 秒','demo-use',session.id)+btn('提示小程序购买','demo-guide',session.id)+btn('验证号码后认领','demo-claim',session.id)+'</div><p class="small muted">认领演示代表已完成后端验证和冲突校验，不是仅凭登录认领；固话需主叫挑战等验证。认领不改变实名，不重发试用，不转移证据主体。</p>';}
+const demoCases={new:['NEW_MOBILE','新主叫 · 未实名未登录'],repeat:['REPEAT_CALL','重复呼入 · 已有试用主体'],expired:['EXPIRED_TRIAL','试用到期 · 仍有剩余'], 'no-consent':['TIMEOUT','未按确认键'],'no-caller':['MISSING_CALLER','无法识别可信主叫'],conflict:['CONFLICT','认领冲突']};
+function demoModal(){if(!actor()||state.dataMode!=='normal')return;openModal('IVR 流程演示','<p>只模拟自建 IVR。按 1 明确同意后开通，未实名也可试用。无电话内支付。</p><label class="field">呼入场景'+select('demo-case',Object.entries(demoCases).map(([k,v])=>[k,v[1]]),state.reviewScenario)+'</label>','demo');}
+function demoStart(){const m=state.modal,key=$('#demo-case').value;if(!demoCases[key])return fail('未知场景');const result=B.startIvrSession(business,{scenario:demoCases[key][0]},new Date());if(!result.ok)return fail('无法创建演示会话：'+result.code);if(['no-consent','no-caller'].includes(key)){const session=business.sessions.find(x=>x.id===result.value.id);session.status=key==='no-caller'?'REJECTED':'ABANDONED';}m.submitted=true;const id=result.value.id;closeModal();go('/ivr-sessions/'+id);openDemoSession(id);}
+function openDemoSession(id){const s=one(business.sessions,'id',id);if(!s)return;const u=subject(s.subjectId);openModal('演示当前会话','<p><strong>'+esc(s.id)+' / '+esc(s.maskedCaller||'无法识别')+'</strong></p><p id="demo-outcome">'+esc(s.status==='CONFIRMED'?'已开通 · '+trialText(u):'等待明确同意；无可信主叫或无确认不发试用')+'</p><p>主体：'+esc(u?.id||'尚未建立')+'；实名：'+(u?label('identity',u.identity):'未实名')+'；账户：'+esc(u?.accountId||'待认领')+'</p><p>同意版本：'+esc(s.consentVersion)+'。当前新领取规则 '+business.rule.seconds+' 秒 / '+business.rule.validDays+' 天；既有试用保留原发放。</p><div class="actions">'+btn('按 1 确认开通','demo-confirm',id)+btn('试用录音 60 秒','demo-use',id)+btn('提示小程序购买','demo-guide',id)+btn('验证号码后认领','demo-claim',id)+'</div><p class="small muted">验证认领代表可信 DEMO 校验，保留实名、试用和证据。完整 IVR 分支展示在后续 S3 完成。</p>','demo-flow',id);$('.modal-actions').innerHTML=btn('关闭演示','close-modal');}
+const demoErrors={SUSPENDED:'业务已暂停，不能绕过暂停',TRIAL_EXPIRED:'需要未到期的剩余试用权益',TRIAL_EXHAUSTED:'没有剩余试用权益',CLAIM_CONFLICT:'存在账户绑定冲突，请联系线下客服核验',INVALID_TRANSITION:'需要明确开通、业务有效且有剩余试用权益',VERIFICATION_REQUIRED:'没有可信主叫，本次不新开通、不发试用',CONSENT_REQUIRED:'没有明确确认，本次不新开通、不发试用'};
 function demoAction(action,id){
- const m=state.modal,session=state.sessions.find(x=>x.id===id);
- if(!state.loggedIn||state.dataMode!=='normal'||!m||m.action!=='demo-flow'||m.id!==id||m.route!==state.route||m.role!==state.role||!session?.scenario)return fail('请从当前演示会话执行');
- let s=getSubject(session.subject),message='';
- if(action==='demo-confirm'){
-   if(['REJECTED','ABANDONED'].includes(session.status))return fail('没有可信主叫或明确确认，本次不新开通、不发试用');
-   if(session.status==='CONFIRMED')return fail('原确认已处理，不重复开通或发放试用');
-   if(s&&!s.active)return fail('业务已暂停，不能用重复呼入绕过暂停');
-   if(!s){s={id:'SUB-DEMO-'+(++state.seq),name:'IVR 演示用户',phone:session.caller,type:'手机号',source:'IVR',account:null,identity:'未实名',active:true,version:1,trial:null,history:[]};state.subjects.push(s);session.subject=s.id;}
-   session.status='CONFIRMED';session.key='1';s.history.push(session.id+' / IVR-CONSENT-v1 / 按 1 确认');
-   if(!s.trial&&state.rule.enabled){s.trial={seconds:state.rule.seconds,used:0,rule:state.rule.version,expires:Date.now()+state.rule.days*86400000};message='已开通 · 首次试用 '+s.trial.seconds+' 秒';log('试用发放',s.id,'0 → '+s.trial.seconds+' 秒 / '+state.rule.campaign,'IVR 明确按键确认','ivr-service');}
-   else message=s.trial?'已开通 · 已有试用，不重复领取':'已开通 · 新试用领取已关闭，无可用试用';
-   session.outcome=message;state.activations.push({id:'ACT-'+(++state.seq),subject:s.id,source:'IVR',basis:session.id+' / IVR-CONSENT-v1 / 按 1',result:'ACTIVE'});
- }else if(action==='demo-use'){
-   if(session.status!=='CONFIRMED'||!s?.active||!s.trial||s.trial.expires<=Date.now()||rest(s)===0)return fail('需要明确开通、业务有效且有未到期的剩余试用权益');
-   const seconds=Math.min(60,rest(s));s.trial.used+=seconds;const evidence={id:'EVI-DEMO-'+(++state.seq),subject:s.id,session:id,seconds,identityAtCapture:s.identity,status:'已固证'};state.evidence.push(evidence);s.history.push(evidence.id+' '+s.identity+'试用录音 '+seconds+' 秒，保持原主体');message='已产生 '+seconds+' 秒录音证据；剩余 '+rest(s)+' 秒'+(rest(s)===0?'，已结束取证通话':'');log('试用录音',s.id,evidence.id+' / '+seconds+' 秒','试用有效录音','ivr-service');
- }else if(action==='demo-guide'){session.guided=true;message='已提示用户到微信小程序登录购买；未创建付费订单，未执行支付';}
- else if(action==='demo-claim'){
-   if(session.status!=='CONFIRMED'||!s)return fail('请先明确按键开通并建立业务主体');
-   if(session.scenario==='conflict')return fail('存在账户绑定冲突，拒绝认领，请联系线下客服核验');
-   if(s.account)return fail('主体已认领，不重复关联或发放试用');
-   s.account='USR-CLAIM-'+(++state.seq);s.version++;s.history.push('可信号码验证与冲突检查通过，追加账户关联 '+s.account+'；实名未改变');message='已验证认领，实名仍为未完成；既有证据主体及试用发放不变';log('认领业务主体',s.id,'待认领 → '+s.account,'演示后端验证及冲突检查通过','claim-service');
- }else return fail('未知演示操作');
- closeModal();render();openDemoSession(id);if($('#demo-outcome'))$('#demo-outcome').textContent=message;
+ const m=state.modal,a=actor(),s=one(business.sessions,'id',id);
+ if(!a){logout('员工会话已失效');return;}
+ if(!m||m.action!=='demo-flow'||m.id!==id||m.route!==state.route||m.session!==JSON.stringify(state.session)||m.actorRevision!==a.revision||state.dataMode!=='normal'||!s)return fail('请从当前有效员工会话执行');
+ let result,message='';
+ if(action==='demo-confirm'){if(['REJECTED','ABANDONED'].includes(s.status))return fail('没有可信主叫或明确确认，本次不新开通、不发试用');result=B.confirmIvrSession(business,{sessionId:id,key:'1',eventId:'OPS-CONFIRM-'+id},new Date());message=result.ok?(result.code==='DUPLICATE'?'原确认已处理，不重复开通或发放试用':result.value.grantCode==='TRIAL_DISABLED'?'已开通 · 新试用领取已关闭':result.value.grantCode==='DUPLICATE'?'已有试用，不重复领取':'已开通 · 首次试用 '+result.value.grant.grantedSeconds+' 秒'):'';}
+ else if(action==='demo-use'){result=B.consumeTrial(business,{sessionId:id,seconds:60,eventId:'OPS-REC-'+id+'-'+(business.evidence.filter(e=>e.sessionId===id).length+1)},new Date());if(result.ok)message='已产生 '+result.value.evidence.recordedSeconds+' 秒录音证据；'+result.value.message;}
+ else if(action==='demo-claim'){const u=subject(s.subjectId);result=B.claimSubject(business,{subjectId:u?.id,accountId:'ACCOUNT-DEMO-'+u?.id,verification:{verified:true,subjectId:u?.id,method:u?.numberType==='LANDLINE'?'CALLER_CHALLENGE':'SMS'},requestId:'OPS-CLAIM-'+id},new Date());message=result?.code==='DUPLICATE'?'主体已认领，不重复关联或发放试用':'已验证认领，实名仍未改变；试用和证据原样保留';}
+ else if(action==='demo-guide'){s.guidanceStatus='GUIDED';result={ok:true};message='已提示到微信小程序购买；未创建付费订单，未执行支付';}
+ else return;
+ if(!result?.ok)return fail(demoErrors[result?.code]||'操作被拒绝：'+result?.code);
+ if(result.code!=='DUPLICATE')audit('IVR 演示 '+action,id,null,message,'本地可信场景模拟','ivr-service');
+ closeModal();render();openDemoSession(id);$('#demo-outcome').textContent=message;
 }
-document.addEventListener('submit',event=>{event.preventDefault();const form=event.target;if(form.id==='login-form'){if($('#login-code').value!=='482916')return notify('请输入演示验证码 482916');const role=$('#login-role').value;if(!roles[role])return;dismissToast();state.role=role;state.loggedIn=true;if(state.route==='/login')state.route='/dashboard';render();}
- else if(form.id==='user-filter'||form.id==='order-filter'){state.filter=Object.fromEntries(new FormData(form));render();}});
-document.addEventListener('click',event=>{const target=event.target.closest('[data-route],[data-action]');if(!target)return;if(target.dataset.route)return go(target.dataset.route);const {action,id}=target.dataset;
- if(action==='logout'){closeModal();dismissToast();state.loggedIn=false;state.role='admin';state.dataMode='normal';state.filter={};state.route='/dashboard';location.hash='/dashboard';render();}
- else if(action==='close-modal')closeModal();else if(action==='confirm')confirm();else if(action==='demo')demoModal();else if(action.startsWith('demo-'))demoAction(action,id);else openAction(action,id);
+document.addEventListener('submit',event=>{event.preventDefault();const form=event.target;
+ if(form.id==='login-form'){const name=$('#login-name').value.trim().toLowerCase(),code=$('#login-code').value,e=one(employees,'loginName',name);if(!e||e.status!=='ACTIVE'||!credentials.has(e.id)||credentials.get(e.id)!==code)return notify('登录名或 DEMO 码错误，或账号已停用');closeModal();dismissToast();state.session={employeeId:e.id,credentialVersion:e.credentialVersion,role:e.role,nonce:crypto.randomUUID()};if(state.route==='/login')state.route='/dashboard';render();}
+ else if(['user-filter','order-filter','catalog-filter'].includes(form.id)&&actor()){state.filter=Object.fromEntries(new FormData(form));render();}
 });
-document.addEventListener('change',event=>{if(event.target.id==='review-role'&&roles[event.target.value]){closeModal();state.role=event.target.value;render();}if(event.target.id==='data-mode'){const v=event.target.value;if(['normal','empty','loading','unavailable'].includes(v)){closeModal();state.dataMode=v;render();}}});
-document.addEventListener('keydown',event=>{if(!state.modal)return;if(event.key==='Escape'){event.preventDefault();closeModal();return;}if(event.key==='Tab'){const controls=[...document.querySelectorAll('.modal button,.modal input,.modal select,.modal textarea')].filter(el=>!el.disabled);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+document.addEventListener('click',event=>{const target=event.target.closest('[data-route],[data-action]');if(!target)return;if(target.dataset.route)return go(target.dataset.route);const {action,id}=target.dataset;
+ if(action==='logout')logout();else if(action==='close-modal')closeModal();else if(action==='confirm')confirm();else if(action==='demo')demoModal();else if(action.startsWith('demo-'))demoAction(action,id);else openAction(action,id);
+});
+document.addEventListener('change',event=>{if(event.target.id==='data-mode'&&['normal','empty','loading','unavailable'].includes(event.target.value)){closeModal();state.dataMode=event.target.value;render();}});
+document.addEventListener('keydown',event=>{if(!state.modal)return;if(event.key==='Escape'){event.preventDefault();closeModal();return;}if(event.key==='Tab'){const controls=[...document.querySelectorAll('.modal button,.modal input,.modal select,.modal textarea')].filter(el=>!el.disabled&&!el.readOnly);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 window.addEventListener('hashchange',()=>{const route=location.hash.slice(1)||'/dashboard';if(state.route!==route){closeModal();dismissToast();state.route=route;state.filter={};render();}});
-window.__onecallOps={routes:clone(routes),snapshot:()=>clone({...state,modal:undefined,toastTimer:undefined}),go,setReviewRole:role=>{if(roles[role]){closeModal();state.role=role;render();}},setReviewDataMode:mode=>{if(['normal','empty','loading','unavailable'].includes(mode)){closeModal();state.dataMode=mode;render();}}};
+// Local review hooks transfer business fixtures only, never employees, codes or login sessions.
+window.__onecallOps={
+ routes:clone(routeDefs),snapshot:()=>clone({business,employees:isAdmin()?employees:[],session:state.session,route:state.route,dataMode:state.dataMode,audit:state.audit,loggedIn:!!actor()}),
+ businessSnapshot:()=>{const result=B.snapshot(business);if(!result.ok)throw Error(result.code);return result.value;},
+ loadReviewSnapshot:candidate=>{if(!isAdmin()||state.dataMode!=='normal')return {ok:false,code:'FORBIDDEN'};const r=B.loadReviewSnapshot(business,candidate);if(r.ok)render();return clone(r);},
+ setReviewScenario:name=>{const key=Object.keys(demoCases).find(k=>k===name||demoCases[k][0]===name);if(!key)return {ok:false,code:'NOT_FOUND'};state.reviewScenario=key;return {ok:true,scenario:demoCases[key][0]};},go,
+ setReviewDataMode:mode=>{if(['normal','empty','loading','unavailable'].includes(mode)){closeModal();state.dataMode=mode;render();}}
+};
 state.route=location.hash.slice(1)||'/dashboard';render();
 })();
 </script>

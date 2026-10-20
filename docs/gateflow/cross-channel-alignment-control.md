@@ -5,8 +5,8 @@
 - work unit：`cross-channel-alignment`，类型：feature（本地产品原型同步）。
 - design_doc：`docs/09-business-activation-and-lean-admin.md`。
 - control_doc：`docs/gateflow/cross-channel-alignment-control.md`。
-- 当前未完成 gate / next entry point：`accepted slice commit`（S1）。
-- 状态：S1 第 4 轮复审 pass-with-risks，CR-001～007 全部已修复，无新增实质问题；准备接受 S1 本地提交。S2/S3、最终验收和 final closeout 尚未完成。
+- 当前未完成 gate / next entry point：`accepted slice commit`（S2）。
+- 状态：S1 已接受并提交；S2 code review pass-with-risks、无实质 finding，准备接受 S2 本地提交。S3、最终验收和 final closeout 尚未完成。
 - 派发协议：用户在默认 runner 重试仍不可用后，明确回复“继续”，授权改用当前会话内置子 Agent；这是用户明确覆盖，不是静默切换。后续本 work unit 统一使用内置子 Agent。
 - 用户已确认业务顺序与文档路径，并于本轮明确回复“开始”；不再要求重复确认相同业务范围。
 
@@ -35,8 +35,8 @@
 
 | 顺序 | 业务增量 | 当前状态 |
 | --- | --- | --- |
-| 1 | 套餐与跨端状态规则统一 | S1 实现、修复与独立复审通过，准备提交 |
-| 2 | 后台员工账号与套餐配置原型 | 未开始 |
+| 1 | 套餐与跨端状态规则统一 | S1 已接受并提交 |
+| 2 | 后台员工账号与套餐配置原型 | S2 实现与独立 review 通过，准备提交 |
 | 3 | 小程序/Web 同步及 IVR 场景细化 | 未开始 |
 | 4 | 跨端一致性与回归验收 | 未开始 |
 
@@ -74,7 +74,10 @@
 | re-review S1（第 3 轮） | `docs/reviews/code-review-20261020-142931.md`；fail；CR-001～005/007 已修复；CR-006 部分修复，EVIDENCE/ENTITLEMENT 同结果多事件的原键 replay 仍返回 DUPLICATE，虽然 snapshot/import 会拒绝 |
 | fix S1（第 4 轮） | `docs/gateflow/cross-channel-alignment-s1-fix.md` 已追加 round 4；CR-006 报告已修复；business tests 21/21、runner test 1/1、三端 QA、generator/check、syntax、diff check 全部通过；截图基线未改变 |
 | re-review S1（第 4 轮） | `docs/reviews/code-review-20261020-151011.md`；pass-with-risks；CR-001～007 全部已修复，无新增 finding；fresh business 21/21、runner 1/1、七域新旧键探针、syntax、generator/check、diff check 通过 |
-| accepted slice commit S1 | 待创建；范围为 S1 共享规则、生成副本、QA、文档、修复和审查记录 |
+| accepted slice commit S1 | `8fe4c3f18c90c70d10d2a966e8873a8d82cdb33a` (`gateflow: accept cross-channel-alignment S1`)；共享规则、生成副本、QA、文档、修复和审查记录 |
+| implementation S2 | `docs/gateflow/cross-channel-alignment-s2-implementation.md`；六入口、独立员工账号、套餐版本/试用、canonical state 接入及历史保护；shared 21/21、runner 1/1、完整后台 QA、syntax、generator/check、preview/diff check 通过；10 张 alignment 截图，1440/1280/1024/720 无 overflow，人工视觉检查通过 |
+| code review S2 | `docs/reviews/code-review-20261020-162237.md`；pass-with-risks；无实质 finding；shared 21/21、runner 1/1、完整后台 QA、syntax、generator/check、diff check、视觉抽查通过；风险已归入 S3/生产服务/产品决策/外部 CI |
+| accepted slice commit S2 | 待创建；范围为后台源/preview/QA/README、10 张 alignment 截图、当前文档、implementation/review artifacts |
 | 后续 gates | 均未进入 |
 
 ### Plan review finding 裁决
@@ -116,4 +119,4 @@ S1 最终状态：CR-001～007 均已修复，由第 4 轮复审确认。复审�
 
 ## 下一步
 
-创建 S1 accepted slice commit，然后执行 S2 implementation。S1 全部 accepted findings 已关闭，强制验证与独立复审已通过。
+创建 S2 accepted slice commit，然后执行 S3 implementation。S2 无 accepted findings，验证与独立审查已通过。
