@@ -5,7 +5,7 @@
 > 基线日期：2026-10-20
 > 适用范围：微信小程序、客户 Web、自建 IVR、Java 服务端、精简运营后台
 
-当前开通/订购与本期后台范围以 [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) 为准。01—08 中运营商开通接口、未实名禁止全部取证、55 路由和在线工单/退款/发票的旧约束已被该文覆盖；客户小程序/Web 原型尚未同步改版，不应据旧页面反推当前业务规则。
+当前开通/订购与本期后台范围以 [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) 为准，统一演示套餐、状态转换和线下客服口径见 [10-cross-channel-rules.md](10-cross-channel-rules.md)。01—08 中运营商开通接口、未实名禁止全部取证、55 路由和在线工单/退款/发票的旧约束已被当前基线覆盖。共享规则底座已建立；运营后台与客户页面仍等待后续切片接入，不应据旧页面反推当前业务规则，也不应把 S1 描述为已完成跨端改版。
 
 ## 1. 文档目的
 
@@ -33,6 +33,7 @@
 | [07-web-capability-hub-spec.md](07-web-capability-hub-spec.md) | 证枢 Web 端个人/企业工作台、证据与通话管理、权限和响应式规则 | 产品、设计、Web、服务端、测试 |
 | [08-operations-admin-prototype-plan.md](08-operations-admin-prototype-plan.md) | 平台运营后台原型的独立 IAM、权限、路由、状态机、实施切片和 QA 计划 | 产品、运营、安全、法务、设计、Web、测试 |
 | [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) | 当前业务基线：自建 IVR、三入口开通订购、免实名试用、认领和 5 人团队精简后台 | 产品、研发、运营、测试 |
+| [10-cross-channel-rules.md](10-cross-channel-rules.md) | 当前共享演示规则：套餐、状态转换、快照边界与线下客服口径 | 产品、研发、运营、测试 |
 
 ## 3. 已锁定的产品基线
 

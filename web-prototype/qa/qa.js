@@ -284,9 +284,14 @@ async function openRoute(page, route) {
     await page.locator('[data-action="export-submit"]').click();
     await expectText(page, '#content', '下载与导出任务');
     await expectText(page, '#content', '已失效');
-    await page.locator('[data-action="export-complete"]').first().click();
-    await expectText(page, '#content', '可下载');
-    await page.locator('[data-action="export-download"]').first().click();
+    const createdExportId = await page.locator('[data-action="export-complete"]').first().getAttribute('data-export-job');
+    expect(/^EXP-261019-\d{3,}$/.test(createdExportId || ''), `Unexpected created export ID: ${createdExportId}`);
+    const visibleExportIds = await page.locator('[data-export-job]').evaluateAll(nodes => nodes.map(node => node.dataset.exportJob));
+    expect(new Set(visibleExportIds).size === visibleExportIds.length, `Export job IDs must be unique: ${visibleExportIds.join(', ')}`);
+    await page.locator(`[data-action="export-complete"][data-export-job="${createdExportId}"]`).click();
+    const createdExportRow = page.locator('tr').filter({ hasText: createdExportId }).first();
+    expect((await createdExportRow.innerText()).includes('可下载'), `Created export ${createdExportId} was not completed`);
+    await page.locator(`[data-action="export-download"][data-export-job="${createdExportId}"]`).click();
     await expectText(page, '#toast', '受控下载已开始');
     await screenshot(page, 'export-tasks-1440.png', 1440);
     await screenshot(page, 'export-tasks-1024.png', 1024);

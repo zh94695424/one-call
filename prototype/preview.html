@@ -4912,6 +4912,879 @@ html&gt;body{padding:0}&lt;/style&gt;
     &lt;/section&gt;
   &lt;/div&gt;
 
+  &lt;!-- ONECALL_BUSINESS:START --&gt;
+&lt;script data-onecall-business-sha256=&quot;1d380df600b38448b741f5e37e08d66dfd0b64198a5024ce2567e3dcd44a5930&quot;&gt;
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === &#x27;object&#x27; &amp;&amp; module.exports) module.exports = api;
+  if (root &amp;&amp; typeof root === &#x27;object&#x27;) root.OnecallBusiness = api;
+})(typeof globalThis !== &#x27;undefined&#x27; ? globalThis : this, function () {
+  &#x27;use strict&#x27;;
+
+  const schemaVersion = 1;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const BUSINESS_FIELDS = [
+    &#x27;schemaVersion&#x27;, &#x27;catalog&#x27;, &#x27;rule&#x27;, &#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;trialGrants&#x27;, &#x27;sessions&#x27;,
+    &#x27;evidence&#x27;, &#x27;activations&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;, &#x27;processedEvents&#x27;, &#x27;sequence&#x27;,
+  ];
+  const EVENT_DOMAINS = [&#x27;ACTIVATION&#x27;, &#x27;CLAIM&#x27;, &#x27;IVR_CONFIRM&#x27;, &#x27;EVIDENCE&#x27;, &#x27;ORDER&#x27;, &#x27;PAYMENT&#x27;, &#x27;ENTITLEMENT&#x27;];
+  const ID_COLLECTIONS = {
+    ORDER: &#x27;orders&#x27;, TRIAL: &#x27;trialGrants&#x27;, SUBJ: &#x27;subjects&#x27;, ACT: &#x27;activations&#x27;,
+    EVID: &#x27;evidence&#x27;, CLAIM: &#x27;claims&#x27;, ENT: &#x27;entitlements&#x27;, IVR: &#x27;sessions&#x27;,
+  };
+  const FORBIDDEN_IMPORT_KEYS = new Set([
+    &#x27;employees&#x27;, &#x27;employeeLoginSession&#x27;, &#x27;employeeCredentials&#x27;, &#x27;employeeRoles&#x27;,
+    &#x27;customerAuthSession&#x27;, &#x27;uiSession&#x27;, &#x27;widgetState&#x27;, &#x27;code&#x27;,
+  ]);
+  const ENUMS = {
+    numberType: new Set([&#x27;MOBILE&#x27;, &#x27;LANDLINE&#x27;]),
+    identity: new Set([&#x27;UNVERIFIED&#x27;, &#x27;VERIFIED&#x27;]),
+    activation: new Set([&#x27;INACTIVE&#x27;, &#x27;ACTIVE&#x27;, &#x27;SUSPENDED&#x27;]),
+    claimRisk: new Set([&#x27;NONE&#x27;, &#x27;CONFLICT&#x27;, &#x27;RECYCLED&#x27;]),
+    claimMethod: new Set([&#x27;WECHAT_PHONE&#x27;, &#x27;SMS&#x27;, &#x27;CALLER_CHALLENGE&#x27;]),
+    channel: new Set([&#x27;MINIAPP&#x27;, &#x27;WEB&#x27;, &#x27;IVR&#x27;]),
+    purchaseChannel: new Set([&#x27;MINIAPP&#x27;, &#x27;WEB&#x27;]),
+    sessionStatus: new Set([&#x27;RECEIVED&#x27;, &#x27;CONFIRMED&#x27;, &#x27;ABANDONED&#x27;, &#x27;REJECTED&#x27;]),
+    guidanceStatus: new Set([&#x27;NOT_GUIDED&#x27;, &#x27;GUIDED&#x27;]),
+    payment: new Set([&#x27;UNPAID&#x27;, &#x27;UNKNOWN&#x27;, &#x27;PAID&#x27;, &#x27;CLOSED&#x27;]),
+    entitlement: new Set([&#x27;NOT_ISSUED&#x27;, &#x27;PENDING&#x27;, &#x27;ISSUED&#x27;, &#x27;FAILED&#x27;]),
+    saleStatus: new Set([&#x27;DRAFT&#x27;, &#x27;ACTIVE&#x27;, &#x27;OFFSALE&#x27;]),
+    type: new Set([&#x27;SUBSCRIPTION&#x27;, &#x27;ONE_TIME&#x27;, &#x27;ADD_ON&#x27;, &#x27;QUOTE&#x27;]),
+    audience: new Set([&#x27;PERSONAL&#x27;, &#x27;ENTERPRISE&#x27;]),
+    billingCycle: new Set([&#x27;ONCE&#x27;, &#x27;MONTHLY&#x27;, &#x27;QUARTERLY&#x27;, &#x27;ANNUAL&#x27;, &#x27;QUOTE&#x27;]),
+  };
+
+  const labels = deepFreeze({
+    schemaVersion,
+    consentVersion: &#x27;ONECALL-SERVICE-2026.10&#x27;,
+    claim: { UNCLAIMED: &#x27;待认领&#x27;, CLAIMED: &#x27;已认领&#x27;, CONFLICT: &#x27;认领冲突&#x27;, RECYCLED: &#x27;号码回收风险&#x27; },
+    identity: { UNVERIFIED: &#x27;未实名&#x27;, VERIFIED: &#x27;已实名&#x27; },
+    activation: { INACTIVE: &#x27;未开通&#x27;, ACTIVE: &#x27;已开通&#x27;, SUSPENDED: &#x27;已停用&#x27; },
+    trial: { NOT_GRANTED: &#x27;未领取&#x27;, AVAILABLE: &#x27;试用中&#x27;, EXHAUSTED: &#x27;已耗尽&#x27;, EXPIRED: &#x27;已过期&#x27; },
+    payment: { UNPAID: &#x27;待支付&#x27;, UNKNOWN: &#x27;支付结果待确认&#x27;, PAID: &#x27;支付成功&#x27;, CLOSED: &#x27;已关闭&#x27; },
+    entitlement: { NOT_ISSUED: &#x27;未发放&#x27;, PENDING: &#x27;待发放&#x27;, ISSUED: &#x27;已到账&#x27;, FAILED: &#x27;发放失败&#x27; },
+    catalog: { DRAFT: &#x27;草稿&#x27;, ACTIVE: &#x27;在售&#x27;, OFFSALE: &#x27;已下架&#x27; },
+  });
+
+  const support = deepFreeze({
+    mode: &#x27;OFFLINE&#x27;,
+    configured: false,
+    contactLabel: &#x27;人工客服联系方式待配置&#x27;,
+    contactValue: null,
+    hours: null,
+    instructions: {
+      consultation: &#x27;请准备业务号码、问题发生时间和问题说明，待联系方式配置后由人工客服线下承接。&#x27;,
+      refund: &#x27;请准备订单号、支付时间和退款原因，退款资格与处理时效由人工客服线下核验。&#x27;,
+      invoice: &#x27;请准备订单号、开票抬头、税号和接收信息，由人工客服线下核验并处理。&#x27;,
+      claim: &#x27;请准备脱敏号码、验证方式和冲突说明，由人工客服线下核验；原型不要求上传完整证件。&#x27;,
+    },
+  });
+
+  function rights(recordingMinutes, aiMinutes, evidenceCount, storageGB, seats, fixedLines) {
+    return { recordingMinutes, aiMinutes, evidenceCount, storageGB, seats, fixedLines };
+  }
+
+  function offer(input) {
+    return {
+      productCode: input.productCode,
+      sku: input.sku,
+      versionId: `${input.sku}-V1`,
+      version: 1,
+      name: input.name,
+      description: input.description,
+      type: input.type,
+      audience: input.audience,
+      priceCents: input.priceCents,
+      validDays: input.validDays,
+      billingCycle: input.billingCycle,
+      installments: input.installments,
+      grantIntervalMonths: input.grantIntervalMonths,
+      rights: input.rights,
+      channels: [&#x27;MINIAPP&#x27;, &#x27;WEB&#x27;],
+      sortOrder: input.sortOrder,
+      saleStatus: &#x27;ACTIVE&#x27;,
+      demo: true,
+      policyStatus: &#x27;DEMO_NOT_APPROVED&#x27;,
+      includedFeatures: input.includedFeatures || [],
+    };
+  }
+
+  const demoCatalog = deepFreeze([
+    offer({ productCode: &#x27;PERSONAL_BASIC&#x27;, sku: &#x27;PERSONAL_BASIC_MONTHLY&#x27;, name: &#x27;个人基础版（月付）&#x27;, description: &#x27;个人录音与 AI 基础权益演示&#x27;, type: &#x27;SUBSCRIPTION&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 3900, validDays: 30, billingCycle: &#x27;MONTHLY&#x27;, installments: 1, grantIntervalMonths: 1, rights: rights(60, 60, 20, 5, 0, 0), sortOrder: 10 }),
+    offer({ productCode: &#x27;PERSONAL_BASIC&#x27;, sku: &#x27;PERSONAL_BASIC_QUARTERLY&#x27;, name: &#x27;个人基础版（季付）&#x27;, description: &#x27;按月分期发放的季度演示套餐&#x27;, type: &#x27;SUBSCRIPTION&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 10500, validDays: 90, billingCycle: &#x27;QUARTERLY&#x27;, installments: 3, grantIntervalMonths: 1, rights: rights(60, 60, 20, 5, 0, 0), sortOrder: 20 }),
+    offer({ productCode: &#x27;PERSONAL_BASIC&#x27;, sku: &#x27;PERSONAL_BASIC_ANNUAL&#x27;, name: &#x27;个人基础版（年付）&#x27;, description: &#x27;按月分期发放的年度演示套餐&#x27;, type: &#x27;SUBSCRIPTION&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 39000, validDays: 365, billingCycle: &#x27;ANNUAL&#x27;, installments: 12, grantIntervalMonths: 1, rights: rights(60, 60, 20, 5, 0, 0), sortOrder: 30 }),
+    offer({ productCode: &#x27;PERSONAL_PRO&#x27;, sku: &#x27;PERSONAL_PRO_MONTHLY&#x27;, name: &#x27;个人进阶版（月付）&#x27;, description: &#x27;个人高频录音与 AI 权益演示&#x27;, type: &#x27;SUBSCRIPTION&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 8900, validDays: 30, billingCycle: &#x27;MONTHLY&#x27;, installments: 1, grantIntervalMonths: 1, rights: rights(300, 300, 100, 20, 0, 0), sortOrder: 40 }),
+    offer({ productCode: &#x27;PERSONAL_PRO&#x27;, sku: &#x27;PERSONAL_PRO_QUARTERLY&#x27;, name: &#x27;个人进阶版（季付）&#x27;, description: &#x27;按月分期发放的季度演示套餐&#x27;, type: &#x27;SUBSCRIPTION&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 24000, validDays: 90, billingCycle: &#x27;QUARTERLY&#x27;, installments: 3, grantIntervalMonths: 1, rights: rights(300, 300, 100, 20, 0, 0), sortOrder: 50 }),
+    offer({ productCode: &#x27;PERSONAL_PRO&#x27;, sku: &#x27;PERSONAL_PRO_ANNUAL&#x27;, name: &#x27;个人进阶版（年付）&#x27;, description: &#x27;按月分期发放的年度演示套餐&#x27;, type: &#x27;SUBSCRIPTION&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 89000, validDays: 365, billingCycle: &#x27;ANNUAL&#x27;, installments: 12, grantIntervalMonths: 1, rights: rights(300, 300, 100, 20, 0, 0), sortOrder: 60 }),
+    offer({ productCode: &#x27;EVIDENCE_ONE&#x27;, sku: &#x27;EVIDENCE_ONE&#x27;, name: &#x27;单次出证权益&#x27;, description: &#x27;单项证据保存与出证演示&#x27;, type: &#x27;ONE_TIME&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 1290, validDays: 30, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 0, 1, 0, 0, 0), sortOrder: 70, includedFeatures: [&#x27;单项证据保存&#x27;] }),
+    offer({ productCode: &#x27;CALL&#x27;, sku: &#x27;CALL_30&#x27;, name: &#x27;录音 30 分钟包&#x27;, description: &#x27;独立录音加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 1890, validDays: 30, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(30, 0, 0, 0, 0, 0), sortOrder: 80 }),
+    offer({ productCode: &#x27;CALL&#x27;, sku: &#x27;CALL_100&#x27;, name: &#x27;录音 100 分钟包&#x27;, description: &#x27;独立录音加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 4990, validDays: 90, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(100, 0, 0, 0, 0, 0), sortOrder: 90 }),
+    offer({ productCode: &#x27;CALL&#x27;, sku: &#x27;CALL_300&#x27;, name: &#x27;录音 300 分钟包&#x27;, description: &#x27;独立录音加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 12800, validDays: 180, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(300, 0, 0, 0, 0, 0), sortOrder: 100 }),
+    offer({ productCode: &#x27;AI_ADDON&#x27;, sku: &#x27;AI_30&#x27;, name: &#x27;AI 30 分钟包&#x27;, description: &#x27;独立 AI 加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 990, validDays: 30, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 30, 0, 0, 0, 0), sortOrder: 110 }),
+    offer({ productCode: &#x27;AI_ADDON&#x27;, sku: &#x27;AI_100&#x27;, name: &#x27;AI 100 分钟包&#x27;, description: &#x27;独立 AI 加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 2990, validDays: 90, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 100, 0, 0, 0, 0), sortOrder: 120 }),
+    offer({ productCode: &#x27;AI_ADDON&#x27;, sku: &#x27;AI_300&#x27;, name: &#x27;AI 300 分钟包&#x27;, description: &#x27;独立 AI 加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 7900, validDays: 180, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 300, 0, 0, 0, 0), sortOrder: 130 }),
+    offer({ productCode: &#x27;STORAGE&#x27;, sku: &#x27;STORAGE_5&#x27;, name: &#x27;存储 5 GB 包&#x27;, description: &#x27;独立存储加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 990, validDays: 365, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 0, 0, 5, 0, 0), sortOrder: 140 }),
+    offer({ productCode: &#x27;STORAGE&#x27;, sku: &#x27;STORAGE_10&#x27;, name: &#x27;存储 10 GB 包&#x27;, description: &#x27;独立存储加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 1200, validDays: 30, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 0, 0, 10, 0, 0), sortOrder: 150 }),
+    offer({ productCode: &#x27;STORAGE&#x27;, sku: &#x27;STORAGE_50&#x27;, name: &#x27;存储 50 GB 包&#x27;, description: &#x27;独立存储加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 4900, validDays: 90, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 0, 0, 50, 0, 0), sortOrder: 160 }),
+    offer({ productCode: &#x27;STORAGE&#x27;, sku: &#x27;STORAGE_200&#x27;, name: &#x27;存储 200 GB 包&#x27;, description: &#x27;独立存储加量演示&#x27;, type: &#x27;ADD_ON&#x27;, audience: &#x27;PERSONAL&#x27;, priceCents: 16800, validDays: 180, billingCycle: &#x27;ONCE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(0, 0, 0, 200, 0, 0), sortOrder: 170 }),
+    offer({ productCode: &#x27;ENTERPRISE_BASIC&#x27;, sku: &#x27;ENTERPRISE_BASIC&#x27;, name: &#x27;企业基础版&#x27;, description: &#x27;企业方案演示，正式权益与报价待确认&#x27;, type: &#x27;QUOTE&#x27;, audience: &#x27;ENTERPRISE&#x27;, priceCents: null, validDays: 365, billingCycle: &#x27;QUOTE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(1000, 1000, 300, 100, 5, 5), sortOrder: 180 }),
+    offer({ productCode: &#x27;ENTERPRISE_FLAGSHIP&#x27;, sku: &#x27;ENTERPRISE_FLAGSHIP&#x27;, name: &#x27;企业旗舰版&#x27;, description: &#x27;企业方案演示，正式权益与报价待确认&#x27;, type: &#x27;QUOTE&#x27;, audience: &#x27;ENTERPRISE&#x27;, priceCents: null, validDays: 365, billingCycle: &#x27;QUOTE&#x27;, installments: 1, grantIntervalMonths: 0, rights: rights(6000, 6000, 2000, 1024, 20, 30), sortOrder: 190 }),
+  ]);
+
+  const scenarios = {
+    NEW_MOBILE: { maskedCaller: &#x27;138****2039&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    NEW_LANDLINE: { maskedCaller: &#x27;021-****8821&#x27;, trustedCaller: true, numberType: &#x27;LANDLINE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    REPEAT_CALL: { maskedCaller: &#x27;139****7712&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    TIMEOUT: { maskedCaller: &#x27;137****4466&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    WRONG_KEY: { maskedCaller: &#x27;136****8820&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    MISSING_CALLER: { maskedCaller: null, trustedCaller: false, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    SUSPENDED: { maskedCaller: &#x27;010-****1628&#x27;, trustedCaller: true, numberType: &#x27;LANDLINE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    TRIAL_DISABLED: { maskedCaller: &#x27;135****9011&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    EXPIRED_TRIAL: { maskedCaller: &#x27;134****2701&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    EXHAUSTED_TRIAL: { maskedCaller: &#x27;133****3802&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;NONE&#x27; },
+    CONFLICT: { maskedCaller: &#x27;132****4903&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;CONFLICT&#x27; },
+    RECYCLED: { maskedCaller: &#x27;131****5104&#x27;, trustedCaller: true, numberType: &#x27;MOBILE&#x27;, claimRisk: &#x27;RECYCLED&#x27; },
+  };
+
+  function createDemoState(now) {
+    const at = iso(now);
+    return {
+      schemaVersion,
+      catalog: clone(demoCatalog),
+      rule: { campaignId: &#x27;FIRST-TRIAL&#x27;, version: 1, enabled: true, seconds: 300, validDays: 30 },
+      subjects: [
+        subject(&#x27;SUBJ-REPEAT-001&#x27;, scenarios.REPEAT_CALL, &#x27;ACTIVE&#x27;),
+        subject(&#x27;SUBJ-SUSPENDED-001&#x27;, scenarios.SUSPENDED, &#x27;SUSPENDED&#x27;),
+        subject(&#x27;SUBJ-EXPIRED-001&#x27;, scenarios.EXPIRED_TRIAL, &#x27;ACTIVE&#x27;),
+        subject(&#x27;SUBJ-EXHAUSTED-001&#x27;, scenarios.EXHAUSTED_TRIAL, &#x27;ACTIVE&#x27;),
+        subject(&#x27;SUBJ-CONFLICT-001&#x27;, scenarios.CONFLICT, &#x27;ACTIVE&#x27;),
+        subject(&#x27;SUBJ-RECYCLED-001&#x27;, scenarios.RECYCLED, &#x27;ACTIVE&#x27;),
+      ],
+      claims: [],
+      trialGrants: [
+        { id: &#x27;TRIAL-REPEAT-001&#x27;, subjectId: &#x27;SUBJ-REPEAT-001&#x27;, campaignId: &#x27;FIRST-TRIAL&#x27;, ruleVersion: 1, grantedSeconds: 300, usedSeconds: 60, grantedAt: at, expiresAt: new Date(toMs(now) + 30 * DAY_MS).toISOString() },
+        { id: &#x27;TRIAL-EXPIRED-001&#x27;, subjectId: &#x27;SUBJ-EXPIRED-001&#x27;, campaignId: &#x27;FIRST-TRIAL&#x27;, ruleVersion: 1, grantedSeconds: 300, usedSeconds: 30, grantedAt: new Date(toMs(now) - 40 * DAY_MS).toISOString(), expiresAt: new Date(toMs(now) - 10 * DAY_MS).toISOString() },
+        { id: &#x27;TRIAL-EXHAUSTED-001&#x27;, subjectId: &#x27;SUBJ-EXHAUSTED-001&#x27;, campaignId: &#x27;FIRST-TRIAL&#x27;, ruleVersion: 1, grantedSeconds: 300, usedSeconds: 300, grantedAt: at, expiresAt: new Date(toMs(now) + 30 * DAY_MS).toISOString() },
+      ],
+      sessions: [],
+      evidence: [],
+      activations: [],
+      orders: [],
+      entitlements: [],
+      processedEvents: eventStore(),
+      sequence: 1000,
+    };
+  }
+
+  function subject(id, fixture, activation) {
+    return { id, maskedNumber: fixture.maskedCaller, numberType: fixture.numberType, source: &#x27;IVR&#x27;, accountId: null, identity: &#x27;UNVERIFIED&#x27;, activation, revision: 1, claimRisk: fixture.claimRisk };
+  }
+
+  function validateCatalogVersion(value) {
+    if (!plain(value)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const codePattern = /^[A-Z][A-Z0-9_-]{2,39}$/;
+    if (!codePattern.test(value.productCode || &#x27;&#x27;) || !codePattern.test(value.sku || &#x27;&#x27;)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!id(value.versionId) || !safePositive(value.version)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!textBetween(value.name, 1, 40) || !textBetween(value.description, 1, 300)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!ENUMS.type.has(value.type) || !ENUMS.audience.has(value.audience) || !ENUMS.billingCycle.has(value.billingCycle) || !ENUMS.saleStatus.has(value.saleStatus)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (value.audience === &#x27;ENTERPRISE&#x27; &amp;&amp; (value.type !== &#x27;QUOTE&#x27; || value.billingCycle !== &#x27;QUOTE&#x27; || value.priceCents !== null)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (value.audience === &#x27;PERSONAL&#x27; &amp;&amp; (value.type === &#x27;QUOTE&#x27; || value.billingCycle === &#x27;QUOTE&#x27; || !safeBetween(value.priceCents, 1, 9999999))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!safeBetween(value.validDays, 1, 3650) || !safePositive(value.installments) || !safeBetween(value.grantIntervalMonths, 0, 120) || !safeBetween(value.sortOrder, 0, 9999)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (value.demo !== true || value.policyStatus !== &#x27;DEMO_NOT_APPROVED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!Array.isArray(value.channels) || !value.channels.length || new Set(value.channels).size !== value.channels.length || value.channels.some(channel =&gt; !ENUMS.purchaseChannel.has(channel))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!plain(value.rights)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const limits = { recordingMinutes: 100000, aiMinutes: 100000, evidenceCount: 1000000, storageGB: 100000, seats: 100000, fixedLines: 100000 };
+    for (const [key, max] of Object.entries(limits)) if (!safeBetween(value.rights[key], 0, max)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (value.audience === &#x27;PERSONAL&#x27; &amp;&amp; (value.rights.seats || value.rights.fixedLines)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!Array.isArray(value.includedFeatures) || value.includedFeatures.some(item =&gt; !textBetween(item, 1, 100))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const quota = Object.values(value.rights).reduce((sum, current) =&gt; sum + current, 0);
+    if (quota === 0 &amp;&amp; value.includedFeatures.length === 0) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    return ok(clone(value));
+  }
+
+  function visibleOffers(state, query) {
+    if (!plain(query) || !ENUMS.purchaseChannel.has(query.channel) || !ENUMS.audience.has(query.audience)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!Array.isArray(state &amp;&amp; state.catalog)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const selected = state.catalog.filter(item =&gt; item.saleStatus === &#x27;ACTIVE&#x27; &amp;&amp; item.audience === query.audience &amp;&amp; item.channels.includes(query.channel));
+    for (const item of selected) if (!validateCatalogVersion(item).ok) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    selected.sort((a, b) =&gt; a.sortOrder - b.sortOrder || a.sku.localeCompare(b.sku));
+    return ok(selected.map(item =&gt; Object.assign(clone(item), { versionToken: offerVersionToken(item) })));
+  }
+
+  function offerVersionToken(value) {
+    const validation = validateCatalogVersion(value);
+    if (!validation.ok) return null;
+    return `OFFER-V1:${canonicalSerialize(catalogTokenValue(value))}`;
+  }
+
+  function activateService(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !ENUMS.purchaseChannel.has(input.channel) || !id(input.eventId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { subjectId: input.subjectId, channel: input.channel, verified: input.verified === true, consentVersion: input.consentVersion, confirmed: input.confirmed === true };
+      const replay = replayEvent(draft, &#x27;ACTIVATION&#x27;, input.eventId, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item =&gt; item.id === input.subjectId);
+      if (!target) return fail(&#x27;NOT_FOUND&#x27;);
+      if (target.activation === &#x27;SUSPENDED&#x27;) return fail(&#x27;SUSPENDED&#x27;);
+      if (input.confirmed !== true || !id(input.consentVersion)) return fail(&#x27;CONSENT_REQUIRED&#x27;);
+      if (input.channel !== &#x27;IVR&#x27; &amp;&amp; (input.verified !== true || target.identity !== &#x27;VERIFIED&#x27; || !target.accountId)) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
+      const activation = { id: nextId(draft, &#x27;ACT&#x27;), subjectId: target.id, channel: input.channel, consentVersion: input.consentVersion, confirmation: input.channel === &#x27;IVR&#x27; ? &#x27;KEY_1&#x27; : &#x27;EXPLICIT&#x27;, eventId: input.eventId, at: iso(now) };
+      target.activation = &#x27;ACTIVE&#x27;;
+      target.revision += 1;
+      draft.activations.push(activation);
+      const grant = grantTrialDraft(draft, target.id, now);
+      const value = { activation, grant: grant.ok ? grant.value : null, grantCode: grant.code || &#x27;OK&#x27; };
+      recordEvent(draft, &#x27;ACTIVATION&#x27;, input.eventId, eventInput, value);
+      return ok(value);
+    });
+  }
+
+  function grantTrialOnce(state, subjectId, now) {
+    return mutate(state, draft =&gt; grantTrialDraft(draft, subjectId, now));
+  }
+
+  function grantTrialDraft(draft, subjectId, now) {
+    const target = one(draft.subjects, item =&gt; item.id === subjectId);
+    if (!target) return fail(&#x27;NOT_FOUND&#x27;);
+    if (target.activation === &#x27;SUSPENDED&#x27;) return fail(&#x27;SUSPENDED&#x27;);
+    const existing = one(draft.trialGrants, item =&gt; item.subjectId === subjectId &amp;&amp; item.campaignId === &#x27;FIRST-TRIAL&#x27;);
+    if (existing) return duplicate(existing);
+    if (!validRule(draft.rule)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!draft.rule.enabled) return fail(&#x27;TRIAL_DISABLED&#x27;);
+    const grantedAt = iso(now);
+    const grant = { id: nextId(draft, &#x27;TRIAL&#x27;), subjectId, campaignId: &#x27;FIRST-TRIAL&#x27;, ruleVersion: draft.rule.version, grantedSeconds: draft.rule.seconds, usedSeconds: 0, grantedAt, expiresAt: new Date(toMs(now) + draft.rule.validDays * DAY_MS).toISOString() };
+    draft.trialGrants.push(grant);
+    return ok(grant);
+  }
+
+  function claimSubject(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.subjectId) || !id(input.accountId) || !id(input.requestId) || !plain(input.verification)) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
+      const eventInput = { subjectId: input.subjectId, accountId: input.accountId, verification: { verified: input.verification.verified === true, subjectId: input.verification.subjectId, method: input.verification.method } };
+      const replay = replayEvent(draft, &#x27;CLAIM&#x27;, input.requestId, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item =&gt; item.id === input.subjectId);
+      if (!target) return fail(&#x27;NOT_FOUND&#x27;);
+      const verification = input.verification;
+      if (verification.verified !== true || verification.subjectId !== target.id || !ENUMS.claimMethod.has(verification.method)) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
+      const methodAllowed = target.numberType === &#x27;MOBILE&#x27; ? [&#x27;WECHAT_PHONE&#x27;, &#x27;SMS&#x27;].includes(verification.method) : verification.method === &#x27;CALLER_CHALLENGE&#x27;;
+      if (!methodAllowed) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
+      if (target.accountId === input.accountId) {
+        const existing = draft.claims.find(item =&gt; item.subjectId === target.id &amp;&amp; item.accountId === input.accountId);
+        return duplicate(existing || clone(target));
+      }
+      if (target.accountId &amp;&amp; target.accountId !== input.accountId) return fail(&#x27;CLAIM_CONFLICT&#x27;);
+      if (target.claimRisk === &#x27;CONFLICT&#x27;) return fail(&#x27;CLAIM_CONFLICT&#x27;);
+      if (target.claimRisk === &#x27;RECYCLED&#x27;) return fail(&#x27;RECYCLED_NUMBER_REVIEW&#x27;);
+      const claim = { id: nextId(draft, &#x27;CLAIM&#x27;), subjectId: target.id, accountId: input.accountId, method: verification.method, verifiedAt: iso(now), requestId: input.requestId };
+      draft.claims.push(claim);
+      target.accountId = input.accountId;
+      target.revision += 1;
+      recordEvent(draft, &#x27;CLAIM&#x27;, input.requestId, eventInput, claim);
+      return ok(claim);
+    });
+  }
+
+  function startIvrSession(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !Object.prototype.hasOwnProperty.call(scenarios, input.scenario)) return fail(&#x27;NOT_FOUND&#x27;);
+      const fixture = scenarios[input.scenario];
+      const session = { id: nextId(draft, &#x27;IVR&#x27;), subjectId: null, confirmedSubjectId: null, maskedCaller: fixture.maskedCaller, trustedCaller: fixture.trustedCaller, status: &#x27;RECEIVED&#x27;, consentVersion: labels.consentVersion, key: null, guidanceStatus: &#x27;NOT_GUIDED&#x27;, scenario: input.scenario, createdAt: iso(now) };
+      draft.sessions.push(session);
+      return ok(session);
+    });
+  }
+
+  function confirmIvrSession(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.sessionId) || !id(input.eventId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { sessionId: input.sessionId, key: String(input.key) };
+      const replay = replayEvent(draft, &#x27;IVR_CONFIRM&#x27;, input.eventId, eventInput);
+      if (replay) return replay;
+      const session = one(draft.sessions, item =&gt; item.id === input.sessionId);
+      if (!session) return fail(&#x27;NOT_FOUND&#x27;);
+      if (session.status !== &#x27;RECEIVED&#x27; || session.subjectId !== null || session.confirmedSubjectId !== null) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!session.trustedCaller || !session.maskedCaller) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
+      if (String(input.key) !== &#x27;1&#x27; || session.consentVersion !== labels.consentVersion) return fail(&#x27;CONSENT_REQUIRED&#x27;);
+      const matches = draft.subjects.filter(item =&gt; item.maskedNumber === session.maskedCaller);
+      if (matches.length &gt; 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      let target = matches[0];
+      if (!target) {
+        const fixture = scenarios[session.scenario];
+        target = subject(nextId(draft, &#x27;SUBJ&#x27;), fixture, &#x27;INACTIVE&#x27;);
+        draft.subjects.push(target);
+      }
+      if (target.activation === &#x27;SUSPENDED&#x27;) return fail(&#x27;SUSPENDED&#x27;);
+      session.status = &#x27;CONFIRMED&#x27;;
+      session.key = &#x27;1&#x27;;
+      session.subjectId = target.id;
+      session.confirmedSubjectId = target.id;
+      const activation = { id: nextId(draft, &#x27;ACT&#x27;), subjectId: target.id, channel: &#x27;IVR&#x27;, consentVersion: session.consentVersion, confirmation: &#x27;KEY_1&#x27;, eventId: input.eventId, at: iso(now), sessionId: session.id };
+      target.activation = &#x27;ACTIVE&#x27;;
+      target.revision += 1;
+      draft.activations.push(activation);
+      const grant = grantTrialDraft(draft, target.id, now);
+      const value = { session, activation, grant: grant.ok ? grant.value : null, grantCode: grant.code || &#x27;OK&#x27; };
+      recordEvent(draft, &#x27;IVR_CONFIRM&#x27;, input.eventId, eventInput, value);
+      return ok(value);
+    });
+  }
+
+  function consumeTrial(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.sessionId) || !id(input.eventId) || !safePositive(input.seconds)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const matches = draft.sessions.filter(item =&gt; item.id === input.sessionId);
+      if (matches.length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const session = matches[0];
+      if (session.status !== &#x27;CONFIRMED&#x27; || !id(session.subjectId) || session.subjectId !== session.confirmedSubjectId) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const subjects = draft.subjects.filter(item =&gt; item.id === session.confirmedSubjectId);
+      if (subjects.length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const target = subjects[0];
+      if (!allEvidenceReferencesValid(draft)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { sessionId: input.sessionId, seconds: input.seconds };
+      const replay = replayEvent(draft, &#x27;EVIDENCE&#x27;, input.eventId, eventInput);
+      if (replay) return replay;
+      if (target.activation === &#x27;SUSPENDED&#x27;) return fail(&#x27;SUSPENDED&#x27;);
+      const grants = draft.trialGrants.filter(item =&gt; item.subjectId === target.id &amp;&amp; item.campaignId === &#x27;FIRST-TRIAL&#x27;);
+      if (grants.length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const grant = grants[0];
+      if (toMs(now) &gt;= Date.parse(grant.expiresAt)) return fail(&#x27;TRIAL_EXPIRED&#x27;);
+      const remaining = grant.grantedSeconds - grant.usedSeconds;
+      if (remaining &lt;= 0) return fail(&#x27;TRIAL_EXHAUSTED&#x27;);
+      const recordedSeconds = Math.min(input.seconds, remaining);
+      const evidenceRecord = { id: nextId(draft, &#x27;EVID&#x27;), subjectId: session.confirmedSubjectId, sessionId: session.id, recordedSeconds, identityAtCapture: target.identity, consentVersion: session.consentVersion, createdAt: iso(now), preservationStatus: &#x27;PRESERVED&#x27; };
+      grant.usedSeconds += recordedSeconds;
+      draft.evidence.push(evidenceRecord);
+      const value = { evidence: evidenceRecord, grant, exhausted: grant.usedSeconds === grant.grantedSeconds, message: grant.usedSeconds === grant.grantedSeconds ? &#x27;额度耗尽，结束取证&#x27; : &#x27;已按有效录音时长扣减&#x27; };
+      recordEvent(draft, &#x27;EVIDENCE&#x27;, input.eventId, eventInput, value);
+      return ok(value);
+    });
+  }
+
+  function createOrder(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !ENUMS.purchaseChannel.has(input.channel) || !id(input.subjectId) || !id(input.accountId) || !id(input.versionId) || !id(input.idempotencyKey)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { subjectId: input.subjectId, accountId: input.accountId, channel: input.channel, versionId: input.versionId, versionToken: input.versionToken, confirmed: input.confirmed === true, consentVersion: input.consentVersion };
+      const replay = replayEvent(draft, &#x27;ORDER&#x27;, input.idempotencyKey, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item =&gt; item.id === input.subjectId);
+      if (!target) return fail(&#x27;NOT_FOUND&#x27;);
+      if (target.activation === &#x27;SUSPENDED&#x27;) return fail(&#x27;SUSPENDED&#x27;);
+      if (target.accountId !== input.accountId || target.identity !== &#x27;VERIFIED&#x27;) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
+      if (input.confirmed !== true || !id(input.consentVersion)) return fail(&#x27;CONSENT_REQUIRED&#x27;);
+      if (draft.orders.some(order =&gt; order.subjectId === target.id &amp;&amp; order.payment === &#x27;UNKNOWN&#x27;)) return fail(&#x27;PAYMENT_UNRESOLVED&#x27;);
+      const selected = one(draft.catalog, item =&gt; item.versionId === input.versionId);
+      if (!selected) return fail(&#x27;NOT_FOUND&#x27;);
+      const valid = validateCatalogVersion(selected);
+      if (!valid.ok) return valid;
+      if (selected.saleStatus !== &#x27;ACTIVE&#x27; || !transactionalOffer(selected, input.channel)) return fail(&#x27;NOT_SELLABLE&#x27;);
+      if (typeof input.versionToken !== &#x27;string&#x27; || !input.versionToken || input.versionToken !== offerVersionToken(selected)) return fail(&#x27;STALE_VERSION&#x27;);
+      const order = { id: nextId(draft, &#x27;ORDER&#x27;), subjectId: target.id, accountId: input.accountId, channel: input.channel, snapshot: clone(selected), payment: &#x27;UNPAID&#x27;, entitlement: &#x27;NOT_ISSUED&#x27;, createdAt: iso(now), idempotencyKey: input.idempotencyKey, consentVersion: input.consentVersion };
+      draft.orders.push(order);
+      recordEvent(draft, &#x27;ORDER&#x27;, input.idempotencyKey, eventInput, order);
+      return ok(order);
+    });
+  }
+
+  function applyPaymentResult(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.orderId) || !id(input.eventId) || !ENUMS.payment.has(input.result)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { orderId: input.orderId, result: input.result };
+      const replay = replayEvent(draft, &#x27;PAYMENT&#x27;, input.eventId, eventInput);
+      if (replay) return replay;
+      const order = one(draft.orders, item =&gt; item.id === input.orderId);
+      if (!order) return fail(&#x27;NOT_FOUND&#x27;);
+      if (order.payment === &#x27;PAID&#x27;) return input.result === &#x27;PAID&#x27; ? duplicate(order) : fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (order.payment === &#x27;CLOSED&#x27;) return input.result === &#x27;CLOSED&#x27; ? duplicate(order) : fail(&#x27;INVALID_TRANSITION&#x27;);
+      const allowed = order.payment === &#x27;UNPAID&#x27; ? [&#x27;UNKNOWN&#x27;, &#x27;PAID&#x27;, &#x27;CLOSED&#x27;] : [&#x27;UNPAID&#x27;, &#x27;PAID&#x27;, &#x27;CLOSED&#x27;];
+      if (!allowed.includes(input.result)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      order.payment = input.result;
+      if (input.result === &#x27;PAID&#x27;) order.entitlement = &#x27;PENDING&#x27;;
+      recordEvent(draft, &#x27;PAYMENT&#x27;, input.eventId, eventInput, order);
+      return ok(order);
+    });
+  }
+
+  function issueEntitlements(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.orderId) || !id(input.eventId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { orderId: input.orderId };
+      const replay = replayEvent(draft, &#x27;ENTITLEMENT&#x27;, input.eventId, eventInput);
+      if (replay) return replay;
+      const order = one(draft.orders, item =&gt; item.id === input.orderId);
+      if (!order) return fail(&#x27;NOT_FOUND&#x27;);
+      if (!transactionalOffer(order.snapshot, order.channel)) return fail(&#x27;NOT_SELLABLE&#x27;);
+      const existing = one(draft.entitlements, item =&gt; item.orderId === order.id);
+      if (existing) return duplicate(existing);
+      if (order.payment !== &#x27;PAID&#x27; || ![&#x27;PENDING&#x27;, &#x27;FAILED&#x27;].includes(order.entitlement)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const entitlement = { id: nextId(draft, &#x27;ENT&#x27;), orderId: order.id, ownerAccountId: order.accountId, subjectId: order.subjectId, snapshot: clone(order.snapshot), issuedAt: iso(now) };
+      draft.entitlements.push(entitlement);
+      order.entitlement = &#x27;ISSUED&#x27;;
+      recordEvent(draft, &#x27;ENTITLEMENT&#x27;, input.eventId, eventInput, entitlement);
+      return ok(entitlement);
+    });
+  }
+
+  function trialStatus(state, subjectId, now) {
+    if (!one(state &amp;&amp; state.subjects, item =&gt; item.id === subjectId)) return fail(&#x27;NOT_FOUND&#x27;);
+    const grants = state.trialGrants.filter(item =&gt; item.subjectId === subjectId &amp;&amp; item.campaignId === &#x27;FIRST-TRIAL&#x27;);
+    if (!grants.length) return ok({ status: &#x27;NOT_GRANTED&#x27;, remainingSeconds: 0, grant: null });
+    if (grants.length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const grant = grants[0];
+    const remainingSeconds = Math.max(0, grant.grantedSeconds - grant.usedSeconds);
+    const status = remainingSeconds === 0 ? &#x27;EXHAUSTED&#x27; : toMs(now) &gt;= Date.parse(grant.expiresAt) ? &#x27;EXPIRED&#x27; : &#x27;AVAILABLE&#x27;;
+    return ok({ status, remainingSeconds, grant: clone(grant) });
+  }
+
+  function snapshot(state) {
+    const validation = validateState(state);
+    return validation.ok ? ok(clone(pickBusiness(state))) : validation;
+  }
+
+  function loadReviewSnapshot(state, candidate) {
+    if (!plain(state)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const validation = validateState(candidate);
+    if (!validation.ok) return validation;
+    const copied = clone(pickBusiness(candidate));
+    replace(state, copied);
+    return ok(clone(copied));
+  }
+
+  function validateState(candidate) {
+    if (!safeData(candidate) || !plain(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const keys = Object.keys(candidate).sort();
+    const allowed = [...BUSINESS_FIELDS].sort();
+    if (keys.length !== allowed.length || keys.some((key, index) =&gt; key !== allowed[index]) || keys.some(key =&gt; FORBIDDEN_IMPORT_KEYS.has(key))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (candidate.schemaVersion !== schemaVersion || !safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER) || !plain(candidate.processedEvents)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const arrays = [&#x27;catalog&#x27;, &#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;trialGrants&#x27;, &#x27;sessions&#x27;, &#x27;evidence&#x27;, &#x27;activations&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;];
+    if (arrays.some(key =&gt; !Array.isArray(candidate[key]))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!validRule(candidate.rule)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!unique(candidate.catalog, &#x27;versionId&#x27;) || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, &#x27;requestId&#x27;) || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.orders) || !unique(candidate.orders, &#x27;idempotencyKey&#x27;) || !unique(candidate.entitlements)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (candidate.catalog.some(item =&gt; !validateCatalogVersion(item).ok)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const activeSkus = new Set();
+    const draftSkus = new Set();
+    for (const item of candidate.catalog) {
+      if (item.saleStatus === &#x27;ACTIVE&#x27; &amp;&amp; activeSkus.has(item.sku)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (item.saleStatus === &#x27;DRAFT&#x27; &amp;&amp; draftSkus.has(item.sku)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (item.saleStatus === &#x27;ACTIVE&#x27;) activeSkus.add(item.sku);
+      if (item.saleStatus === &#x27;DRAFT&#x27;) draftSkus.add(item.sku);
+    }
+    for (const item of candidate.subjects) if (!validSubject(item)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const subjectCount = idCount(candidate.subjects);
+    const claimedSubjects = new Set();
+    for (const claim of candidate.claims) {
+      if (!validClaim(claim) || subjectCount.get(claim.subjectId) !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const owner = candidate.subjects.find(item =&gt; item.id === claim.subjectId);
+      if (owner.accountId !== claim.accountId || claimedSubjects.has(claim.subjectId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      claimedSubjects.add(claim.subjectId);
+    }
+    const trialKeys = new Set();
+    for (const grant of candidate.trialGrants) {
+      if (!validGrant(grant) || subjectCount.get(grant.subjectId) !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const key = `${grant.subjectId}:${grant.campaignId}`;
+      if (trialKeys.has(key)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      trialKeys.add(key);
+    }
+    for (const session of candidate.sessions) if (!validSession(session, subjectCount)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!allEvidenceReferencesValid(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const activationEventKeys = new Set();
+    for (const activation of candidate.activations) {
+      if (!validActivation(activation) || subjectCount.get(activation.subjectId) !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const domainKey = `${activation.channel === &#x27;IVR&#x27; ? &#x27;IVR_CONFIRM&#x27; : &#x27;ACTIVATION&#x27;}:${activation.eventId}`;
+      if (activationEventKeys.has(domainKey)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      activationEventKeys.add(domainKey);
+      if (activation.channel === &#x27;IVR&#x27;) {
+        const sessions = candidate.sessions.filter(item =&gt; item.id === activation.sessionId);
+        if (sessions.length !== 1 || sessions[0].status !== &#x27;CONFIRMED&#x27; || sessions[0].confirmedSubjectId !== activation.subjectId) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      } else if (activation.sessionId !== undefined) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    }
+    for (const session of candidate.sessions) {
+      if (session.status === &#x27;CONFIRMED&#x27; &amp;&amp; candidate.activations.filter(item =&gt; item.sessionId === session.id &amp;&amp; item.channel === &#x27;IVR&#x27; &amp;&amp; item.subjectId === session.confirmedSubjectId).length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    }
+    const orderCount = idCount(candidate.orders);
+    for (const order of candidate.orders) {
+      if (!validOrder(order) || subjectCount.get(order.subjectId) !== 1 || !validateCatalogVersion(order.snapshot).ok) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const owner = candidate.subjects.find(item =&gt; item.id === order.subjectId);
+      if (owner.accountId !== order.accountId) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!transactionalOffer(order.snapshot, order.channel)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (order.payment !== &#x27;PAID&#x27; &amp;&amp; order.entitlement !== &#x27;NOT_ISSUED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (order.payment === &#x27;PAID&#x27; &amp;&amp; ![&#x27;PENDING&#x27;, &#x27;FAILED&#x27;, &#x27;ISSUED&#x27;].includes(order.entitlement)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    }
+    const entitledOrders = new Set();
+    for (const entitlement of candidate.entitlements) {
+      if (!validEntitlement(entitlement) || orderCount.get(entitlement.orderId) !== 1 || subjectCount.get(entitlement.subjectId) !== 1 || entitledOrders.has(entitlement.orderId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const order = candidate.orders.find(item =&gt; item.id === entitlement.orderId);
+      if (order.subjectId !== entitlement.subjectId || order.accountId !== entitlement.ownerAccountId || order.payment !== &#x27;PAID&#x27; || order.entitlement !== &#x27;ISSUED&#x27; || canonicalSerialize(order.snapshot) !== canonicalSerialize(entitlement.snapshot) || !transactionalOffer(entitlement.snapshot, order.channel)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      entitledOrders.add(entitlement.orderId);
+    }
+    for (const order of candidate.orders) {
+      const count = candidate.entitlements.filter(item =&gt; item.orderId === order.id).length;
+      if ((order.entitlement === &#x27;ISSUED&#x27; &amp;&amp; count !== 1) || (order.entitlement !== &#x27;ISSUED&#x27; &amp;&amp; count !== 0)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    }
+    if (!validProcessedEvents(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    return ok(true);
+  }
+
+  function validProcessedEvents(state) {
+    if (!plain(state.processedEvents)) return false;
+    const domains = Object.keys(state.processedEvents).sort();
+    if (domains.length !== EVENT_DOMAINS.length || domains.some((domain, index) =&gt; domain !== [...EVENT_DOMAINS].sort()[index])) return false;
+    for (const domain of EVENT_DOMAINS) {
+      if (!validEventDomain(state, domain)) return false;
+    }
+    return true;
+  }
+
+  // Import and every replay lookup use the same domain record/ownership checks.
+  function validEventDomain(state, domain) {
+    if (!EVENT_DOMAINS.includes(domain) || !plain(state.processedEvents) || !plain(state.processedEvents[domain])) return false;
+    const resultIdentities = new Set();
+    for (const [key, record] of Object.entries(state.processedEvents[domain])) {
+      if (!validEventRecord(state, domain, key, record)) return false;
+      const resultIdentity = createdResultIdentity(domain, record.result);
+      if (resultIdentity !== null &amp;&amp; (!id(resultIdentity) || resultIdentities.has(resultIdentity))) return false;
+      if (resultIdentity !== null) resultIdentities.add(resultIdentity);
+    }
+    return true;
+  }
+
+  function allEvidenceReferencesValid(state) {
+    const sessionCount = idCount(state.sessions || []);
+    const subjectCount = idCount(state.subjects || []);
+    for (const record of state.evidence || []) {
+      if (!validEvidence(record) || sessionCount.get(record.sessionId) !== 1 || subjectCount.get(record.subjectId) !== 1) return false;
+      const session = state.sessions.find(item =&gt; item.id === record.sessionId);
+      if (session.status !== &#x27;CONFIRMED&#x27; || record.subjectId !== session.subjectId || record.subjectId !== session.confirmedSubjectId) return false;
+    }
+    return true;
+  }
+
+  function validRule(rule) {
+    return plain(rule) &amp;&amp; rule.campaignId === &#x27;FIRST-TRIAL&#x27; &amp;&amp; safePositive(rule.version) &amp;&amp; typeof rule.enabled === &#x27;boolean&#x27; &amp;&amp; safeBetween(rule.seconds, 1, 3600) &amp;&amp; safeBetween(rule.validDays, 1, 365);
+  }
+
+  function validSubject(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.maskedNumber) &amp;&amp; ENUMS.numberType.has(item.numberType) &amp;&amp; id(item.source) &amp;&amp; (item.accountId === null || id(item.accountId)) &amp;&amp; ENUMS.identity.has(item.identity) &amp;&amp; ENUMS.activation.has(item.activation) &amp;&amp; safePositive(item.revision) &amp;&amp; ENUMS.claimRisk.has(item.claimRisk);
+  }
+
+  function validClaim(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; id(item.accountId) &amp;&amp; ENUMS.claimMethod.has(item.method) &amp;&amp; date(item.verifiedAt) &amp;&amp; id(item.requestId);
+  }
+
+  function validGrant(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; item.campaignId === &#x27;FIRST-TRIAL&#x27; &amp;&amp; safePositive(item.ruleVersion) &amp;&amp; safePositive(item.grantedSeconds) &amp;&amp; safeBetween(item.usedSeconds, 0, item.grantedSeconds) &amp;&amp; date(item.grantedAt) &amp;&amp; date(item.expiresAt) &amp;&amp; Date.parse(item.expiresAt) &gt;= Date.parse(item.grantedAt);
+  }
+
+  function validSession(item, subjectCount) {
+    if (!plain(item) || !id(item.id) || (item.maskedCaller !== null &amp;&amp; !id(item.maskedCaller)) || typeof item.trustedCaller !== &#x27;boolean&#x27; || !ENUMS.sessionStatus.has(item.status) || !id(item.consentVersion) || (item.key !== null &amp;&amp; item.key !== &#x27;1&#x27;) || !ENUMS.guidanceStatus.has(item.guidanceStatus) || !Object.prototype.hasOwnProperty.call(scenarios, item.scenario) || !date(item.createdAt)) return false;
+    if (item.status === &#x27;CONFIRMED&#x27;) return id(item.subjectId) &amp;&amp; item.subjectId === item.confirmedSubjectId &amp;&amp; subjectCount.get(item.subjectId) === 1 &amp;&amp; item.key === &#x27;1&#x27;;
+    return item.subjectId === null &amp;&amp; item.confirmedSubjectId === null;
+  }
+
+  function validEvidence(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; id(item.sessionId) &amp;&amp; safePositive(item.recordedSeconds) &amp;&amp; ENUMS.identity.has(item.identityAtCapture) &amp;&amp; id(item.consentVersion) &amp;&amp; date(item.createdAt) &amp;&amp; item.preservationStatus === &#x27;PRESERVED&#x27;;
+  }
+
+  function validActivation(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; ENUMS.channel.has(item.channel) &amp;&amp; id(item.consentVersion) &amp;&amp; [&#x27;EXPLICIT&#x27;, &#x27;KEY_1&#x27;].includes(item.confirmation) &amp;&amp; id(item.eventId) &amp;&amp; date(item.at) &amp;&amp; (item.sessionId === undefined || id(item.sessionId));
+  }
+
+  function validOrder(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; id(item.accountId) &amp;&amp; ENUMS.purchaseChannel.has(item.channel) &amp;&amp; plain(item.snapshot) &amp;&amp; ENUMS.payment.has(item.payment) &amp;&amp; ENUMS.entitlement.has(item.entitlement) &amp;&amp; date(item.createdAt) &amp;&amp; id(item.idempotencyKey) &amp;&amp; id(item.consentVersion);
+  }
+
+  function validEntitlement(item) {
+    return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.orderId) &amp;&amp; id(item.ownerAccountId) &amp;&amp; id(item.subjectId) &amp;&amp; plain(item.snapshot) &amp;&amp; date(item.issuedAt);
+  }
+
+  function mutate(state, action) {
+    if (!plain(state)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    let draft;
+    try { draft = clone(pickBusiness(state)); } catch (_) { return fail(&#x27;INVALID_TRANSITION&#x27;); }
+    let result;
+    try { result = action(draft); } catch (_) { return fail(&#x27;INVALID_TRANSITION&#x27;); }
+    if (!result || !result.ok || result.code === &#x27;DUPLICATE&#x27;) return result || fail(&#x27;INVALID_TRANSITION&#x27;);
+    const validation = validateState(draft);
+    if (!validation.ok) return validation;
+    replace(state, draft);
+    return ok(clone(result.value), result.code);
+  }
+
+  function pickBusiness(state) {
+    const output = {};
+    for (const key of BUSINESS_FIELDS) output[key] = state[key];
+    return output;
+  }
+
+  function replace(state, source) {
+    for (const key of BUSINESS_FIELDS) state[key] = source[key];
+  }
+
+  function eventStore() {
+    const store = {};
+    for (const domain of EVENT_DOMAINS) store[domain] = {};
+    return store;
+  }
+
+  function eventKey(eventId) {
+    return `$${eventId}`;
+  }
+
+  function replayEvent(state, domain, eventId, input) {
+    const records = state.processedEvents &amp;&amp; state.processedEvents[domain];
+    if (!validEventDomain(state, domain)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const record = Object.prototype.hasOwnProperty.call(records, eventKey(eventId)) ? records[eventKey(eventId)] : null;
+    if (!record) return null;
+    const inputFingerprint = `INPUT-V1:${canonicalSerialize(input)}`;
+    if (record.inputFingerprint !== inputFingerprint) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    return duplicate(record.result);
+  }
+
+  // Historical mutable facts may differ; frozen identities, snapshots and
+  // references must still resolve uniquely within a valid event domain.
+  function validEventRecord(state, domain, key, record) {
+    if (!EVENT_DOMAINS.includes(domain) || !exactKeys(record, [&#x27;eventId&#x27;, &#x27;inputFingerprint&#x27;, &#x27;result&#x27;]) || !id(record.eventId) || key !== eventKey(record.eventId) || !safeData(record.result)) return false;
+    if (typeof record.inputFingerprint !== &#x27;string&#x27; || !record.inputFingerprint.startsWith(&#x27;INPUT-V1:&#x27;)) return false;
+    let input;
+    try { input = JSON.parse(record.inputFingerprint.slice(&#x27;INPUT-V1:&#x27;.length)); } catch (_) { return false; }
+    if (!plain(input) || !safeData(input) || record.inputFingerprint !== `INPUT-V1:${canonicalSerialize(input)}`) return false;
+    if ([&#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;sessions&#x27;, &#x27;activations&#x27;, &#x27;trialGrants&#x27;, &#x27;evidence&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;].some(name =&gt; !Array.isArray(state[name]))) return false;
+    const value = record.result;
+
+    if (domain === &#x27;ACTIVATION&#x27;) {
+      if (!exactKeys(input, [&#x27;subjectId&#x27;, &#x27;channel&#x27;, &#x27;verified&#x27;, &#x27;consentVersion&#x27;, &#x27;confirmed&#x27;]) || !id(input.subjectId) || !ENUMS.purchaseChannel.has(input.channel) || input.verified !== true || input.confirmed !== true || !id(input.consentVersion)) return false;
+      if (!exactKeys(value, [&#x27;activation&#x27;, &#x27;grant&#x27;, &#x27;grantCode&#x27;]) || !frozenEntity(state.activations, value.activation, [], validActivation)) return false;
+      const activation = value.activation;
+      const eventActivation = one(state.activations, item =&gt; item.channel !== &#x27;IVR&#x27; &amp;&amp; item.eventId === record.eventId);
+      return eventActivation &amp;&amp; eventActivation.id === activation.id &amp;&amp; activation.eventId === record.eventId &amp;&amp; activation.subjectId === input.subjectId &amp;&amp; activation.channel === input.channel &amp;&amp; activation.consentVersion === input.consentVersion &amp;&amp; activation.confirmation === &#x27;EXPLICIT&#x27; &amp;&amp; activation.sessionId === undefined &amp;&amp; referencedSubject(state, input.subjectId) &amp;&amp; validGrantResult(state, value, input.subjectId);
+    }
+
+    if (domain === &#x27;IVR_CONFIRM&#x27;) {
+      if (!exactKeys(input, [&#x27;sessionId&#x27;, &#x27;key&#x27;]) || !id(input.sessionId) || input.key !== &#x27;1&#x27; || !exactKeys(value, [&#x27;session&#x27;, &#x27;activation&#x27;, &#x27;grant&#x27;, &#x27;grantCode&#x27;])) return false;
+      const subjectCounts = idCount(state.subjects);
+      if (!frozenEntity(state.sessions, value.session, [&#x27;guidanceStatus&#x27;], item =&gt; validSession(item, subjectCounts)) || !frozenEntity(state.activations, value.activation, [], validActivation)) return false;
+      const session = value.session;
+      const activation = value.activation;
+      const eventActivation = one(state.activations, item =&gt; item.channel === &#x27;IVR&#x27; &amp;&amp; item.eventId === record.eventId);
+      return eventActivation &amp;&amp; eventActivation.id === activation.id &amp;&amp; session.id === input.sessionId &amp;&amp; session.status === &#x27;CONFIRMED&#x27; &amp;&amp; session.trustedCaller &amp;&amp; id(session.maskedCaller) &amp;&amp; session.key === &#x27;1&#x27; &amp;&amp; activation.eventId === record.eventId &amp;&amp; activation.sessionId === session.id &amp;&amp; activation.subjectId === session.confirmedSubjectId &amp;&amp; activation.channel === &#x27;IVR&#x27; &amp;&amp; activation.confirmation === &#x27;KEY_1&#x27; &amp;&amp; activation.consentVersion === session.consentVersion &amp;&amp; referencedSubject(state, session.confirmedSubjectId) &amp;&amp; validGrantResult(state, value, session.confirmedSubjectId);
+    }
+
+    if (domain === &#x27;EVIDENCE&#x27;) {
+      if (!exactKeys(input, [&#x27;sessionId&#x27;, &#x27;seconds&#x27;]) || !id(input.sessionId) || !safePositive(input.seconds) || !exactKeys(value, [&#x27;evidence&#x27;, &#x27;grant&#x27;, &#x27;exhausted&#x27;, &#x27;message&#x27;])) return false;
+      if (!frozenEntity(state.evidence, value.evidence, [], validEvidence) || !frozenGrant(state, value.grant, value.evidence.subjectId)) return false;
+      const evidenceRecord = value.evidence;
+      const session = one(state.sessions, item =&gt; item.id === evidenceRecord.sessionId);
+      const exhausted = value.grant.usedSeconds === value.grant.grantedSeconds;
+      return session &amp;&amp; validSession(session, idCount(state.subjects)) &amp;&amp; session.status === &#x27;CONFIRMED&#x27; &amp;&amp; referencedSubject(state, evidenceRecord.subjectId) &amp;&amp; evidenceRecord.sessionId === input.sessionId &amp;&amp; evidenceRecord.subjectId === session.confirmedSubjectId &amp;&amp; evidenceRecord.recordedSeconds &lt;= input.seconds &amp;&amp; value.grant.usedSeconds &gt;= evidenceRecord.recordedSeconds &amp;&amp; value.exhausted === exhausted &amp;&amp; value.message === (exhausted ? &#x27;额度耗尽，结束取证&#x27; : &#x27;已按有效录音时长扣减&#x27;);
+    }
+
+    if (domain === &#x27;CLAIM&#x27;) {
+      if (!exactKeys(input, [&#x27;subjectId&#x27;, &#x27;accountId&#x27;, &#x27;verification&#x27;]) || !id(input.subjectId) || !id(input.accountId) || !exactKeys(input.verification, [&#x27;verified&#x27;, &#x27;subjectId&#x27;, &#x27;method&#x27;])) return false;
+      const verification = input.verification;
+      const owner = one(state.subjects, item =&gt; item.id === input.subjectId);
+      if (!validSubject(owner) || verification.verified !== true || verification.subjectId !== input.subjectId || !ENUMS.claimMethod.has(verification.method)) return false;
+      const methodAllowed = owner.numberType === &#x27;MOBILE&#x27; ? [&#x27;WECHAT_PHONE&#x27;, &#x27;SMS&#x27;].includes(verification.method) : verification.method === &#x27;CALLER_CHALLENGE&#x27;;
+      const eventClaim = one(state.claims, item =&gt; item.requestId === record.eventId);
+      return methodAllowed &amp;&amp; frozenEntity(state.claims, value, [], validClaim) &amp;&amp; eventClaim &amp;&amp; eventClaim.id === value.id &amp;&amp; value.subjectId === input.subjectId &amp;&amp; value.accountId === input.accountId &amp;&amp; owner.accountId === value.accountId &amp;&amp; value.method === verification.method &amp;&amp; value.requestId === record.eventId;
+    }
+
+    if (domain === &#x27;ORDER&#x27;) {
+      if (!exactKeys(input, [&#x27;subjectId&#x27;, &#x27;accountId&#x27;, &#x27;channel&#x27;, &#x27;versionId&#x27;, &#x27;versionToken&#x27;, &#x27;confirmed&#x27;, &#x27;consentVersion&#x27;]) || !id(input.subjectId) || !id(input.accountId) || !ENUMS.purchaseChannel.has(input.channel) || !id(input.versionId) || input.confirmed !== true || !id(input.consentVersion)) return false;
+      const eventOrder = one(state.orders, item =&gt; item.idempotencyKey === record.eventId);
+      return frozenOrder(state, value) &amp;&amp; eventOrder &amp;&amp; eventOrder.id === value.id &amp;&amp; value.subjectId === input.subjectId &amp;&amp; value.accountId === input.accountId &amp;&amp; value.channel === input.channel &amp;&amp; value.snapshot.versionId === input.versionId &amp;&amp; value.snapshot.saleStatus === &#x27;ACTIVE&#x27; &amp;&amp; input.versionToken === offerVersionToken(value.snapshot) &amp;&amp; value.consentVersion === input.consentVersion &amp;&amp; value.idempotencyKey === record.eventId &amp;&amp; value.payment === &#x27;UNPAID&#x27; &amp;&amp; value.entitlement === &#x27;NOT_ISSUED&#x27;;
+    }
+
+    if (domain === &#x27;PAYMENT&#x27;) {
+      if (!exactKeys(input, [&#x27;orderId&#x27;, &#x27;result&#x27;]) || !id(input.orderId) || !ENUMS.payment.has(input.result)) return false;
+      return frozenOrder(state, value) &amp;&amp; value.id === input.orderId &amp;&amp; value.payment === input.result &amp;&amp; value.entitlement === (input.result === &#x27;PAID&#x27; ? &#x27;PENDING&#x27; : &#x27;NOT_ISSUED&#x27;);
+    }
+
+    if (!exactKeys(input, [&#x27;orderId&#x27;]) || !id(input.orderId) || !frozenEntity(state.entitlements, value, [], validEntitlement)) return false;
+    const order = one(state.orders, item =&gt; item.id === value.orderId);
+    return order &amp;&amp; orderFactsValid(order) &amp;&amp; referencedSubject(state, value.subjectId) &amp;&amp; order.id === input.orderId &amp;&amp; order.subjectId === value.subjectId &amp;&amp; order.accountId === value.ownerAccountId &amp;&amp; order.payment === &#x27;PAID&#x27; &amp;&amp; order.entitlement === &#x27;ISSUED&#x27; &amp;&amp; canonicalSerialize(order.snapshot) === canonicalSerialize(value.snapshot);
+  }
+
+  function referencedSubject(state, subjectId) {
+    return validSubject(one(state.subjects, item =&gt; item.id === subjectId));
+  }
+
+  function validGrantResult(state, value, subjectId) {
+    if (value.grant === null) return value.grantCode === &#x27;TRIAL_DISABLED&#x27;;
+    return [&#x27;OK&#x27;, &#x27;DUPLICATE&#x27;].includes(value.grantCode) &amp;&amp; frozenGrant(state, value.grant, subjectId);
+  }
+
+  function frozenGrant(state, value, subjectId) {
+    if (!frozenEntity(state.trialGrants, value, [&#x27;usedSeconds&#x27;], validGrant) || value.subjectId !== subjectId || !referencedSubject(state, subjectId)) return false;
+    const current = one(state.trialGrants, item =&gt; item.id === value.id);
+    return value.usedSeconds &lt;= current.usedSeconds;
+  }
+
+  function frozenOrder(state, value) {
+    if (!frozenEntity(state.orders, value, [&#x27;payment&#x27;, &#x27;entitlement&#x27;], orderFactsValid) || !referencedSubject(state, value.subjectId)) return false;
+    const owner = one(state.subjects, item =&gt; item.id === value.subjectId);
+    return owner.accountId === value.accountId;
+  }
+
+  function orderFactsValid(value) {
+    if (!validOrder(value) || !transactionalOffer(value.snapshot, value.channel)) return false;
+    return value.payment === &#x27;PAID&#x27; ? [&#x27;PENDING&#x27;, &#x27;FAILED&#x27;, &#x27;ISSUED&#x27;].includes(value.entitlement) : value.entitlement === &#x27;NOT_ISSUED&#x27;;
+  }
+
+  function frozenEntity(items, value, mutableFields, validator) {
+    if (!validator(value)) return false;
+    const current = one(items, item =&gt; item.id === value.id);
+    if (!validator(current)) return false;
+    const frozen = item =&gt; Object.fromEntries(Object.entries(item).filter(([key]) =&gt; !mutableFields.includes(key)));
+    return canonicalSerialize(frozen(value)) === canonicalSerialize(frozen(current));
+  }
+
+  function exactKeys(value, keys) {
+    if (!plain(value)) return false;
+    const actual = Object.keys(value).sort();
+    const expected = [...keys].sort();
+    return actual.length === expected.length &amp;&amp; actual.every((key, index) =&gt; key === expected[index]);
+  }
+
+  function createdResultIdentity(domain, value) {
+    if (domain === &#x27;PAYMENT&#x27;) return null;
+    if (!plain(value)) return undefined;
+    if (domain === &#x27;ACTIVATION&#x27; || domain === &#x27;IVR_CONFIRM&#x27;) return plain(value.activation) ? value.activation.id : undefined;
+    if (domain === &#x27;EVIDENCE&#x27;) return plain(value.evidence) ? value.evidence.id : undefined;
+    return value.id;
+  }
+
+  function recordEvent(state, domain, eventId, input, result) {
+    const records = state.processedEvents[domain];
+    const key = eventKey(eventId);
+    if (!plain(records) || Object.prototype.hasOwnProperty.call(records, key)) throw new Error(&#x27;Event already recorded&#x27;);
+    records[key] = { eventId, inputFingerprint: `INPUT-V1:${canonicalSerialize(input)}`, result: clone(result) };
+  }
+
+  function nextId(state, prefix) {
+    const collection = ID_COLLECTIONS[prefix];
+    if (!collection || !Array.isArray(state[collection])) throw new Error(&#x27;Unknown ID prefix&#x27;);
+    const used = new Set(state[collection].map(item =&gt; item &amp;&amp; item.id));
+    let sequence = state.sequence;
+    let candidate;
+    do {
+      if (sequence &gt;= Number.MAX_SAFE_INTEGER) throw new Error(&#x27;ID sequence exhausted&#x27;);
+      sequence += 1;
+      candidate = `${prefix}-${String(sequence).padStart(6, &#x27;0&#x27;)}`;
+    } while (used.has(candidate));
+    state.sequence = sequence;
+    return candidate;
+  }
+
+  function transactionalOffer(value, channel) {
+    return validateCatalogVersion(value).ok &amp;&amp; value.audience === &#x27;PERSONAL&#x27; &amp;&amp; value.type !== &#x27;QUOTE&#x27; &amp;&amp; value.billingCycle !== &#x27;QUOTE&#x27; &amp;&amp; safeBetween(value.priceCents, 1, 9999999) &amp;&amp; value.rights.seats === 0 &amp;&amp; value.rights.fixedLines === 0 &amp;&amp; ENUMS.purchaseChannel.has(channel) &amp;&amp; value.channels.includes(channel);
+  }
+
+  function catalogTokenValue(value) {
+    const copyValue = clone(value);
+    delete copyValue.versionToken;
+    return copyValue;
+  }
+
+  function canonicalSerialize(value) {
+    if (value === undefined) return &#x27;&quot;$undefined&quot;&#x27;;
+    if (value === null || typeof value === &#x27;boolean&#x27; || typeof value === &#x27;string&#x27;) return JSON.stringify(value);
+    if (typeof value === &#x27;number&#x27;) {
+      if (!Number.isFinite(value)) throw new TypeError(&#x27;Canonical data must be finite&#x27;);
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) return `[${value.map(canonicalSerialize).join(&#x27;,&#x27;)}]`;
+    if (!plain(value)) throw new TypeError(&#x27;Canonical data must be plain&#x27;);
+    return `{${Object.keys(value).sort().map(key =&gt; `${JSON.stringify(key)}:${canonicalSerialize(value[key])}`).join(&#x27;,&#x27;)}}`;
+  }
+
+  function unique(items, key) {
+    const counts = idCount(items, key);
+    return items.every(item =&gt; plain(item) &amp;&amp; id(item[key || &#x27;id&#x27;])) &amp;&amp; [...counts.values()].every(count =&gt; count === 1);
+  }
+
+  function idCount(items, key) {
+    const counts = new Map();
+    for (const item of items) {
+      const value = item &amp;&amp; item[key || &#x27;id&#x27;];
+      counts.set(value, (counts.get(value) || 0) + 1);
+    }
+    return counts;
+  }
+
+  function one(items, predicate) {
+    if (!Array.isArray(items)) return null;
+    const matches = items.filter(predicate);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  function safeData(value, seen) {
+    if (value === null || [&#x27;string&#x27;, &#x27;number&#x27;, &#x27;boolean&#x27;].includes(typeof value)) return typeof value !== &#x27;number&#x27; || Number.isFinite(value);
+    if (typeof value !== &#x27;object&#x27;) return false;
+    const visited = seen || new Set();
+    if (visited.has(value)) return false;
+    visited.add(value);
+    if (!Array.isArray(value) &amp;&amp; !plain(value)) return false;
+    for (const key of Object.keys(value)) {
+      if ([&#x27;__proto__&#x27;, &#x27;prototype&#x27;, &#x27;constructor&#x27;].includes(key) || !safeData(value[key], visited)) return false;
+    }
+    visited.delete(value);
+    return true;
+  }
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function deepFreeze(value) {
+    if (value &amp;&amp; typeof value === &#x27;object&#x27; &amp;&amp; !Object.isFrozen(value)) {
+      Object.freeze(value);
+      Object.values(value).forEach(deepFreeze);
+    }
+    return value;
+  }
+
+  function plain(value) {
+    if (!value || typeof value !== &#x27;object&#x27; || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+
+  function safeBetween(value, min, max) { return Number.isSafeInteger(value) &amp;&amp; value &gt;= min &amp;&amp; value &lt;= max; }
+  function safePositive(value) { return safeBetween(value, 1, Number.MAX_SAFE_INTEGER); }
+  function id(value) { return typeof value === &#x27;string&#x27; &amp;&amp; value.trim().length &gt; 0 &amp;&amp; value.length &lt;= 160; }
+  function textBetween(value, min, max) { return typeof value === &#x27;string&#x27; &amp;&amp; value.trim().length &gt;= min &amp;&amp; value.length &lt;= max; }
+  function date(value) { return typeof value === &#x27;string&#x27; &amp;&amp; Number.isFinite(Date.parse(value)); }
+  function toMs(value) { const result = value instanceof Date ? value.getTime() : Date.parse(value); if (!Number.isFinite(result)) throw new TypeError(&#x27;A valid time is required&#x27;); return result; }
+  function iso(value) { return new Date(toMs(value)).toISOString(); }
+  function ok(value, code) { return { ok: true, code: code || &#x27;OK&#x27;, value: clone(value) }; }
+  function duplicate(value) { return { ok: true, code: &#x27;DUPLICATE&#x27;, value: clone(value) }; }
+  function fail(code) { return { ok: false, code }; }
+
+  return deepFreeze({
+    schemaVersion,
+    labels,
+    support,
+    demoCatalog,
+    createDemoState,
+    validateCatalogVersion,
+    visibleOffers,
+    offerVersionToken,
+    createOrder,
+    applyPaymentResult,
+    issueEntitlements,
+    activateService,
+    grantTrialOnce,
+    claimSubject,
+    startIvrSession,
+    confirmIvrSession,
+    consumeTrial,
+    trialStatus,
+    snapshot,
+    loadReviewSnapshot,
+  });
+});
+&lt;/script&gt;
+&lt;!-- ONECALL_BUSINESS:END --&gt;
   &lt;script&gt;
     (function () {
       const root = document.getElementById(&quot;onecall-pages&quot;);
