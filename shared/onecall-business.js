@@ -9,12 +9,12 @@
   const DAY_MS = 24 * 60 * 60 * 1000;
   const BUSINESS_FIELDS = [
     'schemaVersion', 'catalog', 'rule', 'subjects', 'claims', 'trialGrants', 'sessions',
-    'evidence', 'activations', 'orders', 'entitlements', 'processedEvents', 'sequence',
+    'evidence', 'activations', 'activationTransitions', 'orders', 'entitlements', 'processedEvents', 'sequence',
   ];
-  const EVENT_DOMAINS = ['ACTIVATION', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT'];
+  const EVENT_DOMAINS = ['ACTIVATION', 'ACTIVATION_STATUS', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT'];
   const ID_COLLECTIONS = {
     ORDER: 'orders', TRIAL: 'trialGrants', SUBJ: 'subjects', ACT: 'activations',
-    EVID: 'evidence', CLAIM: 'claims', ENT: 'entitlements', IVR: 'sessions',
+    ASTAT: 'activationTransitions', EVID: 'evidence', CLAIM: 'claims', ENT: 'entitlements', IVR: 'sessions',
   };
   const FORBIDDEN_IMPORT_KEYS = new Set([
     'employees', 'employeeLoginSession', 'employeeCredentials', 'employeeRoles',
@@ -27,6 +27,7 @@
     claimRisk: new Set(['NONE', 'CONFLICT', 'RECYCLED']),
     claimMethod: new Set(['WECHAT_PHONE', 'SMS', 'CALLER_CHALLENGE']),
     channel: new Set(['MINIAPP', 'WEB', 'IVR']),
+    activationStatusChannel: new Set(['MINIAPP', 'WEB', 'OPERATIONS']),
     purchaseChannel: new Set(['MINIAPP', 'WEB']),
     sessionStatus: new Set(['RECEIVED', 'CONFIRMED', 'ABANDONED', 'REJECTED']),
     guidanceStatus: new Set(['NOT_GUIDED', 'GUIDED']),
@@ -153,6 +154,7 @@
       sessions: [],
       evidence: [],
       activations: [],
+      activationTransitions: [],
       orders: [],
       entitlements: [],
       processedEvents: eventStore(),
@@ -174,6 +176,10 @@
     if (value.audience === 'ENTERPRISE' && (value.type !== 'QUOTE' || value.billingCycle !== 'QUOTE' || value.priceCents !== null)) return fail('INVALID_TRANSITION');
     if (value.audience === 'PERSONAL' && (value.type === 'QUOTE' || value.billingCycle === 'QUOTE' || !safeBetween(value.priceCents, 1, 9999999))) return fail('INVALID_TRANSITION');
     if (!safeBetween(value.validDays, 1, 3650) || !safePositive(value.installments) || !safeBetween(value.grantIntervalMonths, 0, 120) || !safeBetween(value.sortOrder, 0, 9999)) return fail('INVALID_TRANSITION');
+    const recurring = ['MONTHLY', 'QUARTERLY', 'ANNUAL'];
+    if (value.type === 'SUBSCRIPTION' && (!recurring.includes(value.billingCycle) || !safePositive(value.installments) || !safePositive(value.grantIntervalMonths))) return fail('INVALID_TRANSITION');
+    if (['ONE_TIME', 'ADD_ON'].includes(value.type) && (value.billingCycle !== 'ONCE' || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail('INVALID_TRANSITION');
+    if (value.type === 'QUOTE' && (value.billingCycle !== 'QUOTE' || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail('INVALID_TRANSITION');
     if (value.demo !== true || value.policyStatus !== 'DEMO_NOT_APPROVED') return fail('INVALID_TRANSITION');
     if (!Array.isArray(value.channels) || !value.channels.length || new Set(value.channels).size !== value.channels.length || value.channels.some(channel => !ENUMS.purchaseChannel.has(channel))) return fail('INVALID_TRANSITION');
     if (!plain(value.rights)) return fail('INVALID_TRANSITION');
@@ -223,6 +229,27 @@
     });
   }
 
+  function setActivationStatus(state, input, now) {
+    return mutate(state, draft => {
+      if (!plain(input) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || !['ACTIVE', 'SUSPENDED'].includes(input.status) || !id(input.eventId)) return fail('INVALID_TRANSITION');
+      if (!activationTransitionLedgerValid(draft) || !activationStatusEventCoverageValid(draft)) return fail('INVALID_TRANSITION');
+      const eventInput = { subjectId: input.subjectId, channel: input.channel, status: input.status };
+      const replay = replayEvent(draft, 'ACTIVATION_STATUS', input.eventId, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item => item.id === input.subjectId);
+      if (!target) return fail('NOT_FOUND');
+      if (target.activation === 'INACTIVE' || target.activation === input.status) return fail('INVALID_TRANSITION');
+      const fromRevision = target.revision;
+      const toRevision = fromRevision + 1;
+      const transition = { id: nextId(draft, 'ASTAT'), subjectId: target.id, channel: input.channel, from: target.activation, to: input.status, fromRevision, toRevision, eventId: input.eventId, at: iso(now) };
+      target.activation = input.status;
+      target.revision = toRevision;
+      draft.activationTransitions.push(transition);
+      recordEvent(draft, 'ACTIVATION_STATUS', input.eventId, eventInput, transition);
+      return ok(transition);
+    });
+  }
+
   function grantTrialOnce(state, subjectId, now) {
     return mutate(state, draft => grantTrialDraft(draft, subjectId, now));
   }
@@ -245,10 +272,12 @@
     return mutate(state, draft => {
       if (!plain(input) || !id(input.subjectId) || !id(input.accountId) || !id(input.requestId) || !plain(input.verification)) return fail('VERIFICATION_REQUIRED');
       const eventInput = { subjectId: input.subjectId, accountId: input.accountId, verification: { verified: input.verification.verified === true, subjectId: input.verification.subjectId, method: input.verification.method } };
-      const replay = replayEvent(draft, 'CLAIM', input.requestId, eventInput);
-      if (replay) return replay;
       const target = one(draft.subjects, item => item.id === input.subjectId);
       if (!target) return fail('NOT_FOUND');
+      if (target.claimRisk === 'CONFLICT') return fail('CLAIM_CONFLICT');
+      if (target.claimRisk === 'RECYCLED') return fail('RECYCLED_NUMBER_REVIEW');
+      const replay = replayEvent(draft, 'CLAIM', input.requestId, eventInput);
+      if (replay) return replay;
       const verification = input.verification;
       if (verification.verified !== true || verification.subjectId !== target.id || !ENUMS.claimMethod.has(verification.method)) return fail('VERIFICATION_REQUIRED');
       const methodAllowed = target.numberType === 'MOBILE' ? ['WECHAT_PHONE', 'SMS'].includes(verification.method) : verification.method === 'CALLER_CHALLENGE';
@@ -258,8 +287,6 @@
         return duplicate(existing || clone(target));
       }
       if (target.accountId && target.accountId !== input.accountId) return fail('CLAIM_CONFLICT');
-      if (target.claimRisk === 'CONFLICT') return fail('CLAIM_CONFLICT');
-      if (target.claimRisk === 'RECYCLED') return fail('RECYCLED_NUMBER_REVIEW');
       const claim = { id: nextId(draft, 'CLAIM'), subjectId: target.id, accountId: input.accountId, method: verification.method, verifiedAt: iso(now), requestId: input.requestId };
       draft.claims.push(claim);
       target.accountId = input.accountId;
@@ -324,7 +351,7 @@
       const subjects = draft.subjects.filter(item => item.id === session.confirmedSubjectId);
       if (subjects.length !== 1) return fail('INVALID_TRANSITION');
       const target = subjects[0];
-      if (!allEvidenceReferencesValid(draft)) return fail('INVALID_TRANSITION');
+      if (!allEvidenceReferencesValid(draft) || !evidenceEventCoverageValid(draft)) return fail('INVALID_TRANSITION');
       const eventInput = { sessionId: input.sessionId, seconds: input.seconds };
       const replay = replayEvent(draft, 'EVIDENCE', input.eventId, eventInput);
       if (replay) return replay;
@@ -440,10 +467,10 @@
     const allowed = [...BUSINESS_FIELDS].sort();
     if (keys.length !== allowed.length || keys.some((key, index) => key !== allowed[index]) || keys.some(key => FORBIDDEN_IMPORT_KEYS.has(key))) return fail('INVALID_TRANSITION');
     if (candidate.schemaVersion !== schemaVersion || !safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER) || !plain(candidate.processedEvents)) return fail('INVALID_TRANSITION');
-    const arrays = ['catalog', 'subjects', 'claims', 'trialGrants', 'sessions', 'evidence', 'activations', 'orders', 'entitlements'];
+    const arrays = ['catalog', 'subjects', 'claims', 'trialGrants', 'sessions', 'evidence', 'activations', 'activationTransitions', 'orders', 'entitlements'];
     if (arrays.some(key => !Array.isArray(candidate[key]))) return fail('INVALID_TRANSITION');
     if (!validRule(candidate.rule)) return fail('INVALID_TRANSITION');
-    if (!unique(candidate.catalog, 'versionId') || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, 'requestId') || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.orders) || !unique(candidate.orders, 'idempotencyKey') || !unique(candidate.entitlements)) return fail('INVALID_TRANSITION');
+    if (!unique(candidate.catalog, 'versionId') || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, 'requestId') || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.activationTransitions) || !unique(candidate.orders) || !unique(candidate.orders, 'idempotencyKey') || !unique(candidate.entitlements)) return fail('INVALID_TRANSITION');
     if (candidate.catalog.some(item => !validateCatalogVersion(item).ok)) return fail('INVALID_TRANSITION');
     const activeSkus = new Set();
     const draftSkus = new Set();
@@ -485,6 +512,7 @@
     for (const session of candidate.sessions) {
       if (session.status === 'CONFIRMED' && candidate.activations.filter(item => item.sessionId === session.id && item.channel === 'IVR' && item.subjectId === session.confirmedSubjectId).length !== 1) return fail('INVALID_TRANSITION');
     }
+    if (!activationTransitionLedgerValid(candidate)) return fail('INVALID_TRANSITION');
     const orderCount = idCount(candidate.orders);
     for (const order of candidate.orders) {
       if (!validOrder(order) || subjectCount.get(order.subjectId) !== 1 || !validateCatalogVersion(order.snapshot).ok) return fail('INVALID_TRANSITION');
@@ -505,7 +533,7 @@
       const count = candidate.entitlements.filter(item => item.orderId === order.id).length;
       if ((order.entitlement === 'ISSUED' && count !== 1) || (order.entitlement !== 'ISSUED' && count !== 0)) return fail('INVALID_TRANSITION');
     }
-    if (!validProcessedEvents(candidate)) return fail('INVALID_TRANSITION');
+    if (!validProcessedEvents(candidate) || !evidenceEventCoverageValid(candidate) || !activationStatusEventCoverageValid(candidate)) return fail('INVALID_TRANSITION');
     return ok(true);
   }
 
@@ -543,6 +571,47 @@
     return true;
   }
 
+  function evidenceEventCoverageValid(state) {
+    if (!Array.isArray(state.evidence) || !validEventDomain(state, 'EVIDENCE')) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.EVIDENCE)) {
+      const evidenceId = record && record.result && record.result.evidence && record.result.evidence.id;
+      coverage.set(evidenceId, (coverage.get(evidenceId) || 0) + 1);
+    }
+    return state.evidence.length === coverage.size && state.evidence.every(item => coverage.get(item.id) === 1);
+  }
+
+  function activationStatusEventCoverageValid(state) {
+    if (!Array.isArray(state.activationTransitions) || !validEventDomain(state, 'ACTIVATION_STATUS')) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.ACTIVATION_STATUS)) {
+      const transitionId = record && record.result && record.result.id;
+      coverage.set(transitionId, (coverage.get(transitionId) || 0) + 1);
+    }
+    return state.activationTransitions.length === coverage.size && state.activationTransitions.every(item => coverage.get(item.id) === 1);
+  }
+
+  function activationTransitionLedgerValid(state) {
+    if (!Array.isArray(state.subjects) || !Array.isArray(state.activationTransitions)) return false;
+    const subjectCount = idCount(state.subjects);
+    const transitionTails = new Map();
+    for (const transition of state.activationTransitions) {
+      if (!validActivationTransition(transition) || subjectCount.get(transition.subjectId) !== 1) return false;
+      const previous = transitionTails.get(transition.subjectId);
+      if (previous && (
+        transition.fromRevision < previous.toRevision ||
+        transition.from !== previous.to ||
+        Date.parse(transition.at) < Date.parse(previous.at)
+      )) return false;
+      transitionTails.set(transition.subjectId, transition);
+    }
+    for (const [subjectId, transition] of transitionTails) {
+      const subject = one(state.subjects, item => item.id === subjectId);
+      if (!validSubject(subject) || subject.revision < transition.toRevision || subject.activation !== transition.to) return false;
+    }
+    return true;
+  }
+
   function validRule(rule) {
     return plain(rule) && rule.campaignId === 'FIRST-TRIAL' && safePositive(rule.version) && typeof rule.enabled === 'boolean' && safeBetween(rule.seconds, 1, 3600) && safeBetween(rule.validDays, 1, 365);
   }
@@ -571,6 +640,10 @@
 
   function validActivation(item) {
     return plain(item) && id(item.id) && id(item.subjectId) && ENUMS.channel.has(item.channel) && id(item.consentVersion) && ['EXPLICIT', 'KEY_1'].includes(item.confirmation) && id(item.eventId) && date(item.at) && (item.sessionId === undefined || id(item.sessionId));
+  }
+
+  function validActivationTransition(item) {
+    return exactKeys(item, ['id', 'subjectId', 'channel', 'from', 'to', 'fromRevision', 'toRevision', 'eventId', 'at']) && id(item.id) && id(item.subjectId) && ENUMS.activationStatusChannel.has(item.channel) && ['ACTIVE', 'SUSPENDED'].includes(item.from) && ['ACTIVE', 'SUSPENDED'].includes(item.to) && item.from !== item.to && safePositive(item.fromRevision) && item.toRevision === item.fromRevision + 1 && safePositive(item.toRevision) && id(item.eventId) && date(item.at);
   }
 
   function validOrder(item) {
@@ -632,7 +705,7 @@
     let input;
     try { input = JSON.parse(record.inputFingerprint.slice('INPUT-V1:'.length)); } catch (_) { return false; }
     if (!plain(input) || !safeData(input) || record.inputFingerprint !== `INPUT-V1:${canonicalSerialize(input)}`) return false;
-    if (['subjects', 'claims', 'sessions', 'activations', 'trialGrants', 'evidence', 'orders', 'entitlements'].some(name => !Array.isArray(state[name]))) return false;
+    if (['subjects', 'claims', 'sessions', 'activations', 'activationTransitions', 'trialGrants', 'evidence', 'orders', 'entitlements'].some(name => !Array.isArray(state[name]))) return false;
     const value = record.result;
 
     if (domain === 'ACTIVATION') {
@@ -641,6 +714,12 @@
       const activation = value.activation;
       const eventActivation = one(state.activations, item => item.channel !== 'IVR' && item.eventId === record.eventId);
       return eventActivation && eventActivation.id === activation.id && activation.eventId === record.eventId && activation.subjectId === input.subjectId && activation.channel === input.channel && activation.consentVersion === input.consentVersion && activation.confirmation === 'EXPLICIT' && activation.sessionId === undefined && referencedSubject(state, input.subjectId) && validGrantResult(state, value, input.subjectId);
+    }
+
+    if (domain === 'ACTIVATION_STATUS') {
+      if (!exactKeys(input, ['subjectId', 'channel', 'status']) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || !['ACTIVE', 'SUSPENDED'].includes(input.status)) return false;
+      const eventTransition = one(state.activationTransitions, item => item.eventId === record.eventId);
+      return frozenEntity(state.activationTransitions, value, [], validActivationTransition) && eventTransition && eventTransition.id === value.id && value.subjectId === input.subjectId && value.channel === input.channel && value.to === input.status && value.eventId === record.eventId && referencedSubject(state, input.subjectId);
     }
 
     if (domain === 'IVR_CONFIRM') {
@@ -857,6 +936,7 @@
     applyPaymentResult,
     issueEntitlements,
     activateService,
+    setActivationStatus,
     grantTrialOnce,
     claimSubject,
     startIvrSession,

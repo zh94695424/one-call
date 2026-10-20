@@ -73,7 +73,7 @@ fs.mkdirSync(screenshotDir, { recursive: true });
   assert.ok(!(await page.locator('#root').innerText()).includes(ownCode));assert.ok(!JSON.stringify((await state()).audit).includes(ownCode));
 
   // Business snapshots never contain employees, credentials, auth or widget state.
-  const clean=await business();assert.deepEqual(Object.keys(clean).sort(),['schemaVersion','catalog','rule','subjects','claims','trialGrants','sessions','evidence','activations','orders','entitlements','processedEvents','sequence'].sort());
+  const clean=await business();assert.deepEqual(Object.keys(clean).sort(),['schemaVersion','catalog','rule','subjects','claims','trialGrants','sessions','evidence','activations','activationTransitions','orders','entitlements','processedEvents','sequence'].sort());
   const rejected=await page.evaluate(()=>{const h=window.__onecallOps,b=h.businessSnapshot();b.employees=[];return h.loadReviewSnapshot(b);});assert.equal(rejected.ok,false);assert.deepEqual(await business(),clean);
 
   // Unknown IDs never select a fallback; legacy financial routes have no writes.
@@ -130,7 +130,34 @@ fs.mkdirSync(screenshotDir, { recursive: true });
     if(['repeat','suspended','disabled'].includes(scenario))assert.deepEqual((await business()).trialGrants,before.trialGrants);
     await close();
   }
-  await go('/users/SUB-1002');await action('suspend');await confirm();const oldGrant=(await business()).trialGrants.find(g=>g.subjectId==='SUB-1002');await action('resume');await confirm();assert.deepEqual((await business()).trialGrants.find(g=>g.subjectId==='SUB-1002'),oldGrant);
+  const exhaustedClosed=await business(),exhaustedGrant=exhaustedClosed.trialGrants.find(g=>g.subjectId==='SUBJ-EXHAUSTED-001');assert.equal(exhaustedGrant.usedSeconds,300);
+  const exhaustedEvidence=JSON.stringify(exhaustedClosed.evidence),exhaustedEvents=JSON.stringify(exhaustedClosed.processedEvents.EVIDENCE);
+  await demo('exhausted');const exhaustedReopened=await business();assert.equal(exhaustedReopened.trialGrants.find(g=>g.subjectId==='SUBJ-EXHAUSTED-001').usedSeconds,300);assert.equal(JSON.stringify(exhaustedReopened.evidence),exhaustedEvidence);assert.equal(JSON.stringify(exhaustedReopened.processedEvents.EVIDENCE),exhaustedEvents);
+  await shot('ivr-exhausted-reopened-1440');
+  await action('demo-confirm');const exhaustedConfirmed=await business();assert.equal(exhaustedConfirmed.trialGrants.find(g=>g.subjectId==='SUBJ-EXHAUSTED-001').usedSeconds,300);assert.equal(JSON.stringify(exhaustedConfirmed.evidence),exhaustedEvidence);assert.equal(JSON.stringify(exhaustedConfirmed.processedEvents.EVIDENCE),exhaustedEvents);
+  await action('demo-use');await text('#modal-error','已耗尽');assert.deepEqual(await business(),exhaustedConfirmed);await close();
+  await go('/users/SUB-1002');
+  const operationsBefore=await business(),operationsSubjectBefore=operationsBefore.subjects.find(s=>s.id==='SUB-1002'),oldGrant=operationsBefore.trialGrants.find(g=>g.subjectId==='SUB-1002'),auditBefore=(await state()).audit.length;
+  await action('suspend');await confirm();
+  const operationsStopped=await business(),operationsStoppedSubject=operationsStopped.subjects.find(s=>s.id==='SUB-1002'),operationsStop=operationsStopped.activationTransitions.at(-1);
+  assert.equal(operationsStoppedSubject.activation,'SUSPENDED');assert.equal(operationsStoppedSubject.revision,operationsSubjectBefore.revision+1);assert.equal(operationsStop.channel,'OPERATIONS');assert.equal(operationsStop.fromRevision,operationsSubjectBefore.revision);assert.equal(operationsStop.toRevision,operationsStoppedSubject.revision);
+  assert.deepEqual(operationsStopped.trialGrants.find(g=>g.subjectId==='SUB-1002'),oldGrant);assert.equal((await state()).audit.length,auditBefore+1);assert.equal((await state()).audit[0].event,'暂停业务');
+  const stopReplayInput={subjectId:'SUB-1002',channel:'OPERATIONS',status:'SUSPENDED',eventId:operationsStop.eventId},operationsStoppedFrozen=JSON.stringify(operationsStopped);
+  const operationsStopReplay=await page.evaluate(input=>window.__onecallOps.applyActivationStatus(input),stopReplayInput);assert.equal(operationsStopReplay.code,'DUPLICATE');assert.equal(JSON.stringify(await business()),operationsStoppedFrozen);
+  const operationsStopConflict=await page.evaluate(input=>window.__onecallOps.applyActivationStatus({...input,status:'ACTIVE'}),stopReplayInput);assert.equal(operationsStopConflict.ok,false);assert.equal(JSON.stringify(await business()),operationsStoppedFrozen);
+  await action('resume');await confirm();
+  const operationsResumed=await business(),operationsResumedSubject=operationsResumed.subjects.find(s=>s.id==='SUB-1002'),operationsResume=operationsResumed.activationTransitions.at(-1);
+  assert.equal(operationsResumedSubject.activation,'ACTIVE');assert.equal(operationsResume.channel,'OPERATIONS');assert.equal(operationsResume.fromRevision,operationsStoppedSubject.revision);assert.equal(operationsResume.toRevision,operationsResumedSubject.revision);assert.deepEqual(operationsResumed.trialGrants.find(g=>g.subjectId==='SUB-1002'),oldGrant);
+
+  const webHistoryInput={subjectId:'SUB-1003',channel:'WEB',status:'SUSPENDED',eventId:'QA-WEB-STATUS-BEFORE-OPERATIONS'};
+  const webStopped=await page.evaluate(input=>window.__onecallOps.applyActivationStatus(input),webHistoryInput);assert.equal(webStopped.ok,true);assert.equal(webStopped.value.channel,'WEB');
+  await go('/users/SUB-1003');await action('resume');await confirm();
+  const afterWebHistory=await business(),subjectAfterWebHistory=afterWebHistory.subjects.find(s=>s.id==='SUB-1003'),operationsAfterWeb=afterWebHistory.activationTransitions.at(-1);
+  assert.equal(subjectAfterWebHistory.activation,'ACTIVE');assert.equal(operationsAfterWeb.channel,'OPERATIONS');assert.equal(operationsAfterWeb.from,'SUSPENDED');assert.equal(operationsAfterWeb.to,'ACTIVE');assert.equal(operationsAfterWeb.fromRevision,webStopped.value.toRevision);assert.equal(operationsAfterWeb.toRevision,subjectAfterWebHistory.revision);
+  const afterWebHistoryFrozen=JSON.stringify(afterWebHistory),operationsAfterWebInput={subjectId:'SUB-1003',channel:'OPERATIONS',status:'ACTIVE',eventId:operationsAfterWeb.eventId};
+  assert.equal((await page.evaluate(input=>window.__onecallOps.applyActivationStatus(input),operationsAfterWebInput)).code,'DUPLICATE');assert.equal(JSON.stringify(await business()),afterWebHistoryFrozen);
+  assert.equal((await page.evaluate(input=>window.__onecallOps.applyActivationStatus({...input,status:'SUSPENDED'}),operationsAfterWebInput)).ok,false);assert.equal(JSON.stringify(await business()),afterWebHistoryFrozen);
+  assert.equal((await page.evaluate(()=>window.__onecallOps.applyActivationStatus({subjectId:'SUB-1003',channel:'OPERATIONS',status:'ACTIVE',eventId:'QA-OPERATIONS-INVALID-CURRENT'}))).ok,false);assert.equal(JSON.stringify(await business()),afterWebHistoryFrozen);
   await go('/users');await page.selectOption('[name="source"]','IVR');await page.selectOption('[name="status"]','pending');await page.locator('#user-filter button').click();await text('tbody','SUB-1002');await page.fill('[name="q"]','absent');await page.locator('#user-filter button').click();await text('#content','暂无符合条件');
   await go('/orders/ORD-602');await text('#content','支付成功');await text('#content','待发放');assert.equal(await page.locator('#content [data-action]').count(),0);
   await go('/orders/ORD-601');await text('#content','¥29.00');await text('#content','100');assert.equal((await business()).orders.find(o=>o.id==='ORD-601').snapshot.priceCents,2900);

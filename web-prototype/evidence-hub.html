@@ -619,7 +619,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <!-- ONECALL_BUSINESS:START -->
-<script data-onecall-business-sha256="1d380df600b38448b741f5e37e08d66dfd0b64198a5024ce2567e3dcd44a5930">
+<script data-onecall-business-sha256="2a86a23f91af8df9dfe881e93b88d7ea51c49a7fb62b57598dc5ea80d32520a9">
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -631,12 +631,12 @@
   const DAY_MS = 24 * 60 * 60 * 1000;
   const BUSINESS_FIELDS = [
     'schemaVersion', 'catalog', 'rule', 'subjects', 'claims', 'trialGrants', 'sessions',
-    'evidence', 'activations', 'orders', 'entitlements', 'processedEvents', 'sequence',
+    'evidence', 'activations', 'activationTransitions', 'orders', 'entitlements', 'processedEvents', 'sequence',
   ];
-  const EVENT_DOMAINS = ['ACTIVATION', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT'];
+  const EVENT_DOMAINS = ['ACTIVATION', 'ACTIVATION_STATUS', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT'];
   const ID_COLLECTIONS = {
     ORDER: 'orders', TRIAL: 'trialGrants', SUBJ: 'subjects', ACT: 'activations',
-    EVID: 'evidence', CLAIM: 'claims', ENT: 'entitlements', IVR: 'sessions',
+    ASTAT: 'activationTransitions', EVID: 'evidence', CLAIM: 'claims', ENT: 'entitlements', IVR: 'sessions',
   };
   const FORBIDDEN_IMPORT_KEYS = new Set([
     'employees', 'employeeLoginSession', 'employeeCredentials', 'employeeRoles',
@@ -649,6 +649,7 @@
     claimRisk: new Set(['NONE', 'CONFLICT', 'RECYCLED']),
     claimMethod: new Set(['WECHAT_PHONE', 'SMS', 'CALLER_CHALLENGE']),
     channel: new Set(['MINIAPP', 'WEB', 'IVR']),
+    activationStatusChannel: new Set(['MINIAPP', 'WEB', 'OPERATIONS']),
     purchaseChannel: new Set(['MINIAPP', 'WEB']),
     sessionStatus: new Set(['RECEIVED', 'CONFIRMED', 'ABANDONED', 'REJECTED']),
     guidanceStatus: new Set(['NOT_GUIDED', 'GUIDED']),
@@ -775,6 +776,7 @@
       sessions: [],
       evidence: [],
       activations: [],
+      activationTransitions: [],
       orders: [],
       entitlements: [],
       processedEvents: eventStore(),
@@ -796,6 +798,10 @@
     if (value.audience === 'ENTERPRISE' && (value.type !== 'QUOTE' || value.billingCycle !== 'QUOTE' || value.priceCents !== null)) return fail('INVALID_TRANSITION');
     if (value.audience === 'PERSONAL' && (value.type === 'QUOTE' || value.billingCycle === 'QUOTE' || !safeBetween(value.priceCents, 1, 9999999))) return fail('INVALID_TRANSITION');
     if (!safeBetween(value.validDays, 1, 3650) || !safePositive(value.installments) || !safeBetween(value.grantIntervalMonths, 0, 120) || !safeBetween(value.sortOrder, 0, 9999)) return fail('INVALID_TRANSITION');
+    const recurring = ['MONTHLY', 'QUARTERLY', 'ANNUAL'];
+    if (value.type === 'SUBSCRIPTION' && (!recurring.includes(value.billingCycle) || !safePositive(value.installments) || !safePositive(value.grantIntervalMonths))) return fail('INVALID_TRANSITION');
+    if (['ONE_TIME', 'ADD_ON'].includes(value.type) && (value.billingCycle !== 'ONCE' || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail('INVALID_TRANSITION');
+    if (value.type === 'QUOTE' && (value.billingCycle !== 'QUOTE' || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail('INVALID_TRANSITION');
     if (value.demo !== true || value.policyStatus !== 'DEMO_NOT_APPROVED') return fail('INVALID_TRANSITION');
     if (!Array.isArray(value.channels) || !value.channels.length || new Set(value.channels).size !== value.channels.length || value.channels.some(channel => !ENUMS.purchaseChannel.has(channel))) return fail('INVALID_TRANSITION');
     if (!plain(value.rights)) return fail('INVALID_TRANSITION');
@@ -845,6 +851,27 @@
     });
   }
 
+  function setActivationStatus(state, input, now) {
+    return mutate(state, draft => {
+      if (!plain(input) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || !['ACTIVE', 'SUSPENDED'].includes(input.status) || !id(input.eventId)) return fail('INVALID_TRANSITION');
+      if (!activationTransitionLedgerValid(draft) || !activationStatusEventCoverageValid(draft)) return fail('INVALID_TRANSITION');
+      const eventInput = { subjectId: input.subjectId, channel: input.channel, status: input.status };
+      const replay = replayEvent(draft, 'ACTIVATION_STATUS', input.eventId, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item => item.id === input.subjectId);
+      if (!target) return fail('NOT_FOUND');
+      if (target.activation === 'INACTIVE' || target.activation === input.status) return fail('INVALID_TRANSITION');
+      const fromRevision = target.revision;
+      const toRevision = fromRevision + 1;
+      const transition = { id: nextId(draft, 'ASTAT'), subjectId: target.id, channel: input.channel, from: target.activation, to: input.status, fromRevision, toRevision, eventId: input.eventId, at: iso(now) };
+      target.activation = input.status;
+      target.revision = toRevision;
+      draft.activationTransitions.push(transition);
+      recordEvent(draft, 'ACTIVATION_STATUS', input.eventId, eventInput, transition);
+      return ok(transition);
+    });
+  }
+
   function grantTrialOnce(state, subjectId, now) {
     return mutate(state, draft => grantTrialDraft(draft, subjectId, now));
   }
@@ -867,10 +894,12 @@
     return mutate(state, draft => {
       if (!plain(input) || !id(input.subjectId) || !id(input.accountId) || !id(input.requestId) || !plain(input.verification)) return fail('VERIFICATION_REQUIRED');
       const eventInput = { subjectId: input.subjectId, accountId: input.accountId, verification: { verified: input.verification.verified === true, subjectId: input.verification.subjectId, method: input.verification.method } };
-      const replay = replayEvent(draft, 'CLAIM', input.requestId, eventInput);
-      if (replay) return replay;
       const target = one(draft.subjects, item => item.id === input.subjectId);
       if (!target) return fail('NOT_FOUND');
+      if (target.claimRisk === 'CONFLICT') return fail('CLAIM_CONFLICT');
+      if (target.claimRisk === 'RECYCLED') return fail('RECYCLED_NUMBER_REVIEW');
+      const replay = replayEvent(draft, 'CLAIM', input.requestId, eventInput);
+      if (replay) return replay;
       const verification = input.verification;
       if (verification.verified !== true || verification.subjectId !== target.id || !ENUMS.claimMethod.has(verification.method)) return fail('VERIFICATION_REQUIRED');
       const methodAllowed = target.numberType === 'MOBILE' ? ['WECHAT_PHONE', 'SMS'].includes(verification.method) : verification.method === 'CALLER_CHALLENGE';
@@ -880,8 +909,6 @@
         return duplicate(existing || clone(target));
       }
       if (target.accountId && target.accountId !== input.accountId) return fail('CLAIM_CONFLICT');
-      if (target.claimRisk === 'CONFLICT') return fail('CLAIM_CONFLICT');
-      if (target.claimRisk === 'RECYCLED') return fail('RECYCLED_NUMBER_REVIEW');
       const claim = { id: nextId(draft, 'CLAIM'), subjectId: target.id, accountId: input.accountId, method: verification.method, verifiedAt: iso(now), requestId: input.requestId };
       draft.claims.push(claim);
       target.accountId = input.accountId;
@@ -946,7 +973,7 @@
       const subjects = draft.subjects.filter(item => item.id === session.confirmedSubjectId);
       if (subjects.length !== 1) return fail('INVALID_TRANSITION');
       const target = subjects[0];
-      if (!allEvidenceReferencesValid(draft)) return fail('INVALID_TRANSITION');
+      if (!allEvidenceReferencesValid(draft) || !evidenceEventCoverageValid(draft)) return fail('INVALID_TRANSITION');
       const eventInput = { sessionId: input.sessionId, seconds: input.seconds };
       const replay = replayEvent(draft, 'EVIDENCE', input.eventId, eventInput);
       if (replay) return replay;
@@ -1062,10 +1089,10 @@
     const allowed = [...BUSINESS_FIELDS].sort();
     if (keys.length !== allowed.length || keys.some((key, index) => key !== allowed[index]) || keys.some(key => FORBIDDEN_IMPORT_KEYS.has(key))) return fail('INVALID_TRANSITION');
     if (candidate.schemaVersion !== schemaVersion || !safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER) || !plain(candidate.processedEvents)) return fail('INVALID_TRANSITION');
-    const arrays = ['catalog', 'subjects', 'claims', 'trialGrants', 'sessions', 'evidence', 'activations', 'orders', 'entitlements'];
+    const arrays = ['catalog', 'subjects', 'claims', 'trialGrants', 'sessions', 'evidence', 'activations', 'activationTransitions', 'orders', 'entitlements'];
     if (arrays.some(key => !Array.isArray(candidate[key]))) return fail('INVALID_TRANSITION');
     if (!validRule(candidate.rule)) return fail('INVALID_TRANSITION');
-    if (!unique(candidate.catalog, 'versionId') || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, 'requestId') || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.orders) || !unique(candidate.orders, 'idempotencyKey') || !unique(candidate.entitlements)) return fail('INVALID_TRANSITION');
+    if (!unique(candidate.catalog, 'versionId') || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, 'requestId') || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.activationTransitions) || !unique(candidate.orders) || !unique(candidate.orders, 'idempotencyKey') || !unique(candidate.entitlements)) return fail('INVALID_TRANSITION');
     if (candidate.catalog.some(item => !validateCatalogVersion(item).ok)) return fail('INVALID_TRANSITION');
     const activeSkus = new Set();
     const draftSkus = new Set();
@@ -1107,6 +1134,7 @@
     for (const session of candidate.sessions) {
       if (session.status === 'CONFIRMED' && candidate.activations.filter(item => item.sessionId === session.id && item.channel === 'IVR' && item.subjectId === session.confirmedSubjectId).length !== 1) return fail('INVALID_TRANSITION');
     }
+    if (!activationTransitionLedgerValid(candidate)) return fail('INVALID_TRANSITION');
     const orderCount = idCount(candidate.orders);
     for (const order of candidate.orders) {
       if (!validOrder(order) || subjectCount.get(order.subjectId) !== 1 || !validateCatalogVersion(order.snapshot).ok) return fail('INVALID_TRANSITION');
@@ -1127,7 +1155,7 @@
       const count = candidate.entitlements.filter(item => item.orderId === order.id).length;
       if ((order.entitlement === 'ISSUED' && count !== 1) || (order.entitlement !== 'ISSUED' && count !== 0)) return fail('INVALID_TRANSITION');
     }
-    if (!validProcessedEvents(candidate)) return fail('INVALID_TRANSITION');
+    if (!validProcessedEvents(candidate) || !evidenceEventCoverageValid(candidate) || !activationStatusEventCoverageValid(candidate)) return fail('INVALID_TRANSITION');
     return ok(true);
   }
 
@@ -1165,6 +1193,47 @@
     return true;
   }
 
+  function evidenceEventCoverageValid(state) {
+    if (!Array.isArray(state.evidence) || !validEventDomain(state, 'EVIDENCE')) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.EVIDENCE)) {
+      const evidenceId = record && record.result && record.result.evidence && record.result.evidence.id;
+      coverage.set(evidenceId, (coverage.get(evidenceId) || 0) + 1);
+    }
+    return state.evidence.length === coverage.size && state.evidence.every(item => coverage.get(item.id) === 1);
+  }
+
+  function activationStatusEventCoverageValid(state) {
+    if (!Array.isArray(state.activationTransitions) || !validEventDomain(state, 'ACTIVATION_STATUS')) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.ACTIVATION_STATUS)) {
+      const transitionId = record && record.result && record.result.id;
+      coverage.set(transitionId, (coverage.get(transitionId) || 0) + 1);
+    }
+    return state.activationTransitions.length === coverage.size && state.activationTransitions.every(item => coverage.get(item.id) === 1);
+  }
+
+  function activationTransitionLedgerValid(state) {
+    if (!Array.isArray(state.subjects) || !Array.isArray(state.activationTransitions)) return false;
+    const subjectCount = idCount(state.subjects);
+    const transitionTails = new Map();
+    for (const transition of state.activationTransitions) {
+      if (!validActivationTransition(transition) || subjectCount.get(transition.subjectId) !== 1) return false;
+      const previous = transitionTails.get(transition.subjectId);
+      if (previous && (
+        transition.fromRevision < previous.toRevision ||
+        transition.from !== previous.to ||
+        Date.parse(transition.at) < Date.parse(previous.at)
+      )) return false;
+      transitionTails.set(transition.subjectId, transition);
+    }
+    for (const [subjectId, transition] of transitionTails) {
+      const subject = one(state.subjects, item => item.id === subjectId);
+      if (!validSubject(subject) || subject.revision < transition.toRevision || subject.activation !== transition.to) return false;
+    }
+    return true;
+  }
+
   function validRule(rule) {
     return plain(rule) && rule.campaignId === 'FIRST-TRIAL' && safePositive(rule.version) && typeof rule.enabled === 'boolean' && safeBetween(rule.seconds, 1, 3600) && safeBetween(rule.validDays, 1, 365);
   }
@@ -1193,6 +1262,10 @@
 
   function validActivation(item) {
     return plain(item) && id(item.id) && id(item.subjectId) && ENUMS.channel.has(item.channel) && id(item.consentVersion) && ['EXPLICIT', 'KEY_1'].includes(item.confirmation) && id(item.eventId) && date(item.at) && (item.sessionId === undefined || id(item.sessionId));
+  }
+
+  function validActivationTransition(item) {
+    return exactKeys(item, ['id', 'subjectId', 'channel', 'from', 'to', 'fromRevision', 'toRevision', 'eventId', 'at']) && id(item.id) && id(item.subjectId) && ENUMS.activationStatusChannel.has(item.channel) && ['ACTIVE', 'SUSPENDED'].includes(item.from) && ['ACTIVE', 'SUSPENDED'].includes(item.to) && item.from !== item.to && safePositive(item.fromRevision) && item.toRevision === item.fromRevision + 1 && safePositive(item.toRevision) && id(item.eventId) && date(item.at);
   }
 
   function validOrder(item) {
@@ -1254,7 +1327,7 @@
     let input;
     try { input = JSON.parse(record.inputFingerprint.slice('INPUT-V1:'.length)); } catch (_) { return false; }
     if (!plain(input) || !safeData(input) || record.inputFingerprint !== `INPUT-V1:${canonicalSerialize(input)}`) return false;
-    if (['subjects', 'claims', 'sessions', 'activations', 'trialGrants', 'evidence', 'orders', 'entitlements'].some(name => !Array.isArray(state[name]))) return false;
+    if (['subjects', 'claims', 'sessions', 'activations', 'activationTransitions', 'trialGrants', 'evidence', 'orders', 'entitlements'].some(name => !Array.isArray(state[name]))) return false;
     const value = record.result;
 
     if (domain === 'ACTIVATION') {
@@ -1263,6 +1336,12 @@
       const activation = value.activation;
       const eventActivation = one(state.activations, item => item.channel !== 'IVR' && item.eventId === record.eventId);
       return eventActivation && eventActivation.id === activation.id && activation.eventId === record.eventId && activation.subjectId === input.subjectId && activation.channel === input.channel && activation.consentVersion === input.consentVersion && activation.confirmation === 'EXPLICIT' && activation.sessionId === undefined && referencedSubject(state, input.subjectId) && validGrantResult(state, value, input.subjectId);
+    }
+
+    if (domain === 'ACTIVATION_STATUS') {
+      if (!exactKeys(input, ['subjectId', 'channel', 'status']) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || !['ACTIVE', 'SUSPENDED'].includes(input.status)) return false;
+      const eventTransition = one(state.activationTransitions, item => item.eventId === record.eventId);
+      return frozenEntity(state.activationTransitions, value, [], validActivationTransition) && eventTransition && eventTransition.id === value.id && value.subjectId === input.subjectId && value.channel === input.channel && value.to === input.status && value.eventId === record.eventId && referencedSubject(state, input.subjectId);
     }
 
     if (domain === 'IVR_CONFIRM') {
@@ -1479,6 +1558,7 @@
     applyPaymentResult,
     issueEntitlements,
     activateService,
+    setActivationStatus,
     grantTrialOnce,
     claimSubject,
     startIvrSession,
@@ -1584,7 +1664,7 @@
       activeShare:'SHR-261019-8Q4K', shareAccessState:'entry', shareCodeInput:'', shareCodeError:'', shareCodeAttempts:0, currentShareCode:'8K3P',
       matterStep:1, matterCreated:false, activeMatter:'MAT-202610-018', matterEvidence:['OC-E1042','OC-E1041','OC-E1038'],
       matterDetailEvidence:['OC-E1042','OC-E1041','OC-E1040','OC-E1039','OC-E1038','OC-E1037'], matterEvidenceDraft:[], matterManageOpen:false, matterOwner:'李晓', matterArchiveConfirm:false, matterArchived:false, matterEvents:[],
-      activeNumber:'phone-6208', numberDisabled:false, disabledNumbers:[], numberStopConfirm:false, numberDeleteConfirm:false, deletedNumbers:[],
+      activeNumber:'phone-6208', numberDisabled:false, numberStopConfirm:false, numberDeleteConfirm:false, deletedNumbers:[],
       numberAddStep:1, numberAddType:'mobile', numberAddVerify:'wechat', numberAddPhone:'186 0000 4471', numberAddAgreed:false, numberAddVerified:false, numberAdded:false, addedNumbers:[],
       activeAgreement:'auth-6208', agreementRevokeConfirm:false, agreementRevoked:false, agreementReconfirmed:false,
       enterpriseOrderStep:1, enterpriseOrderAction:'expand', enterpriseOrderAgreed:false, enterpriseQuoteDone:false, enterpriseOrderRequests:[], activeEnterpriseRequestId:'',
@@ -1617,8 +1697,18 @@
     ];
     const B=window.OnecallBusiness, cloneBusiness=value=>JSON.parse(JSON.stringify(value));
     const business=B.createDemoState(new Date());
-    business.subjects.push({id:'WEB-ACCOUNT-001',maskedNumber:'138 **** 6208',numberType:'MOBILE',source:'WEB',accountId:'ACCOUNT-DEMO-001',identity:'VERIFIED',activation:'ACTIVE',revision:1,claimRisk:'NONE'});
-    const businessReview={subjectId:'SUBJ-REPEAT-001',accountId:'ACCOUNT-DEMO-001',verified:false,claimCode:'',orderId:null,offer:null,error:''};
+    function seedWebNumber(id,maskedNumber,numberType,at){
+      business.subjects.push({id,maskedNumber,numberType,source:'WEB',accountId:'ACCOUNT-DEMO-001',identity:'VERIFIED',activation:'INACTIVE',revision:1,claimRisk:'NONE'});
+      const result=B.activateService(business,{subjectId:id,channel:'WEB',verified:true,consentVersion:B.labels.consentVersion,confirmed:true,eventId:'WEB-SEED-ACTIVATE-'+id},new Date(at));
+      if(!result.ok)throw Error('Web 默认号码开通失败：'+id+' / '+result.code);
+      return result.value.activation;
+    }
+    const webAccountActivation=seedWebNumber('WEB-ACCOUNT-001','138 **** 6208','MOBILE','2026-10-19T00:56:12.000Z');
+    const webLandline6688Activation=seedWebNumber('WEB-LANDLINE-0106688','010 **** 6688','LANDLINE','2026-10-19T00:56:13.000Z');
+    const webLandline9056Activation=seedWebNumber('WEB-LANDLINE-0219056','021 **** 9056','LANDLINE','2026-10-19T00:56:14.000Z');
+    const webMember7812Activation=seedWebNumber('WEB-MEMBER-1397812','139 **** 7812','MOBILE','2026-10-19T00:56:15.000Z');
+    const webMember3360Activation=seedWebNumber('WEB-MEMBER-1863360','186 **** 3360','MOBILE','2026-10-19T00:56:16.000Z');
+    const businessReview={subjectId:'SUBJ-REPEAT-001',accountId:'ACCOUNT-DEMO-001',verified:false,claimCode:'',claimRequestId:null,orderId:null,offer:null,error:''};
     function reviewSubject(){return business.subjects.find(item=>item.id===businessReview.subjectId);}
     function purchaseSubject(){const target=reviewSubject();return target?.accountId===businessReview.accountId?target:business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source!=='IVR')||target;}
     function accountOrders(){return business.orders.filter(item=>item.accountId===businessReview.accountId);}
@@ -1637,17 +1727,17 @@
       const trial=B.trialStatus(business,target.id,new Date()).value,records=business.evidence.filter(item=>item.subjectId===target.id);
       return head('号码业务已关联','主体、试用授予、录音与证据归属保持不变。',button('线下人工客服','headphones','data-route="support"'))+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>业务状态</h2></div><div class="panel-body"><div class="meta-list">'+meta('主体',target.id)+meta('实名认证',B.labels.identity[target.identity])+meta('内部服务',B.labels.activation[target.activation])+meta('试用',B.labels.trial[trial.status]+' · '+formatTime(trial.remainingSeconds))+meta('试用到期',trial.grant?.expiresAt||'尚未授予')+'</div><div class="workflow-actions">'+(target.identity==='UNVERIFIED'?button('演示：继续身份核验','user-check','data-action="verify-identity"','primary'):button('订购套餐','shopping-bag','data-route="plans"','primary'))+'</div></div></section><section class="panel"><div class="panel-head"><h2>历史录音元数据</h2></div><div class="panel-body">'+(records.length?records.map(item=>'<div class="meta-list">'+meta('证据',item.id)+meta('录音时身份',item.identityAtCapture)+meta('固证',item.preservationStatus)+meta('时长',item.recordedSeconds+' 秒')+'</div>').join(''):'<p>暂无录音元数据</p>')+'</div></section></div>';
     }
-    function setBusinessScenario(name){const selectors={returning:item=>item.source==='IVR'&&item.claimRisk==='NONE'&&!item.accountId&&item.activation!=='SUSPENDED',fixed:item=>item.source==='IVR'&&item.numberType==='LANDLINE'&&!item.accountId,conflict:item=>item.claimRisk==='CONFLICT',recycled:item=>item.claimRisk==='RECYCLED',expired:item=>item.id==='SUBJ-EXPIRED-001',exhausted:item=>item.id==='SUBJ-EXHAUSTED-001',suspended:item=>item.activation==='SUSPENDED'};const select=selectors[name];if(!select)return {ok:false,code:'NOT_FOUND'};const target=business.sessions.slice().reverse().map(item=>business.subjects.find(s=>s.id===item.subjectId)).find(item=>item&&select(item))||business.subjects.find(select);if(!target)return {ok:false,code:'NOT_FOUND'};businessReview.subjectId=target.id;businessReview.verified=false;businessReview.claimCode='';state.session='signedIn';state.workspace='personal';go('ivr-return');return {ok:true,subjectId:target.id};}
+    function setBusinessScenario(name){const selectors={returning:item=>item.source==='IVR'&&item.claimRisk==='NONE'&&!item.accountId&&item.activation!=='SUSPENDED',fixed:item=>item.source==='IVR'&&item.numberType==='LANDLINE'&&!item.accountId,conflict:item=>item.claimRisk==='CONFLICT',recycled:item=>item.claimRisk==='RECYCLED',expired:item=>item.id==='SUBJ-EXPIRED-001',exhausted:item=>item.id==='SUBJ-EXHAUSTED-001',suspended:item=>item.activation==='SUSPENDED'};const select=selectors[name];if(!select)return {ok:false,code:'NOT_FOUND'};const target=business.sessions.slice().reverse().map(item=>business.subjects.find(s=>s.id===item.subjectId)).find(item=>item&&select(item))||business.subjects.find(select);if(!target)return {ok:false,code:'NOT_FOUND'};businessReview.subjectId=target.id;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;state.session='signedIn';state.workspace='personal';go('ivr-return');return {ok:true,subjectId:target.id};}
     function addonCatalogFor(type){const conf={recording:['CALL','录音分钟包'],ai:['AI_ADDON','AI 分钟包'],storage:['STORAGE','存储扩容包']}[type]||['CALL','录音分钟包'];return {name:conf[1],items:webOffers().filter(item=>item.productCode===conf[0])};}
 
     const authorizationVersion='ONECALL-SERVICE-2026.10';
     const authorizationRecords=[
-      {id:'auth-6208',number:'138 **** 6208',type:'手机号',space:'personal',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-01 08:56:12',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261001-0087',activationRecord:'ACT-DEMO-731804',activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
-      {id:'auth-7812',number:'139 **** 7812',type:'手机号',space:'enterprise',version:'ONECALL-SERVICE-2026.09',consentedAt:'2026-09-03 09:42:28',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'陈雨 · 华启科技',device:'iPhone 16 · 微信小程序',ip:'运营商网络 · 已脱敏',requestId:'REQ-AUTH-20260903-0412',activationRecord:'ACT-DEMO-720611',activationStatus:'已开通',requiresReconfirm:true,consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
-      {id:'auth-3360',number:'186 **** 3360',type:'手机号',space:'enterprise',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-02 10:20:44',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'周宁 · 华启科技',device:'iPhone 15 · 微信小程序',ip:'运营商网络 · 已脱敏',requestId:'REQ-AUTH-20261002-0158',activationRecord:'ACT-DEMO-731991',activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
-      {id:'auth-6688',number:'010 **** 6688',type:'独立固话',space:'enterprise',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0921',activationRecord:'ACT-DEMO-735122',activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
-      ,{id:'auth-personal-6688',number:'010 **** 6688',type:'独立固话',space:'personal',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'号码实际使用确认、真实主叫校验、内部录音服务和必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0920',activationRecord:'ACT-DEMO-735121',activationStatus:'已开通',consentItems:['确认绑定号码由本人实际使用','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
-      ,{id:'auth-9056',number:'021 **** 9056',type:'独立固话',space:'enterprise',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-06 09:36:21',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261006-0176',activationRecord:'ACT-DEMO-735818',activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
+      {id:'auth-6208',number:'138 **** 6208',type:'手机号',space:'personal',subjectId:'WEB-ACCOUNT-001',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-01 08:56:12',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261001-0087',activationRecord:webAccountActivation.id,activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
+      {id:'auth-7812',number:'139 **** 7812',type:'手机号',space:'enterprise',subjectId:'WEB-MEMBER-1397812',version:'ONECALL-SERVICE-2026.09',consentedAt:'2026-09-03 09:42:28',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'陈雨 · 华启科技',device:'iPhone 16 · 微信小程序',ip:'运营商网络 · 已脱敏',requestId:'REQ-AUTH-20260903-0412',activationRecord:webMember7812Activation.id,activationStatus:'已开通',requiresReconfirm:true,consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
+      {id:'auth-3360',number:'186 **** 3360',type:'手机号',space:'enterprise',subjectId:'WEB-MEMBER-1863360',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-02 10:20:44',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'周宁 · 华启科技',device:'iPhone 15 · 微信小程序',ip:'运营商网络 · 已脱敏',requestId:'REQ-AUTH-20261002-0158',activationRecord:webMember3360Activation.id,activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
+      {id:'auth-6688',number:'010 **** 6688',type:'独立固话',space:'enterprise',subjectId:'WEB-LANDLINE-0106688',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0921',activationRecord:webLandline6688Activation.id,activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
+      ,{id:'auth-personal-6688',number:'010 **** 6688',type:'独立固话',space:'personal',subjectId:'WEB-LANDLINE-0106688',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'号码实际使用确认、真实主叫校验、内部录音服务和必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0920',activationRecord:webLandline6688Activation.id,activationStatus:'已开通',consentItems:['确认绑定号码由本人实际使用','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
+      ,{id:'auth-9056',number:'021 **** 9056',type:'独立固话',space:'enterprise',subjectId:'WEB-LANDLINE-0219056',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-06 09:36:21',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261006-0176',activationRecord:webLandline9056Activation.id,activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
     ];
     const authorizationEvents=[];
     const exportJobs=[
@@ -2054,12 +2144,33 @@
     }
 
     function numberRecords(){
-      let cards=[{id:'phone-6208',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'默认手机主叫',usage:'5.7 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'归属待公证前核验',usage:'17.3 分钟',eligibility:'未核验',authorized:'已开通'}];
+      let cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'默认手机主叫',usage:'5.7 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'归属待公证前核验',usage:'17.3 分钟',eligibility:'未核验',authorized:'已开通'}];
       if(!isEnterprise()&&state.addedNumbers.length) cards=cards.concat(state.addedNumbers);
-      if(isEnterpriseAdmin()) cards=[{id:'phone-6208',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'李晓 · 采购部',usage:'426 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'法务部',usage:'512 分钟',eligibility:'未核验',authorized:'已开通'},{id:'fixed-9056',number:'021 **** 9056',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'客服部',usage:'346 分钟',eligibility:'未核验',authorized:'已开通'}];
+      if(isEnterpriseAdmin()) cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'李晓 · 采购部',usage:'426 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'法务部',usage:'512 分钟',eligibility:'未核验',authorized:'已开通'},{id:'fixed-9056',number:'021 **** 9056',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'客服部',usage:'346 分钟',eligibility:'未核验',authorized:'已开通'}];
       if(isEnterpriseAdmin()&&state.addedNumbers.length) cards=cards.concat(state.addedNumbers);
       else if(isEnterprise()){const profile=enterpriseProfile();cards=[{id:'member-phone',number:profile.phone,type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:profile.name+' · '+profile.dept,usage:isEvidenceManager()?'87 分钟':'118 分钟',eligibility:'已匹配',authorized:'已开通'}];}
       return cards.filter(item=>!state.deletedNumbers.includes(item.id));
+    }
+    function resolveNumberSubject(record){
+      if(!record?.number)return {ok:false,code:'NOT_FOUND'};
+      const accountId=record.accountId||businessReview.accountId;
+      const matches=business.subjects.filter(item=>item.maskedNumber===record.number&&item.accountId===accountId);
+      return matches.length===1?{ok:true,value:matches[0]}:{ok:false,code:matches.length?'INVALID_TRANSITION':'NOT_FOUND'};
+    }
+    function numberSubject(record){const resolved=resolveNumberSubject(record);return resolved.ok?resolved.value:null;}
+    function numberDisabled(record){return numberSubject(record)?.activation==='SUSPENDED';}
+    function activationFact(record){
+      const subject=numberSubject(record);
+      if(!subject)return {record:record?.activationRecord||'内部记录待关联',status:record?.activationStatus||'未开通'};
+      const transition=business.activationTransitions.filter(item=>item.subjectId===subject.id).slice().reverse()[0];
+      const activation=business.activations.filter(item=>item.subjectId===subject.id).slice().reverse()[0];
+      return {record:(transition||activation)?.id||'内部记录待关联',status:B.labels.activation[subject.activation]};
+    }
+    function setNumberActivation(record,status){
+      const resolved=resolveNumberSubject(record);
+      if(!resolved.ok)return resolved;
+      const subject=resolved.value;
+      return B.setActivationStatus(business,{subjectId:subject.id,channel:'WEB',status,eventId:'WEB-STATUS-'+status+'-'+subject.id+'-R'+subject.revision},new Date());
     }
     function numbersPage(){
       const cards=numberRecords();
@@ -2071,7 +2182,7 @@
         title='我的主叫号码';action=button('在小程序管理号码','smartphone','data-action="toast" data-message="手机号验证、授权与开通需在本人微信小程序中完成"','primary');ownerLabel='使用人';
       }
       const quota=!isEnterprise()?'<div class="notice" style="margin-bottom:14px">'+icon('contact-round')+'<span>有效主叫号码 '+cards.length+' / 3。停用并删除号码后可释放名额；历史录音、证据和用量流水不会随号码删除。</span></div>':'';
-      return head(title,'管理当前权限范围内的手机号与独立固话；录音按运营商确认的实际主叫统计。',action)+quota+'<div class="number-grid">'+cards.map(n=>{const disabled=state.disabledNumbers.includes(n.id);return '<article class="number-card"><div class="number-top"><span class="number-value">'+n.number+'</span>'+status(disabled?'已停用':'可取证',disabled?'neutral':'success',disabled?'ban':'circle-check')+'</div><div class="meta-list" style="margin-top:13px">'+meta('号码类型',n.type)+meta('验证方式',n.verify)+meta('接入方式',n.access)+meta(ownerLabel,n.owner)+meta('本账期录音',n.usage)+'</div><div class="tag-row"><span class="tag">套餐额度共享</span>'+(n.type==='独立固话直线'?'<span class="tag">不支持 PBX/分机</span>':'')+'</div><div class="workflow-actions">'+button('查看详情','chevron-right','data-number-id="'+n.id+'"')+'</div></article>';}).join('')+'</div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+(isEnterpriseAdmin()?'组织固话名额与成员个人号码上限分开；成员手机号仍由本人实名、验证和授权。':isEnterprise()?'普通成员和证据管理员只能管理本人手机号，不能查看或操作其他成员及组织固话。':'个人账户手机号与固话合计最多三个。号码验证不直接代表运营商实名或号码产权一致。')+'</span></div>';
+      return head(title,'管理当前权限范围内的手机号与独立固话；录音按运营商确认的实际主叫统计。',action)+quota+'<div class="number-grid">'+cards.map(n=>{const disabled=numberDisabled(n);return '<article class="number-card"><div class="number-top"><span class="number-value">'+n.number+'</span>'+status(disabled?'已停用':'可取证',disabled?'neutral':'success',disabled?'ban':'circle-check')+'</div><div class="meta-list" style="margin-top:13px">'+meta('号码类型',n.type)+meta('验证方式',n.verify)+meta('接入方式',n.access)+meta(ownerLabel,n.owner)+meta('本账期录音',n.usage)+'</div><div class="tag-row"><span class="tag">套餐额度共享</span>'+(n.type==='独立固话直线'?'<span class="tag">不支持 PBX/分机</span>':'')+'</div><div class="workflow-actions">'+button('查看详情','chevron-right','data-number-id="'+n.id+'"')+'</div></article>';}).join('')+'</div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+(isEnterpriseAdmin()?'组织固话名额与成员个人号码上限分开；成员手机号仍由本人实名、验证和授权。':isEnterprise()?'普通成员和证据管理员只能管理本人手机号，不能查看或操作其他成员及组织固话。':'个人账户手机号与固话合计最多三个。号码验证不直接代表运营商实名或号码产权一致。')+'</span></div>';
     }
 
     function numberAddPage(){
@@ -2079,7 +2190,7 @@
       const enterprise=isEnterpriseAdmin();
       const count=numberRecords().length;
       const full=!enterprise&&count>=3;
-      if(state.numberAddStep===3) return head(enterprise?'绑定组织固话':'新增主叫号码','内部服务授权与开通已完成。')+'<section class="panel success-state"><div><span class="success-icon">'+icon('phone-call')+'</span><h2>号码已开通</h2><p>'+(state.numberAddType==='mobile'?'186 **** 4471':'020 **** 7816')+' 已完成独立验证、授权和内部服务开通。公证资格仍将在申请公证书前单独核验。</p><div class="meta-list" style="max-width:520px;margin:0 auto 20px;text-align:left">'+meta('内部请求号','REQ-OPEN-20261019-0612')+meta('内部授权记录','ACT-DEMO-742810')+meta('授权快照','ONECALL-SERVICE-2026.10')+'</div><div class="success-actions">'+button('查看授权记录','file-check-2','data-route="agreements"')+button('返回号码列表','list','data-route="numbers"','primary')+'</div></div></section>';
+      if(state.numberAddStep===3){const latest=authorizationRecords.find(item=>item.id===state.activeAgreement),fact=activationFact(latest);return head(enterprise?'绑定组织固话':'新增主叫号码','内部服务授权与开通已完成。')+'<section class="panel success-state"><div><span class="success-icon">'+icon('phone-call')+'</span><h2>号码已开通</h2><p>'+(state.numberAddType==='mobile'?'186 **** 4471':'020 **** 7816')+' 已完成独立验证、授权和内部服务开通。公证资格仍将在申请公证书前单独核验。</p><div class="meta-list" style="max-width:520px;margin:0 auto 20px;text-align:left">'+meta('内部请求号','REQ-OPEN-20261019-0612')+meta('内部开通记录',fact.record)+meta('授权快照','ONECALL-SERVICE-2026.10')+'</div><div class="success-actions">'+button('查看授权记录','file-check-2','data-route="agreements"')+button('返回号码列表','list','data-route="numbers"','primary')+'</div></div></section>';}
       let body='';
       if(state.numberAddStep===1){
         body='<div class="share-option-grid">'+shareChoice('numberAddType','mobile','smartphone','手机号','支持微信平台手机号验证或短信验证码')+shareChoice('numberAddType','fixed','phone','独立固话直线','使用待绑定座机拨打声讯验证短号')+'</div>'+(full?'<div class="notice warning" style="margin-top:14px">'+icon('circle-alert')+'<span>个人账户已有 3 个有效主叫号码。请先停用并删除不再使用的号码，释放名额后再新增。</span></div>':'<div class="notice" style="margin-top:14px">'+icon('info')+'<span>每个号码都要独立验证、授权和开通，不会复用其他号码的授权记录。</span></div>');
@@ -2087,25 +2198,28 @@
         const mobile=state.numberAddType==='mobile';
         body=mobile?'<div class="field"><label for="number-mobile">手机号</label><input id="number-mobile" class="input" value="186 0000 4471" inputmode="numeric"></div><div class="setting-group"><h3 class="setting-title">验证方式</h3><div class="segmented"><button class="'+(state.numberAddVerify==='wechat'?'active':'')+'" data-number-add-verify="wechat">微信授权手机号</button><button class="'+(state.numberAddVerify==='sms'?'active':'')+'" data-number-add-verify="sms">短信验证码</button></div></div>'+(state.numberAddVerify==='sms'?'<div class="form-grid" style="margin-top:14px"><div class="field"><label for="number-code">短信验证码</label><input id="number-code" class="input" value="482916"></div><div class="field"><label>验证结果</label><div class="input" style="display:flex;align-items:center;color:var(--green)">'+(state.numberAddVerified?'已验证当前可接收短信':'待验证')+'</div></div></div>':'<div class="notice" style="margin-top:14px">'+icon('message-circle-check')+'<span>微信返回的手机号只证明本次授权取得该号码，不等于运营商实名登记人与账户身份一致。</span></div>')+'<div class="workflow-actions">'+button(state.numberAddVerified?'手机号已验证':'验证当前手机号',state.numberAddVerify==='wechat'?'message-circle-check':'messages-square','data-action="number-add-verify" '+(state.numberAddVerified?'disabled':''))+'</div>':'<div class="field"><label for="fixed-number">独立固话号码</label><input id="fixed-number" class="input" value="020 8888 7816"></div><div class="credential-block"><span class="credential-label">主叫验证</span><div class="credential-line"><span class="credential-value">请使用待绑定座机拨打 95013，并输入验证短码</span><strong class="share-code">6294</strong></div></div><div class="notice" style="margin-top:14px">'+icon('phone-forwarded')+'<span>运营商将返回真实主叫完成匹配。企业总机、PBX、分机和无法返回唯一真实主叫的线路暂不支持。</span></div><div class="workflow-actions">'+button(state.numberAddVerified?'运营商已确认主叫':'模拟完成主叫验证','phone-forwarded','data-action="number-add-verify" '+(state.numberAddVerified?'disabled':''))+'</div>';
         const agreementCopy=enterprise&&state.numberAddType==='fixed'?'我已阅读并同意以上全部授权内容，确认本组织对绑定号码具有合法使用权，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。':'我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。';
-        body+='<div class="setting-group"><h3 class="setting-title">授权内容</h3><div class="proof-list"><div class="proof-item">'+icon('fingerprint')+'<div><strong>敏感个人信息处理</strong><span>用于号码验证、局端录音、固证和出证资格核验</span></div>'+status('待同意','pending')+'</div><div class="proof-item">'+icon('radio-tower')+'<div><strong>运营商局端录音</strong><span>在通信网络侧生成原始录音并同步固证</span></div>'+status('待同意','pending')+'</div><div class="proof-item">'+icon('share-2')+'<div><strong>必要的数据共享</strong><span>向运营商及公证处存证平台提供完成服务所需数据</span></div>'+status('待同意','pending')+'</div></div></div><label class="check-line"><input id="number-add-agree" type="checkbox" '+(state.numberAddAgreed?'checked':'')+'><span>'+agreementCopy+'</span></label>';
+        body+='<div class="setting-group"><h3 class="setting-title">授权内容</h3><div class="proof-list"><div class="proof-item">'+icon('fingerprint')+'<div><strong>敏感个人信息处理</strong><span>用于号码验证、内部录音、固证和出证资格核验</span></div>'+status('待同意','pending')+'</div><div class="proof-item">'+icon('radio-tower')+'<div><strong>ONECALL 内部录音服务</strong><span>按已验证实际主叫生成录音并同步固证</span></div>'+status('待同意','pending')+'</div><div class="proof-item">'+icon('share-2')+'<div><strong>必要的数据共享</strong><span>向通信服务方及公证处存证平台提供完成服务所需数据</span></div>'+status('待同意','pending')+'</div></div></div><label class="check-line"><input id="number-add-agree" type="checkbox" '+(state.numberAddAgreed?'checked':'')+'><span>'+agreementCopy+'</span></label>';
       }
       const previous=state.numberAddStep===1?button('返回号码列表','arrow-left','data-route="numbers"'):button('上一步','arrow-left','data-action="number-add-back"');
       const next=state.numberAddStep===1?button('下一步：验证并授权','arrow-right','data-action="number-add-next" '+(full?'disabled':''),'primary'):button('同意并内部开通','radio-tower','data-action="number-add-submit" '+(!state.numberAddAgreed||!state.numberAddVerified?'disabled':''),'primary');
-      return head(enterprise?'绑定组织固话':'新增主叫号码','验证、授权和运营商开通按号码独立保存。')+workflowSteps(['选择号码类型','验证并授权','开通结果'],state.numberAddStep)+'<div class="workflow-grid"><section class="panel"><div class="panel-head"><h2>'+(state.numberAddStep===1?'选择号码类型':'完成号码验证与授权')+'</h2></div><div class="panel-body">'+body+'<div class="workflow-actions">'+previous+next+'</div></div></section><aside class="panel"><div class="panel-head"><h2>开通规则</h2></div><div class="panel-body">'+quickRule('badge-check','同步返回结果','提交后直接展示运营商成功或失败结果')+quickRule('shield-check','授权记录不可覆盖','保存协议版本、同意项、设备、IP 和回执')+quickRule('scale','公证资格另行核验','手机号做三要素；固话核验登记归属或合法使用权')+'</div></aside></div>';
+      return head(enterprise?'绑定组织固话':'新增主叫号码','验证、授权和 ONECALL 内部开通按号码独立保存。')+workflowSteps(['选择号码类型','验证并授权','开通结果'],state.numberAddStep)+'<div class="workflow-grid"><section class="panel"><div class="panel-head"><h2>'+(state.numberAddStep===1?'选择号码类型':'完成号码验证与授权')+'</h2></div><div class="panel-body">'+body+'<div class="workflow-actions">'+previous+next+'</div></div></section><aside class="panel"><div class="panel-head"><h2>开通规则</h2></div><div class="panel-body">'+quickRule('badge-check','内部状态同步返回','提交后直接展示 ONECALL 内部开通成功或失败结果')+quickRule('shield-check','授权记录不可覆盖','保存协议版本、同意项、设备、IP 和内部记录号')+quickRule('scale','公证资格另行核验','手机号做三要素；固话核验登记归属或合法使用权')+'</div></aside></div>';
     }
 
     function numberDetailPage(){
       if(state.deletedNumbers.includes(state.activeNumber)) return head('号码详情','号码已从有效号码列表中删除。')+'<section class="panel success-state"><div><span class="success-icon">'+icon('trash-2')+'</span><h2>号码已删除</h2><p>已释放号码名额。历史录音、证据、哈希、公证处存证记录、授权快照和用量流水继续保留。</p><div class="success-actions">'+button('查看授权历史','file-check-2','data-route="agreements"')+button('返回号码列表','list','data-route="numbers"','primary')+'</div></div></section>';
       const record=numberRecords().find(item=>item.id===state.activeNumber)||numberRecords()[0];
       if(!record) return accessDeniedPage('当前号码不在你的管理范围','企业成员只能查看本人手机号；组织固话由企业管理员管理。');
-      const disabled=state.disabledNumbers.includes(state.activeNumber);
+      const disabled=numberDisabled(record),subject=numberSubject(record),fact=activationFact({...record,activationRecord:null,activationStatus:record.authorized});
+      const transition=subject?business.activationTransitions.filter(item=>item.subjectId===subject.id).slice().reverse()[0]:null;
       const ownerLabel=isEnterpriseAdmin()?'归属':'使用说明';
       const agreementRecord=authorizationRecords.slice().reverse().find(item=>item.number===record.number&&item.space===(isEnterprise()?'enterprise':'personal'));
       const agreementId=agreementRecord?.id||'auth-'+record.id.replace(/\D/g,'');
-      const topActions=button('返回号码列表','arrow-left','data-route="numbers"')+button('查看授权记录','file-check-2','data-agreement-id="'+agreementId+'"')+(!disabled?button('停用号码','ban','data-action="number-stop-confirm"','danger'):button('删除号码','trash-2','data-action="number-delete-confirm"','danger')+button('重新申请开通','rotate-cw','data-action="number-reactivate"','primary'));
-      const warning=state.numberStopConfirm?'<section class="panel" style="margin-bottom:16px"><div class="panel-body"><div class="notice warning">'+icon('triangle-alert')+'<span><strong>确认停用并撤销后续录音授权？</strong><br>停用后不再产生新的局端录音；既有录音、证据、哈希、存证记录和用量流水继续保留，不会被删除或修改。</span></div><div class="workflow-actions">'+button('取消','x','data-action="number-stop-cancel"')+button('确认停用','ban','data-action="number-stop"','danger')+'</div></div></section>':'';
+      const lifecycleActions=!isEnterprise()||isEnterpriseAdmin()?(!disabled?button('停用号码','ban','data-action="number-stop-confirm"','danger'):button('删除号码','trash-2','data-action="number-delete-confirm"','danger')+button('重新申请开通','rotate-cw','data-action="number-reactivate"','primary')):'';
+      const topActions=button('返回号码列表','arrow-left','data-route="numbers"')+button('查看授权记录','file-check-2','data-agreement-id="'+agreementId+'"')+lifecycleActions;
+      const warning=state.numberStopConfirm?'<section class="panel" style="margin-bottom:16px"><div class="panel-body"><div class="notice warning">'+icon('triangle-alert')+'<span><strong>确认停用并撤销后续录音授权？</strong><br>停用后不再产生新的内部录音；既有录音、证据、哈希、存证记录和用量流水继续保留，不会被删除或修改。</span></div><div class="workflow-actions">'+button('取消','x','data-action="number-stop-cancel"')+button('确认停用','ban','data-action="number-stop"','danger')+'</div></div></section>':'';
       const deleteWarning=state.numberDeleteConfirm?'<section class="panel" style="margin-bottom:16px"><div class="panel-body"><div class="notice warning">'+icon('trash-2')+'<span><strong>确认删除已停用号码？</strong><br>删除只释放有效号码名额，不删除任何历史录音、证据、授权快照或用量流水；删除后如再次使用，必须重新验证和授权。</span></div><div class="workflow-actions">'+button('取消','x','data-action="number-delete-cancel"')+button('确认删除','trash-2','data-action="number-delete"','danger')+'</div></div></section>':'';
-      return head('号码详情',record.number+' · '+record.type,topActions)+warning+deleteWarning+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>验证与授权状态</h2><p>每个号码独立验证、授权和开通</p></div>'+status(disabled?'已停用':'可取证',disabled?'neutral':'success',disabled?'ban':'circle-check')+'</div><div class="panel-body"><div class="meta-list">'+meta('号码类型',record.type)+meta('验证方式',record.verify)+meta('持有验证',status('已验证当前可使用','success'))+meta('敏感信息授权',disabled?status('已撤销','neutral','ban'):status('有效','success'))+meta('运营商局端录音',disabled?status('已停用','neutral','ban'):status(record.authorized,'success'))+meta('公证资格',status(record.eligibility,record.eligibility==='已匹配'?'success':record.eligibility==='已过期'?'error':'pending',record.eligibility==='已匹配'?'circle-check':'shield-question'))+meta('接入方式',record.access)+meta(ownerLabel,record.owner)+'</div><div class="notice" style="margin-top:14px">'+icon('shield-check')+'<span>“号码已验证”只证明当前可完成微信或短信/主叫验证，不代表已核验运营商实名登记人与账户身份一致；申请公证书前另做三要素核验。</span></div></div></section><aside class="stack"><section class="panel"><div class="panel-head"><h2>本账期用量</h2></div><div class="panel-body">'+progress('有效录音',record.usage,record.type==='手机号'?12:36,'')+progress('AI 转写摘要',record.type==='手机号'?'18 分钟':'42 分钟',18,'green')+button('查看相关呼叫','phone-call','data-route="calls"')+'</div></section><section class="panel"><div class="panel-head"><h2>状态记录</h2></div><div class="panel-body">'+timeline(disabled?[['今天 11:52','号码已停用','停止后续局端录音并撤销当前授权'],['10 月 01 日','运营商开通成功','同步返回成功，号码进入可取证状态'],['10 月 01 日','号码验证完成',record.verify]]:[['10 月 01 日','运营商开通成功','同步返回成功，号码进入可取证状态'],['10 月 01 日','授权记录已保存','协议 ONECALL-SERVICE-2026.10'],['10 月 01 日','号码验证完成',record.verify]])+'</div></section></aside></div>';
+      const currentEvent=transition?[[(transition.at||'').replace('T',' ').slice(0,19),disabled?'内部服务已停用':'内部服务已恢复',transition.id+' · '+transition.from+' → '+transition.to]]:[];
+      return head('号码详情',record.number+' · '+record.type,topActions)+warning+deleteWarning+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>验证与授权状态</h2><p>每个号码独立验证、授权和内部开通</p></div>'+status(disabled?'已停用':'可取证',disabled?'neutral':'success',disabled?'ban':'circle-check')+'</div><div class="panel-body"><div class="meta-list">'+meta('号码类型',record.type)+meta('验证方式',record.verify)+meta('持有验证',status('已验证当前可使用','success'))+meta('敏感信息授权',disabled?status('已撤销','neutral','ban'):status('有效','success'))+meta('ONECALL 内部服务',status(fact.status,disabled?'neutral':'success',disabled?'ban':'circle-check'))+meta('内部状态记录',fact.record)+meta('主体修订',subject?String(subject.revision):'本地演示记录')+meta('公证资格',status(record.eligibility,record.eligibility==='已匹配'?'success':record.eligibility==='已过期'?'error':'pending',record.eligibility==='已匹配'?'circle-check':'shield-question'))+meta('接入方式',record.access)+meta(ownerLabel,record.owner)+'</div><div class="notice" style="margin-top:14px">'+icon('shield-check')+'<span>“号码已验证”只证明当前可完成微信或短信/主叫验证，不代表已核验运营商实名登记人与账户身份一致；申请公证书前另做三要素核验。</span></div></div></section><aside class="stack"><section class="panel"><div class="panel-head"><h2>本账期用量</h2></div><div class="panel-body">'+progress('有效录音',record.usage,record.type==='手机号'?12:36,'')+progress('AI 转写摘要',record.type==='手机号'?'18 分钟':'42 分钟',18,'green')+button('查看相关呼叫','phone-call','data-route="calls"')+'</div></section><section class="panel"><div class="panel-head"><h2>状态记录</h2></div><div class="panel-body">'+timeline(currentEvent.concat([['10 月 01 日','ONECALL 内部开通成功',fact.record+' · 号码进入可取证状态'],['10 月 01 日','授权记录已保存','协议 ONECALL-SERVICE-2026.10'],['10 月 01 日','号码验证完成',record.verify]]))+'</div></section></aside></div>';
     }
 
     function rightsPage(){
@@ -2211,9 +2325,9 @@
       const rows=visibleAgreementRecords();
       const auditor=isEnterpriseAuditor();
       const title=auditor?'授权版本记录':isEnterpriseMember()||isEvidenceManager()?'我的授权记录':'协议与授权';
-      const description=auditor?'只读查看当前组织的脱敏授权版本、时间和状态；不展示身份证明材料。':'每个主叫号码分别保存授权快照、同意证据、运营商回执和撤销历史。';
+      const description=auditor?'只读查看当前组织的脱敏授权版本、时间和状态；不展示身份证明材料。':'每个主叫号码分别保存授权快照、同意证据、ONECALL 内部记录和撤销历史。';
       const renewalNotice=rows.some(record=>agreementStatus(record)==='待重新确认')?'<div class="notice warning" style="margin-bottom:14px">'+icon('file-warning')+'<span><strong>授权内容已有更新</strong><br>再次使用相关号码录音前，请先确认最新版协议；旧版本和原始同意记录仍保留。</span></div>':'';
-      return head(title,description)+renewalNotice+'<div class="table-wrap"><table><thead><tr><th>授权号码</th><th>号码类型</th><th>协议版本</th><th>同意时间</th><th>授权状态</th><th>运营商开通</th><th></th></tr></thead><tbody>'+rows.map(record=>{const current=agreementStatus(record);const tone=current==='有效'?'success':current==='待重新确认'?'pending':current==='已撤销'?'error':'neutral';return '<tr><td><strong>'+record.number+'</strong></td><td>'+record.type+'</td><td class="mono">'+record.version+'</td><td>'+record.consentedAt+'</td><td>'+status(current,tone)+'</td><td>'+status(record.activationStatus,record.activationStatus==='已开通'?'success':'pending')+'</td><td><div class="tag-row">'+button('查看快照','file-search','data-agreement-id="'+record.id+'"','ghost')+(!auditor&&current==='待重新确认'?button('重新确认','rotate-cw','data-action="agreement-reconfirm" data-agreement-id="'+record.id+'"','primary'):'')+'</div></td></tr>';}).join('')+'</tbody></table></div><div class="notice" style="margin-top:14px">'+icon('lock-keyhole')+'<span>授权快照不可编辑或删除；撤销只影响后续录音。号码短信/微信验证不代表运营商实名登记人已与账户身份匹配。</span></div>';
+      return head(title,description)+renewalNotice+'<div class="table-wrap"><table><thead><tr><th>授权号码</th><th>号码类型</th><th>协议版本</th><th>同意时间</th><th>授权状态</th><th>内部服务</th><th></th></tr></thead><tbody>'+rows.map(record=>{const current=agreementStatus(record),fact=activationFact(record);const tone=current==='有效'?'success':current==='待重新确认'?'pending':current==='已撤销'?'error':'neutral';return '<tr><td><strong>'+record.number+'</strong></td><td>'+record.type+'</td><td class="mono">'+record.version+'</td><td>'+record.consentedAt+'</td><td>'+status(current,tone)+'</td><td>'+status(fact.status,fact.status==='已开通'?'success':'pending')+'</td><td><div class="tag-row">'+button('查看快照','file-search','data-agreement-id="'+record.id+'"','ghost')+(!auditor&&current==='待重新确认'?button('重新确认','rotate-cw','data-action="agreement-reconfirm" data-agreement-id="'+record.id+'"','primary'):'')+'</div></td></tr>';}).join('')+'</tbody></table></div><div class="notice" style="margin-top:14px">'+icon('lock-keyhole')+'<span>授权快照不可编辑或删除；撤销只影响后续录音。号码短信/微信验证不代表运营商实名登记人已与账户身份匹配。</span></div>';
     }
 
     function agreementDetailPage(){
@@ -2221,12 +2335,13 @@
       if(!record||!visibleAgreementRecords().some(item=>item.id===state.activeAgreement)) return accessDeniedPage('无权查看此授权记录','授权快照仅向号码使用者和有权限的组织角色开放。');
       const current=agreementStatus(record);
       const revocations=authorizationEvents.filter(event=>event.recordId===record.id&&event.type==='revoked');
+      const fact=activationFact(record);
       const readOnly=isEnterpriseAuditor();
-      const confirm=state.agreementRevokeConfirm?'<div class="notice warning" style="margin:0 16px 16px">'+icon('triangle-alert')+'<span><strong>确认撤销此号码后续录音授权？</strong><br>撤销立即停止该号码的新局端录音，不删除或修改已形成的录音、证据、存证回执和用量记录。</span></div><div class="workflow-actions">'+button('取消','x','data-action="agreement-revoke-cancel"')+button('确认撤销','ban','data-action="agreement-revoke" data-agreement-id="'+record.id+'"','danger')+'</div>':'';
+      const confirm=state.agreementRevokeConfirm?'<div class="notice warning" style="margin:0 16px 16px">'+icon('triangle-alert')+'<span><strong>确认撤销此号码后续录音授权？</strong><br>撤销立即停止该号码新的内部录音，不删除或修改已形成的录音、证据、存证记录和用量记录。</span></div><div class="workflow-actions">'+button('取消','x','data-action="agreement-revoke-cancel"')+button('确认撤销','ban','data-action="agreement-revoke" data-agreement-id="'+record.id+'"','danger')+'</div>':'';
       const actions=button('返回授权列表','arrow-left','data-route="agreements"')+(!readOnly&&current==='有效'?button('撤销后续授权','ban','data-action="agreement-revoke-confirm"','danger'):'')+(!readOnly&&current==='待重新确认'?button('确认最新版协议','rotate-cw','data-action="agreement-reconfirm" data-agreement-id="'+record.id+'"','primary'):'');
-      const snapshot='<section class="panel"><div class="panel-head"><div><h2>授权快照</h2><p>此记录只读保存；修改须形成新版本</p></div>'+status(current,current==='有效'?'success':current==='待重新确认'?'pending':current==='已撤销'?'error':'neutral')+'</div>'+confirm+'<div class="panel-body"><div class="meta-list">'+meta('授权记录编号',record.id)+meta('授权号码',record.number)+meta('号码类型',record.type)+meta('协议版本',record.version)+meta('授权范围',record.scope)+meta('授权账户',record.account)+meta('同意时间',record.consentedAt)+meta('设备信息',record.device)+meta('来源 IP',record.ip)+meta('请求编号',record.requestId)+meta('运营商回执',record.activationRecord)+meta('运营商结果',record.activationStatus)+'</div></div></section>';
+      const snapshot='<section class="panel"><div class="panel-head"><div><h2>授权快照</h2><p>此记录只读保存；修改须形成新版本</p></div>'+status(current,current==='有效'?'success':current==='待重新确认'?'pending':current==='已撤销'?'error':'neutral')+'</div>'+confirm+'<div class="panel-body"><div class="meta-list">'+meta('授权记录编号',record.id)+meta('授权号码',record.number)+meta('号码类型',record.type)+meta('协议版本',record.version)+meta('授权范围',record.scope)+meta('授权账户',record.account)+meta('同意时间',record.consentedAt)+meta('设备信息',record.device)+meta('来源 IP',record.ip)+meta('请求编号',record.requestId)+meta('当前内部记录',fact.record)+meta('当前内部结果',fact.status)+'</div></div></section>';
       const consent='<section class="panel"><div class="panel-head"><div><h2>明确同意项</h2><p>授权时展示的原始项目，不随当前协议修改</p></div></div><div class="panel-body"><div class="proof-list">'+record.consentItems.map(item=>'<div class="proof-item">'+icon('circle-check')+'<div><strong>'+item+'</strong><span>已在 '+record.consentedAt+' 记录同意</span></div>'+status('已同意','success')+'</div>').join('')+'</div></div></section>';
-      const history='<section class="panel"><div class="panel-head"><div><h2>关联状态事件</h2><p>号码状态只改变后续服务权限</p></div></div><div class="panel-body">'+timeline([[record.consentedAt,'用户完成明确授权','保存协议版本、同意项、设备、IP 和请求号'],...(record.supersedes?[[record.consentedAt,'重新确认新版协议','替代旧快照 '+record.supersedes+'，旧版本继续保留']]:[]),[record.consentedAt,'内部服务开通已记录',record.activationRecord+' · '+record.activationStatus],...revocations.map(event=>[event.at,'用户撤销后续授权',event.actor+' · 已停止新录音']),...authorizationRecords.filter(item=>item.supersedes===record.id).map(item=>[item.consentedAt,'重新确认新版协议',item.version+' · 新快照 '+item.id])])+'</div></section>';
+      const history='<section class="panel"><div class="panel-head"><div><h2>关联状态事件</h2><p>号码状态只改变后续服务权限</p></div></div><div class="panel-body">'+timeline([[record.consentedAt,'用户完成明确授权','保存协议版本、同意项、设备、IP 和请求号'],...(record.supersedes?[[record.consentedAt,'重新确认新版协议','替代旧快照 '+record.supersedes+'，旧版本继续保留']]:[]),[record.consentedAt,'ONECALL 内部服务记录',fact.record+' · '+fact.status],...revocations.map(event=>[event.at,'用户撤销后续授权',event.actor+' · '+(event.transitionId||'本地记录')+' · 已停止新录音']),...authorizationRecords.filter(item=>item.supersedes===record.id).map(item=>[item.consentedAt,'重新确认新版协议',item.version+' · 新快照 '+item.id])])+'</div></section>';
       return head('授权记录详情',record.number+' · '+record.version,actions)+'<div class="stack">'+snapshot+consent+history+'</div>';
     }
 
@@ -2368,7 +2483,7 @@
       const notificationOpen=event.target.closest('[data-notification-open]'); if(notificationOpen){const item=notificationRecords.find(row=>row.id===notificationOpen.dataset.notificationOpen);if(item){item.read=true;go(item.route);}return;}
       const offerButton=event.target.closest('[data-web-offer]');if(offerButton){businessReview.offer=webOffers().find(item=>item.versionId===offerButton.dataset.webOffer);businessReview.orderId=null;businessReview.error='';state.checkoutAgreed=false;go('checkout');return;}
       const action=event.target.closest('[data-action]'); if(!action)return;
-      if(action.dataset.action==='claim-subject'){const target=reviewSubject(),r=B.claimSubject(business,{subjectId:target.id,accountId:businessReview.accountId,requestId:'WEB-CLAIM-'+target.id,verification:{verified:true,subjectId:target.id,method:target.numberType==='LANDLINE'?'CALLER_CHALLENGE':'SMS'}},new Date());businessReview.verified=r.ok;businessReview.claimCode=r.ok?'':r.code;render();return;}
+      if(action.dataset.action==='claim-subject'){const target=reviewSubject(),requestId=businessReview.claimRequestId||'WEB-CLAIM-'+target.id;businessReview.claimRequestId=null;const r=B.claimSubject(business,{subjectId:target.id,accountId:businessReview.accountId,requestId,verification:{verified:true,subjectId:target.id,method:target.numberType==='LANDLINE'?'CALLER_CHALLENGE':'SMS'}},new Date());businessReview.verified=r.ok;businessReview.claimCode=r.ok?'':r.code;render();return;}
       if(action.dataset.action==='verify-identity'){const candidate=B.snapshot(business).value,target=candidate.subjects.find(item=>item.id===businessReview.subjectId);if(target&&target.accountId===businessReview.accountId){target.identity='VERIFIED';target.revision+=1;const r=B.loadReviewSnapshot(business,candidate);if(!r.ok)showToast(r.code);}render();return;}
       if(action.dataset.action==='web-payment'){const order=activeBusinessOrder();if(order){const r=B.applyPaymentResult(business,{orderId:order.id,eventId:'WEB-PAY-'+order.id+'-'+action.dataset.result,result:action.dataset.result},new Date());businessReview.error=r.ok?'':r.code;}render();return;}
       if(action.dataset.action==='web-issue'){const order=activeBusinessOrder();if(order){const r=B.issueEntitlements(business,{orderId:order.id,eventId:'WEB-ISSUE-'+order.id},new Date());businessReview.error=r.ok?'':r.code;}render();return;}
@@ -2480,36 +2595,41 @@
         const activated=B.activateService(business,{subjectId,channel:'WEB',eventId:'WEB-ACT-'+subjectId,verified:true,confirmed:true,consentVersion:B.labels.consentVersion},new Date());if(!activated.ok){showToast(activated.code);return;}
         number.subjectId=subjectId;state.addedNumbers.push(number);state.numberAdded=true;
         const recordId='auth-new-'+Date.now().toString(36);
-        authorizationRecords.push({id:recordId,number:masked,type:mobile?'手机号':'独立固话',space:isEnterprise()?'enterprise':'personal',version:authorizationVersion,consentedAt:'2026-10-19 11:42:18',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:isEnterprise()?'华启科技有限公司':'李晓 · 个人账户',device:mobile?'iPhone · 微信小程序':'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-OPEN-20261019-0612',activationRecord:activated.value.activation?.id||'内部开通已记录',activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']});
+        authorizationRecords.push({id:recordId,number:masked,type:mobile?'手机号':'独立固话',space:isEnterprise()?'enterprise':'personal',subjectId,version:authorizationVersion,consentedAt:'2026-10-19 11:42:18',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:isEnterprise()?'华启科技有限公司':'李晓 · 个人账户',device:mobile?'iPhone · 微信小程序':'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-OPEN-20261019-0612',activationRecord:activated.value.activation?.id||'内部开通已记录',activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向通信服务方和公证处存证平台共享完成服务所需数据']});
         state.activeAgreement=recordId;state.numberAddStep=3;render();return;
       }
       if(action.dataset.action==='number-delete-confirm'){state.numberDeleteConfirm=true;render();return;}
       if(action.dataset.action==='number-delete-cancel'){state.numberDeleteConfirm=false;render();return;}
       if(action.dataset.action==='number-delete'){
-        if(!state.disabledNumbers.includes(state.activeNumber)){showToast('请先停用号码并撤销后续录音授权');return;}
+        const current=numberRecords().find(item=>item.id===state.activeNumber);
+        if(!numberDisabled(current)){showToast('请先停用号码并撤销后续录音授权');return;}
         if(!state.deletedNumbers.includes(state.activeNumber))state.deletedNumbers.push(state.activeNumber);
         state.numberDeleteConfirm=false;render();return;
       }
       if(action.dataset.action==='number-stop-confirm'){state.numberStopConfirm=true;render();return;}
       if(action.dataset.action==='number-stop-cancel'){state.numberStopConfirm=false;render();return;}
       if(action.dataset.action==='number-stop'){
-        if(!state.disabledNumbers.includes(state.activeNumber))state.disabledNumbers.push(state.activeNumber);
-        const record=authorizationRecords.slice().reverse().find(item=>item.number===numberRecords().find(number=>number.id===state.activeNumber)?.number&&item.space===(isEnterprise()?'enterprise':'personal'));
-        if(record&&!authorizationEvents.some(item=>item.type==='revoked'&&item.recordId===record.id))authorizationEvents.push({type:'revoked',recordId:record.id,at:'2026-10-19 11:48:00',actor:isEnterprise()?'企业管理员':'李晓'});
+        const current=numberRecords().find(number=>number.id===state.activeNumber),result=setNumberActivation(current,'SUSPENDED');
+        if(!result.ok){showToast('停用失败：'+result.code);return;}
+        const record=authorizationRecords.slice().reverse().find(item=>item.number===current?.number&&item.space===(isEnterprise()?'enterprise':'personal'));
+        if(record&&!authorizationEvents.some(item=>item.type==='revoked'&&item.recordId===record.id))authorizationEvents.push({type:'revoked',recordId:record.id,transitionId:result.value?.id||null,at:'2026-10-19 11:48:00',actor:isEnterprise()?'企业管理员':'李晓'});
         state.numberDisabled=true;state.numberStopConfirm=false;render();return;
       }
       if(action.dataset.action==='number-reactivate'){
         const current=numberRecords().find(item=>item.id===state.activeNumber);
         const old=authorizationRecords.slice().reverse().find(item=>item.number===current?.number&&item.space===(isEnterprise()?'enterprise':'personal'));
-        if(current&&old){const newId='auth-reactivate-'+Date.now().toString(36);authorizationRecords.push({...old,id:newId,version:authorizationVersion,consentedAt:'2026-10-19 11:52:00',requestId:'REQ-REOPEN-20261019-0211',activationRecord:'ACT-DEMO-742924',supersedes:old.id,requiresReconfirm:false});state.activeAgreement=newId;}
-        state.disabledNumbers=state.disabledNumbers.filter(id=>id!==state.activeNumber);state.numberDisabled=false;showToast('已重新完成授权并内部开通；原授权和停用记录仍保留');render();return;
+        const result=setNumberActivation(current,'ACTIVE');if(!result.ok){showToast('重新开通失败：'+result.code);return;}
+        if(current&&old){const newId='auth-reactivate-'+Date.now().toString(36),subject=numberSubject(current);authorizationRecords.push({...old,id:newId,subjectId:subject?.id||old.subjectId,version:authorizationVersion,consentedAt:'2026-10-19 11:52:00',requestId:'REQ-REOPEN-20261019-0211',activationRecord:result.value?.id||old.activationRecord,activationStatus:subject?B.labels.activation[subject.activation]:'已开通',supersedes:old.id,requiresReconfirm:false});state.activeAgreement=newId;}
+        state.numberDisabled=false;showToast('已重新完成授权并内部开通；原授权和停用记录仍保留');render();return;
       }
       if(action.dataset.action==='agreement-revoke-confirm'){state.agreementRevokeConfirm=true;render();return;}
       if(action.dataset.action==='agreement-revoke-cancel'){state.agreementRevokeConfirm=false;render();return;}
       if(action.dataset.action==='agreement-revoke'){
-        const record=authorizationRecords.find(item=>item.id===action.dataset.agreementId);
-        if(record&&!authorizationEvents.some(item=>item.type==='revoked'&&item.recordId===record.id))authorizationEvents.push({type:'revoked',recordId:record.id,at:'2026-10-19 12:04:00',actor:isEnterprise()?'企业管理员':'李晓'});
-        const number=numberRecords().find(item=>item.number===record?.number);if(number&&!state.disabledNumbers.includes(number.id))state.disabledNumbers.push(number.id);
+        const record=visibleAgreementRecords().find(item=>item.id===action.dataset.agreementId&&item.id===state.activeAgreement);
+        if(!record||isEnterpriseAuditor()||agreementStatus(record)!=='有效'||state.route!=='agreement-detail'||!state.agreementRevokeConfirm){showToast('撤销失败：PERMISSION_DENIED');return;}
+        const result=setNumberActivation(record,'SUSPENDED');
+        if(!result.ok){showToast('撤销失败：'+result.code);return;}
+        if(record&&!authorizationEvents.some(item=>item.type==='revoked'&&item.recordId===record.id))authorizationEvents.push({type:'revoked',recordId:record.id,transitionId:result.value?.id||null,at:'2026-10-19 12:04:00',actor:isEnterprise()?'企业管理员':'李晓'});
         state.agreementRevokeConfirm=false;render();return;
       }
       if(action.dataset.action==='agreement-reconfirm'){
@@ -2630,7 +2750,7 @@
     });
     function startAudio(){stopAudio();state.audioTimer=setInterval(()=>{if(!state.audioPlaying)return;state.audioSeconds=Math.min(522,state.audioSeconds+1);const progress=document.getElementById('audio-progress');const current=document.getElementById('audio-current');if(progress)progress.style.width=(state.audioSeconds/522*100)+'%';if(current)current.textContent=formatTime(state.audioSeconds);if(state.audioSeconds>=522){state.audioPlaying=false;stopAudio();render();}},1000);}
     function stopAudio(){if(state.audioTimer){clearInterval(state.audioTimer);state.audioTimer=null;}}
-    window.__onecallWeb={businessSnapshot(){const r=B.snapshot(business);if(!r.ok)throw Error(r.code);return r.value;},loadReviewSnapshot(candidate){const r=B.loadReviewSnapshot(business,candidate);if(r.ok){const linked=business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source==='IVR')||business.subjects.find(item=>item.accountId===businessReview.accountId);if(linked)businessReview.subjectId=linked.id;businessReview.verified=false;businessReview.claimCode='';if(!business.orders.some(item=>item.id===businessReview.orderId))businessReview.orderId=null;render();}return cloneBusiness(r);},setReviewScenario:setBusinessScenario,navigate(route){if(!Object.hasOwn(pageTitles,route))return {ok:false,code:'NOT_FOUND'};go(route);return {ok:true,route};},currentRoute(){return state.route;}};
+    window.__onecallWeb={businessSnapshot(){const r=B.snapshot(business);if(!r.ok)throw Error(r.code);return r.value;},loadReviewSnapshot(candidate){const r=B.loadReviewSnapshot(business,candidate);if(r.ok){const linked=business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source==='IVR')||business.subjects.find(item=>item.accountId===businessReview.accountId);if(linked)businessReview.subjectId=linked.id;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;if(!business.orders.some(item=>item.id===businessReview.orderId))businessReview.orderId=null;render();}return cloneBusiness(r);},setReviewScenario:setBusinessScenario,setClaimRequestId(requestId){businessReview.claimRequestId=requestId;return {ok:true};},applyActivationStatus(input){const r=B.setActivationStatus(business,input,new Date());if(r.ok)render();return cloneBusiness(r);},navigate(route){if(!Object.hasOwn(pageTitles,route))return {ok:false,code:'NOT_FOUND'};go(route);return {ok:true,route};},currentRoute(){return state.route;}};
     window.addEventListener('beforeunload',stopAudio);
     render();
   </script>

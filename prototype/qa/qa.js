@@ -191,9 +191,33 @@ async function assertNoOverflow(frame, label) {
   await landlineSubmit.click();
   const landlineVerifyText = await frame.locator('#oc-screen').innerText();
   if (!landlineVerifyText.includes('95XXX') || !landlineVerifyText.includes('483 621') || !landlineVerifyText.includes('真实主叫')) throw new Error('Landline caller verification instructions are incomplete');
-  await frame.locator('[data-go="landlineReady"]').click();
+  const beforeLandline=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  await openPage(frame,'landlineReady');
+  assert.ok(!(await frame.locator('#oc-screen').innerText()).includes('固话已验证并开通'));
+  for(const mode of ['unverified','suspended']){
+    const fixture=JSON.parse(JSON.stringify(beforeLandline));
+    fixture.subjects.push({id:'MINI-LANDLINE-01088886688',maskedNumber:'010 **** 6688',numberType:'LANDLINE',source:'MINIAPP',accountId:'ACCOUNT-DEMO-001',identity:mode==='unverified'?'UNVERIFIED':'VERIFIED',activation:mode==='suspended'?'SUSPENDED':'INACTIVE',revision:1,claimRisk:'NONE'});
+    assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),fixture)).ok,true);
+    await openPage(frame,'landlineVerify');await frame.locator('[data-go="landlineReady"]').click();
+    assert.equal(await frame.evaluate(()=>window.__onecallMini.currentPage()),'landlineVerify');
+    assert.ok((await frame.locator('[data-activation-error]').innerText()).includes(mode==='suspended'?'SUSPENDED':'VERIFICATION_REQUIRED'));
+    assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),fixture);
+  }
+  assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),beforeLandline)).ok,true);
+  await openPage(frame,'landlineVerify');await frame.locator('[data-go="landlineReady"]').click();
   const landlineReadyText = await frame.locator('#oc-screen').innerText();
-  if (!landlineReadyText.includes('010 **** 6688') || !landlineReadyText.includes('主叫挑战') || !landlineReadyText.includes('独立固话直线')) throw new Error('Landline provisioning result is incomplete');
+  if (!landlineReadyText.includes('010 **** 6688') || !landlineReadyText.includes('CALLER_CHALLENGE') || !landlineReadyText.includes('独立固话直线') || !landlineReadyText.includes('05:00')) throw new Error('Landline provisioning result is incomplete');
+  const landlineState=await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),landline=landlineState.subjects.find(item=>item.id==='MINI-LANDLINE-01088886688');
+  assert.ok(landline);assert.equal(landline.accountId,'ACCOUNT-DEMO-001');assert.equal(landline.identity,'VERIFIED');assert.equal(landline.activation,'ACTIVE');
+  assert.equal(landlineState.activations.filter(item=>item.subjectId===landline.id&&item.channel==='MINIAPP').length,1);
+  assert.equal(landlineState.trialGrants.filter(item=>item.subjectId===landline.id).length,1);
+  const captureLandline=async stage=>{await frame.locator('#oc-screen').evaluate(screen=>{screen.scrollTop=0;});await frame.waitForTimeout(100);await frame.locator('.phone').screenshot({path:path.join(screenshotRoot,'alignment-landline-activation-'+stage+'-393.png'),animations:'disabled'});};
+  await page.setViewportSize({width:393,height:852});await captureLandline('result');
+  await frame.locator('[data-go="trialHome"]').click();assert.equal(await frame.locator('[data-selected-subject]').getAttribute('data-selected-subject'),landline.id);assert.ok((await frame.locator('[data-selected-subject]').innerText()).includes('010 **** 6688'));await captureLandline('trial');
+  await frame.locator('[data-go="numbers"]').click();assert.equal(await frame.locator('[data-selected-subject]').getAttribute('data-selected-subject'),landline.id);assert.ok((await frame.locator('[data-selected-subject]').innerText()).includes('010 **** 6688'));await captureLandline('numbers');
+  await page.setViewportSize({width:760,height:1100});
+  await openPage(frame,'landlineVerify');await frame.locator('[data-go="landlineReady"]').click();assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),landlineState,'Repeated landline activation must not regrant or duplicate activation');
+  assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),activated)).ok,true);
 
   await openPage(frame, 'numbers');
   if (await frame.locator('.number-card').count() !== 3) throw new Error('Number management must show three bound numbers');
@@ -399,6 +423,25 @@ async function assertNoOverflow(frame, label) {
     }
     await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),canonical);
   }
+  await page.setViewportSize({width:393,height:852});
+  const associatedScenario=await frame.evaluate(()=>window.__onecallMini.setReviewScenario('returning'));
+  assert.equal(associatedScenario.ok,true,'Missing returning fixture for same-account risk coverage');
+  await openPage(frame,'claimVerify');await frame.locator('[data-action="claim-submit"]').click();
+  const associated=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  assert.equal(associated.subjects.find(item=>item.id===associatedScenario.subjectId).accountId,'ACCOUNT-DEMO-001');
+  for(const risk of ['CONFLICT','RECYCLED']){
+    const fixture=JSON.parse(JSON.stringify(associated));fixture.subjects.find(item=>item.id===associatedScenario.subjectId).claimRisk=risk;
+    for(const request of ['original','new']){
+      assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),fixture)).ok,true);
+      if(request==='new')await frame.evaluate(id=>window.__onecallMini.setClaimRequestId(id),'MINI-CLAIM-RISK-'+risk);
+      await openPage(frame,'claimVerify');await frame.locator('[data-action="claim-submit"]').click();
+      const blockedText=await frame.locator('#oc-screen').innerText();
+      assert.ok(blockedText.includes('人工客服联系方式待配置')&&!/EVID-|TRIAL-/.test(blockedText),risk+' same-account claim exposed protected history');
+      assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),fixture,risk+' '+request+' request mutated a blocked same-account claim');
+      if(request==='original')await page.screenshot({path:path.join(screenshotRoot,'alignment-claim-same-account-'+risk.toLowerCase()+'-393.png'),fullPage:true});
+    }
+  }
+  assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),canonical)).ok,true);
   const beforeInvalid=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
   for(const key of ['employees','customerAuthSession','widgetState']){
     const result=await frame.evaluate(({b,key})=>window.__onecallMini.loadReviewSnapshot({...b,[key]:{}}),{b:beforeInvalid,key});

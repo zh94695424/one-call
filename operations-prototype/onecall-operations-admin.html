@@ -21,7 +21,7 @@
 <body>
 <div id="root"></div><div id="modal-root"></div><div id="toast-root" aria-live="polite"></div>
 <!-- ONECALL_BUSINESS:START -->
-<script data-onecall-business-sha256="1d380df600b38448b741f5e37e08d66dfd0b64198a5024ce2567e3dcd44a5930">
+<script data-onecall-business-sha256="2a86a23f91af8df9dfe881e93b88d7ea51c49a7fb62b57598dc5ea80d32520a9">
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -33,12 +33,12 @@
   const DAY_MS = 24 * 60 * 60 * 1000;
   const BUSINESS_FIELDS = [
     'schemaVersion', 'catalog', 'rule', 'subjects', 'claims', 'trialGrants', 'sessions',
-    'evidence', 'activations', 'orders', 'entitlements', 'processedEvents', 'sequence',
+    'evidence', 'activations', 'activationTransitions', 'orders', 'entitlements', 'processedEvents', 'sequence',
   ];
-  const EVENT_DOMAINS = ['ACTIVATION', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT'];
+  const EVENT_DOMAINS = ['ACTIVATION', 'ACTIVATION_STATUS', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT'];
   const ID_COLLECTIONS = {
     ORDER: 'orders', TRIAL: 'trialGrants', SUBJ: 'subjects', ACT: 'activations',
-    EVID: 'evidence', CLAIM: 'claims', ENT: 'entitlements', IVR: 'sessions',
+    ASTAT: 'activationTransitions', EVID: 'evidence', CLAIM: 'claims', ENT: 'entitlements', IVR: 'sessions',
   };
   const FORBIDDEN_IMPORT_KEYS = new Set([
     'employees', 'employeeLoginSession', 'employeeCredentials', 'employeeRoles',
@@ -51,6 +51,7 @@
     claimRisk: new Set(['NONE', 'CONFLICT', 'RECYCLED']),
     claimMethod: new Set(['WECHAT_PHONE', 'SMS', 'CALLER_CHALLENGE']),
     channel: new Set(['MINIAPP', 'WEB', 'IVR']),
+    activationStatusChannel: new Set(['MINIAPP', 'WEB', 'OPERATIONS']),
     purchaseChannel: new Set(['MINIAPP', 'WEB']),
     sessionStatus: new Set(['RECEIVED', 'CONFIRMED', 'ABANDONED', 'REJECTED']),
     guidanceStatus: new Set(['NOT_GUIDED', 'GUIDED']),
@@ -177,6 +178,7 @@
       sessions: [],
       evidence: [],
       activations: [],
+      activationTransitions: [],
       orders: [],
       entitlements: [],
       processedEvents: eventStore(),
@@ -198,6 +200,10 @@
     if (value.audience === 'ENTERPRISE' && (value.type !== 'QUOTE' || value.billingCycle !== 'QUOTE' || value.priceCents !== null)) return fail('INVALID_TRANSITION');
     if (value.audience === 'PERSONAL' && (value.type === 'QUOTE' || value.billingCycle === 'QUOTE' || !safeBetween(value.priceCents, 1, 9999999))) return fail('INVALID_TRANSITION');
     if (!safeBetween(value.validDays, 1, 3650) || !safePositive(value.installments) || !safeBetween(value.grantIntervalMonths, 0, 120) || !safeBetween(value.sortOrder, 0, 9999)) return fail('INVALID_TRANSITION');
+    const recurring = ['MONTHLY', 'QUARTERLY', 'ANNUAL'];
+    if (value.type === 'SUBSCRIPTION' && (!recurring.includes(value.billingCycle) || !safePositive(value.installments) || !safePositive(value.grantIntervalMonths))) return fail('INVALID_TRANSITION');
+    if (['ONE_TIME', 'ADD_ON'].includes(value.type) && (value.billingCycle !== 'ONCE' || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail('INVALID_TRANSITION');
+    if (value.type === 'QUOTE' && (value.billingCycle !== 'QUOTE' || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail('INVALID_TRANSITION');
     if (value.demo !== true || value.policyStatus !== 'DEMO_NOT_APPROVED') return fail('INVALID_TRANSITION');
     if (!Array.isArray(value.channels) || !value.channels.length || new Set(value.channels).size !== value.channels.length || value.channels.some(channel => !ENUMS.purchaseChannel.has(channel))) return fail('INVALID_TRANSITION');
     if (!plain(value.rights)) return fail('INVALID_TRANSITION');
@@ -247,6 +253,27 @@
     });
   }
 
+  function setActivationStatus(state, input, now) {
+    return mutate(state, draft => {
+      if (!plain(input) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || !['ACTIVE', 'SUSPENDED'].includes(input.status) || !id(input.eventId)) return fail('INVALID_TRANSITION');
+      if (!activationTransitionLedgerValid(draft) || !activationStatusEventCoverageValid(draft)) return fail('INVALID_TRANSITION');
+      const eventInput = { subjectId: input.subjectId, channel: input.channel, status: input.status };
+      const replay = replayEvent(draft, 'ACTIVATION_STATUS', input.eventId, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item => item.id === input.subjectId);
+      if (!target) return fail('NOT_FOUND');
+      if (target.activation === 'INACTIVE' || target.activation === input.status) return fail('INVALID_TRANSITION');
+      const fromRevision = target.revision;
+      const toRevision = fromRevision + 1;
+      const transition = { id: nextId(draft, 'ASTAT'), subjectId: target.id, channel: input.channel, from: target.activation, to: input.status, fromRevision, toRevision, eventId: input.eventId, at: iso(now) };
+      target.activation = input.status;
+      target.revision = toRevision;
+      draft.activationTransitions.push(transition);
+      recordEvent(draft, 'ACTIVATION_STATUS', input.eventId, eventInput, transition);
+      return ok(transition);
+    });
+  }
+
   function grantTrialOnce(state, subjectId, now) {
     return mutate(state, draft => grantTrialDraft(draft, subjectId, now));
   }
@@ -269,10 +296,12 @@
     return mutate(state, draft => {
       if (!plain(input) || !id(input.subjectId) || !id(input.accountId) || !id(input.requestId) || !plain(input.verification)) return fail('VERIFICATION_REQUIRED');
       const eventInput = { subjectId: input.subjectId, accountId: input.accountId, verification: { verified: input.verification.verified === true, subjectId: input.verification.subjectId, method: input.verification.method } };
-      const replay = replayEvent(draft, 'CLAIM', input.requestId, eventInput);
-      if (replay) return replay;
       const target = one(draft.subjects, item => item.id === input.subjectId);
       if (!target) return fail('NOT_FOUND');
+      if (target.claimRisk === 'CONFLICT') return fail('CLAIM_CONFLICT');
+      if (target.claimRisk === 'RECYCLED') return fail('RECYCLED_NUMBER_REVIEW');
+      const replay = replayEvent(draft, 'CLAIM', input.requestId, eventInput);
+      if (replay) return replay;
       const verification = input.verification;
       if (verification.verified !== true || verification.subjectId !== target.id || !ENUMS.claimMethod.has(verification.method)) return fail('VERIFICATION_REQUIRED');
       const methodAllowed = target.numberType === 'MOBILE' ? ['WECHAT_PHONE', 'SMS'].includes(verification.method) : verification.method === 'CALLER_CHALLENGE';
@@ -282,8 +311,6 @@
         return duplicate(existing || clone(target));
       }
       if (target.accountId && target.accountId !== input.accountId) return fail('CLAIM_CONFLICT');
-      if (target.claimRisk === 'CONFLICT') return fail('CLAIM_CONFLICT');
-      if (target.claimRisk === 'RECYCLED') return fail('RECYCLED_NUMBER_REVIEW');
       const claim = { id: nextId(draft, 'CLAIM'), subjectId: target.id, accountId: input.accountId, method: verification.method, verifiedAt: iso(now), requestId: input.requestId };
       draft.claims.push(claim);
       target.accountId = input.accountId;
@@ -348,7 +375,7 @@
       const subjects = draft.subjects.filter(item => item.id === session.confirmedSubjectId);
       if (subjects.length !== 1) return fail('INVALID_TRANSITION');
       const target = subjects[0];
-      if (!allEvidenceReferencesValid(draft)) return fail('INVALID_TRANSITION');
+      if (!allEvidenceReferencesValid(draft) || !evidenceEventCoverageValid(draft)) return fail('INVALID_TRANSITION');
       const eventInput = { sessionId: input.sessionId, seconds: input.seconds };
       const replay = replayEvent(draft, 'EVIDENCE', input.eventId, eventInput);
       if (replay) return replay;
@@ -464,10 +491,10 @@
     const allowed = [...BUSINESS_FIELDS].sort();
     if (keys.length !== allowed.length || keys.some((key, index) => key !== allowed[index]) || keys.some(key => FORBIDDEN_IMPORT_KEYS.has(key))) return fail('INVALID_TRANSITION');
     if (candidate.schemaVersion !== schemaVersion || !safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER) || !plain(candidate.processedEvents)) return fail('INVALID_TRANSITION');
-    const arrays = ['catalog', 'subjects', 'claims', 'trialGrants', 'sessions', 'evidence', 'activations', 'orders', 'entitlements'];
+    const arrays = ['catalog', 'subjects', 'claims', 'trialGrants', 'sessions', 'evidence', 'activations', 'activationTransitions', 'orders', 'entitlements'];
     if (arrays.some(key => !Array.isArray(candidate[key]))) return fail('INVALID_TRANSITION');
     if (!validRule(candidate.rule)) return fail('INVALID_TRANSITION');
-    if (!unique(candidate.catalog, 'versionId') || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, 'requestId') || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.orders) || !unique(candidate.orders, 'idempotencyKey') || !unique(candidate.entitlements)) return fail('INVALID_TRANSITION');
+    if (!unique(candidate.catalog, 'versionId') || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, 'requestId') || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.activationTransitions) || !unique(candidate.orders) || !unique(candidate.orders, 'idempotencyKey') || !unique(candidate.entitlements)) return fail('INVALID_TRANSITION');
     if (candidate.catalog.some(item => !validateCatalogVersion(item).ok)) return fail('INVALID_TRANSITION');
     const activeSkus = new Set();
     const draftSkus = new Set();
@@ -509,6 +536,7 @@
     for (const session of candidate.sessions) {
       if (session.status === 'CONFIRMED' && candidate.activations.filter(item => item.sessionId === session.id && item.channel === 'IVR' && item.subjectId === session.confirmedSubjectId).length !== 1) return fail('INVALID_TRANSITION');
     }
+    if (!activationTransitionLedgerValid(candidate)) return fail('INVALID_TRANSITION');
     const orderCount = idCount(candidate.orders);
     for (const order of candidate.orders) {
       if (!validOrder(order) || subjectCount.get(order.subjectId) !== 1 || !validateCatalogVersion(order.snapshot).ok) return fail('INVALID_TRANSITION');
@@ -529,7 +557,7 @@
       const count = candidate.entitlements.filter(item => item.orderId === order.id).length;
       if ((order.entitlement === 'ISSUED' && count !== 1) || (order.entitlement !== 'ISSUED' && count !== 0)) return fail('INVALID_TRANSITION');
     }
-    if (!validProcessedEvents(candidate)) return fail('INVALID_TRANSITION');
+    if (!validProcessedEvents(candidate) || !evidenceEventCoverageValid(candidate) || !activationStatusEventCoverageValid(candidate)) return fail('INVALID_TRANSITION');
     return ok(true);
   }
 
@@ -567,6 +595,47 @@
     return true;
   }
 
+  function evidenceEventCoverageValid(state) {
+    if (!Array.isArray(state.evidence) || !validEventDomain(state, 'EVIDENCE')) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.EVIDENCE)) {
+      const evidenceId = record && record.result && record.result.evidence && record.result.evidence.id;
+      coverage.set(evidenceId, (coverage.get(evidenceId) || 0) + 1);
+    }
+    return state.evidence.length === coverage.size && state.evidence.every(item => coverage.get(item.id) === 1);
+  }
+
+  function activationStatusEventCoverageValid(state) {
+    if (!Array.isArray(state.activationTransitions) || !validEventDomain(state, 'ACTIVATION_STATUS')) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.ACTIVATION_STATUS)) {
+      const transitionId = record && record.result && record.result.id;
+      coverage.set(transitionId, (coverage.get(transitionId) || 0) + 1);
+    }
+    return state.activationTransitions.length === coverage.size && state.activationTransitions.every(item => coverage.get(item.id) === 1);
+  }
+
+  function activationTransitionLedgerValid(state) {
+    if (!Array.isArray(state.subjects) || !Array.isArray(state.activationTransitions)) return false;
+    const subjectCount = idCount(state.subjects);
+    const transitionTails = new Map();
+    for (const transition of state.activationTransitions) {
+      if (!validActivationTransition(transition) || subjectCount.get(transition.subjectId) !== 1) return false;
+      const previous = transitionTails.get(transition.subjectId);
+      if (previous && (
+        transition.fromRevision < previous.toRevision ||
+        transition.from !== previous.to ||
+        Date.parse(transition.at) < Date.parse(previous.at)
+      )) return false;
+      transitionTails.set(transition.subjectId, transition);
+    }
+    for (const [subjectId, transition] of transitionTails) {
+      const subject = one(state.subjects, item => item.id === subjectId);
+      if (!validSubject(subject) || subject.revision < transition.toRevision || subject.activation !== transition.to) return false;
+    }
+    return true;
+  }
+
   function validRule(rule) {
     return plain(rule) && rule.campaignId === 'FIRST-TRIAL' && safePositive(rule.version) && typeof rule.enabled === 'boolean' && safeBetween(rule.seconds, 1, 3600) && safeBetween(rule.validDays, 1, 365);
   }
@@ -595,6 +664,10 @@
 
   function validActivation(item) {
     return plain(item) && id(item.id) && id(item.subjectId) && ENUMS.channel.has(item.channel) && id(item.consentVersion) && ['EXPLICIT', 'KEY_1'].includes(item.confirmation) && id(item.eventId) && date(item.at) && (item.sessionId === undefined || id(item.sessionId));
+  }
+
+  function validActivationTransition(item) {
+    return exactKeys(item, ['id', 'subjectId', 'channel', 'from', 'to', 'fromRevision', 'toRevision', 'eventId', 'at']) && id(item.id) && id(item.subjectId) && ENUMS.activationStatusChannel.has(item.channel) && ['ACTIVE', 'SUSPENDED'].includes(item.from) && ['ACTIVE', 'SUSPENDED'].includes(item.to) && item.from !== item.to && safePositive(item.fromRevision) && item.toRevision === item.fromRevision + 1 && safePositive(item.toRevision) && id(item.eventId) && date(item.at);
   }
 
   function validOrder(item) {
@@ -656,7 +729,7 @@
     let input;
     try { input = JSON.parse(record.inputFingerprint.slice('INPUT-V1:'.length)); } catch (_) { return false; }
     if (!plain(input) || !safeData(input) || record.inputFingerprint !== `INPUT-V1:${canonicalSerialize(input)}`) return false;
-    if (['subjects', 'claims', 'sessions', 'activations', 'trialGrants', 'evidence', 'orders', 'entitlements'].some(name => !Array.isArray(state[name]))) return false;
+    if (['subjects', 'claims', 'sessions', 'activations', 'activationTransitions', 'trialGrants', 'evidence', 'orders', 'entitlements'].some(name => !Array.isArray(state[name]))) return false;
     const value = record.result;
 
     if (domain === 'ACTIVATION') {
@@ -665,6 +738,12 @@
       const activation = value.activation;
       const eventActivation = one(state.activations, item => item.channel !== 'IVR' && item.eventId === record.eventId);
       return eventActivation && eventActivation.id === activation.id && activation.eventId === record.eventId && activation.subjectId === input.subjectId && activation.channel === input.channel && activation.consentVersion === input.consentVersion && activation.confirmation === 'EXPLICIT' && activation.sessionId === undefined && referencedSubject(state, input.subjectId) && validGrantResult(state, value, input.subjectId);
+    }
+
+    if (domain === 'ACTIVATION_STATUS') {
+      if (!exactKeys(input, ['subjectId', 'channel', 'status']) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || !['ACTIVE', 'SUSPENDED'].includes(input.status)) return false;
+      const eventTransition = one(state.activationTransitions, item => item.eventId === record.eventId);
+      return frozenEntity(state.activationTransitions, value, [], validActivationTransition) && eventTransition && eventTransition.id === value.id && value.subjectId === input.subjectId && value.channel === input.channel && value.to === input.status && value.eventId === record.eventId && referencedSubject(state, input.subjectId);
     }
 
     if (domain === 'IVR_CONFIRM') {
@@ -881,6 +960,7 @@
     applyPaymentResult,
     issueEntitlements,
     activateService,
+    setActivationStatus,
     grantTrialOnce,
     claimSubject,
     startIvrSession,
@@ -920,6 +1000,8 @@ const routeDefs=[
 ].map(([path,title,primary=false])=>({path,title,primary}));
 const now=Date.now(),day=86400000,at=new Date(now).toISOString();
 const business=B.createDemoState(new Date(now));
+// The exhausted demo starts once with 20 seconds remaining; reopening never rewinds it.
+business.trialGrants.find(item=>item.subjectId==='SUBJ-EXHAUSTED-001').usedSeconds=280;
 // These pre-alignment facts retain their original money, quota, IDs and capture facts.
 const oldOffers=[['PER','PERSONAL','个人基础套餐',2900,100],['PLUS','PLUS','个人进阶套餐',5900,300],['TEAM','TEAM','团队套餐（示例）',19900,1000]].map(([code,sku,name,priceCents,minutes])=>({
  productCode:'HISTORY_'+code,sku:'HISTORY_'+sku,versionId:'PKG-'+code+'-1',version:1,name,description:'历史演示版本；保留旧记录，不作为当前新购推荐',type:'ONE_TIME',audience:'PERSONAL',priceCents,validDays:30,billingCycle:'ONCE',installments:1,grantIntervalMonths:0,rights:{recordingMinutes:minutes,aiMinutes:0,evidenceCount:0,storageGB:0,seats:0,fixedLines:0},channels:['MINIAPP','WEB'],sortOrder:9000,saleStatus:'OFFSALE',demo:true,policyStatus:'DEMO_NOT_APPROVED',includedFeatures:['历史快照'],revision:1,historical:true
@@ -929,7 +1011,7 @@ business.catalog.forEach(p=>{p.revision=1;});
 const subjectNames={'SUB-1001':'林某甲','SUB-1002':'IVR 试用用户','SUB-1003':'周某乙','SUB-1004':'IVR 固话用户','SUB-1005':'试用到期用户'};
 [
 ['SUB-1001','138****4026','MOBILE','MINIAPP','USR-2048','VERIFIED','ACTIVE',120,20],
-['SUB-1002','139****5137','MOBILE','IVR',null,'UNVERIFIED','ACTIVE',60,25],
+['SUB-1002','139****5137','MOBILE','IVR',null,'UNVERIFIED','ACTIVE',0,25],
 ['SUB-1003','186****2251','MOBILE','WEB','USR-2271','VERIFIED','ACTIVE',300,10],
 ['SUB-1004','021-****7812','LANDLINE','IVR',null,'UNVERIFIED','SUSPENDED',300,-1],
 ['SUB-1005','137****1086','MOBILE','IVR',null,'UNVERIFIED','ACTIVE',60,-1]
@@ -941,11 +1023,12 @@ const subjectNames={'SUB-1001':'林某甲','SUB-1002':'IVR 试用用户','SUB-10
  business.sessions.push({id,subjectId,confirmedSubjectId:subjectId,maskedCaller,trustedCaller:true,status:'CONFIRMED',consentVersion:'IVR-CONSENT-v1',key:'1',guidanceStatus:'GUIDED',scenario:'REPEAT_CALL',createdAt:at});
 });
 business.sessions.push({id:'IVR-8003',subjectId:null,confirmedSubjectId:null,maskedCaller:null,trustedCaller:false,status:'REJECTED',consentVersion:'IVR-CONSENT-v1',key:null,guidanceStatus:'NOT_GUIDED',scenario:'MISSING_CALLER',createdAt:at});
-business.evidence.push({id:'EVI-9901',subjectId:'SUB-1002',sessionId:'IVR-8001',recordedSeconds:60,identityAtCapture:'UNVERIFIED',consentVersion:'IVR-CONSENT-v1',createdAt:at,preservationStatus:'PRESERVED'});
 [['ACT-7001','SUB-1001','MINIAPP'],['ACT-7002','SUB-1002','IVR','IVR-8001'],['ACT-7003','SUB-1003','WEB'],['ACT-7004','SUB-1004','IVR','IVR-8002']].forEach(([id,subjectId,channel,sessionId])=>{
  const a={id,subjectId,channel,consentVersion:channel==='IVR'?'IVR-CONSENT-v1':'服务协议 v1',confirmation:channel==='IVR'?'KEY_1':'EXPLICIT',eventId:'HISTORY-'+id,at};
  if(sessionId)a.sessionId=sessionId;business.activations.push(a);
 });
+const historicalEvidence=B.consumeTrial(business,{sessionId:'IVR-8001',eventId:'HISTORY-EVIDENCE-IVR-8001',seconds:60},new Date(now));
+if(!historicalEvidence.ok)throw Error('历史证据事件迁移失败：'+historicalEvidence.code);
 [['ORD-601','SUB-1001','MINIAPP','PAID','ISSUED',0],['ORD-602','SUB-1003','WEB','PAID','PENDING',1],['ORD-603','SUB-1003','WEB','UNPAID','NOT_ISSUED',0],['ORD-604','SUB-1001','MINIAPP','UNKNOWN','NOT_ISSUED',0]].forEach(([id,subjectId,channel,payment,entitlement,index])=>{
  const snapshot=clone(oldOffers[index]);snapshot.saleStatus='ACTIVE';
  const order={id,subjectId,accountId:business.subjects.find(s=>s.id===subjectId).accountId,channel,payment,entitlement,snapshot,createdAt:at,idempotencyKey:'HISTORY-'+id,consentVersion:'服务协议 v1'};business.orders.push(order);
@@ -1122,9 +1205,14 @@ function confirm(){
   const selfRevoked=invalidates&&state.session.employeeId===next.id;
   closeModal();if(code){showCredential(next,code,selfRevoked);return;}if(selfRevoked){logout('当前员工状态或角色已变化，会话已撤销');return;}render();notify('员工变更已完成');return;
  }
+ if(['suspend','resume'].includes(m.action)){
+  const before=clone(s),status=m.action==='resume'?'ACTIVE':'SUSPENDED',event=m.action==='resume'?'恢复业务':'暂停业务';
+  const result=B.setActivationStatus(business,{subjectId:s.id,channel:'OPERATIONS',status,eventId:'OPS-STATUS-'+status+'-'+s.id+'-R'+s.revision},new Date());
+  if(!result.ok)return fail('业务校验拒绝变更：'+result.code);
+  const after=clone(subject(s.id));m.submitted=true;audit(event,s.id,before,after,reason);closeModal();render();notify('操作已完成，历史快照保持不变');return;
+ }
  const candidate=clone(business);let object=m.id,before=null,after=null,event='';
- if(['suspend','resume'].includes(m.action)){const target=candidate.subjects.find(x=>x.id===s.id);before=clone(s);target.activation=m.action==='resume'?'ACTIVE':'SUSPENDED';target.revision++;after=clone(target);event=m.action==='resume'?'恢复业务':'暂停业务';}
- else if(['create-product','edit-draft','edit-product'].includes(m.action)){const value=readOffer(m);if(!value)return fail('请检查编码唯一性、名称说明、价格、整数权益、渠道及类型/周期组合；个人不能携带企业席位或固话');before=p?clone(p):null;after=value;object=value.versionId;event=m.action==='edit-draft'?'保存同一草稿':'创建套餐草稿';if(m.action==='edit-draft')candidate.catalog[candidate.catalog.findIndex(x=>x.versionId===m.id)]=value;else candidate.catalog.push(value);}
+ if(['create-product','edit-draft','edit-product'].includes(m.action)){const value=readOffer(m);if(!value)return fail('请检查编码唯一性、名称说明、价格、整数权益、渠道及类型/周期组合；个人不能携带企业席位或固话');before=p?clone(p):null;after=value;object=value.versionId;event=m.action==='edit-draft'?'保存同一草稿':'创建套餐草稿';if(m.action==='edit-draft')candidate.catalog[candidate.catalog.findIndex(x=>x.versionId===m.id)]=value;else candidate.catalog.push(value);}
  else if(m.action==='edit-trial'){const seconds=$('#trial-seconds').value.trim(),days=$('#trial-days').value.trim(),enabled=$('#trial-enabled').value;if(!integer(seconds,1,3600)||!integer(days,1,365)||!['true','false'].includes(enabled))return fail('试用额度需为 1—3600 整数秒，有效期为 1—365 整数天');before=clone(business.rule);candidate.rule={...candidate.rule,version:candidate.rule.version+1,seconds:+seconds,validDays:+days,enabled:enabled==='true'};after=clone(candidate.rule);object='FIRST-TRIAL';event='发布试用规则';}
  else {before=clone(candidate.catalog.filter(x=>x.sku===p.sku));if(m.action==='off-sale'){const target=candidate.catalog.find(x=>x.versionId===p.versionId);target.saleStatus='OFFSALE';target.revision++;}else{candidate.catalog.filter(x=>x.sku===p.sku&&x.saleStatus==='ACTIVE').forEach(x=>{x.saleStatus='OFFSALE';x.revision++;});const target=candidate.catalog.find(x=>x.versionId===p.versionId);target.saleStatus='ACTIVE';target.revision++;}after=clone(candidate.catalog.filter(x=>x.sku===p.sku));event=m.action==='publish'?'发布套餐':m.action==='off-sale'?'下架套餐':'上架套餐';}
  if(!commitBusiness(candidate))return;m.submitted=true;audit(event,object,before,after,reason);closeModal();if(['create-product','edit-product'].includes(m.action))go('/catalog/'+object);else render();notify('操作已完成，历史快照保持不变');
@@ -1133,7 +1221,7 @@ const demoCases={
  new:['NEW_MOBILE','新手机号 · 未实名未登录'],fixed:['NEW_LANDLINE','新固话 · 主叫挑战'],repeat:['REPEAT_CALL','重复呼入 · 复用原主体与试用'],timeout:['TIMEOUT','超时 · 未确认'],wrong:['WRONG_KEY','错误按键 · 非 1'],missing:['MISSING_CALLER','主叫缺失'],suspended:['SUSPENDED','业务已停用'],disabled:['TRIAL_DISABLED','新试用已关闭'],expired:['EXPIRED_TRIAL','试用已过期'],exhausted:['EXHAUSTED_TRIAL','剩余 20 秒后耗尽'],conflict:['CONFLICT','认领冲突'],recycled:['RECYCLED','号码回收风险']
 };
 function demoModal(){if(!actor()||state.dataMode!=='normal')return;openModal('IVR 流程演示','<p>仅本地演示自建 IVR：播放录音告知与提示词版本，可信主叫按键 1 后内部开通；IVR 只引导到小程序购买，不创建订单或支付。</p><label class="field">呼入场景'+select('demo-case',Object.entries(demoCases).map(([k,v])=>[k,v[1]]),state.reviewScenario)+'</label>','demo');}
-function demoStart(){const m=state.modal,key=$('#demo-case').value;if(!demoCases[key])return fail('未知场景');const result=B.startIvrSession(business,{scenario:demoCases[key][0]},new Date());if(!result.ok)return fail('无法创建演示会话：'+result.code);if(['timeout','wrong','missing'].includes(key)){const session=business.sessions.find(x=>x.id===result.value.id);session.status=key==='missing'?'REJECTED':'ABANDONED';}if(key==='exhausted'){const grant=business.trialGrants.find(x=>x.subjectId==='SUBJ-EXHAUSTED-001');if(grant)grant.usedSeconds=280;}m.submitted=true;const id=result.value.id;closeModal();go('/ivr-sessions/'+id);openDemoSession(id);}
+function demoStart(){const m=state.modal,key=$('#demo-case').value;if(!demoCases[key])return fail('未知场景');const result=B.startIvrSession(business,{scenario:demoCases[key][0]},new Date());if(!result.ok)return fail('无法创建演示会话：'+result.code);if(['timeout','wrong','missing'].includes(key)){const session=business.sessions.find(x=>x.id===result.value.id);session.status=key==='missing'?'REJECTED':'ABANDONED';}m.submitted=true;const id=result.value.id;closeModal();go('/ivr-sessions/'+id);openDemoSession(id);}
 function openDemoSession(id){const s=one(business.sessions,'id',id);if(!s)return;const u=subject(s.subjectId);const fixed=s.scenario==='NEW_LANDLINE'||s.maskedCaller?.includes('-');openModal('演示当前会话','<p><strong>'+esc(s.id)+' / '+esc(s.maskedCaller||'无法识别')+'</strong></p><p id="demo-outcome">'+esc(s.status==='CONFIRMED'?'已开通 · '+trialText(u):'等待明确同意；无可信主叫、超时或错误按键不发试用')+'</p><p>主体：'+esc(u?.id||'尚未建立')+'；实名：'+(u?label('identity',u.identity):'未实名')+'；账户：'+esc(u?.accountId||'待认领')+'</p><p><strong>录音告知：</strong>本次试用通话会录音并形成证据元数据。提示词版本 '+esc(s.consentVersion)+'；按键 1 表示明确同意。</p><p>当前新领取规则 '+business.rule.seconds+' 秒 / '+business.rule.validDays+' 天；既有试用按原发放版本与到期时间保留。</p><div class="actions">'+btn('按 1 确认开通','demo-confirm',id)+btn('试用录音 60 秒','demo-use',id)+btn(fixed?'提示微信搜索小程序购买':'提示到微信小程序购买','demo-guide',id)+btn(fixed?'主叫挑战后认领':'验证号码后认领','demo-claim',id)+'</div><p class="small muted">购买指引只记录 GUIDED，不产生支付或订单。固定电话不宣称发送短信。认领保留实名、试用和证据主体。</p>','demo-flow',id);$('.modal-actions').innerHTML=btn('关闭演示','close-modal');}
 const demoErrors={SUSPENDED:'业务已暂停，不能绕过暂停',TRIAL_DISABLED:'新试用领取已关闭',TRIAL_EXPIRED:'试用已过期，不能新增录音',TRIAL_EXHAUSTED:'试用已耗尽，没有剩余试用权益',CLAIM_CONFLICT:'存在账户绑定冲突，请转线下人工客服核验',RECYCLED_NUMBER_REVIEW:'存在号码回收风险，请转线下人工客服核验',INVALID_TRANSITION:'需要明确开通、业务有效且有剩余试用权益',VERIFICATION_REQUIRED:'没有可信主叫，本次不新开通、不发试用',CONSENT_REQUIRED:'没有按键 1 明确确认，本次不新开通、不发试用'};
 function demoAction(action,id){
@@ -1165,6 +1253,7 @@ window.__onecallOps={
  routes:clone(routeDefs),snapshot:()=>clone({business,employees:isAdmin()?employees:[],session:state.session,route:state.route,dataMode:state.dataMode,audit:state.audit,loggedIn:!!actor()}),
  businessSnapshot:()=>{const result=B.snapshot(business);if(!result.ok)throw Error(result.code);return result.value;},
  loadReviewSnapshot:candidate=>{if(!isAdmin()||state.dataMode!=='normal')return {ok:false,code:'FORBIDDEN'};const r=B.loadReviewSnapshot(business,candidate);if(r.ok)render();return clone(r);},
+ applyActivationStatus:input=>{if(!isAdmin()||state.dataMode!=='normal')return {ok:false,code:'FORBIDDEN'};const r=B.setActivationStatus(business,input,new Date());if(r.ok)render();return clone(r);},
  setReviewScenario:name=>{const key=Object.keys(demoCases).find(k=>k===name||demoCases[k][0]===name);if(!key)return {ok:false,code:'NOT_FOUND'};state.reviewScenario=key;return {ok:true,scenario:demoCases[key][0]};},go,
  setReviewDataMode:mode=>{if(['normal','empty','loading','unavailable'].includes(mode)){closeModal();state.dataMode=mode;render();}}
 };

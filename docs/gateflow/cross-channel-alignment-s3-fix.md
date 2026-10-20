@@ -131,4 +131,3 @@ No claim is made that all 127 family images or all repository screens were manua
 | External gate dependency | Repository remote is not configured; push/draft PR/remote review/final closeout require maintainer/controller conditions at their authorized gate. | Repository maintainer / controller |
 
 No blocker required expanding the accepted fix scope or editing the shared executable contract.
-

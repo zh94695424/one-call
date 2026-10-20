@@ -219,19 +219,96 @@ async function openRoute(page, route) {
     await expectText(page, '#content', '事情已归档为只读');
     await screenshot(page, 'matter-archived-1024.png', 1024);
 
-    await openRoute(page, 'numbers');
-    await page.locator('[data-number-id="phone-6208"]').click();
-    await expectText(page, '#content', '号码详情');
-    await expectText(page, '#content', '每个号码独立验证、授权和开通');
-    await expectText(page, '#content', '不代表已核验运营商实名登记人与账户身份一致');
-    await screenshot(page, 'number-detail-1280.png', 1280);
-    await screenshot(page, 'number-detail-1024.png', 1024);
-    await page.locator('[data-action="number-stop-confirm"]').click();
-    await expectText(page, '#content', '既有录音、证据、哈希、存证记录和用量流水继续保留');
+    const lifecycleCases=[
+      {recordId:'phone-6208',subjectId:'WEB-ACCOUNT-001',type:'mobile'},
+      {recordId:'fixed-6688',subjectId:'WEB-LANDLINE-0106688',type:'landline'},
+    ];
+    for(const lifecycle of lifecycleCases){
+      await openRoute(page, 'numbers');
+      await page.locator('[data-number-id="'+lifecycle.recordId+'"]').click();
+      await expectText(page, '#content', '号码详情');
+      await expectText(page, '#content', '每个号码独立验证、授权和内部开通');
+      await expectText(page, '#content', '不代表已核验运营商实名登记人与账户身份一致');
+      const lifecycleBefore=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+      const lifecycleSubjectBefore=lifecycleBefore.subjects.find(item=>item.id===lifecycle.subjectId);
+      const lifecycleGrant=JSON.stringify(lifecycleBefore.trialGrants.find(item=>item.subjectId===lifecycle.subjectId));
+      const lifecycleActivationCount=lifecycleBefore.activations.filter(item=>item.subjectId===lifecycle.subjectId).length;
+      const lifecycleTransitionCount=lifecycleBefore.activationTransitions.length;
+      expect(lifecycleSubjectBefore?.activation==='ACTIVE',lifecycle.type+' Web number must start canonically active');
+      if(lifecycle.type==='mobile'){
+        await screenshot(page, 'number-detail-1280.png', 1280);
+        await screenshot(page, 'number-detail-1024.png', 1024);
+      }
+      await page.locator('[data-action="number-stop-confirm"]').click();
+      await expectText(page, '#content', '既有录音、证据、哈希、存证记录和用量流水继续保留');
+      await page.locator('[data-action="number-stop"]').click();
+      await expectText(page, '#content', '已停用');
+      const lifecycleStopped=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+      const stoppedSubject=lifecycleStopped.subjects.find(item=>item.id===lifecycle.subjectId),stopTransition=lifecycleStopped.activationTransitions.at(-1);
+      expect(stoppedSubject.activation==='SUSPENDED'&&stoppedSubject.revision===lifecycleSubjectBefore.revision+1,lifecycle.type+' visible stop must update canonical status and revision');
+      expect(lifecycleStopped.activationTransitions.length===lifecycleTransitionCount+1&&stopTransition.subjectId===lifecycle.subjectId&&stopTransition.from==='ACTIVE'&&stopTransition.to==='SUSPENDED',lifecycle.type+' visible stop must append one canonical transition');
+      expect(stopTransition.fromRevision===lifecycleSubjectBefore.revision&&stopTransition.toRevision===stoppedSubject.revision,lifecycle.type+' stop must persist exact revision anchors');
+      expect(JSON.stringify(lifecycleStopped.trialGrants.find(item=>item.subjectId===lifecycle.subjectId))===lifecycleGrant,lifecycle.type+' stopping must preserve the original trial grant');
+      expect(lifecycleStopped.activations.filter(item=>item.subjectId===lifecycle.subjectId).length===lifecycleActivationCount,lifecycle.type+' stopping must not fabricate another activation');
+      await expectText(page,'#content',stopTransition.id);
+      await expectText(page,'#content',String(stoppedSubject.revision));
+      await screenshot(page,lifecycle.type==='mobile'?'number-disabled-1280.png':'number-landline-canonical-stopped-1280.png',1280);
+      if(lifecycle.type==='mobile')await screenshot(page, 'number-canonical-stopped-1280.png', 1280);
+      for(const mode of ['missing-event','malformed-event']){
+        const candidate=JSON.parse(JSON.stringify(lifecycleStopped)),key='$'+stopTransition.eventId;
+        if(mode==='missing-event')delete candidate.processedEvents.ACTIVATION_STATUS[key];
+        else candidate.processedEvents.ACTIVATION_STATUS[key].result.to='ACTIVE';
+        const rejected=await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),candidate);
+        expect(!rejected.ok&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(lifecycleStopped),lifecycle.type+' '+mode+' activation transition import must reject atomically');
+      }
+      const stopInput={subjectId:lifecycle.subjectId,channel:'WEB',status:'SUSPENDED',eventId:stopTransition.eventId};
+      const replayStop=await page.evaluate(input=>window.__onecallWeb.applyActivationStatus(input),stopInput);
+      expect(replayStop.ok&&replayStop.code==='DUPLICATE'&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(lifecycleStopped),lifecycle.type+' original stop replay must be a no-op duplicate');
+      const conflictingStop=await page.evaluate(input=>window.__onecallWeb.applyActivationStatus({...input,status:'ACTIVE'}),stopInput);
+      expect(!conflictingStop.ok&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(lifecycleStopped),lifecycle.type+' same transition key with a different status must reject atomically');
+      await page.locator('[data-action="number-reactivate"]').click();
+      const lifecycleRestored=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+      const restoredSubject=lifecycleRestored.subjects.find(item=>item.id===lifecycle.subjectId),restoreTransition=lifecycleRestored.activationTransitions.at(-1);
+      expect(restoredSubject.activation==='ACTIVE'&&restoredSubject.revision===stoppedSubject.revision+1,lifecycle.type+' visible restore must update canonical status and revision');
+      expect(lifecycleRestored.activationTransitions.length===lifecycleTransitionCount+2&&restoreTransition.from==='SUSPENDED'&&restoreTransition.to==='ACTIVE',lifecycle.type+' visible restore must append one canonical transition');
+      expect(restoreTransition.fromRevision===stoppedSubject.revision&&restoreTransition.toRevision===restoredSubject.revision,lifecycle.type+' restore must persist exact revision anchors');
+      expect(JSON.stringify(lifecycleRestored.trialGrants.find(item=>item.subjectId===lifecycle.subjectId))===lifecycleGrant,lifecycle.type+' restore must not regrant or rewrite the trial');
+      expect(lifecycleRestored.activations.filter(item=>item.subjectId===lifecycle.subjectId).length===lifecycleActivationCount,lifecycle.type+' restore must not fabricate another activation');
+      await expectText(page,'#content',restoreTransition.id);
+      await expectText(page,'#content',String(restoredSubject.revision));
+      await screenshot(page,lifecycle.type==='mobile'?'number-canonical-restored-1280.png':'number-landline-canonical-restored-1280.png',1280);
+      const replayRestore=await page.evaluate(input=>window.__onecallWeb.applyActivationStatus(input),{subjectId:lifecycle.subjectId,channel:'WEB',status:'ACTIVE',eventId:restoreTransition.eventId});
+      expect(replayRestore.ok&&replayRestore.code==='DUPLICATE'&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(lifecycleRestored),lifecycle.type+' original restore replay must be a no-op duplicate');
+    }
+
+    const canonicalLifecycleState=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    const withoutLandline=JSON.parse(JSON.stringify(canonicalLifecycleState)),landlineId='WEB-LANDLINE-0106688';
+    const landlineActivationEvents=withoutLandline.activations.filter(item=>item.subjectId===landlineId).map(item=>item.eventId);
+    const landlineTransitionEvents=withoutLandline.activationTransitions.filter(item=>item.subjectId===landlineId).map(item=>item.eventId);
+    withoutLandline.subjects=withoutLandline.subjects.filter(item=>item.id!==landlineId);
+    withoutLandline.trialGrants=withoutLandline.trialGrants.filter(item=>item.subjectId!==landlineId);
+    withoutLandline.activations=withoutLandline.activations.filter(item=>item.subjectId!==landlineId);
+    withoutLandline.activationTransitions=withoutLandline.activationTransitions.filter(item=>item.subjectId!==landlineId);
+    for(const eventId of landlineActivationEvents)delete withoutLandline.processedEvents.ACTIVATION['$'+eventId];
+    for(const eventId of landlineTransitionEvents)delete withoutLandline.processedEvents.ACTIVATION_STATUS['$'+eventId];
+    expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),withoutLandline)).ok,'Missing-subject fixture must remain a valid imported snapshot');
+    await openRoute(page,'numbers');await page.locator('[data-number-id="fixed-6688"]').click();await page.locator('[data-action="number-stop-confirm"]').click();
+    const missingUiBefore=await page.locator('#content').innerText(),missingStateBefore=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
     await page.locator('[data-action="number-stop"]').click();
-    await expectText(page, '#content', '已停用');
-    await screenshot(page, 'number-disabled-1280.png', 1280);
-    await page.locator('[data-action="number-reactivate"]').click();
+    expect(await page.locator('#content').innerText()===missingUiBefore,'Missing canonical resolution must leave number UI unchanged');
+    expect(JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(missingStateBefore),'Missing canonical resolution must leave canonical state unchanged');
+    await expectText(page,'#toast','停用失败：NOT_FOUND');
+
+    const ambiguous=JSON.parse(JSON.stringify(canonicalLifecycleState));
+    ambiguous.subjects.push({id:'WEB-LANDLINE-0106688-DUPLICATE',maskedNumber:'010 **** 6688',numberType:'LANDLINE',source:'WEB',accountId:'ACCOUNT-DEMO-001',identity:'VERIFIED',activation:'ACTIVE',revision:1,claimRisk:'NONE'});
+    expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),ambiguous)).ok,'Ambiguous-number fixture must remain a valid imported snapshot');
+    await openRoute(page,'numbers');await page.locator('[data-number-id="fixed-6688"]').click();await page.locator('[data-action="number-stop-confirm"]').click();
+    const ambiguousUiBefore=await page.locator('#content').innerText(),ambiguousStateBefore=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    await page.locator('[data-action="number-stop"]').click();
+    expect(await page.locator('#content').innerText()===ambiguousUiBefore,'Ambiguous canonical resolution must leave number UI unchanged');
+    expect(JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(ambiguousStateBefore),'Ambiguous canonical resolution must leave canonical state unchanged');
+    await expectText(page,'#toast','停用失败：INVALID_TRANSITION');
+    expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),canonicalLifecycleState)).ok,'Canonical Web lifecycle fixture must restore after failure probes');
     await openRoute(page, 'numbers');
     await page.locator('[data-route="number-add"]').click();
     await page.locator('[data-action="number-add-next"]').click();
@@ -479,6 +556,26 @@ async function openRoute(page, route) {
       await screenshot(page,'claim-'+scenario+'-1024.png',1024);
       await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),canonical);
     }
+    const associatedScenario=await page.evaluate(()=>window.__onecallWeb.setReviewScenario('returning'));
+    expect(associatedScenario.ok,'Missing returning fixture for same-account risk coverage');
+    await page.evaluate(()=>window.__onecallWeb.navigate('subject-claim'));
+    await page.locator('[data-action="claim-subject"]').click();
+    const associated=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    expect(associated.subjects.find(item=>item.id===associatedScenario.subjectId).accountId==='ACCOUNT-DEMO-001','Risk fixture must first be associated with the current account');
+    for(const risk of ['CONFLICT','RECYCLED']){
+      const fixture=JSON.parse(JSON.stringify(associated));fixture.subjects.find(item=>item.id===associatedScenario.subjectId).claimRisk=risk;
+      for(const request of ['original','new']){
+        expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),fixture)).ok,'Valid same-account risk fixture import');
+        if(request==='new')await page.evaluate(id=>window.__onecallWeb.setClaimRequestId(id),'WEB-CLAIM-RISK-'+risk);
+        await page.evaluate(()=>window.__onecallWeb.navigate('subject-claim'));
+        await page.locator('[data-action="claim-subject"]').click();
+        await expectText(page,'#content','人工客服联系方式待配置');
+        expect(!/EVID-|TRIAL-/.test(await page.locator('#content').innerText()),risk+' same-account claim exposed protected history');
+        expect(JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(fixture),risk+' '+request+' request mutated a blocked same-account claim');
+        if(request==='original')await screenshot(page,'claim-same-account-'+risk.toLowerCase()+'-1024.png',1024);
+      }
+    }
+    expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),canonical)).ok,'Restore post-risk Web baseline');
     for(const key of ['employees','customerAuthSession','uiSession']){
       const r=await page.evaluate(({b,key})=>window.__onecallWeb.loadReviewSnapshot({...b,[key]:{}}),{b:canonical,key});
       expect(!r.ok&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(canonical),'Forbidden snapshot import must reject atomically');
@@ -620,6 +717,111 @@ async function openRoute(page, route) {
     await screenshot(page, 'auditor-export-partial-1280.png', 1280);
     await page.evaluate(() => go('evidence'));
     await expectText(page, '#content', '审计概览 · 王璐');
+
+    // Each authorization starts in an independent page, without relying on number cards.
+    const freshAgreementPage=async(role='admin')=>{
+      const current=await browser.newPage({viewport:{width:1280,height:900}});
+      current.on('pageerror',error=>pageErrors.push(error.message));
+      current.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
+      await current.goto(previewUrl,{waitUntil:'load'});
+      await current.locator('[data-action="wechat-login"]').click();
+      await current.locator('[data-workspace-choice="personal"]').click();
+      await current.locator('#workspace-select').selectOption('enterprise');
+      if(role!=='admin')await current.locator('#role-select').selectOption(role);
+      await openRoute(current,'agreements');
+      return current;
+    };
+    const rejectRevoke=async(current,id,label)=>{
+      const before=JSON.stringify(await current.evaluate(()=>__onecallWeb.businessSnapshot()));
+      const content=await current.locator('#content').innerHTML();
+      await current.evaluate(id=>{
+        const button=document.createElement('button');button.dataset.action='agreement-revoke';button.dataset.agreementId=id;
+        document.body.append(button);button.click();button.remove();
+      },id);
+      expect(JSON.stringify(await current.evaluate(()=>__onecallWeb.businessSnapshot()))===before,label+' must preserve the entire canonical snapshot');
+      expect(await current.locator('#content').innerHTML()===content,label+' must preserve the entire content DOM');
+      await expectText(current,'#toast','撤销失败：PERMISSION_DENIED');
+    };
+    for(const item of [
+      {id:'auth-6688',number:'010 **** 6688',role:'admin'},
+      {id:'auth-9056',number:'021 **** 9056',role:'admin'},
+      {id:'auth-3360',number:'186 **** 3360',role:'admin'},
+      {id:'auth-7812',number:'139 **** 7812',role:'admin',reconfirm:true},
+      {id:'auth-7812',number:'139 **** 7812',role:'member',reconfirm:true},
+      {id:'auth-3360',number:'186 **** 3360',role:'evidence'},
+    ]){
+      const current=await freshAgreementPage(item.role);
+      try{
+        if(item.role!=='admin')expect(await current.locator('[data-agreement-id="auth-6688"]').count()===0,item.role+' must not see another user authorization');
+        await current.locator('[data-agreement-id="'+item.id+'"]').filter({hasText:'查看快照'}).click();
+        if(item.reconfirm)await current.locator('[data-action="agreement-reconfirm"]').click();
+        const activeId=await current.locator('[data-action="agreement-revoke-confirm"]').count().then(async count=>{
+          expect(count===1,item.id+' must expose its valid authorization revoke action');
+          await current.locator('[data-action="agreement-revoke-confirm"]').click();
+          return current.locator('[data-action="agreement-revoke"]').getAttribute('data-agreement-id');
+        });
+        if(item.reconfirm)expect(activeId!==item.id,item.id+' reconfirm must create a new authorization version');
+        const before=await current.evaluate(()=>__onecallWeb.businessSnapshot());
+        const matches=before.subjects.filter(subject=>subject.accountId==='ACCOUNT-DEMO-001'&&subject.maskedNumber===item.number);
+        expect(matches.length===1&&matches[0].activation==='ACTIVE'&&matches[0].revision===2,item.id+' must resolve a unique active same-account subject in fresh state');
+        const subject=matches[0],consent=await current.locator('.proof-list').innerHTML();
+        await current.locator('[data-action="agreement-revoke"]').click();
+        const after=await current.evaluate(()=>__onecallWeb.businessSnapshot()),transition=after.activationTransitions.at(-1);
+        expect(after.activationTransitions.length===before.activationTransitions.length+1,item.id+' must append exactly one transition');
+        expect(transition.subjectId===subject.id&&transition.channel==='WEB'&&transition.from==='ACTIVE'&&transition.to==='SUSPENDED'&&transition.fromRevision===2&&transition.toRevision===3,item.id+' must persist the correct WEB status and revision transition');
+        const expectedSubjects=before.subjects.map(row=>row.id===subject.id?{...row,activation:'SUSPENDED',revision:3}:row);
+        expect(JSON.stringify(after.subjects)===JSON.stringify(expectedSubjects),item.id+' must change only its unique subject');
+        for(const key of Object.keys(before).filter(key=>!['subjects','activationTransitions','processedEvents','sequence'].includes(key)))expect(JSON.stringify(after[key])===JSON.stringify(before[key]),item.id+' must preserve original '+key+' facts, including grants and evidence');
+        const newEvents=Object.values(after.processedEvents.ACTIVATION_STATUS).filter(event=>!before.processedEvents.ACTIVATION_STATUS['$'+event.eventId]);
+        expect(newEvents.length===1&&JSON.stringify(newEvents[0].result)===JSON.stringify(transition),item.id+' must have exactly one event owning the committed transition');
+        for(const [domain,events] of Object.entries(before.processedEvents))for(const [key,event] of Object.entries(events))expect(JSON.stringify(after.processedEvents[domain][key])===JSON.stringify(event),item.id+' must preserve every original event');
+        await expectText(current,'#content','已撤销');
+        const revocations=current.locator('.timeline-item').filter({hasText:'用户撤销后续授权'});
+        expect(await revocations.count()===1,item.id+' must show exactly one authorization revocation');
+        await expectText(current,'.timeline-item:has-text("用户撤销后续授权")',transition.id);
+        expect(await current.locator('.proof-list').innerHTML()===consent,item.id+' must preserve original consent items');
+        expect(await current.locator('[data-action="agreement-revoke-confirm"]').count()===0,item.id+' must no longer offer revoke');
+        if(item.role==='admin')await screenshot(current,'authorization-admin-'+item.id.slice(5)+'-revoked-1280.png',1280);
+        await rejectRevoke(current,activeId,item.role+' already revoked authorization');
+      }finally{await current.close();}
+    }
+    for(const mode of ['missing','ambiguous']){
+      const current=await freshAgreementPage();
+      try{
+        const candidate=await current.evaluate(()=>__onecallWeb.businessSnapshot());
+        const subject=candidate.subjects.find(row=>row.maskedNumber==='010 **** 6688'&&row.accountId==='ACCOUNT-DEMO-001');
+        if(mode==='missing'){
+          const events=candidate.activations.filter(row=>row.subjectId===subject.id).map(row=>row.eventId);
+          for(const key of ['subjects','trialGrants','activations'])candidate[key]=candidate[key].filter(row=>(key==='subjects'?row.id:row.subjectId)!==subject.id);
+          for(const id of events)delete candidate.processedEvents.ACTIVATION['$'+id];
+        }else candidate.subjects.push({...subject,id:'QA-AMBIGUOUS-AUTHORIZATION'});
+        expect((await current.evaluate(data=>__onecallWeb.loadReviewSnapshot(data),candidate)).ok,mode+' authorization fixture must be a valid snapshot');
+        await current.locator('[data-agreement-id="auth-6688"]').click();
+        await current.locator('[data-action="agreement-revoke-confirm"]').click();
+        const before=JSON.stringify(await current.evaluate(()=>__onecallWeb.businessSnapshot())),content=await current.locator('#content').innerHTML();
+        await current.locator('[data-action="agreement-revoke"]').click();
+        expect(JSON.stringify(await current.evaluate(()=>__onecallWeb.businessSnapshot()))===before,mode+' authorization resolution must preserve the entire canonical snapshot');
+        expect(await current.locator('#content').innerHTML()===content,mode+' authorization resolution must preserve the entire content DOM');
+        await expectText(current,'#toast','撤销失败：'+(mode==='missing'?'NOT_FOUND':'INVALID_TRANSITION'));
+      }finally{await current.close();}
+    }
+    for(const role of ['member','evidence','auditor']){
+      const current=await freshAgreementPage(role);
+      try{
+        if(role==='auditor'){
+          expect(await current.locator('[data-action="agreement-reconfirm"]').count()===0,'Auditor authorization list must be read only');
+          await current.locator('[data-agreement-id="auth-6688"]').click();
+          expect(await current.locator('[data-action="agreement-revoke-confirm"]').count()===0,'Auditor authorization detail must be read only');
+        }else{
+          expect(await current.locator('[data-agreement-id="auth-6688"]').count()===0,role+' must not see unrelated authorization');
+          await current.evaluate(()=>{
+            const button=document.createElement('button');button.dataset.agreementId='auth-6688';document.body.append(button);button.click();button.remove();
+          });
+          await expectText(current,'#content','无权查看此授权记录');
+        }
+        await rejectRevoke(current,'auth-6688',role+' forbidden authorization');
+      }finally{await current.close();}
+    }
 
     for (const width of [720, 1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: 800 });

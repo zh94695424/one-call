@@ -5,8 +5,8 @@
 - work unit：`cross-channel-alignment`，类型：feature（本地产品原型同步）。
 - design_doc：`docs/09-business-activation-and-lean-admin.md`。
 - control_doc：`docs/gateflow/cross-channel-alignment-control.md`。
-- 当前未完成 gate / next entry point：`accepted slice commit`（S3）。
-- 状态：S1、S2 已接受并提交；S3 的 3 项 accepted findings 已由独立复审确认修复，准备接受 S3 本地提交。最终 aggregate deepreview 和 final closeout 尚未完成。
+- 当前未完成 gate / next entry point：`re-review`（aggregate deepreview，第 3 轮）。
+- 状态：S1、S2、S3 均已接受并提交；第 3 轮窄修复已明确完成，四条企业授权撤销、权限与缺失/歧义原子拒绝、跨端导入回归均报告 PASS，controller 已读取完整 handoff 并接受为独立复审输入。C-02 仍待独立裁决，final closeout 尚未完成。
 - 派发协议：用户在默认 runner 重试仍不可用后，明确回复“继续”，授权改用当前会话内置子 Agent；这是用户明确覆盖，不是静默切换。后续本 work unit 统一使用内置子 Agent。
 - 用户已确认业务顺序与文档路径，并于本轮明确回复“开始”；不再要求重复确认相同业务范围。
 
@@ -37,7 +37,7 @@
 | --- | --- | --- |
 | 1 | 套餐与跨端状态规则统一 | S1 已接受并提交 |
 | 2 | 后台员工账号与套餐配置原型 | S2 已接受并提交 |
-| 3 | 小程序/Web 同步及 IVR 场景细化 | S3 独立复审 PASS，准备 accepted slice commit |
+| 3 | 小程序/Web 同步及 IVR 场景细化 | S3 已接受并提交 |
 | 4 | 跨端一致性与回归验收 | 完整三端及最终 handoff 重验 PASS，新增普通开通拒绝/连续性、混合账户及非默认发放间隔断言 |
 
 ## Preflight 与执行证据
@@ -82,8 +82,16 @@
 | code review S3 | `docs/reviews/code-review-20261020-173728.md`；FAIL；S3-01/02/03 均 accepted；reviewer 独立 shared 21/21、runner 1/1、三端完整 QA、最终跨端 handoff、syntax/generator/diff 均通过，但新增真实 UI / 合法混合账户 / 年付探针确认 3 项中等级缺陷；Agent 明确完成 |
 | fix S3 | `docs/gateflow/cross-channel-alignment-s3-fix.md`；S3-01/02/03 均报告已修复；普通微信/SMS 主体连续性及错误原子性、同账户多主体/他人账户隔离、季/年付/非默认间隔与历史快照断言已补齐；shared 21/21、runner 1/1、三端完整 QA、最后 cross-channel、generator/syntax/diff PASS；14 新增/23 刷新图片均由实现者目检；Agent 明确完成，accepted as re-review input |
 | re-review S3 | `docs/reviews/code-review-20261020-201023.md`；PASS；S3-01/02/03 均已修复，无新增实质 finding；reviewer 独立 shared 21/21、runner 1/1、三端完整 QA、最终 cross-channel、两项额外 Playwright probe、generator/syntax/diff 均 PASS；人工检查 5 张关键修复图；无本地 blocker，Agent 明确完成 |
-| accepted slice commit S3 | 待创建；范围为完整 S3 源/preview/QA/README、cross-channel QA、当前文档、implementation/fix/review artifacts 与 127 张 alignment 图片中的本轮新增/刷新项 |
-| 后续 gates | 均未进入 |
+| accepted slice commit S3 | `df5250865f94d82eac4e167e44ae8e9fa4853d7d` (`gateflow: accept cross-channel-alignment S3`)；142 files，完整 S3 源/preview/QA/README、cross-channel QA、当前文档、implementation/fix/review artifacts 与本轮 alignment 图片 |
+| aggregate deepreview | `docs/reviews/code-review-20261020-202826.md`；FAIL；相对起始基线 `f6ea510bb23c98fa04aee91acbdb3200dc3f70f4` 覆盖完整 S1/S2/S3，发现 A-01 高、A-02/A-03/B-01/C-01/C-02 中，共 6 项均 accepted；三端完整 QA、shared 21/21、runner 1/1、最后 cross-channel 均 PASS，但 focused Node/Playwright probes 复现全部 finding；另有 4 个 EOF 空行 hygiene failure |
+| aggregate fix | `docs/gateflow/cross-channel-alignment-aggregate-fix.md`；A-01/A-02/A-03/B-01/C-01/C-02 与 4 个 EOF hygiene 均报告已修复；shared 24/24、runner 1/1、三端完整 QA、最后 cross-channel、11 个 inline scripts、generator/diff 均 PASS；12 新增/27 刷新图片均由实现者目检；Agent 明确完成，accepted as re-review input |
+| aggregate re-review | `docs/reviews/code-review-20261020-213407.md`；FAIL；A-01/A-02/A-03/B-01/C-01 已修复，C-02 部分修复；新增 N-01/N-02 均 accepted。完整 shared/browser/cross-channel/diff 验证 PASS，但 focused probes 复现 Web 固话 local fallback、Operations 绕过 shared owner、transition 顺序/replay 缺口 |
+| aggregate fix（第 2 轮） | `docs/gateflow/cross-channel-alignment-aggregate-fix.md` round 2；C-02 remaining、N-01、N-02 均报告已修复；shared 27/27、runner 1/1、三端完整 QA、最后 cross-channel、8 个 syntax/11 个 inline scripts、generator/diff 全部 PASS；4 新增/29 刷新图片均由实现者目检；Agent 明确完成，accepted as re-review input |
+| aggregate re-review（第 2 轮） | `docs/reviews/code-review-20261020-225338.md`；FAIL；A-01/A-02/A-03/B-01/C-01/N-01/N-02 已修复，C-02 部分修复。shared 27/27、runner 1/1、三端完整 QA、最终 cross-channel、generator/syntax/diff PASS；四个企业管理员授权撤销真实点击仍返回 NOT_FOUND；Agent 明确完成 |
+| aggregate fix（第 3 轮） | `docs/gateflow/cross-channel-alignment-aggregate-fix.md:321`；仅修改 Web 源/preview/QA、cross-channel QA 与 fix artifact；四条企业管理员授权及成员/证据本人、权限、缺失/歧义原子拒绝与跨端导入均报告 PASS。shared 27/27、runner 1/1、Web full、最终 cross-channel、generator/syntax/11 inline scripts/diff PASS；4 新增/19 刷新图片，13 张目检，0 删除；Agent 明确完成，accepted as re-review input |
+| aggregate re-review（第 3 轮） | `docs/reviews/code-review-20261020-235705.md`；PASS；C-02 已修复，无新增 finding。四条企业管理员授权、成员/证据管理员/审计员权限、缺失/歧义原子拒绝、Mini 同号复用及 Ops/Mini 导入均独立通过；shared 27/27、runner 1/1、generator/syntax/inline、Web full、最终 cross-channel PASS；4 新增/19 changed/0 deleted 图片，4 张新增图原分辨率目检 |
+| accepted deepreview commit | 待创建；全部 aggregate findings 已完成独立复审，准备 stage/commit |
+| 后续 gates | `ready-to-open-draft-PR`；无 Git remote，push/draft PR/远端 review 仍为外部阻断 |
 
 ### Plan review finding 裁决
 
@@ -111,6 +119,33 @@ Open Questions 裁决：事件键采用按动作类型分域，域内事件键�
 
 S1 最终状态：CR-001～007 均已修复，由第 4 轮复审确认。复审无新 findings，残余测试证据限制均 nonblocking：七域新键畸形 peer 已由只读探针验证，浏览器沿用本轮 implementer 全量 PASS；对应 owner 为 shared 测试维护者与后续 S2/S3 验证。生成器逐文件写入可由 check/rerun 检测恢复，归 shared generator 后续维护，不在本轮扩大修复。
 
+### Aggregate deepreview finding 裁决
+
+| Finding | 裁决 | 理由 / 要求 |
+| --- | --- | --- |
+| A-01 | accepted | 删除 EVIDENCE event 后快照仍可导入并重复扣量，直接违反试用幂等与原子性。当前 canonical `business.evidence` 只承载本地 IVR 试用录音证据，其他历史证据产品数据在独立旧 UI 域；因此本 schema 不允许 eventless canonical evidence。校验每条 evidence 恰有一个 EVIDENCE event 反向覆盖，删除/替换/重复映射均原子拒绝，seed 历史样例须通过一致事件事实构建。 |
+| A-02 | accepted | CONFLICT/RECYCLED 是当前访问边界，必须优先于 same-account duplicate 和原事件 replay。风险后来改变时，原键和新键自助认领都拒绝、无 mutation 且两端不展示历史。 |
+| A-03 | accepted | 商品类型/周期/发放组合属于共享商品契约，不能只在后台表单校验。SUBSCRIPTION 仅 recurring cycle 且 interval/installments 为正；ONE_TIME/ADD_ON 仅 ONCE+1期+interval0；QUOTE 仅 QUOTE+1期+interval0；保留合法非默认订阅间隔与冻结历史。 |
+| B-01 | accepted | exhausted 场景直接回退 usedSeconds 破坏单调性和 snapshot。将 20 秒准备放在首次场景前的合法 fixture 初始化，或等价完整隔离构建；重复打开不得回退、旧事件/证据不变且每一步可导出。 |
+| C-01 | accepted | 固话成功页无 canonical mutation，违反跨端一致性。使用确定性 `CALLER_CHALLENGE` 本地验证 fixture，创建/选择当前已实名账户的 LANDLINE subject，并经 shared activation 原子提交后才成功；首次试用沿用 `activateService` 规则，重复不重发，失败无 mutation。主叫挑战仍不声称运营商实名或产权证明。 |
+| C-02 | accepted | Web 停用/恢复只改 UI 并伪造运营商回执，违反内部服务真源。新增最小共享 activation-status transition 与幂等事件所有权，ACTIVE/SUSPENDED 写入 canonical subject 和内部记录；恢复不重发试用，显示 committed internal result，不再出现 carrier receipt/status。 |
+
+Aggregate open questions 裁决：canonical business evidence 本 work unit 不接受无 EVIDENCE event 的历史/外部记录；其它历史证据仍由原证据 UI 数据域承载。Mini 固话用当前已实名个人账户 + `CALLER_CHALLENGE` 的确定性本地 fixture 开通，试用政策与其它普通首次 activation 相同；这些是本地原型语义，不扩大为生产实名、产权或线路证明。
+
+### Aggregate re-review 新 finding 裁决
+
+| Finding | 裁决 | 理由 / 要求 |
+| --- | --- | --- |
+| C-02 remaining | accepted | Web `fixed-6688` 暴露停用/恢复按钮却在无 canonical subject 时返回 local success，仍是双真源。所有可操作号码必须解析同号码的 canonical subject 并走 shared transition；fresh Web 提供确定性 LANDLINE seed，导入 Mini 固话快照后复用导入主体。任何无法唯一解析的号码拒绝且无 UI/canonical mutation，不保留 success fallback。 |
+| N-01 | accepted | Operations 直接写 activation/revision 会产生无 event 的状态，并在合法 Web history 后失效。共享 transition source 扩展明确 `OPERATIONS`，后台只调用 shared owner；不可把后台动作误标为 WEB。覆盖无历史、已有 Web history、重复/冲突 key 和跨端导入。 |
+| N-02 | accepted | activation transition 必须携带不可变 `fromRevision/toRevision`；每条 `toRevision=fromRevision+1`，同主体数组顺序按 revision 严格递增，状态 from/to 连续，当前 subject revision 不早于尾记录且 activation 等于尾 to。旧键 replay 在返回 DUPLICATE 前必须运行与 import 共用的完整 transition ledger/final-state 校验；乱序、重复/倒退 revision、不连续链、尾状态错配和时间倒序均原子拒绝。 |
+
+Re-review open questions 裁决：transition `channel` 增加 `OPERATIONS`，继续保留 MINIAPP/WEB，不混用购买渠道含义；本地 schemaVersion 仍为 1，但当前快照严格要求 revision anchor，不承诺兼容修复前的临时未接受 workspace schema。Web 固话是可管理号码，不能降级为无说明的只读行。
+
+第 2 轮复审最终状态：A-01/A-02/A-03/B-01/C-01/N-01/N-02 均已修复；C-02 部分修复。剩余 C-02 accepted：`agreement-revoke` 必须按当前可见且可撤销授权记录的账户与号码，经唯一 canonical resolver 调用共享迁移，不能以号码展示列表是否含该号码判断主体存在。不得用 fixture subjectId 绕过导入后的同号主体复用；保持角色与授权可见性检查。补企业管理员 auth-6688/auth-9056/auth-3360 及重新确认 auth-7812 新版本的实际撤销，验证 WEB transition/event/revision、撤销记录引用、不重发试用、跨端可导入，以及缺失/歧义拒绝时完整 UI/canonical 不变。此项不扩展企业号码管理功能。
+
+第 3 轮独立复审最终状态：A-01/A-02/A-03/B-01/C-01/N-01/N-02 保持已修复；C-02 已修复。四条企业管理员授权撤销均通过当前可见授权记录的账户+号码唯一解析，经 shared `setActivationStatus` 写入 WEB transition/event/revision；撤销记录引用真实迁移，试用/证据/订单/其它主体不变，并可通过真实 Operations/Mini review hooks 导入。成员、证据管理员和审计员权限、取消/重复/伪造、缺失主体与歧义主体的 UI/canonical 原子拒绝均通过。无新增 finding；复审报告为 `docs/reviews/code-review-20261020-235705.md`。
+
 ### S3 code review finding 裁决
 
 | Finding | 裁决 | 理由 / 要求 |
@@ -128,8 +163,9 @@ S1 最终状态：CR-001～007 均已修复，由第 4 轮复审确认。复审�
 | assigned to later work unit | 号码回收、认领凭证与历史证据访问策略 | 产品与安全 / 后续真实认领服务 |
 | requiring explicit user decision | 正式商品参数、续购规则、客服联系方式 | 产品与运营 / 原型可清晰标记待确认，不伪造上线参数 |
 | existing external-state blocker | 无 Git remote，不能 push 或创建 PR | 仓库维护者 / 本地审查完成后的 push gate |
+| assigned to later work unit（视觉证据限制） | controller 目检 Mini 固话结果图通过；`alignment-ivr-exhausted-reopened-1440.png` 捕获于新会话按键确认前，不能单凭该图证明可见的额度耗尽结果；用量保持 300 与随后拒绝已由 QA 及独立探针确认。完整视觉验收及 1024px 横向表格证据仍有限 | UI / 后续视觉验收；本轮以 snapshot 与真实动作断言作为状态证据 |
 | fixed in current slice（授权） | Web 原型的种子任务 `EXP-261019-004` 与 `exportJobs.length+1` 新任务重复，完成动作命中已过期旧记录；用户明确批准纳入本轮窄修复 | S1 implementation：生成真正唯一 ID、补重复 ID 回归、复跑三端与 shared 验证；不得扩展导出功能 |
 
 ## 下一步
 
-创建 S3 accepted slice commit，然后相对起始基线 `f6ea510bb23c98fa04aee91acbdb3200dc3f70f4` 执行覆盖 S1/S2/S3 的 aggregate deepreview。S3-01/02/03 均已修复，无本地 blocker；生产能力与正式配置风险均按 owner/destination 记录。
+Aggregate 第 3 轮独立 re-review 已通过。下一步由 controller 创建 accepted deepreview local commit，再进入 ready-to-open-draft-PR；生产能力、正式配置、视觉证据限制及旧企业号码展示分支按 owner/destination 记录。

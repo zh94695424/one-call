@@ -4923,7 +4923,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;/div&gt;
 
   &lt;!-- ONECALL_BUSINESS:START --&gt;
-&lt;script data-onecall-business-sha256=&quot;1d380df600b38448b741f5e37e08d66dfd0b64198a5024ce2567e3dcd44a5930&quot;&gt;
+&lt;script data-onecall-business-sha256=&quot;2a86a23f91af8df9dfe881e93b88d7ea51c49a7fb62b57598dc5ea80d32520a9&quot;&gt;
 (function (root, factory) {
   const api = factory();
   if (typeof module === &#x27;object&#x27; &amp;&amp; module.exports) module.exports = api;
@@ -4935,12 +4935,12 @@ html&gt;body{padding:0}&lt;/style&gt;
   const DAY_MS = 24 * 60 * 60 * 1000;
   const BUSINESS_FIELDS = [
     &#x27;schemaVersion&#x27;, &#x27;catalog&#x27;, &#x27;rule&#x27;, &#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;trialGrants&#x27;, &#x27;sessions&#x27;,
-    &#x27;evidence&#x27;, &#x27;activations&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;, &#x27;processedEvents&#x27;, &#x27;sequence&#x27;,
+    &#x27;evidence&#x27;, &#x27;activations&#x27;, &#x27;activationTransitions&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;, &#x27;processedEvents&#x27;, &#x27;sequence&#x27;,
   ];
-  const EVENT_DOMAINS = [&#x27;ACTIVATION&#x27;, &#x27;CLAIM&#x27;, &#x27;IVR_CONFIRM&#x27;, &#x27;EVIDENCE&#x27;, &#x27;ORDER&#x27;, &#x27;PAYMENT&#x27;, &#x27;ENTITLEMENT&#x27;];
+  const EVENT_DOMAINS = [&#x27;ACTIVATION&#x27;, &#x27;ACTIVATION_STATUS&#x27;, &#x27;CLAIM&#x27;, &#x27;IVR_CONFIRM&#x27;, &#x27;EVIDENCE&#x27;, &#x27;ORDER&#x27;, &#x27;PAYMENT&#x27;, &#x27;ENTITLEMENT&#x27;];
   const ID_COLLECTIONS = {
     ORDER: &#x27;orders&#x27;, TRIAL: &#x27;trialGrants&#x27;, SUBJ: &#x27;subjects&#x27;, ACT: &#x27;activations&#x27;,
-    EVID: &#x27;evidence&#x27;, CLAIM: &#x27;claims&#x27;, ENT: &#x27;entitlements&#x27;, IVR: &#x27;sessions&#x27;,
+    ASTAT: &#x27;activationTransitions&#x27;, EVID: &#x27;evidence&#x27;, CLAIM: &#x27;claims&#x27;, ENT: &#x27;entitlements&#x27;, IVR: &#x27;sessions&#x27;,
   };
   const FORBIDDEN_IMPORT_KEYS = new Set([
     &#x27;employees&#x27;, &#x27;employeeLoginSession&#x27;, &#x27;employeeCredentials&#x27;, &#x27;employeeRoles&#x27;,
@@ -4953,6 +4953,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     claimRisk: new Set([&#x27;NONE&#x27;, &#x27;CONFLICT&#x27;, &#x27;RECYCLED&#x27;]),
     claimMethod: new Set([&#x27;WECHAT_PHONE&#x27;, &#x27;SMS&#x27;, &#x27;CALLER_CHALLENGE&#x27;]),
     channel: new Set([&#x27;MINIAPP&#x27;, &#x27;WEB&#x27;, &#x27;IVR&#x27;]),
+    activationStatusChannel: new Set([&#x27;MINIAPP&#x27;, &#x27;WEB&#x27;, &#x27;OPERATIONS&#x27;]),
     purchaseChannel: new Set([&#x27;MINIAPP&#x27;, &#x27;WEB&#x27;]),
     sessionStatus: new Set([&#x27;RECEIVED&#x27;, &#x27;CONFIRMED&#x27;, &#x27;ABANDONED&#x27;, &#x27;REJECTED&#x27;]),
     guidanceStatus: new Set([&#x27;NOT_GUIDED&#x27;, &#x27;GUIDED&#x27;]),
@@ -5079,6 +5080,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       sessions: [],
       evidence: [],
       activations: [],
+      activationTransitions: [],
       orders: [],
       entitlements: [],
       processedEvents: eventStore(),
@@ -5100,6 +5102,10 @@ html&gt;body{padding:0}&lt;/style&gt;
     if (value.audience === &#x27;ENTERPRISE&#x27; &amp;&amp; (value.type !== &#x27;QUOTE&#x27; || value.billingCycle !== &#x27;QUOTE&#x27; || value.priceCents !== null)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (value.audience === &#x27;PERSONAL&#x27; &amp;&amp; (value.type === &#x27;QUOTE&#x27; || value.billingCycle === &#x27;QUOTE&#x27; || !safeBetween(value.priceCents, 1, 9999999))) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (!safeBetween(value.validDays, 1, 3650) || !safePositive(value.installments) || !safeBetween(value.grantIntervalMonths, 0, 120) || !safeBetween(value.sortOrder, 0, 9999)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    const recurring = [&#x27;MONTHLY&#x27;, &#x27;QUARTERLY&#x27;, &#x27;ANNUAL&#x27;];
+    if (value.type === &#x27;SUBSCRIPTION&#x27; &amp;&amp; (!recurring.includes(value.billingCycle) || !safePositive(value.installments) || !safePositive(value.grantIntervalMonths))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if ([&#x27;ONE_TIME&#x27;, &#x27;ADD_ON&#x27;].includes(value.type) &amp;&amp; (value.billingCycle !== &#x27;ONCE&#x27; || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (value.type === &#x27;QUOTE&#x27; &amp;&amp; (value.billingCycle !== &#x27;QUOTE&#x27; || value.installments !== 1 || value.grantIntervalMonths !== 0)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (value.demo !== true || value.policyStatus !== &#x27;DEMO_NOT_APPROVED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (!Array.isArray(value.channels) || !value.channels.length || new Set(value.channels).size !== value.channels.length || value.channels.some(channel =&gt; !ENUMS.purchaseChannel.has(channel))) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (!plain(value.rights)) return fail(&#x27;INVALID_TRANSITION&#x27;);
@@ -5149,6 +5155,27 @@ html&gt;body{padding:0}&lt;/style&gt;
     });
   }
 
+  function setActivationStatus(state, input, now) {
+    return mutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || ![&#x27;ACTIVE&#x27;, &#x27;SUSPENDED&#x27;].includes(input.status) || !id(input.eventId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!activationTransitionLedgerValid(draft) || !activationStatusEventCoverageValid(draft)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const eventInput = { subjectId: input.subjectId, channel: input.channel, status: input.status };
+      const replay = replayEvent(draft, &#x27;ACTIVATION_STATUS&#x27;, input.eventId, eventInput);
+      if (replay) return replay;
+      const target = one(draft.subjects, item =&gt; item.id === input.subjectId);
+      if (!target) return fail(&#x27;NOT_FOUND&#x27;);
+      if (target.activation === &#x27;INACTIVE&#x27; || target.activation === input.status) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const fromRevision = target.revision;
+      const toRevision = fromRevision + 1;
+      const transition = { id: nextId(draft, &#x27;ASTAT&#x27;), subjectId: target.id, channel: input.channel, from: target.activation, to: input.status, fromRevision, toRevision, eventId: input.eventId, at: iso(now) };
+      target.activation = input.status;
+      target.revision = toRevision;
+      draft.activationTransitions.push(transition);
+      recordEvent(draft, &#x27;ACTIVATION_STATUS&#x27;, input.eventId, eventInput, transition);
+      return ok(transition);
+    });
+  }
+
   function grantTrialOnce(state, subjectId, now) {
     return mutate(state, draft =&gt; grantTrialDraft(draft, subjectId, now));
   }
@@ -5171,10 +5198,12 @@ html&gt;body{padding:0}&lt;/style&gt;
     return mutate(state, draft =&gt; {
       if (!plain(input) || !id(input.subjectId) || !id(input.accountId) || !id(input.requestId) || !plain(input.verification)) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
       const eventInput = { subjectId: input.subjectId, accountId: input.accountId, verification: { verified: input.verification.verified === true, subjectId: input.verification.subjectId, method: input.verification.method } };
-      const replay = replayEvent(draft, &#x27;CLAIM&#x27;, input.requestId, eventInput);
-      if (replay) return replay;
       const target = one(draft.subjects, item =&gt; item.id === input.subjectId);
       if (!target) return fail(&#x27;NOT_FOUND&#x27;);
+      if (target.claimRisk === &#x27;CONFLICT&#x27;) return fail(&#x27;CLAIM_CONFLICT&#x27;);
+      if (target.claimRisk === &#x27;RECYCLED&#x27;) return fail(&#x27;RECYCLED_NUMBER_REVIEW&#x27;);
+      const replay = replayEvent(draft, &#x27;CLAIM&#x27;, input.requestId, eventInput);
+      if (replay) return replay;
       const verification = input.verification;
       if (verification.verified !== true || verification.subjectId !== target.id || !ENUMS.claimMethod.has(verification.method)) return fail(&#x27;VERIFICATION_REQUIRED&#x27;);
       const methodAllowed = target.numberType === &#x27;MOBILE&#x27; ? [&#x27;WECHAT_PHONE&#x27;, &#x27;SMS&#x27;].includes(verification.method) : verification.method === &#x27;CALLER_CHALLENGE&#x27;;
@@ -5184,8 +5213,6 @@ html&gt;body{padding:0}&lt;/style&gt;
         return duplicate(existing || clone(target));
       }
       if (target.accountId &amp;&amp; target.accountId !== input.accountId) return fail(&#x27;CLAIM_CONFLICT&#x27;);
-      if (target.claimRisk === &#x27;CONFLICT&#x27;) return fail(&#x27;CLAIM_CONFLICT&#x27;);
-      if (target.claimRisk === &#x27;RECYCLED&#x27;) return fail(&#x27;RECYCLED_NUMBER_REVIEW&#x27;);
       const claim = { id: nextId(draft, &#x27;CLAIM&#x27;), subjectId: target.id, accountId: input.accountId, method: verification.method, verifiedAt: iso(now), requestId: input.requestId };
       draft.claims.push(claim);
       target.accountId = input.accountId;
@@ -5250,7 +5277,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       const subjects = draft.subjects.filter(item =&gt; item.id === session.confirmedSubjectId);
       if (subjects.length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
       const target = subjects[0];
-      if (!allEvidenceReferencesValid(draft)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!allEvidenceReferencesValid(draft) || !evidenceEventCoverageValid(draft)) return fail(&#x27;INVALID_TRANSITION&#x27;);
       const eventInput = { sessionId: input.sessionId, seconds: input.seconds };
       const replay = replayEvent(draft, &#x27;EVIDENCE&#x27;, input.eventId, eventInput);
       if (replay) return replay;
@@ -5366,10 +5393,10 @@ html&gt;body{padding:0}&lt;/style&gt;
     const allowed = [...BUSINESS_FIELDS].sort();
     if (keys.length !== allowed.length || keys.some((key, index) =&gt; key !== allowed[index]) || keys.some(key =&gt; FORBIDDEN_IMPORT_KEYS.has(key))) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (candidate.schemaVersion !== schemaVersion || !safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER) || !plain(candidate.processedEvents)) return fail(&#x27;INVALID_TRANSITION&#x27;);
-    const arrays = [&#x27;catalog&#x27;, &#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;trialGrants&#x27;, &#x27;sessions&#x27;, &#x27;evidence&#x27;, &#x27;activations&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;];
+    const arrays = [&#x27;catalog&#x27;, &#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;trialGrants&#x27;, &#x27;sessions&#x27;, &#x27;evidence&#x27;, &#x27;activations&#x27;, &#x27;activationTransitions&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;];
     if (arrays.some(key =&gt; !Array.isArray(candidate[key]))) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (!validRule(candidate.rule)) return fail(&#x27;INVALID_TRANSITION&#x27;);
-    if (!unique(candidate.catalog, &#x27;versionId&#x27;) || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, &#x27;requestId&#x27;) || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.orders) || !unique(candidate.orders, &#x27;idempotencyKey&#x27;) || !unique(candidate.entitlements)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!unique(candidate.catalog, &#x27;versionId&#x27;) || !unique(candidate.subjects) || !unique(candidate.claims) || !unique(candidate.claims, &#x27;requestId&#x27;) || !unique(candidate.trialGrants) || !unique(candidate.sessions) || !unique(candidate.evidence) || !unique(candidate.activations) || !unique(candidate.activationTransitions) || !unique(candidate.orders) || !unique(candidate.orders, &#x27;idempotencyKey&#x27;) || !unique(candidate.entitlements)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     if (candidate.catalog.some(item =&gt; !validateCatalogVersion(item).ok)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     const activeSkus = new Set();
     const draftSkus = new Set();
@@ -5411,6 +5438,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     for (const session of candidate.sessions) {
       if (session.status === &#x27;CONFIRMED&#x27; &amp;&amp; candidate.activations.filter(item =&gt; item.sessionId === session.id &amp;&amp; item.channel === &#x27;IVR&#x27; &amp;&amp; item.subjectId === session.confirmedSubjectId).length !== 1) return fail(&#x27;INVALID_TRANSITION&#x27;);
     }
+    if (!activationTransitionLedgerValid(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     const orderCount = idCount(candidate.orders);
     for (const order of candidate.orders) {
       if (!validOrder(order) || subjectCount.get(order.subjectId) !== 1 || !validateCatalogVersion(order.snapshot).ok) return fail(&#x27;INVALID_TRANSITION&#x27;);
@@ -5431,7 +5459,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       const count = candidate.entitlements.filter(item =&gt; item.orderId === order.id).length;
       if ((order.entitlement === &#x27;ISSUED&#x27; &amp;&amp; count !== 1) || (order.entitlement !== &#x27;ISSUED&#x27; &amp;&amp; count !== 0)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     }
-    if (!validProcessedEvents(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+    if (!validProcessedEvents(candidate) || !evidenceEventCoverageValid(candidate) || !activationStatusEventCoverageValid(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     return ok(true);
   }
 
@@ -5469,6 +5497,47 @@ html&gt;body{padding:0}&lt;/style&gt;
     return true;
   }
 
+  function evidenceEventCoverageValid(state) {
+    if (!Array.isArray(state.evidence) || !validEventDomain(state, &#x27;EVIDENCE&#x27;)) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.EVIDENCE)) {
+      const evidenceId = record &amp;&amp; record.result &amp;&amp; record.result.evidence &amp;&amp; record.result.evidence.id;
+      coverage.set(evidenceId, (coverage.get(evidenceId) || 0) + 1);
+    }
+    return state.evidence.length === coverage.size &amp;&amp; state.evidence.every(item =&gt; coverage.get(item.id) === 1);
+  }
+
+  function activationStatusEventCoverageValid(state) {
+    if (!Array.isArray(state.activationTransitions) || !validEventDomain(state, &#x27;ACTIVATION_STATUS&#x27;)) return false;
+    const coverage = new Map();
+    for (const record of Object.values(state.processedEvents.ACTIVATION_STATUS)) {
+      const transitionId = record &amp;&amp; record.result &amp;&amp; record.result.id;
+      coverage.set(transitionId, (coverage.get(transitionId) || 0) + 1);
+    }
+    return state.activationTransitions.length === coverage.size &amp;&amp; state.activationTransitions.every(item =&gt; coverage.get(item.id) === 1);
+  }
+
+  function activationTransitionLedgerValid(state) {
+    if (!Array.isArray(state.subjects) || !Array.isArray(state.activationTransitions)) return false;
+    const subjectCount = idCount(state.subjects);
+    const transitionTails = new Map();
+    for (const transition of state.activationTransitions) {
+      if (!validActivationTransition(transition) || subjectCount.get(transition.subjectId) !== 1) return false;
+      const previous = transitionTails.get(transition.subjectId);
+      if (previous &amp;&amp; (
+        transition.fromRevision &lt; previous.toRevision ||
+        transition.from !== previous.to ||
+        Date.parse(transition.at) &lt; Date.parse(previous.at)
+      )) return false;
+      transitionTails.set(transition.subjectId, transition);
+    }
+    for (const [subjectId, transition] of transitionTails) {
+      const subject = one(state.subjects, item =&gt; item.id === subjectId);
+      if (!validSubject(subject) || subject.revision &lt; transition.toRevision || subject.activation !== transition.to) return false;
+    }
+    return true;
+  }
+
   function validRule(rule) {
     return plain(rule) &amp;&amp; rule.campaignId === &#x27;FIRST-TRIAL&#x27; &amp;&amp; safePositive(rule.version) &amp;&amp; typeof rule.enabled === &#x27;boolean&#x27; &amp;&amp; safeBetween(rule.seconds, 1, 3600) &amp;&amp; safeBetween(rule.validDays, 1, 365);
   }
@@ -5497,6 +5566,10 @@ html&gt;body{padding:0}&lt;/style&gt;
 
   function validActivation(item) {
     return plain(item) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; ENUMS.channel.has(item.channel) &amp;&amp; id(item.consentVersion) &amp;&amp; [&#x27;EXPLICIT&#x27;, &#x27;KEY_1&#x27;].includes(item.confirmation) &amp;&amp; id(item.eventId) &amp;&amp; date(item.at) &amp;&amp; (item.sessionId === undefined || id(item.sessionId));
+  }
+
+  function validActivationTransition(item) {
+    return exactKeys(item, [&#x27;id&#x27;, &#x27;subjectId&#x27;, &#x27;channel&#x27;, &#x27;from&#x27;, &#x27;to&#x27;, &#x27;fromRevision&#x27;, &#x27;toRevision&#x27;, &#x27;eventId&#x27;, &#x27;at&#x27;]) &amp;&amp; id(item.id) &amp;&amp; id(item.subjectId) &amp;&amp; ENUMS.activationStatusChannel.has(item.channel) &amp;&amp; [&#x27;ACTIVE&#x27;, &#x27;SUSPENDED&#x27;].includes(item.from) &amp;&amp; [&#x27;ACTIVE&#x27;, &#x27;SUSPENDED&#x27;].includes(item.to) &amp;&amp; item.from !== item.to &amp;&amp; safePositive(item.fromRevision) &amp;&amp; item.toRevision === item.fromRevision + 1 &amp;&amp; safePositive(item.toRevision) &amp;&amp; id(item.eventId) &amp;&amp; date(item.at);
   }
 
   function validOrder(item) {
@@ -5558,7 +5631,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     let input;
     try { input = JSON.parse(record.inputFingerprint.slice(&#x27;INPUT-V1:&#x27;.length)); } catch (_) { return false; }
     if (!plain(input) || !safeData(input) || record.inputFingerprint !== `INPUT-V1:${canonicalSerialize(input)}`) return false;
-    if ([&#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;sessions&#x27;, &#x27;activations&#x27;, &#x27;trialGrants&#x27;, &#x27;evidence&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;].some(name =&gt; !Array.isArray(state[name]))) return false;
+    if ([&#x27;subjects&#x27;, &#x27;claims&#x27;, &#x27;sessions&#x27;, &#x27;activations&#x27;, &#x27;activationTransitions&#x27;, &#x27;trialGrants&#x27;, &#x27;evidence&#x27;, &#x27;orders&#x27;, &#x27;entitlements&#x27;].some(name =&gt; !Array.isArray(state[name]))) return false;
     const value = record.result;
 
     if (domain === &#x27;ACTIVATION&#x27;) {
@@ -5567,6 +5640,12 @@ html&gt;body{padding:0}&lt;/style&gt;
       const activation = value.activation;
       const eventActivation = one(state.activations, item =&gt; item.channel !== &#x27;IVR&#x27; &amp;&amp; item.eventId === record.eventId);
       return eventActivation &amp;&amp; eventActivation.id === activation.id &amp;&amp; activation.eventId === record.eventId &amp;&amp; activation.subjectId === input.subjectId &amp;&amp; activation.channel === input.channel &amp;&amp; activation.consentVersion === input.consentVersion &amp;&amp; activation.confirmation === &#x27;EXPLICIT&#x27; &amp;&amp; activation.sessionId === undefined &amp;&amp; referencedSubject(state, input.subjectId) &amp;&amp; validGrantResult(state, value, input.subjectId);
+    }
+
+    if (domain === &#x27;ACTIVATION_STATUS&#x27;) {
+      if (!exactKeys(input, [&#x27;subjectId&#x27;, &#x27;channel&#x27;, &#x27;status&#x27;]) || !id(input.subjectId) || !ENUMS.activationStatusChannel.has(input.channel) || ![&#x27;ACTIVE&#x27;, &#x27;SUSPENDED&#x27;].includes(input.status)) return false;
+      const eventTransition = one(state.activationTransitions, item =&gt; item.eventId === record.eventId);
+      return frozenEntity(state.activationTransitions, value, [], validActivationTransition) &amp;&amp; eventTransition &amp;&amp; eventTransition.id === value.id &amp;&amp; value.subjectId === input.subjectId &amp;&amp; value.channel === input.channel &amp;&amp; value.to === input.status &amp;&amp; value.eventId === record.eventId &amp;&amp; referencedSubject(state, input.subjectId);
     }
 
     if (domain === &#x27;IVR_CONFIRM&#x27;) {
@@ -5783,6 +5862,7 @@ html&gt;body{padding:0}&lt;/style&gt;
     applyPaymentResult,
     issueEntitlements,
     activateService,
+    setActivationStatus,
     grantTrialOnce,
     claimSubject,
     startIvrSession,
@@ -5805,7 +5885,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       const B = window.OnecallBusiness;
       let business = B.createDemoState(new Date());
       business.subjects.push({id:&quot;MINI-ACCOUNT-001&quot;,maskedNumber:&quot;138 **** 6208&quot;,numberType:&quot;MOBILE&quot;,source:&quot;MINIAPP&quot;,accountId:&quot;ACCOUNT-DEMO-001&quot;,identity:&quot;VERIFIED&quot;,activation:&quot;ACTIVE&quot;,revision:1,claimRisk:&quot;NONE&quot;});
-      const review = {scenario:&quot;returning&quot;,subjectId:&quot;SUBJ-REPEAT-001&quot;,accountId:&quot;ACCOUNT-DEMO-001&quot;,orderId:null,notice:&quot;&quot;,blockedCode:null};
+      const review = {scenario:&quot;returning&quot;,subjectId:&quot;SUBJ-REPEAT-001&quot;,accountId:&quot;ACCOUNT-DEMO-001&quot;,claimRequestId:null,orderId:null,notice:&quot;&quot;,blockedCode:null};
 
       function clone(value) { return JSON.parse(JSON.stringify(value)); }
       function formatSeconds(value) { const seconds=Math.max(0,Number(value)||0);return String(Math.floor(seconds/60)).padStart(2,&quot;0&quot;)+&quot;:&quot;+String(seconds%60).padStart(2,&quot;0&quot;); }
@@ -6158,6 +6238,38 @@ html&gt;body{padding:0}&lt;/style&gt;
         return true;
       }
 
+      function activateLandline(button) {
+        const mask=&quot;010 **** 6688&quot;,candidate=clone(business);
+        const matches=candidate.subjects.filter(function(item){return item.maskedNumber.replace(/\s/g,&quot;&quot;)===mask.replace(/\s/g,&quot;&quot;);});
+        let target=matches[0],result;
+        if(matches.length&gt;1||(target&amp;&amp;target.accountId!==review.accountId))result={ok:false,code:&quot;OWNERSHIP_CONFLICT&quot;};
+        else {
+          if(!target){
+            const identity=candidate.subjects.some(function(item){return item.accountId===review.accountId&amp;&amp;item.identity===&quot;VERIFIED&quot;;})?&quot;VERIFIED&quot;:&quot;UNVERIFIED&quot;;
+            target={id:&quot;MINI-LANDLINE-01088886688&quot;,maskedNumber:mask,numberType:&quot;LANDLINE&quot;,source:&quot;MINIAPP&quot;,accountId:review.accountId,identity:identity,activation:&quot;INACTIVE&quot;,revision:1,claimRisk:&quot;NONE&quot;};
+            candidate.subjects.push(target);
+          }
+          result=B.activateService(candidate,{subjectId:target.id,channel:&quot;MINIAPP&quot;,verified:true,consentVersion:B.labels.consentVersion,confirmed:true,eventId:&quot;MINI-LANDLINE-ACTIVATE-&quot;+target.id},new Date());
+          if(result.ok)result=B.loadReviewSnapshot(business,candidate);
+        }
+        if(!result.ok){
+          let error=screen.querySelector(&quot;[data-activation-error]&quot;);
+          if(!error){error=document.createElement(&quot;p&quot;);error.dataset.activationError=&quot;&quot;;error.className=&quot;field-help&quot;;error.setAttribute(&quot;role&quot;,&quot;alert&quot;);button.before(error);}
+          error.textContent=({VERIFICATION_REQUIRED:&quot;当前账户尚未完成实名，不能开通该固话。&quot;,SUSPENDED:&quot;该固话业务已停用，请联系人工客服。&quot;,OWNERSHIP_CONFLICT:&quot;该固话需要账户核验，请联系人工客服。&quot;}[result.code]||&quot;固话开通未完成，请重试或联系人工客服。&quot;)+&quot;（&quot;+result.code+&quot;）&quot;;
+          return false;
+        }
+        review.subjectId=target.id;
+        pendingBinding={subjectId:target.id,mask:mask,method:&quot;CALLER_CHALLENGE 主叫挑战&quot;};
+        return true;
+      }
+
+      function landlineReadyHtml() {
+        const target=pendingBinding&amp;&amp;business.subjects.find(function(item){return item.id===pendingBinding.subjectId&amp;&amp;item.accountId===review.accountId&amp;&amp;item.numberType===&quot;LANDLINE&quot;;});
+        if(!target||target.activation!==&quot;ACTIVE&quot;||!business.activations.some(function(item){return item.subjectId===target.id&amp;&amp;item.channel===&quot;MINIAPP&quot;;}))return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;h3 class=&quot;page-heading&quot;&gt;尚未完成固话开通&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;请先完成当前固话的主叫挑战、明确授权和内部开通。&lt;/p&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;landlineBind&quot;&gt;返回固话验证&lt;/button&gt;&lt;/div&gt;&#x27;;
+        const status=B.trialStatus(business,target.id,new Date()),trial=status.ok?status.value:null;
+        return &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark success&quot;&gt;&lt;i data-lucide=&quot;badge-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;固话已验证并开通&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;确定性主叫挑战与 &#x27;+pendingBinding.mask+&#x27; 完全一致；ONECALL 内部录音服务已开通。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:22px;text-align:left&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;内部开通结果&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&#x27;+B.labels.activation[target.activation]+&#x27;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;独立固话直线&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;验证方式&lt;/span&gt;&lt;strong&gt;CALLER_CHALLENGE 主叫挑战&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;试用状态&lt;/span&gt;&lt;strong&gt;&#x27;+(trial?B.labels.trial[trial.status]:&quot;未领取&quot;)+&#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;试用剩余&lt;/span&gt;&lt;strong&gt;&#x27;+(trial?formatSeconds(trial.remainingSeconds):&quot;00:00&quot;)+&#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;公证资格&lt;/span&gt;&lt;strong&gt;需另行核验归属&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;主叫挑战只证明该线路完成了本次确定性验证，不代表运营商实名登记人或号码产权已经与账户身份一致。后续请使用该座机拨打声讯短号。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;trialHome&quot;&gt;查看试用状态&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;numbers&quot;&gt;查看全部主叫号码&lt;/button&gt;&lt;/div&gt;&#x27;;
+      }
+
       function selectedCaller() {
         return callerOptions.find(function (item) { return item.id === selectedCallerId; }) || callerOptions[0];
       }
@@ -6277,7 +6389,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         landlineReady: {
           title: &quot;固话内部服务&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark success&quot;&gt;&lt;i data-lucide=&quot;badge-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;固话已验证并开通&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;真实主叫挑战与 010 **** 6688 完全一致；ONECALL 内部录音服务已开通。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:22px;text-align:left&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;主叫号码&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;独立固话直线&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;验证方式&lt;/span&gt;&lt;strong&gt;主叫挑战&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;内部服务&lt;/span&gt;&lt;strong&gt;已同意并开通&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;公证资格&lt;/span&gt;&lt;strong&gt;需另行核验归属&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;小程序不会直接拨打固话取证电话。后续请使用这部座机拨打声讯短号，录音分钟与账户下其他主叫号码共享。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;查看固话取证方式&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;numbers&quot;&gt;查看全部主叫号码&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: landlineReadyHtml
         },
         provisioningFailed: {
           title: &quot;开通失败&quot;,
@@ -6662,7 +6774,8 @@ html&gt;body{padding:0}&lt;/style&gt;
           }
           if (action === &quot;claim-submit&quot;) {
             const target=currentSubject();
-            const result=target?B.claimSubject(business,{subjectId:target.id,accountId:review.accountId,verification:{verified:true,subjectId:target.id,method:target.numberType===&quot;LANDLINE&quot;?&quot;CALLER_CHALLENGE&quot;:&quot;WECHAT_PHONE&quot;},requestId:&quot;MINI-CLAIM-&quot;+target.id+&quot;-&quot;+review.accountId},new Date()):{ok:false,code:&quot;NOT_FOUND&quot;};
+            const requestId=review.claimRequestId||(target?&quot;MINI-CLAIM-&quot;+target.id+&quot;-&quot;+review.accountId:null);review.claimRequestId=null;
+            const result=target?B.claimSubject(business,{subjectId:target.id,accountId:review.accountId,verification:{verified:true,subjectId:target.id,method:target.numberType===&quot;LANDLINE&quot;?&quot;CALLER_CHALLENGE&quot;:&quot;WECHAT_PHONE&quot;},requestId:requestId},new Date()):{ok:false,code:&quot;NOT_FOUND&quot;};
             if(result.ok){review.blockedCode=null;show(&quot;claimResult&quot;);}else if([&quot;CLAIM_CONFLICT&quot;,&quot;RECYCLED_NUMBER_REVIEW&quot;].includes(result.code)){review.blockedCode=result.code;show(&quot;claimBlocked&quot;);}else{review.notice=result.code;show(&quot;claimVerify&quot;,false);}
             return;
           }
@@ -6728,6 +6841,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           if (goButton.dataset.phoneSubmit !== undefined || goButton.hasAttribute(&quot;data-phone-submit&quot;)) {
             if(!activateBoundNumber(goButton))return;
           }
+          if (goButton.dataset.go === &quot;landlineReady&quot; &amp;&amp; !activateLandline(goButton)) return;
           if (goButton.dataset.go === &quot;captureResult&quot; &amp;&amp; captureEntitlementMode === &quot;free&quot; &amp;&amp; freeEvidenceRemaining &gt; 0) {
             freeEvidenceRemaining = 0;
           }
@@ -6825,12 +6939,13 @@ html&gt;body{padding:0}&lt;/style&gt;
 
       window.__onecallMini = {
         businessSnapshot:function(){const result=B.snapshot(business);if(!result.ok)throw Error(result.code);return result.value;},
-        loadReviewSnapshot:function(candidate){const result=B.loadReviewSnapshot(business,candidate);if(result.ok){pendingBinding=null;const linked=business.subjects.find(function(item){return item.accountId===review.accountId&amp;&amp;item.source===&quot;IVR&quot;;})||business.subjects.find(function(item){return item.accountId===review.accountId;});if(linked)review.subjectId=linked.id;show(current,false);}return clone(result);},
+        loadReviewSnapshot:function(candidate){const result=B.loadReviewSnapshot(business,candidate);if(result.ok){pendingBinding=null;review.claimRequestId=null;const linked=business.subjects.find(function(item){return item.accountId===review.accountId&amp;&amp;item.source===&quot;IVR&quot;;})||business.activations.slice().reverse().map(function(item){return business.subjects.find(function(subject){return subject.id===item.subjectId;});}).find(function(item){return item&amp;&amp;item.accountId===review.accountId;})||business.subjects.find(function(item){return item.accountId===review.accountId;});if(linked)review.subjectId=linked.id;show(current,false);}return clone(result);},
         setReviewScenario:function(name){
           const selectors={returning:function(item){return item.source===&quot;IVR&quot;&amp;&amp;item.claimRisk===&quot;NONE&quot;&amp;&amp;!item.accountId&amp;&amp;item.activation!==&quot;SUSPENDED&quot;;},fixed:function(item){return item.numberType===&quot;LANDLINE&quot;&amp;&amp;item.source===&quot;IVR&quot;&amp;&amp;!item.accountId;},conflict:function(item){return item.claimRisk===&quot;CONFLICT&quot;;},recycled:function(item){return item.claimRisk===&quot;RECYCLED&quot;;},suspended:function(item){return item.activation===&quot;SUSPENDED&quot;;},expired:function(item){return item.id===&quot;SUBJ-EXPIRED-001&quot;;},exhausted:function(item){return item.id===&quot;SUBJ-EXHAUSTED-001&quot;;}};
           if(name===&quot;payment-pending&quot;||name===&quot;payment-failed&quot;||name===&quot;payment-unknown&quot;){const expected={&quot;payment-pending&quot;:&quot;PENDING&quot;,&quot;payment-failed&quot;:&quot;FAILED&quot;,&quot;payment-unknown&quot;:&quot;NOT_ISSUED&quot;}[name];const order=business.orders.slice().reverse().find(function(item){return name===&quot;payment-unknown&quot;?item.payment===&quot;UNKNOWN&quot;:item.entitlement===expected;});if(!order)return {ok:false,code:&quot;NOT_FOUND&quot;};review.orderId=order.id;show(name===&quot;payment-unknown&quot;?&quot;paymentIssue&quot;:&quot;paymentSuccess&quot;,false);return {ok:true,orderId:order.id};}
-          const selector=selectors[name]||selectors.returning;const sessions=business.sessions.filter(function(item){return item.status===&quot;CONFIRMED&quot;;}).slice().reverse();let target=sessions.map(function(item){return business.subjects.find(function(subject){return subject.id===item.subjectId;});}).find(selector)||business.subjects.find(selector);if(!target)return {ok:false,code:&quot;NOT_FOUND&quot;};review.scenario=name;review.subjectId=target.id;review.blockedCode=null;show(name===&quot;conflict&quot;||name===&quot;recycled&quot;?&quot;ivrReturn&quot;:&quot;ivrReturn&quot;,false);return {ok:true,subjectId:target.id};
+          const selector=selectors[name]||selectors.returning;const sessions=business.sessions.filter(function(item){return item.status===&quot;CONFIRMED&quot;;}).slice().reverse();let target=sessions.map(function(item){return business.subjects.find(function(subject){return subject.id===item.subjectId;});}).find(selector)||business.subjects.find(selector);if(!target)return {ok:false,code:&quot;NOT_FOUND&quot;};review.scenario=name;review.subjectId=target.id;review.blockedCode=null;review.claimRequestId=null;show(name===&quot;conflict&quot;||name===&quot;recycled&quot;?&quot;ivrReturn&quot;:&quot;ivrReturn&quot;,false);return {ok:true,subjectId:target.id};
         },
+        setClaimRequestId:function(requestId){review.claimRequestId=requestId;return {ok:true};},
         navigate:function(pageId){if(!pages[pageId])return {ok:false,code:&quot;NOT_FOUND&quot;};show(pageId,false);return {ok:true,pageId:pageId};},
         currentPage:function(){return current;}
       };

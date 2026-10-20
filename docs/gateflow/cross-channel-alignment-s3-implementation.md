@@ -239,4 +239,3 @@ web-prototype/qa/screenshots/alignment-share-recipient-revoked-1024.png
 web-prototype/qa/screenshots/alignment-shares-management-1440.png
 web-prototype/qa/screenshots/alignment-support-1024.png
 ```
-

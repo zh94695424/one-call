@@ -215,6 +215,48 @@ test('conflict and recycled-number claims reject without exposing or mutating hi
       requestId: `REQUEST-${subjectId}`,
     }, LATER), expected);
   }
+
+  for (const [risk, expected] of [['CONFLICT', 'CLAIM_CONFLICT'], ['RECYCLED', 'RECYCLED_NUMBER_REVIEW']]) {
+    const state = business.createDemoState(NOW);
+    const confirmed = startAndConfirm(state, 'NEW_MOBILE', `RISK-${risk}`);
+    const input = {
+      subjectId: confirmed.session.subjectId,
+      accountId: 'ACCOUNT-RISK-001',
+      verification: { verified: true, subjectId: confirmed.session.subjectId, method: 'SMS' },
+      requestId: `CLAIM-RISK-${risk}`,
+    };
+    assert.equal(business.claimSubject(state, input, LATER).ok, true);
+    state.subjects.find(item => item.id === confirmed.session.subjectId).claimRisk = risk;
+    assert.equal(business.snapshot(state).ok, true);
+    assertRejectedWithoutMutation(state, () => business.claimSubject(state, input, LATER), expected);
+    assertRejectedWithoutMutation(state, () => business.claimSubject(state, { ...input, requestId: `${input.requestId}-NEW` }, LATER), expected);
+  }
+});
+
+test('canonical evidence requires exactly one durable EVIDENCE event owner', () => {
+  const state = business.createDemoState(NOW);
+  const confirmed = startAndConfirm(state, 'NEW_MOBILE', 'REVERSE-COVERAGE');
+  const input = { sessionId: confirmed.session.id, eventId: 'EVIDENCE-REVERSE-COVERAGE', seconds: 60 };
+  assert.equal(business.consumeTrial(state, input, LATER).ok, true);
+  const canonical = business.snapshot(state).value;
+
+  const candidates = [
+    payload => { delete payload.processedEvents.EVIDENCE['$EVIDENCE-REVERSE-COVERAGE']; },
+    payload => { payload.processedEvents.EVIDENCE['$EVIDENCE-REVERSE-COVERAGE'].result.evidence.id = 'EVID-REPLACED'; },
+    payload => {
+      payload.processedEvents.EVIDENCE['$EVIDENCE-DUPLICATE-OWNER'] = copy(payload.processedEvents.EVIDENCE['$EVIDENCE-REVERSE-COVERAGE']);
+      payload.processedEvents.EVIDENCE['$EVIDENCE-DUPLICATE-OWNER'].eventId = 'EVIDENCE-DUPLICATE-OWNER';
+    },
+  ];
+  for (const tamper of candidates) {
+    const invalid = copy(canonical); tamper(invalid);
+    assertRejectedWithoutMutation(invalid, () => business.snapshot(invalid), 'INVALID_TRANSITION');
+    const target = business.createDemoState(NOW);
+    assertRejectedWithoutMutation(target, () => business.loadReviewSnapshot(target, invalid), 'INVALID_TRANSITION');
+    for (const eventId of [input.eventId, 'EVIDENCE-NEW-AFTER-TAMPER']) {
+      assertRejectedWithoutMutation(invalid, () => business.consumeTrial(invalid, { ...input, eventId }, LATER), 'INVALID_TRANSITION');
+    }
+  }
 });
 
 test('consumeTrial derives the subject only from a valid frozen confirmed session', () => {
@@ -334,9 +376,10 @@ test('imported sequence is a hint and all ID allocators skip occupied next candi
   {
     const state = business.createDemoState(NOW);
     const confirmed = startAndConfirm(state, 'NEW_MOBILE', 'ALLOCATE-EVID');
-    const grant = state.trialGrants.find(item => item.subjectId === confirmed.session.subjectId);
-    grant.usedSeconds = 1;
-    state.evidence.push({ id: 'EVID-001001', subjectId: confirmed.session.subjectId, sessionId: confirmed.session.id, recordedSeconds: 1, identityAtCapture: 'UNVERIFIED', consentVersion: business.labels.consentVersion, createdAt: LATER, preservationStatus: 'PRESERVED' });
+    const first = business.consumeTrial(state, { sessionId: confirmed.session.id, eventId: 'ALLOCATE-EVIDENCE-SEED', seconds: 1 }, LATER);
+    assert.equal(first.ok, true);
+    state.evidence.find(item => item.id === first.value.evidence.id).id = 'EVID-001001';
+    state.processedEvents.EVIDENCE['$ALLOCATE-EVIDENCE-SEED'].result.evidence.id = 'EVID-001001';
     state.sequence = 1000;
     cases.push({ prefix: 'EVID', state, collection: 'evidence', action: imported => business.consumeTrial(imported, { sessionId: confirmed.session.id, eventId: 'ALLOCATE-EVIDENCE', seconds: 1 }, LATER), resultId: result => result.value.evidence.id });
   }
@@ -394,6 +437,173 @@ test('client activation requires verification while IVR keeps identity unverifie
   assert.equal(activated.ok, true);
   assert.equal(activated.value.activation.channel, 'MINIAPP');
   assert.equal(activated.value.grant.grantedSeconds, 300);
+});
+
+test('activation status transitions are canonical, event-owned and do not regrant trial', () => {
+  const state = business.createDemoState(NOW);
+  const target = prepareBuyer(state, 'SUBJ-REPEAT-001', 'ACCOUNT-STATUS-001');
+  const originalGrant = copy(state.trialGrants.find(item => item.subjectId === target.id));
+  const stopInput = { subjectId: target.id, channel: 'WEB', status: 'SUSPENDED', eventId: 'STATUS-STOP-001' };
+  const stopped = business.setActivationStatus(state, stopInput, NOW);
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.value.fromRevision + 1, stopped.value.toRevision);
+  assert.equal(state.subjects.find(item => item.id === target.id).activation, 'SUSPENDED');
+  assert.deepEqual(state.trialGrants.find(item => item.subjectId === target.id), originalGrant);
+  const stoppedState = raw(state);
+  assert.equal(business.setActivationStatus(state, stopInput, LATER).code, 'DUPLICATE');
+  assert.deepEqual(state, stoppedState);
+  assertRejectedWithoutMutation(state, () => business.setActivationStatus(state, { ...stopInput, status: 'ACTIVE' }, LATER), 'INVALID_TRANSITION');
+
+  const resumeInput = { subjectId: target.id, channel: 'WEB', status: 'ACTIVE', eventId: 'STATUS-RESUME-001' };
+  assert.equal(business.setActivationStatus(state, resumeInput, LATER).ok, true);
+  assert.equal(state.subjects.find(item => item.id === target.id).activation, 'ACTIVE');
+  assert.deepEqual(state.trialGrants.find(item => item.subjectId === target.id), originalGrant);
+  assert.equal(state.activationTransitions.length, 2);
+  assert.equal(state.activationTransitions[1].fromRevision, state.activationTransitions[0].toRevision);
+  assert.equal(business.snapshot(state).ok, true);
+
+  const missingEvent = raw(state);
+  delete missingEvent.processedEvents.ACTIVATION_STATUS['$STATUS-STOP-001'];
+  assertRejectedWithoutMutation(missingEvent, () => business.snapshot(missingEvent), 'INVALID_TRANSITION');
+  assertRejectedWithoutMutation(missingEvent, () => business.setActivationStatus(missingEvent, { ...stopInput, eventId: 'STATUS-NEW' }, LATER), 'INVALID_TRANSITION');
+});
+
+test('operations activation transitions preserve web history, audit ownership and atomic replay', () => {
+  const state = business.createDemoState(NOW);
+  const target = prepareBuyer(state, 'SUBJ-REPEAT-001', 'ACCOUNT-OPERATIONS-001');
+  const webStop = { subjectId: target.id, channel: 'WEB', status: 'SUSPENDED', eventId: 'WEB-BEFORE-OPERATIONS' };
+  const operationsResume = { subjectId: target.id, channel: 'OPERATIONS', status: 'ACTIVE', eventId: 'OPERATIONS-RESUME-001' };
+  assert.equal(business.setActivationStatus(state, webStop, NOW).ok, true);
+  const beforeOperations = raw(state);
+  const resumed = business.setActivationStatus(state, operationsResume, LATER);
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.value.channel, 'OPERATIONS');
+  assert.equal(resumed.value.fromRevision, beforeOperations.subjects.find(item => item.id === target.id).revision);
+  assert.equal(resumed.value.toRevision, resumed.value.fromRevision + 1);
+  assert.equal(state.subjects.find(item => item.id === target.id).revision, resumed.value.toRevision);
+  assert.deepEqual(state.processedEvents.ACTIVATION_STATUS['$OPERATIONS-RESUME-001'].result, resumed.value);
+
+  const completed = raw(state);
+  assert.equal(business.setActivationStatus(state, operationsResume, LATER).code, 'DUPLICATE');
+  assert.deepEqual(state, completed);
+  assertRejectedWithoutMutation(state, () => business.setActivationStatus(state, { ...operationsResume, status: 'SUSPENDED' }, LATER), 'INVALID_TRANSITION');
+  assertRejectedWithoutMutation(state, () => business.setActivationStatus(state, { ...operationsResume, eventId: 'OPERATIONS-INVALID-CURRENT' }, LATER), 'INVALID_TRANSITION');
+
+  const fresh = business.createDemoState(NOW);
+  const freshTarget = prepareBuyer(fresh, 'SUBJ-REPEAT-001', 'ACCOUNT-OPERATIONS-FRESH');
+  const freshStop = business.setActivationStatus(fresh, { subjectId: freshTarget.id, channel: 'OPERATIONS', status: 'SUSPENDED', eventId: 'OPERATIONS-FRESH-STOP' }, NOW);
+  assert.equal(freshStop.ok, true);
+  assert.equal(fresh.activationTransitions.length, 1);
+  assert.equal(freshStop.value.channel, 'OPERATIONS');
+});
+
+test('mobile and landline lifecycle transitions survive import, replay and failure paths', () => {
+  for (const numberType of ['MOBILE', 'LANDLINE']) {
+    const state = business.createDemoState(NOW);
+    const subjectId = `STATUS-${numberType}`;
+    state.subjects.push({ id: subjectId, maskedNumber: numberType === 'MOBILE' ? '138 **** 0020' : '010 **** 0020', numberType, source: 'WEB', accountId: 'ACCOUNT-STATUS-TYPES', identity: 'VERIFIED', activation: 'ACTIVE', revision: 3, claimRisk: 'NONE' });
+    const stopInput = { subjectId, channel: 'WEB', status: 'SUSPENDED', eventId: `STATUS-${numberType}-STOP` };
+    const restoreInput = { subjectId, channel: 'WEB', status: 'ACTIVE', eventId: `STATUS-${numberType}-RESTORE` };
+    assert.equal(business.setActivationStatus(state, stopInput, NOW).ok, true, numberType);
+    assert.equal(business.setActivationStatus(state, restoreInput, LATER).ok, true, numberType);
+    assert.deepEqual(state.activationTransitions.map(item => [item.fromRevision, item.toRevision]), [[3, 4], [4, 5]], numberType);
+
+    const imported = business.createDemoState(NOW);
+    const snapshot = business.snapshot(state).value;
+    assert.equal(business.loadReviewSnapshot(imported, snapshot).ok, true, numberType);
+    const importedBefore = raw(imported);
+    assert.equal(business.setActivationStatus(imported, stopInput, LATER).code, 'DUPLICATE', numberType);
+    assert.equal(business.setActivationStatus(imported, restoreInput, LATER).code, 'DUPLICATE', numberType);
+    assert.deepEqual(imported, importedBefore, numberType);
+    assertRejectedWithoutMutation(imported, () => business.setActivationStatus(imported, { ...stopInput, status: 'ACTIVE' }, LATER), 'INVALID_TRANSITION');
+  }
+});
+
+test('activation transition ledger rejects every ordering and final-state corruption before replay', () => {
+  const valid = business.createDemoState(NOW);
+  const target = prepareBuyer(valid, 'SUBJ-REPEAT-001', 'ACCOUNT-LEDGER-001');
+  const stopInput = { subjectId: target.id, channel: 'WEB', status: 'SUSPENDED', eventId: 'LEDGER-STOP' };
+  const restoreInput = { subjectId: target.id, channel: 'OPERATIONS', status: 'ACTIVE', eventId: 'LEDGER-RESTORE' };
+  assert.equal(business.setActivationStatus(valid, stopInput, NOW).ok, true);
+  assert.equal(business.setActivationStatus(valid, restoreInput, LATER).ok, true);
+  const eventResult = (state, eventId) => state.processedEvents.ACTIVATION_STATUS[`$${eventId}`].result;
+  const corruptions = [
+    ['out-of-order ledger', state => state.activationTransitions.reverse()],
+    ['duplicate revision', state => {
+      const second = state.activationTransitions[1];
+      second.fromRevision = state.activationTransitions[0].fromRevision;
+      second.toRevision = second.fromRevision + 1;
+      Object.assign(eventResult(state, second.eventId), copy(second));
+    }],
+    ['decreasing revision', state => {
+      const second = state.activationTransitions[1];
+      second.fromRevision = 1;
+      second.toRevision = 2;
+      Object.assign(eventResult(state, second.eventId), copy(second));
+    }],
+    ['discontinuous state', state => {
+      const second = state.activationTransitions[1];
+      second.from = 'ACTIVE';
+      second.to = 'SUSPENDED';
+      state.subjects.find(item => item.id === second.subjectId).activation = 'SUSPENDED';
+      Object.assign(eventResult(state, second.eventId), copy(second));
+    }],
+    ['tail state mismatch', state => { state.subjects.find(item => item.id === target.id).activation = 'SUSPENDED'; }],
+    ['tail revision mismatch', state => { state.subjects.find(item => item.id === target.id).revision = state.activationTransitions.at(-1).toRevision - 1; }],
+    ['time regression', state => {
+      const second = state.activationTransitions[1];
+      second.at = '2026-10-19T23:59:00.000Z';
+      Object.assign(eventResult(state, second.eventId), copy(second));
+    }],
+    ['missing revision anchor', state => {
+      const second = state.activationTransitions[1];
+      delete second.fromRevision;
+      delete eventResult(state, second.eventId).fromRevision;
+    }],
+  ];
+  for (const [label, corrupt] of corruptions) {
+    const invalid = raw(valid);
+    corrupt(invalid);
+    assertRejectedWithoutMutation(invalid, () => business.snapshot(invalid), 'INVALID_TRANSITION');
+    const importTarget = business.createDemoState(NOW);
+    assertRejectedWithoutMutation(importTarget, () => business.loadReviewSnapshot(importTarget, invalid), 'INVALID_TRANSITION');
+    assertRejectedWithoutMutation(invalid, () => business.setActivationStatus(invalid, restoreInput, LATER), 'INVALID_TRANSITION');
+    assertRejectedWithoutMutation(invalid, () => business.setActivationStatus(invalid, { ...restoreInput, eventId: `LEDGER-FRESH-${label}` }, LATER), 'INVALID_TRANSITION');
+  }
+});
+
+test('catalog type, billing cycle and grant schedule matrix is shared and transactional', () => {
+  const validCustom = copy(business.demoCatalog.find(item => item.sku === 'PERSONAL_BASIC_ANNUAL'));
+  validCustom.grantIntervalMonths = 3;
+  validCustom.installments = 4;
+  assert.equal(business.validateCatalogVersion(validCustom).ok, true);
+
+  const templates = {
+    SUBSCRIPTION: business.demoCatalog.find(item => item.type === 'SUBSCRIPTION'),
+    ONE_TIME: business.demoCatalog.find(item => item.type === 'ONE_TIME'),
+    ADD_ON: business.demoCatalog.find(item => item.type === 'ADD_ON'),
+    QUOTE: business.demoCatalog.find(item => item.type === 'QUOTE'),
+  };
+  const invalid = [
+    ['SUBSCRIPTION', 'ONCE', 1, 0], ['SUBSCRIPTION', 'MONTHLY', 0, 1], ['SUBSCRIPTION', 'ANNUAL', 12, 0],
+    ['ONE_TIME', 'ANNUAL', 1, 0], ['ONE_TIME', 'ONCE', 2, 0], ['ONE_TIME', 'ONCE', 1, 1],
+    ['ADD_ON', 'MONTHLY', 1, 0], ['ADD_ON', 'ONCE', 2, 0], ['ADD_ON', 'ONCE', 1, 1],
+    ['QUOTE', 'ANNUAL', 1, 0], ['QUOTE', 'QUOTE', 2, 0], ['QUOTE', 'QUOTE', 1, 1],
+  ];
+  for (const [type, billingCycle, installments, grantIntervalMonths] of invalid) {
+    const offer = copy(templates[type]);
+    Object.assign(offer, { billingCycle, installments, grantIntervalMonths });
+    assert.equal(business.validateCatalogVersion(offer).ok, false, `${type}:${billingCycle}:${installments}:${grantIntervalMonths}`);
+    const state = business.createDemoState(NOW);
+    const buyer = prepareBuyer(state);
+    state.catalog.find(item => item.versionId === offer.versionId) && Object.assign(state.catalog.find(item => item.versionId === offer.versionId), offer);
+    if (!state.catalog.some(item => item.versionId === offer.versionId)) state.catalog.push(offer);
+    const target = business.createDemoState(NOW);
+    assertRejectedWithoutMutation(target, () => business.loadReviewSnapshot(target, state), 'INVALID_TRANSITION');
+    assertRejectedWithoutMutation(state, () => business.createOrder(state, { ...orderInput(state, buyer, `MATRIX-${type}-${billingCycle}-${installments}-${grantIntervalMonths}`), versionId: offer.versionId, versionToken: `OFFER-V1:invalid` }, NOW), 'INVALID_TRANSITION');
+    state.orders.push({ id: `ORDER-MATRIX-${type}-${installments}-${grantIntervalMonths}`, subjectId: buyer.id, accountId: buyer.accountId, channel: 'WEB', snapshot: offer, payment: 'PAID', entitlement: 'PENDING', createdAt: NOW, idempotencyKey: `ORDER-MATRIX-KEY-${type}-${installments}-${grantIntervalMonths}`, consentVersion: 'ORDER-CONSENT-V1' });
+    assertRejectedWithoutMutation(state, () => business.issueEntitlements(state, { orderId: state.orders.at(-1).id, eventId: `ISSUE-MATRIX-${type}-${installments}-${grantIntervalMonths}` }, LATER), 'NOT_SELLABLE');
+  }
 });
 
 test('order payment and entitlement transitions remain separate and idempotent', () => {
@@ -604,6 +814,7 @@ test('processed event results enforce domain schemas, stable identity and refere
   for (const domain of ['ACTIVATION', 'CLAIM', 'IVR_CONFIRM', 'EVIDENCE', 'ORDER', 'PAYMENT', 'ENTITLEMENT']) {
     assert.ok(Object.keys(exported.value.processedEvents[domain]).length > 0, domain);
   }
+  assert.deepEqual(exported.value.processedEvents.ACTIVATION_STATUS, {});
 
   const imported = business.createDemoState(NOW);
   assert.equal(business.loadReviewSnapshot(imported, exported.value).ok, true);

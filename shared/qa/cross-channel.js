@@ -38,7 +38,7 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     const act = name => admin.locator('[data-action="'+name+'"]').last().click();
     const confirm = async () => {await admin.fill('#reason','跨端本地 fixture 评审');await act('confirm');};
     const demo = async name => {await admin.evaluate(()=>document.querySelector('.review').open=true);await act('demo');await admin.selectOption('#demo-case',name);await act('confirm');return (await snapshot(a)).sessions.at(-1).id;};
-    const text = async (frame,selector,value) => assert.ok((await frame.locator(selector).innerText()).includes(value),'Missing '+value+' in '+selector);
+    const text = async (frame,selector,value) => {const actual=await frame.locator(selector).innerText();assert.ok(actual.includes(value),'Missing '+value+' in '+selector+'; rendered: '+actual);};
     const shot = async (page,dir,name) => {const p=path.join(root,dir,'qa/screenshots','alignment-cross-'+name+'.png');fs.mkdirSync(path.dirname(p),{recursive:true});await page.screenshot({path:p,fullPage:true});};
 
     await admin.fill('#login-name','admin.lin');await admin.fill('#login-code','482916');await admin.locator('#login-form button').click();
@@ -120,7 +120,7 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     const final=await snapshot(m);assert.equal(final.entitlements.length,captured.entitlements.length+2);assert.ok(final.orders.every(item=>['MINIAPP','WEB'].includes(item.channel)));assert.deepEqual(final.evidence,captured.evidence);assert.deepEqual(final.trialGrants,captured.trialGrants);
     for(const s of surfaces)await load(s,final);
     // Every original event can be replayed without changing any current fact.
-    const functions={ACTIVATION:['activateService','eventId'],CLAIM:['claimSubject','requestId'],IVR_CONFIRM:['confirmIvrSession','eventId'],EVIDENCE:['consumeTrial','eventId'],ORDER:['createOrder','idempotencyKey'],PAYMENT:['applyPaymentResult','eventId'],ENTITLEMENT:['issueEntitlements','eventId']};
+    const functions={ACTIVATION:['activateService','eventId'],ACTIVATION_STATUS:['setActivationStatus','eventId'],CLAIM:['claimSubject','requestId'],IVR_CONFIRM:['confirmIvrSession','eventId'],EVIDENCE:['consumeTrial','eventId'],ORDER:['createOrder','idempotencyKey'],PAYMENT:['applyPaymentResult','eventId'],ENTITLEMENT:['issueEntitlements','eventId']};
     const replayed=copy(final);
     for(const [domain,events] of Object.entries(final.processedEvents))for(const event of Object.values(events)) {
       const [name,key]=functions[domain],input=JSON.parse(event.inputFingerprint.slice('INPUT-V1:'.length));
@@ -146,6 +146,33 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
       }
       for(const s of surfaces) {const r=await s.frame.evaluate(({h,data})=>window[h].loadReviewSnapshot(data),{h:s.hook,data:candidate});assert.equal(r.ok,false);assert.deepEqual(await snapshot(s),final);}
     }
+
+    // Mini fixed-line setup commits a canonical subject that Operations and Web can import.
+    await load(m,final);await mgo('landlineBind');await mini.locator('[data-landline-confirm]').check();await mini.locator('[data-landline-submit]').click();
+    await mini.locator('[data-go="landlineReady"]').click();await text(mini,'#oc-screen','固话已验证并开通');await text(mini,'#oc-screen','CALLER_CHALLENGE');
+    const landlineState=await snapshot(m),landlineSubject=landlineState.subjects.find(item=>item.id==='MINI-LANDLINE-01088886688');
+    assert.ok(landlineSubject);assert.equal(landlineSubject.accountId,'ACCOUNT-DEMO-001');assert.equal(landlineSubject.numberType,'LANDLINE');assert.equal(landlineSubject.identity,'VERIFIED');assert.equal(landlineSubject.activation,'ACTIVE');
+    assert.equal(landlineState.activations.filter(item=>item.subjectId===landlineSubject.id&&item.channel==='MINIAPP').length,1);
+    assert.equal(landlineState.trialGrants.filter(item=>item.subjectId===landlineSubject.id).length,1);assert.equal(landlineState.trialGrants.find(item=>item.subjectId===landlineSubject.id).grantedSeconds,final.rule.seconds);
+    await shot(miniPage,'prototype','landline-activation-393');
+    await mgo('landlineVerify');await mini.locator('[data-go="landlineReady"]').click();assert.deepEqual(await snapshot(m),landlineState);
+    await load(a,landlineState);await ago('/users/'+landlineSubject.id);await text(admin,'#content',landlineSubject.id);await text(admin,'#content','ACCOUNT-DEMO-001');await text(admin,'#content','独立固话');await text(admin,'#content','已实名');await text(admin,'#content','已开通');
+    await shot(admin,'operations-prototype','landline-activation-1440');
+    await load(w,landlineState);assert.deepEqual(await snapshot(w),landlineState);
+    await wgo('numbers');await web.locator('[data-number-id="fixed-6688"]').click();await text(web,'#content','010 **** 6688');
+    await web.locator('[data-action="number-stop-confirm"]').click();await web.locator('[data-action="number-stop"]').click();
+    const webStoppedLandline=await snapshot(w),webStoppedSubject=webStoppedLandline.subjects.find(item=>item.id===landlineSubject.id),webStopTransition=webStoppedLandline.activationTransitions.at(-1);
+    assert.equal(webStoppedSubject.activation,'SUSPENDED');assert.equal(webStopTransition.subjectId,landlineSubject.id);assert.equal(webStopTransition.channel,'WEB');assert.equal(webStopTransition.fromRevision,landlineSubject.revision);assert.equal(webStopTransition.toRevision,webStoppedSubject.revision);
+    assert.equal(webStoppedLandline.subjects.filter(item=>item.maskedNumber==='010 **** 6688'&&item.accountId==='ACCOUNT-DEMO-001').length,1);assert.equal(webStoppedLandline.trialGrants.filter(item=>item.subjectId===landlineSubject.id).length,1);
+    await shot(web,'web-prototype','landline-lifecycle-stopped-1280');
+    await web.locator('[data-action="number-reactivate"]').click();
+    const webRestoredLandline=await snapshot(w),webRestoredSubject=webRestoredLandline.subjects.find(item=>item.id===landlineSubject.id),webRestoreTransition=webRestoredLandline.activationTransitions.at(-1);
+    assert.equal(webRestoredSubject.activation,'ACTIVE');assert.equal(webRestoreTransition.subjectId,landlineSubject.id);assert.equal(webRestoreTransition.fromRevision,webStoppedSubject.revision);assert.equal(webRestoreTransition.toRevision,webRestoredSubject.revision);assert.equal(webRestoredLandline.activations.filter(item=>item.subjectId===landlineSubject.id).length,1);assert.equal(webRestoredLandline.trialGrants.filter(item=>item.subjectId===landlineSubject.id).length,1);
+    const importedRestoreInput={subjectId:landlineSubject.id,channel:'WEB',status:'ACTIVE',eventId:webRestoreTransition.eventId},webRestoredFrozen=copy(webRestoredLandline);
+    assert.equal((await web.evaluate(input=>window.__onecallWeb.applyActivationStatus(input),importedRestoreInput)).code,'DUPLICATE');assert.deepEqual(await snapshot(w),webRestoredFrozen);
+    assert.equal((await web.evaluate(input=>window.__onecallWeb.applyActivationStatus({...input,status:'SUSPENDED'}),importedRestoreInput)).ok,false);assert.deepEqual(await snapshot(w),webRestoredFrozen);
+    await shot(web,'web-prototype','landline-lifecycle-restored-1280');
+    for(const s of surfaces)await load(s,final);
 
     // Dynamic landline session uses CALLER_CHALLENGE on both client surfaces.
     await demo('fixed');await act('demo-confirm');await act('demo-use');const fixed=await snapshot(a);await admin.keyboard.press('Escape');
@@ -192,6 +219,38 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
       if(count===0){await text(mini,'#oc-screen','当前没有共享业务订单');await text(web,'#content','0 笔已到账');}
       if(count===2){await mgo('profile');await shot(miniPage,'prototype','account-scope-profile-393');await shot(web,'web-prototype','account-scope-rights-1280');}
     }
+    // Visible enterprise authorization revocations must survive actual cross-channel imports.
+    for(const item of [
+      {id:'auth-6688',number:'010 **** 6688'},
+      {id:'auth-9056',number:'021 **** 9056'},
+      {id:'auth-3360',number:'186 **** 3360'},
+      {id:'auth-7812',number:'139 **** 7812',reconfirm:true},
+    ]){
+      await web.reload({waitUntil:'load'});
+      await web.locator('[data-action="wechat-login"]').click();await web.locator('[data-workspace-choice="personal"]').click();
+      await web.locator('#workspace-select').selectOption('enterprise');
+      await web.locator('#side-nav [data-route="agreements"]').click();
+      await web.locator('[data-agreement-id="'+item.id+'"]').filter({hasText:'查看快照'}).click();
+      if(item.reconfirm)await web.locator('[data-action="agreement-reconfirm"]').click();
+      const before=await snapshot(w),matches=before.subjects.filter(subject=>subject.accountId==='ACCOUNT-DEMO-001'&&subject.maskedNumber===item.number);
+      assert.equal(matches.length,1);const original=matches[0];assert.equal(original.activation,'ACTIVE');assert.equal(original.revision,2);
+      await web.locator('[data-action="agreement-revoke-confirm"]').click();
+      const recordId=await web.locator('[data-action="agreement-revoke"]').getAttribute('data-agreement-id');
+      if(item.reconfirm)assert.notEqual(recordId,item.id);
+      await web.locator('[data-action="agreement-revoke"]').click();
+      const revoked=await snapshot(w),transition=revoked.activationTransitions.at(-1);
+      assert.equal(revoked.activationTransitions.length,before.activationTransitions.length+1);
+      assert.deepEqual(revoked.subjects,before.subjects.map(subject=>subject.id===original.id?{...subject,activation:'SUSPENDED',revision:3}:subject));
+      assert.equal(transition.subjectId,original.id);assert.equal(transition.channel,'WEB');assert.equal(transition.from,'ACTIVE');assert.equal(transition.to,'SUSPENDED');assert.equal(transition.fromRevision,2);assert.equal(transition.toRevision,3);
+      const owners=Object.values(revoked.processedEvents.ACTIVATION_STATUS).filter(event=>event.result.id===transition.id);
+      assert.equal(owners.length,1);assert.deepEqual(owners[0].result,transition);
+      for(const key of Object.keys(before).filter(key=>!['subjects','activationTransitions','processedEvents','sequence'].includes(key)))assert.deepEqual(revoked[key],before[key]);
+      await text(web,'#content','已撤销');await text(web,'.timeline-item:has-text("用户撤销后续授权")',transition.id);
+      for(const target of [a,m]){
+        await load(target,revoked);
+        assert.deepEqual((await snapshot(target)).subjects.find(subject=>subject.id===original.id),revoked.subjects.find(subject=>subject.id===original.id));
+      }
+    }
     await ago('/roadmap');await mgo('support');await wgo('invoice-apply');
     for(const [s,selector] of [[a,'#content'],[m,'#oc-screen'],[w,'#content']]) {
       await text(s.frame,selector,B.support.contactLabel);
@@ -202,6 +261,6 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     await shot(admin,'operations-prototype','support-1440');await shot(miniPage,'prototype','support-393');await shot(web,'web-prototype','support-1280');
     const hashes=[];for(const s of surfaces)hashes.push(await s.frame.locator('[data-onecall-business-sha256]').getAttribute('data-onecall-business-sha256'));
     assert.ok(hashes[0]);assert.equal(new Set(hashes).size,1);assert.deepEqual(errors,[]);
-    console.log('PASS: admin publication -> both clients; frozen stale/off-sale/channel checkout; dynamic IVR claim/recording/trial continuity; WEB + MINIAPP UNKNOWN/PAID/PENDING/FAILED/ISSUED; all event replays; fixed/conflict/recycled; forbidden imports and five reference tamper cases; account-owned orders/rights (empty, one, two subjects) exclude other accounts; support and generated hash equality; no browser errors.');
+    console.log('PASS: admin publication -> both clients; frozen stale/off-sale/channel checkout; dynamic IVR claim/recording/trial continuity; WEB + MINIAPP UNKNOWN/PAID/PENDING/FAILED/ISSUED; all event replays; fixed/conflict/recycled; forbidden imports and five reference tamper cases; account-owned orders/rights (empty, one, two subjects) exclude other accounts; four enterprise admin authorization revocations import into Operations and Mini; support and generated hash equality; no browser errors.');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});
