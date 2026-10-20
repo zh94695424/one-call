@@ -5,8 +5,8 @@
 - work unit：`cross-channel-alignment`，类型：feature（本地产品原型同步）。
 - design_doc：`docs/09-business-activation-and-lean-admin.md`。
 - control_doc：`docs/gateflow/cross-channel-alignment-control.md`。
-- 当前未完成 gate / next entry point：`accepted slice commit`（S2）。
-- 状态：S1 已接受并提交；S2 code review pass-with-risks、无实质 finding，准备接受 S2 本地提交。S3、最终验收和 final closeout 尚未完成。
+- 当前未完成 gate / next entry point：`accepted slice commit`（S3）。
+- 状态：S1、S2 已接受并提交；S3 的 3 项 accepted findings 已由独立复审确认修复，准备接受 S3 本地提交。最终 aggregate deepreview 和 final closeout 尚未完成。
 - 派发协议：用户在默认 runner 重试仍不可用后，明确回复“继续”，授权改用当前会话内置子 Agent；这是用户明确覆盖，不是静默切换。后续本 work unit 统一使用内置子 Agent。
 - 用户已确认业务顺序与文档路径，并于本轮明确回复“开始”；不再要求重复确认相同业务范围。
 
@@ -36,9 +36,9 @@
 | 顺序 | 业务增量 | 当前状态 |
 | --- | --- | --- |
 | 1 | 套餐与跨端状态规则统一 | S1 已接受并提交 |
-| 2 | 后台员工账号与套餐配置原型 | S2 实现与独立 review 通过，准备提交 |
-| 3 | 小程序/Web 同步及 IVR 场景细化 | 未开始 |
-| 4 | 跨端一致性与回归验收 | 未开始 |
+| 2 | 后台员工账号与套餐配置原型 | S2 已接受并提交 |
+| 3 | 小程序/Web 同步及 IVR 场景细化 | S3 独立复审 PASS，准备 accepted slice commit |
+| 4 | 跨端一致性与回归验收 | 完整三端及最终 handoff 重验 PASS，新增普通开通拒绝/连续性、混合账户及非默认发放间隔断言 |
 
 ## Preflight 与执行证据
 
@@ -77,7 +77,12 @@
 | accepted slice commit S1 | `8fe4c3f18c90c70d10d2a966e8873a8d82cdb33a` (`gateflow: accept cross-channel-alignment S1`)；共享规则、生成副本、QA、文档、修复和审查记录 |
 | implementation S2 | `docs/gateflow/cross-channel-alignment-s2-implementation.md`；六入口、独立员工账号、套餐版本/试用、canonical state 接入及历史保护；shared 21/21、runner 1/1、完整后台 QA、syntax、generator/check、preview/diff check 通过；10 张 alignment 截图，1440/1280/1024/720 无 overflow，人工视觉检查通过 |
 | code review S2 | `docs/reviews/code-review-20261020-162237.md`；pass-with-risks；无实质 finding；shared 21/21、runner 1/1、完整后台 QA、syntax、generator/check、diff check、视觉抽查通过；风险已归入 S3/生产服务/产品决策/外部 CI |
-| accepted slice commit S2 | 待创建；范围为后台源/preview/QA/README、10 张 alignment 截图、当前文档、implementation/review artifacts |
+| accepted slice commit S2 | `4cef1d8af0c9384b5e3a849b9fec8d45507f285a` (`gateflow: accept cross-channel-alignment S2`)；后台源/preview/QA/README、10 张 alignment 截图、当前文档、implementation/review artifacts |
+| implementation S3 | `docs/gateflow/cross-channel-alignment-s3-implementation.md`；61 小程序页面、Web 内部开通与三端 canonical 认领/购买/客服、12 IVR 场景、冻结 checkout 和账户过滤；shared 21/21、runner 1/1、三端完整 QA、cross-channel handoff、syntax/generator/diff 全通过；105 张 alignment 截图清单，13 张实现者目检；controller 另目检跨端认领393、Web支付待发放1280与客服1024；accepted as code-review input，尚未接受 slice |
+| code review S3 | `docs/reviews/code-review-20261020-173728.md`；FAIL；S3-01/02/03 均 accepted；reviewer 独立 shared 21/21、runner 1/1、三端完整 QA、最终跨端 handoff、syntax/generator/diff 均通过，但新增真实 UI / 合法混合账户 / 年付探针确认 3 项中等级缺陷；Agent 明确完成 |
+| fix S3 | `docs/gateflow/cross-channel-alignment-s3-fix.md`；S3-01/02/03 均报告已修复；普通微信/SMS 主体连续性及错误原子性、同账户多主体/他人账户隔离、季/年付/非默认间隔与历史快照断言已补齐；shared 21/21、runner 1/1、三端完整 QA、最后 cross-channel、generator/syntax/diff PASS；14 新增/23 刷新图片均由实现者目检；Agent 明确完成，accepted as re-review input |
+| re-review S3 | `docs/reviews/code-review-20261020-201023.md`；PASS；S3-01/02/03 均已修复，无新增实质 finding；reviewer 独立 shared 21/21、runner 1/1、三端完整 QA、最终 cross-channel、两项额外 Playwright probe、generator/syntax/diff 均 PASS；人工检查 5 张关键修复图；无本地 blocker，Agent 明确完成 |
+| accepted slice commit S3 | 待创建；范围为完整 S3 源/preview/QA/README、cross-channel QA、当前文档、implementation/fix/review artifacts 与 127 张 alignment 图片中的本轮新增/刷新项 |
 | 后续 gates | 均未进入 |
 
 ### Plan review finding 裁决
@@ -106,6 +111,14 @@ Open Questions 裁决：事件键采用按动作类型分域，域内事件键�
 
 S1 最终状态：CR-001～007 均已修复，由第 4 轮复审确认。复审无新 findings，残余测试证据限制均 nonblocking：七域新键畸形 peer 已由只读探针验证，浏览器沿用本轮 implementer 全量 PASS；对应 owner 为 shared 测试维护者与后续 S2/S3 验证。生成器逐文件写入可由 check/rerun 检测恢复，归 shared generator 后续维护，不在本轮扩大修复。
 
+### S3 code review finding 裁决
+
+| Finding | 裁决 | 理由 / 要求 |
+| --- | --- | --- |
+| S3-01 | accepted | 可见短信开通的 4471、实际 mutation 的 6208 与后续试用的 7712 分属不同主体，违反已确认的号码/主体与试用连续性。微信/短信验证结果必须解析到当前账户明确主体，检查 shared activation 返回值后才显示成功；结果、试用及号码管理沿用该主体。覆盖错误/未验证/暂停拒绝，不影响 IVR 原主体和不重发试用。 |
+| S3-02 | accepted | 个人权益与计数读取全局集合，忽略 canonical account ownership；合法跨端混合账户已复现。按 order.accountId、entitlement.ownerAccountId 派生一致账户范围，聚合同账户多号码，排除他人事实；这是本地业务读模型修复，不扩展生产鉴权。 |
+| S3-03 | accepted | Web renderer 丢弃已冻结商品的 installments 与 grantIntervalMonths，导致季/年付确认和历史详情缺少每期/间隔/期数语义。按 live offer 或历史 order.snapshot 渲染，覆盖非默认间隔与目录变更后的历史稳定性；不建设生产分期 scheduler。 |
+
 ## 阻断与残余风险
 
 | 分类 | 事项 | Owner / destination |
@@ -119,4 +132,4 @@ S1 最终状态：CR-001～007 均已修复，由第 4 轮复审确认。复审�
 
 ## 下一步
 
-创建 S2 accepted slice commit，然后执行 S3 implementation。S2 无 accepted findings，验证与独立审查已通过。
+创建 S3 accepted slice commit，然后相对起始基线 `f6ea510bb23c98fa04aee91acbdb3200dc3f70f4` 执行覆盖 S1/S2/S3 的 aggregate deepreview。S3-01/02/03 均已修复，无本地 blocker；生产能力与正式配置风险均按 owner/destination 记录。

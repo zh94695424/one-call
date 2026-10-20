@@ -2,7 +2,9 @@
 
 > 当前业务基线：2026-10-20，依据本轮用户明确说明。涉及开通、IVR、实名前置条件和后台范围时，本文优先于 01—08 中旧稿。本文同时作为 `lean-ivr-admin` work unit 的设计和实施计划。
 
-> 当前跨端实施说明：统一演示套餐、状态转换、快照与线下客服口径已在 [10-cross-channel-rules.md](10-cross-channel-rules.md) 建立 S1 可执行基线。S2 运营后台独立员工账号、六主入口和完整套餐/试用界面已实现并接入；小程序、Web 与完整 IVR 分支的 S3 接入仍待实施。本文下方上一 work unit 的实施与验证记录保持历史事实，不表示客户页面已完成同步。
+> 当前跨端实施说明：S1 共享契约、S2 运营后台及 S3 小程序/Web/完整 IVR 展示已实现并通过本地 fixture QA，当前规则见 [10](10-cross-channel-rules.md)，证据见 [S3 implementation](gateflow/cross-channel-alignment-s3-implementation.md)。三端通过显式校验快照交接，不代表真实系统联调。本文下方上一 work unit 的非目标、实施与验证记录保留其历史范围。
+
+> S3 独立 review 的三项 finding 修复与验证单独记录于 [S3 fix](gateflow/cross-channel-alignment-s3-fix.md)：普通开通主体连续性、当前账户订单/权益范围，以及每期权益/发放周期的冻结展示。该记录不代表复审或 slice acceptance 已通过。
 
 ## 1. 已确认目标与边界（Goal confirmation）
 

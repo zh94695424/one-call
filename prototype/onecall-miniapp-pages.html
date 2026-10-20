@@ -3021,7 +3021,7 @@
   <div class="suite">
     <aside class="screen-index" aria-label="页面目录">
       <h1 class="index-title">一通话页面集</h1>
-      <p class="index-meta">57 个核心页面 · 点击切换评审</p>
+      <p class="index-meta">61 个核心页面 · 点击切换评审</p>
 
       <section class="index-group">
         <h2 class="index-label">开通</h2>
@@ -3039,6 +3039,16 @@
           <button class="index-button" type="button" data-page="landlineReady"><i data-lucide="circle-check-big" aria-hidden="true"></i>固话开通成功</button>
           <button class="index-button" type="button" data-page="provisioningFailed"><i data-lucide="circle-x" aria-hidden="true"></i>开通失败</button>
           <button class="index-button" type="button" data-page="provisioning"><i data-lucide="circle-check-big" aria-hidden="true"></i>开通成功</button>
+        </div>
+      </section>
+
+      <section class="index-group">
+        <h2 class="index-label">IVR 回流</h2>
+        <div class="index-items">
+          <button class="index-button" type="button" data-page="ivrReturn"><i data-lucide="phone-incoming" aria-hidden="true"></i>已有试用认领</button>
+          <button class="index-button" type="button" data-page="claimVerify"><i data-lucide="badge-check" aria-hidden="true"></i>同号验证</button>
+          <button class="index-button" type="button" data-page="claimResult"><i data-lucide="link" aria-hidden="true"></i>认领结果</button>
+          <button class="index-button" type="button" data-page="claimBlocked"><i data-lucide="shield-alert" aria-hidden="true"></i>认领受阻</button>
         </div>
       </section>
 
@@ -4004,6 +4014,19 @@
       const appTitle = root.querySelector("#oc-app-title");
       const back = root.querySelector("#oc-back");
       const bottomNav = root.querySelector("#oc-bottom-nav");
+      const B = window.OnecallBusiness;
+      let business = B.createDemoState(new Date());
+      business.subjects.push({id:"MINI-ACCOUNT-001",maskedNumber:"138 **** 6208",numberType:"MOBILE",source:"MINIAPP",accountId:"ACCOUNT-DEMO-001",identity:"VERIFIED",activation:"ACTIVE",revision:1,claimRisk:"NONE"});
+      const review = {scenario:"returning",subjectId:"SUBJ-REPEAT-001",accountId:"ACCOUNT-DEMO-001",orderId:null,notice:"",blockedCode:null};
+
+      function clone(value) { return JSON.parse(JSON.stringify(value)); }
+      function formatSeconds(value) { const seconds=Math.max(0,Number(value)||0);return String(Math.floor(seconds/60)).padStart(2,"0")+":"+String(seconds%60).padStart(2,"0"); }
+      function currentSubject() { return business.subjects.find(function (item) { return item.id === review.subjectId; }) || business.subjects.find(function (item) { return item.accountId === review.accountId; }) || business.subjects[0]; }
+      function purchaseSubject() { const selected=currentSubject();return selected&&selected.accountId===review.accountId?selected:business.subjects.find(function(item){return item.accountId===review.accountId&&item.source!=="IVR";})||selected; }
+      function accountOrders() { return business.orders.filter(function(item){return item.accountId===review.accountId;}); }
+      function accountEntitlements() { return business.entitlements.filter(function(item){return item.ownerAccountId===review.accountId;}); }
+      function currentOrder() { const rows=accountOrders();return rows.find(function(item){return item.id===review.orderId;}) || rows[rows.length-1] || null; }
+      function supportHtml(context) { const instruction=Object.values(B.support.instructions).join("<br>");return '<div class="screen-pad"><p class="eyebrow">线下人工客服</p><h3 class="page-heading">'+B.support.contactLabel+'</h3><p class="page-lead">咨询、退款、发票与认领由人工客服线下承接；当前原型不提供在线提交、回执或处理时效承诺。</p><div class="surface" style="margin-top:18px"><div class="record-top"><span class="record-label">需要准备</span><span class="state warning"><i data-lucide="clock-3" aria-hidden="true"></i>待配置</span></div><p style="margin:12px 0 0;color:var(--oc-body);line-height:20px">'+instruction+'</p></div><div class="notice"><i data-lucide="shield-alert" aria-hidden="true"></i><span>不填写完整身份证件、验证码或证据正文；页面不会跳转到虚构电话、邮箱或微信。</span></div></div>'; }
 
       const wave = '<div class="waveform" aria-label="录音波形预览">' + [18,28,38,24,45,31,52,34,42,26,48,61,39,52,29,44,35,55,32,46,24,37,20].map(function (height) { return '<i style="--bar:' + height + 'px"></i>'; }).join("") + '</div>';
       const introWave = '<div class="waveform intro-waveform" aria-label="运营商网络侧原始录音波形示意">' + [18,28,38,24,45,31,62,34,51,27,43,70,39,55,31,46,76,38,59,27,42,34,66,47,31,52,29,45,25,38,22].map(function (height) { return '<i style="--bar:' + height + 'px"></i>'; }).join("") + '</div>';
@@ -4136,12 +4159,25 @@
       }
 
       function captureHomeHtml() {
-        return '<div class="screen-pad first-guide"><div class="first-guide-brand"><i data-lucide="audio-waveform" aria-hidden="true"></i><strong>一通话</strong><span>ONECALL</span></div><div class="first-guide-visual"><div class="first-guide-labels"><span>VOICE / ORIGINAL</span><span>TIME / VERIFIED</span></div>' + introWave + '<div class="first-guide-meta"><span class="first-guide-time">00:00:00</span><span>通信网络侧 · 原始记录</span></div></div><div class="first-guide-copy"><h3 class="first-guide-title">把重要的通话，<br>留成证据。</h3><p class="first-guide-lead">运营商在通信网络侧生成原始录音，并同步完成固证。完成安全开通后，即可发起取证电话。</p><p class="first-guide-promise"><i data-lucide="shield-check" aria-hidden="true"></i><span>一通电话，一份可校验的证据记录</span></p></div><div class="trial-invite"><div class="trial-invite-head"><span class="trial-invite-label"><i data-lucide="gift" aria-hidden="true"></i>新用户免费试用</span><strong>5 分钟</strong></div><p>可分多次拨打，按有效录音时长累计；累计达到 5 分钟时，当前通话会主动挂断。</p></div><div class="spacer"></div><button class="primary-action" type="button" data-go="intro">开通并领取 5 分钟</button><p class="first-guide-note">完成 3 步安全开通即可领取 · 目前仅支持大陆居民身份证用户</p>' + freeToolboxSectionHtml() + '</div>';
+        return '<div class="screen-pad first-guide"><div class="first-guide-brand"><i data-lucide="audio-waveform" aria-hidden="true"></i><strong>一通话</strong><span>ONECALL</span></div><div class="first-guide-visual"><div class="first-guide-labels"><span>VOICE / ORIGINAL</span><span>TIME / VERIFIED</span></div>' + introWave + '<div class="first-guide-meta"><span class="first-guide-time">00:00:00</span><span>通信网络侧 · 原始记录</span></div></div><div class="first-guide-copy"><h3 class="first-guide-title">把重要的通话，<br>留成证据。</h3><p class="first-guide-lead">运营商在通信网络侧生成原始录音，并同步完成固证。完成安全开通后，即可发起取证电话。</p><p class="first-guide-promise"><i data-lucide="shield-check" aria-hidden="true"></i><span>一通电话，一份可校验的证据记录</span></p></div><div class="trial-invite"><div class="trial-invite-head"><span class="trial-invite-label"><i data-lucide="gift" aria-hidden="true"></i>新用户免费试用</span><strong>' + formatSeconds(business.rule.seconds) + '</strong></div><p>DEMO_NOT_APPROVED · 可分多次拨打，按有效录音时长累计；累计达到当前规则上限时，当前通话会主动挂断。</p></div><div class="spacer"></div><button class="primary-action" type="button" data-go="intro">开通并查看当前试用</button><p class="first-guide-note">完成 3 步安全开通即可领取 · 目前仅支持大陆居民身份证用户</p>' + freeToolboxSectionHtml() + '</div>';
       }
 
       function trialHomeHtml() {
-        return '<div class="screen-pad"><p class="eyebrow">免费试用 · 局端录音已开通</p><h3 class="page-heading">继续打一通取证电话</h3><p class="page-lead">试用时长按多次有效录音累计，剩余时长会在每次拨号前重新确认。</p><div class="trial-usage"><div class="trial-usage-head"><span>免费录音剩余</span><strong class="trial-remaining">03:18</strong></div><div class="trial-progress" role="progressbar" aria-label="免费试用剩余 3 分 18 秒，共 5 分钟" aria-valuenow="198" aria-valuemin="0" aria-valuemax="300"><span style="width:66%"></span></div><div class="trial-usage-meta"><span>已累计使用 01:42</span><span>总额 05:00</span></div><p class="trial-usage-copy">本次最多可录 03:18。达到累计上限时，系统将主动挂断当前通话，已录制部分继续固证。</p></div><div class="spacer"></div><button class="primary-action" type="button" data-go="trialCall">继续免费试用</button><button class="upgrade-action" type="button" data-go="plans"><span class="upgrade-action-icon"><i data-lucide="wallet-cards" aria-hidden="true"></i></span><span class="upgrade-action-copy"><strong>选择套餐，解锁更多录音时长</strong><span>录音、AI 转写和存储权益</span></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>' + freeToolboxSectionHtml() + '</div>';
+        const target=currentSubject();const result=target?B.trialStatus(business,target.id,new Date()):{ok:false};const value=result.ok?result.value:{status:"NOT_GRANTED",remainingSeconds:0,grant:null};const grant=value.grant;const total=grant?grant.grantedSeconds:business.rule.seconds;const used=grant?grant.usedSeconds:0;const percentage=total?Math.round(value.remainingSeconds/total*100):0;const usable=value.status==="AVAILABLE"&&target&&target.activation!=="SUSPENDED";
+        return '<div class="screen-pad"><p class="eyebrow">'+(target?B.labels.identity[target.identity]:"未关联主体")+' · '+B.labels.trial[value.status]+'</p><h3 class="page-heading">'+(usable?'继续打一通取证电话':value.status==="EXPIRED"?'试用已过期':value.status==="EXHAUSTED"?'试用已耗尽':target?.activation==="SUSPENDED"?'业务已停用':'尚未领取试用')+'</h3><p class="page-lead" data-selected-subject="'+(target?.id||"")+'">当前业务号码：'+(target?.maskedNumber||"未选择")+'。试用按原发放版本累计；认领、换端和规则换版不会重发或补量。</p><div class="trial-usage"><div class="trial-usage-head"><span>免费录音剩余</span><strong class="trial-remaining">'+formatSeconds(value.remainingSeconds)+'</strong></div><div class="trial-progress" role="progressbar" aria-valuenow="'+value.remainingSeconds+'" aria-valuemin="0" aria-valuemax="'+total+'"><span style="width:'+percentage+'%"></span></div><div class="trial-usage-meta"><span>已累计使用 '+formatSeconds(used)+'</span><span>原发放 '+formatSeconds(total)+'</span></div><p class="trial-usage-copy">'+(grant?'规则 v'+grant.ruleVersion+' · 到期 '+grant.expiresAt.slice(0,10):'没有试用发放记录')+'</p></div><div class="spacer"></div><button class="primary-action" type="button" data-go="'+(usable?'trialCall':'plans')+'">'+(usable?'继续免费试用':'选择独立购买权益')+'</button><button class="upgrade-action" type="button" data-go="plans"><span class="upgrade-action-icon"><i data-lucide="wallet-cards" aria-hidden="true"></i></span><span class="upgrade-action-copy"><strong>选择套餐或加量包</strong><span>试用与付费权益分开记录</span></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>' + '<button class="secondary-action" type="button" data-go="numbers">管理当前业务号码</button>' + freeToolboxSectionHtml() + '</div>';
       }
+
+      function ivrReturnHtml() {
+        const target=currentSubject();
+        return '<div class="screen-pad"><p class="eyebrow">IVR 回流 · 仅本地演示/评审</p><h3 class="page-heading">认领已有试用业务</h3><p class="page-lead">先登录，再验证与 IVR 主体一致的号码。验证前不展示历史录音、证据列表、试用使用量或到期时间。</p><div class="surface" style="margin-top:18px"><div class="record-top"><span class="record-label">待验证主体</span><span class="state warning"><i data-lucide="lock-keyhole" aria-hidden="true"></i>历史已隐藏</span></div><div class="meta-grid"><div class="meta-item"><span>号码</span><strong>'+(target?.maskedNumber||"待选择")+'</strong></div><div class="meta-item"><span>号码类型</span><strong>'+(target?.numberType==="LANDLINE"?"独立固话":"手机号")+'</strong></div><div class="meta-item"><span>登录</span><strong>DEMO 账户已登录</strong></div><div class="meta-item"><span>实名</span><strong>认领不会改变</strong></div></div></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>手机号使用微信手机号或短信演示验证；独立固话使用主叫挑战，不强制发送短信。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="claimVerify">登录并验证同一号码</button><button class="secondary-action" type="button" data-go="intro">走普通实名开通流程</button></div>';
+      }
+      function claimVerifyHtml() {
+        const target=currentSubject();const fixed=target?.numberType==="LANDLINE";return '<div class="screen-pad"><p class="eyebrow">可信号码验证 · DEMO</p><h3 class="page-heading">'+(fixed?'用原固话完成主叫挑战':'验证当前可使用同一手机号')+'</h3><p class="page-lead">登录本身不算号码验证；本页只模拟可信验证结果，不发送真实短信或发起电话。</p><div class="checkout-summary"><div class="checkout-row"><span>目标主体</span><strong>'+(target?.id||"不存在")+'</strong></div><div class="checkout-row"><span>脱敏号码</span><strong>'+(target?.maskedNumber||"待选择")+'</strong></div><div class="checkout-row"><span>验证方式</span><strong>'+(fixed?'CALLER_CHALLENGE':'WECHAT_PHONE')+'</strong></div><div class="checkout-row"><span>风险检查</span><strong>'+(target?.claimRisk||"未知")+'</strong></div></div><div class="spacer"></div><button class="primary-action" type="button" data-action="claim-submit">模拟可信验证并认领</button><button class="secondary-action" type="button" data-go="ivrReturn">返回</button></div>';
+      }
+      function claimResultHtml() {
+        const target=currentSubject();if(!target||target.accountId!==review.accountId)return ivrReturnHtml();const trial=B.trialStatus(business,target.id,new Date());const grant=trial.ok?trial.value.grant:null;const rows=business.evidence.filter(function(item){return item.subjectId===target.id;});return '<div class="screen-pad"><p class="eyebrow">认领成功 · '+B.labels.identity[target.identity]+'</p><h3 class="page-heading">原主体、试用与录音事实保持不变</h3><p class="page-lead">账户关联已追加；采集时实名、IVR 会话主体、证据主体与试用快照没有改写。</p><div class="checkout-summary"><div class="checkout-row"><span>主体</span><strong>'+target.id+'</strong></div><div class="checkout-row"><span>当前账户</span><strong>'+target.accountId+'</strong></div><div class="checkout-row"><span>当前实名</span><strong>'+B.labels.identity[target.identity]+'</strong></div><div class="checkout-row"><span>原试用</span><strong>'+(grant?(grant.usedSeconds+' / '+grant.grantedSeconds+' 秒 · v'+grant.ruleVersion):'未领取')+'</strong></div><div class="checkout-row"><span>原到期</span><strong>'+(grant?grant.expiresAt.slice(0,10):'—')+'</strong></div></div><h4 class="section-title">IVR 录音证据元数据</h4>'+(rows.length?rows.map(function(item){return '<div class="record-card"><div class="record-top"><span class="record-label">'+item.id+'</span><span class="state"><i data-lucide="shield-check" aria-hidden="true"></i>'+item.preservationStatus+'</span></div><div class="meta-grid"><div class="meta-item"><span>会话</span><strong>'+item.sessionId+'</strong></div><div class="meta-item"><span>有效录音</span><strong>'+item.recordedSeconds+' 秒</strong></div><div class="meta-item"><span>采集时实名</span><strong>'+B.labels.identity[item.identityAtCapture]+'</strong></div><div class="meta-item"><span>主体</span><strong>'+item.subjectId+'</strong></div></div></div>';}).join(''):'<div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>当前主体还没有录音证据元数据。</span></div>')+'<p class="button-note">本页不提供原始录音播放器、下载、导出或分享。</p><div class="spacer"></div>'+(target.identity==="UNVERIFIED"?'<button class="primary-action" type="button" data-action="complete-identity">继续实名后购买</button>':'<button class="primary-action" type="button" data-go="plans">选择套餐</button>')+'<button class="secondary-action" type="button" data-go="trialHome">查看原试用状态</button></div>';
+      }
+      function claimBlockedHtml() { const target=currentSubject();const reason=review.blockedCode==="RECYCLED_NUMBER_REVIEW"||target?.claimRisk==="RECYCLED"?"号码回收风险":"账户关联冲突";return '<div class="screen-pad centered"><div class="hero-mark danger"><i data-lucide="shield-alert" aria-hidden="true"></i></div><h3 class="page-heading">不能自动开放历史</h3><p class="page-lead">'+reason+'需要线下人工核验。即使当前短信或微信手机号验证成功，也不会展示历史录音或证据。</p><div class="notice" style="text-align:left"><i data-lucide="headphones" aria-hidden="true"></i><span>'+B.support.contactLabel+'。'+B.support.instructions.claim+'</span></div><div class="spacer"></div><button class="secondary-action" type="button" data-go="support">查看线下客服说明</button></div>'; }
 
       function materialReviewHtml() {
         const item = captureContext || captureProfiles.PHOTO_CAPTURE;
@@ -4190,183 +4226,94 @@
 
       let productContext = "个人基础";
       let billingCycleContext = "MONTHLY";
+      let checkoutOffer = null;
+      const productCodes = {"单次固证包":"EVIDENCE_ONE","30分钟通话包":"CALL_30","个人基础":"PERSONAL_BASIC","个人进阶":"PERSONAL_PRO","AI 加量包":"AI_30","存储扩容包":"STORAGE_5"};
+      const cycleLabels = {MONTHLY:"按月",QUARTERLY:"按季度",ANNUAL:"包年",ONCE:"单次"};
 
-      const catalogVersion = "ONECALL-CATALOG-2026.10-GRAY-B";
-      const catalogProducts = {
-        "免费体验": {
-          skuVersionId: "TRIAL-2026.10-A",
-          type: "TRIAL",
-          priceCents: 0,
-          priceSuffix: "",
-          summary: "首次体验局端录音和工具材料固证，两项免费权益独立计量。",
-          benefits: [["局端录音", "累计 5 分钟"], ["工具材料固证", "首份免费"], ["AI 转写摘要", "5 分钟"], ["续费方式", "无需续费"]],
-          validity: "首次发放后按活动规则使用",
-          purchaseEnabled: false
-        },
-        "单次固证包": {
-          skuVersionId: "EVIDENCE-ONE-2026.10-A",
-          type: "ON_DEMAND",
-          priceCents: 1290,
-          priceSuffix: "/份",
-          summary: "不订阅套餐，也能再保存一份照片、视频、现场录音或导入文件。",
-          benefits: [["工具材料固证", "1 份"], ["文件校验与上传", "包含"], ["公证处平台存证", "包含"], ["存储", "包含本份材料"]],
-          validity: "购买后 30 天内使用",
-          purchaseEnabled: true
-        },
-        "30分钟通话包": {
-          skuVersionId: "CALL-30M-2026.10-A",
-          type: "ON_DEMAND",
-          priceCents: 1890,
-          priceSuffix: "/包",
-          summary: "适合偶发电话取证，按运营商确认的有效录音秒数扣减。",
-          benefits: [["局端录音", "30 分钟"], ["通话录音固证", "包含"], ["对应录音存储", "包含"], ["AI 转写摘要", "不包含"]],
-          validity: "购买后 30 天内使用",
-          purchaseEnabled: true
-        },
-        "个人基础": {
-          type: "SUBSCRIPTION",
-          summary: "适合持续保存重要通话和少量现场材料，账户下三个号码共享。",
-          benefits: [["局端录音", "60 分钟"], ["工具材料固证", "20 份"], ["AI 转写摘要", "60 分钟"], ["存储空间", "5 GB"]],
-          billingOptions: {
-            MONTHLY: {label: "按月", skuVersionId: "PLAN-BASIC-M1-2026.10-A", priceCents: 3900, priceSuffix: "/月", validity: "支付成功后立即生效，有效期 1 个月", grantSchedule: "支付成功后发放 1 期月度权益", promotion: "灵活购买"},
-            QUARTERLY: {label: "按季度", skuVersionId: "PLAN-BASIC-Q1-2026.10-A", priceCents: 10500, priceSuffix: "/3个月", validity: "支付成功后立即生效，有效期 3 个月", grantSchedule: "按购买日每月发放，共 3 期", promotion: "约 9 折 · 省 ¥12"},
-            ANNUAL: {label: "包年", skuVersionId: "PLAN-BASIC-Y1-2026.10-A", priceCents: 39000, priceSuffix: "/年", validity: "支付成功后立即生效，有效期 12 个月", grantSchedule: "按购买日每月发放，共 12 期", promotion: "约 8.3 折 · 省 ¥78"}
-          },
-          purchaseEnabled: true
-        },
-        "个人进阶": {
-          type: "SUBSCRIPTION",
-          summary: "适合材料较多或连续处理纠纷的用户，提供更高的共享额度。",
-          benefits: [["局端录音", "300 分钟"], ["工具材料固证", "100 份"], ["AI 转写摘要", "300 分钟"], ["存储空间", "20 GB"]],
-          billingOptions: {
-            MONTHLY: {label: "按月", skuVersionId: "PLAN-PRO-M1-2026.10-A", priceCents: 8900, priceSuffix: "/月", validity: "支付成功后立即生效，有效期 1 个月", grantSchedule: "支付成功后发放 1 期月度权益", promotion: "灵活购买"},
-            QUARTERLY: {label: "按季度", skuVersionId: "PLAN-PRO-Q1-2026.10-A", priceCents: 24000, priceSuffix: "/3个月", validity: "支付成功后立即生效，有效期 3 个月", grantSchedule: "按购买日每月发放，共 3 期", promotion: "约 9 折 · 省 ¥27"},
-            ANNUAL: {label: "包年", skuVersionId: "PLAN-PRO-Y1-2026.10-A", priceCents: 89000, priceSuffix: "/年", validity: "支付成功后立即生效，有效期 12 个月", grantSchedule: "按购买日每月发放，共 12 期", promotion: "约 8.3 折 · 省 ¥178"}
-          },
-          purchaseEnabled: true
-        },
-        "AI 加量包": {
-          skuVersionId: "AI-30M-2026.10-A",
-          type: "ADD_ON",
-          priceCents: 990,
-          priceSuffix: "/包",
-          summary: "只补充转写与要点摘要分钟，不改变录音和固证额度。",
-          benefits: [["AI 转写摘要", "30 分钟"], ["适用材料", "录音与视频"], ["原结果版本", "继续保留"], ["其他权益", "不包含"]],
-          validity: "购买后 30 天内使用",
-          purchaseEnabled: true
-        },
-        "存储扩容包": {
-          skuVersionId: "STORAGE-5G-2026.10-A",
-          type: "ADD_ON",
-          priceCents: 990,
-          priceSuffix: "/包",
-          summary: "扩充原始录音、照片、视频、现场录音和文件的可用空间。",
-          benefits: [["存储空间", "5 GB"], ["有效期", "12 个月"], ["既有证据", "不迁移、不改写"], ["其他权益", "不包含"]],
-          validity: "支付成功后立即生效，有效期 12 个月",
-          purchaseEnabled: true
-        }
-      };
-
-      const enterpriseCatalog = {
-        BASIC: {
-          name: "企业基础版",
-          seats: 5,
-          fixedLines: 5,
-          recordingMinutes: "1,000 分钟/月",
-          aiMinutes: "1,000 分钟/月",
-          evidenceCount: "300 份/月",
-          storage: "100 GB",
-          administrators: "2 名",
-          positioning: "适合小微企业、门店和小型法务团队"
-        },
-        FLAGSHIP: {
-          name: "企业旗舰版",
-          seats: 20,
-          fixedLines: 30,
-          recordingMinutes: "6,000 分钟/月",
-          aiMinutes: "6,000 分钟/月",
-          evidenceCount: "2,000 份/月",
-          storage: "1 TB",
-          administrators: "10 名",
-          positioning: "适合多部门法务、客服和风控团队"
-        }
-      };
-
+      function personalOffers() { const result=B.visibleOffers(business,{channel:"MINIAPP",audience:"PERSONAL"});return result.ok?result.value:[]; }
+      function enterpriseOffers() { const result=B.visibleOffers(business,{channel:"MINIAPP",audience:"ENTERPRISE"});return result.ok?result.value:[]; }
       function selectedProduct() {
-        return catalogProducts[productContext] || catalogProducts["个人基础"];
+        const code=productCodes[productContext]||"PERSONAL_BASIC";
+        const matches=personalOffers().filter(function (item) { return item.productCode===code||item.sku===code; });
+        if (!matches.length) return null;
+        if (matches[0].type!=="SUBSCRIPTION") return matches[0];
+        return matches.find(function (item) { return item.billingCycle===billingCycleContext; }) || matches[0];
       }
-
-      function selectedOffer() {
-        const product = selectedProduct();
-        if (product.type !== "SUBSCRIPTION") return product;
-        const option = product.billingOptions[billingCycleContext] || product.billingOptions.MONTHLY;
-        return Object.assign({}, product, option, {billingCycle: billingCycleContext, billingCycleLabel: option.label});
+      function selectedOffer() { return current === "purchaseConfirm" ? checkoutOffer : selectedProduct(); }
+      function rightsList(offer) {
+        if (!offer) return [];
+        const definitions=[["recordingMinutes","局端录音"," 分钟"],["aiMinutes","AI 转写摘要"," 分钟"],["evidenceCount","证据权益"," 份"],["storageGB","存储空间"," GB"],["seats","演示坐席"," 个"],["fixedLines","演示固话"," 个"]];
+        const result=definitions.filter(function (item) { return offer.rights[item[0]]>0; }).map(function (item) { return [item[1],offer.rights[item[0]]+item[2]]; });
+        return result.concat((offer.includedFeatures||[]).map(function (item) { return ["包含",item]; }));
       }
+      function validityText(offer) { return offer ? "购买后有效 "+offer.validDays+" 天" : "当前版本不可购买"; }
+      function grantText(offer) { return offer&&offer.type==="SUBSCRIPTION" ? "每 "+offer.grantIntervalMonths+" 个月发放一次，共 "+offer.installments+" 期" : "一次性发放，共 1 期"; }
 
       function priceHtml(product) {
-        if (!product || typeof product.priceCents !== "number") return "暂不可购买";
-        if (product.priceCents === 0) return "免费";
-        const amount = (product.priceCents / 100).toFixed(product.priceCents % 100 === 0 ? 0 : 1);
+        if (!product || typeof product.priceCents !== "number") return "联系咨询";
+        const amount = (product.priceCents / 100).toFixed(2);
         return "¥" + amount;
       }
 
       function commerceCardHtml(name, recommended, core) {
-        const product = catalogProducts[name];
+        const previous=productContext;productContext=name;const product=selectedProduct();productContext=previous;
+        if(!product)return '';
         const label = recommended ? '<span class="recommend-label">持续使用更合适</span>' : '';
-        const displayProduct = product.type === "SUBSCRIPTION" ? product.billingOptions.MONTHLY : product;
-        const cycleSummary = product.type === "SUBSCRIPTION" ? '<span class="commerce-cycle-summary">季付 ' + priceHtml(product.billingOptions.QUARTERLY) + ' · 包年 ' + priceHtml(product.billingOptions.ANNUAL) + '，长期购买更优惠</span>' : '';
-        return '<button class="commerce-card' + (recommended ? ' recommended' : '') + '" type="button" data-go="productDetail" data-product="' + name + '"' + (core ? ' data-core-product' : '') + '><span class="commerce-card-head"><strong>' + name + '</strong>' + label + '</span><span class="commerce-card-copy">' + product.summary + '</span>' + cycleSummary + '<span class="commerce-price-row"><span class="commerce-price">' + priceHtml(displayProduct) + '<small>' + (product.type === "SUBSCRIPTION" ? '/月起' : displayProduct.priceSuffix) + '</small></span><span class="commerce-link">' + (product.type === "SUBSCRIPTION" ? '选择周期' : '查看权益') + '</span></span></button>';
+        const family=personalOffers().filter(function(item){return item.productCode===product.productCode;});
+        const cycleSummary=product.type === "SUBSCRIPTION" ? '<span class="commerce-cycle-summary">'+family.map(function(item){return cycleLabels[item.billingCycle]+' '+priceHtml(item);}).join(' · ')+'</span>' : '';
+        return '<button class="commerce-card' + (recommended ? ' recommended' : '') + '" type="button" data-go="productDetail" data-product="' + name + '"' + (core ? ' data-core-product' : '') + '><span class="commerce-card-head"><strong>' + name + '</strong>' + label + '</span><span class="commerce-card-copy">' + product.description + '</span>' + cycleSummary + '<span class="commerce-price-row"><span class="commerce-price">' + priceHtml(product) + '<small>' + (product.type === "SUBSCRIPTION" ? '/月起' : '') + '</small></span><span class="commerce-link">' + (product.type === "SUBSCRIPTION" ? '选择周期' : '查看权益') + '</span></span></button>';
       }
 
       function billingCyclePickerHtml(product) {
-        if (product.type !== "SUBSCRIPTION") return "";
-        return '<div class="billing-cycle-picker" role="radiogroup" aria-label="购买周期">' + ["MONTHLY", "QUARTERLY", "ANNUAL"].map(function (cycle) {
-          const option = product.billingOptions[cycle];
-          return '<button class="billing-cycle-option" type="button" role="radio" aria-checked="' + (billingCycleContext === cycle) + '" data-billing-cycle="' + cycle + '"><span>' + option.label + '</span><strong>' + priceHtml(option) + '</strong><small>' + option.promotion + '</small></button>';
+        if (!product || product.type !== "SUBSCRIPTION") return "";
+        const family=personalOffers().filter(function(item){return item.productCode===product.productCode;});
+        return '<div class="billing-cycle-picker" role="radiogroup" aria-label="购买周期">' + family.map(function (option) {
+          return '<button class="billing-cycle-option" type="button" role="radio" aria-checked="' + (billingCycleContext === option.billingCycle) + '" data-billing-cycle="' + option.billingCycle + '"><span>' + cycleLabels[option.billingCycle] + '</span><strong>' + priceHtml(option) + '</strong><small>DEMO 待批准</small></button>';
         }).join("") + '</div>';
       }
 
       function plansHtml() {
-        return '<div class="screen-pad"><h3 class="page-heading">按使用频率选择</h3><p class="page-lead">临时需要可以按次购买，持续使用再选择套餐。所有商品使用相同的加密、完整性保护和审计标准。</p><div class="entitlement-grid"><div class="entitlement-item"><strong>03:18</strong><span>免费录音剩余</span></div><div class="entitlement-item"><strong>' + freeEvidenceRemaining + ' 份</strong><span>免费固证剩余</span></div><div class="entitlement-item"><strong>0 分钟</strong><span>AI 可用</span></div><div class="entitlement-item"><strong>0.8 GB</strong><span>当前已存储</span></div></div><button class="text-action" type="button" data-go="usageDetail"><i data-lucide="list-tree" aria-hidden="true"></i>查看全部主叫号用量</button><h4 class="section-title has-lead">按需购买</h4><p class="section-lead">只为当前一次需求付费，不自动续费。</p>' + commerceCardHtml("单次固证包", false, true) + commerceCardHtml("30分钟通话包", false, true) + '<h4 class="section-title has-lead">个人订阅套餐</h4><p class="section-lead">权益按账户共享，可供已开通的手机号与固话号码使用。</p>' + commerceCardHtml("个人基础", true, true) + commerceCardHtml("个人进阶", false, true) + '<button class="upgrade-action" type="button" data-go="enterprisePlans"><span class="upgrade-action-icon"><i data-lucide="building-2" aria-hidden="true"></i></span><span class="upgrade-action-copy"><strong>企业和团队使用</strong><span>坐席、独立固话、共享额度与组织审计</span></span><i data-lucide="chevron-right" aria-hidden="true"></i></button><h4 class="section-title has-lead">需要时再加量</h4><p class="section-lead">AI 或存储不足时单独补充，不要求升级完整套餐。</p><div class="row-list">' + row("sparkles", "AI 加量包", "30 分钟转写与摘要", "productDetail", null, 'data-product="AI 加量包"') + row("hard-drive", "存储扩容包", "增加 5 GB 可用空间", "productDetail", null, 'data-product="存储扩容包"') + '</div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>结算时由服务端重新确认当前商品版本、价格和权益。调价不会修改历史订单或已经到账的权益。</span></div></div>';
+        const target=currentSubject();const trial=target?B.trialStatus(business,target.id,new Date()):{ok:false};const remaining=trial.ok?formatSeconds(trial.value.remainingSeconds):"00:00";
+        return '<div class="screen-pad"><h3 class="page-heading">按使用频率选择</h3><p class="page-lead">当前商品全部来自共享已发布目录；演示价格与权益为 DEMO_NOT_APPROVED，不构成生产承诺。</p><div class="entitlement-grid"><div class="entitlement-item"><strong>'+remaining+'</strong><span>IVR 试用剩余</span></div><div class="entitlement-item"><strong>' + freeEvidenceRemaining + ' 份</strong><span>免费固证剩余</span></div></div><button class="text-action" type="button" data-go="usageDetail"><i data-lucide="list-tree" aria-hidden="true"></i>查看全部主叫号用量</button><h4 class="section-title has-lead">按需购买</h4><p class="section-lead">只为当前一次需求付费，不自动续费。</p>' + commerceCardHtml("单次固证包", false, true) + commerceCardHtml("30分钟通话包", false, true) + '<h4 class="section-title has-lead">个人订阅套餐</h4><p class="section-lead">权益按账户共享，可供已开通的手机号与固话号码使用。</p>' + commerceCardHtml("个人基础", true, true) + commerceCardHtml("个人进阶", false, true) + '<button class="upgrade-action" type="button" data-go="enterprisePlans"><span class="upgrade-action-icon"><i data-lucide="building-2" aria-hidden="true"></i></span><span class="upgrade-action-copy"><strong>企业和团队使用</strong><span>仅咨询演示，规格与报价待确认</span></span><i data-lucide="chevron-right" aria-hidden="true"></i></button><h4 class="section-title has-lead">需要时再加量</h4><p class="section-lead">叠加与抵扣规则待确认，以下为独立购买演示。</p><div class="row-list">' + row("sparkles", "AI 加量包", "共享目录中的 30 分钟规格", "productDetail", null, 'data-product="AI 加量包"') + row("hard-drive", "存储扩容包", "共享目录中的 5 GB 规格", "productDetail", null, 'data-product="存储扩容包"') + '</div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>结算按精确版本 token 重新校验。调价、下架或移除小程序渠道不会修改历史订单。</span></div></div>';
       }
 
       function enterprisePlanCardHtml(plan, featured) {
-        return '<div class="commerce-card' + (featured ? ' recommended' : '') + '"><span class="commerce-card-head"><strong>' + plan.name + '</strong>' + (featured ? '<span class="recommend-label">多部门协作</span>' : '') + '</span><span class="commerce-card-copy">' + plan.positioning + '</span><div class="benefit-list"><div class="benefit-row"><span>包含坐席</span><strong>' + plan.seats + ' 个</strong></div><div class="benefit-row"><span>独立固话直线</span><strong>' + plan.fixedLines + ' 个</strong></div><div class="benefit-row"><span>局端录音</span><strong>' + plan.recordingMinutes + '</strong></div><div class="benefit-row"><span>AI 转写摘要</span><strong>' + plan.aiMinutes + '</strong></div><div class="benefit-row"><span>工具材料固证</span><strong>' + plan.evidenceCount + '</strong></div><div class="benefit-row"><span>组织存储</span><strong>' + plan.storage + '</strong></div><div class="benefit-row"><span>管理员</span><strong>' + plan.administrators + '</strong></div></div><span class="commerce-price-row"><span class="commerce-price" style="font-size:16px">企业报价</span><span class="commerce-link">后台配置</span></span></div>';
+        const benefits=rightsList(plan).map(function(item){return '<div class="benefit-row"><span>'+item[0]+'</span><strong>'+item[1]+'</strong></div>';}).join('');
+        return '<div class="commerce-card' + (featured ? ' recommended' : '') + '"><span class="commerce-card-head"><strong>' + plan.name + '</strong><span class="recommend-label">DEMO 待确认</span></span><span class="commerce-card-copy">' + plan.description + '</span><div class="benefit-list">'+benefits+'</div><span class="commerce-price-row"><span class="commerce-price" style="font-size:16px">仅咨询</span><span class="commerce-link">QUOTE</span></span></div>';
       }
 
       function enterprisePlansHtml() {
-        return '<div class="screen-pad"><p class="eyebrow">企业和团队</p><h3 class="page-heading">集中管理坐席、主叫号码和证据</h3><p class="page-lead">企业统一购买，成员分别实名并授权本人使用的手机号；独立固话直线通过运营商主叫验证后纳入组织统计。</p>' + enterprisePlanCardHtml(enterpriseCatalog.BASIC, false) + enterprisePlanCardHtml(enterpriseCatalog.FLAGSHIP, true) + '<h4 class="section-title has-lead">旗舰版增加</h4><p class="section-lead">部门额度、分级管理员、证据审批、审计导出、企业词库和接口集成按正式商品版本开放。</p><div class="notice"><i data-lucide="circle-help" aria-hidden="true"></i><span><strong>首发边界</strong><br>仅支持能够由运营商返回唯一真实主叫的独立固话直线；企业总机、PBX、分机归属和坐席 PIN 暂不设计。</span></div><div class="notice"><i data-lucide="settings-2" aria-hidden="true"></i><span>坐席数、独立固话数、价格、共享额度、有效期和增购包均由后台企业商品版本或合同报价配置，客户端不写死。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="support">获取企业方案</button><button class="secondary-action" type="button" data-go="plans">返回个人套餐</button></div>';
+        const offers=enterpriseOffers();
+        return '<div class="screen-pad"><p class="eyebrow">企业和团队 · DEMO</p><h3 class="page-heading">企业方案仅作咨询比较</h3><p class="page-lead">共享目录严格标记 ENTERPRISE + QUOTE；展示规格是待确认样例，不能进入个人支付。</p>' + offers.map(function(item,index){return enterprisePlanCardHtml(item,index===1);}).join('') + '<div class="notice"><i data-lucide="circle-help" aria-hidden="true"></i><span>正式坐席、固话名额、价格、共享权益与合同周期需另行确认。企业总机、PBX、分机归属和坐席 PIN 暂不设计。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="support">查看线下咨询方式</button><button class="secondary-action" type="button" data-go="plans">返回个人套餐</button></div>';
       }
 
       function productDetailHtml() {
         const product = selectedProduct();
         const offer = selectedOffer();
-        const benefits = product.benefits.map(function (item) { return '<div class="benefit-row"><span>' + item[0] + '</span><strong>' + item[1] + '</strong></div>'; }).join("");
+        if(!product)return '<div class="screen-pad centered"><h3 class="page-heading">当前版本不可购买</h3><p class="page-lead">商品已下架、渠道已移除或版本不存在，请返回目录重新选择。</p><button class="primary-action" type="button" data-go="plans">重新选择</button></div>';
+        const benefits = rightsList(product).map(function (item) { return '<div class="benefit-row"><span>' + item[0] + '</span><strong>' + item[1] + '</strong></div>'; }).join("");
         const cyclePicker = billingCyclePickerHtml(product);
-        const delivery = product.type === "SUBSCRIPTION" ? '<div class="checkout-row"><span>权益发放</span><strong style="max-width:190px">' + offer.grantSchedule + '</strong></div>' : '';
-        const action = product.purchaseEnabled ? '<button class="primary-action" type="button" data-go="purchaseConfirm">确认购买 ' + priceHtml(offer) + '</button>' : '<button class="primary-action" type="button" data-go="trialHome">返回免费试用</button>';
-        return '<div class="screen-pad"><p class="eyebrow">' + (product.type === "SUBSCRIPTION" ? "订阅套餐" : (product.type === "TRIAL" ? "免费权益" : "按需购买")) + '</p><h3 class="page-heading">' + productContext + '</h3><p class="page-lead">' + product.summary + '</p>' + cyclePicker + '<div class="checkout-summary"><div class="checkout-row total"><span>' + (product.type === "SUBSCRIPTION" ? offer.billingCycleLabel + "价格" : "当前价格") + '</span><strong>' + priceHtml(offer) + '<small style="font-size:11px;color:var(--oc-body);font-weight:400">' + offer.priceSuffix + '</small></strong></div><div class="checkout-row"><span>有效期</span><strong style="max-width:190px">' + offer.validity + '</strong></div>' + delivery + '<div class="checkout-row"><span>续费方式</span><strong>' + (product.type === "SUBSCRIPTION" ? "手动续费，不自动扣款" : "不自动续费") + '</strong></div></div><h4 class="section-title">' + (product.type === "SUBSCRIPTION" ? "每期包含权益" : "包含权益") + '</h4><div class="benefit-list">' + benefits + '</div><div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>' + (product.type === "SUBSCRIPTION" ? "季度和包年按月发放权益，每期未使用额度不结转；包年相当于付 10 个月享 12 个月。" : "") + '线下公证书、公证处另行收取的费用及其他未列明服务不包含在本商品内。</span></div><div class="spacer"></div>' + action + '<button class="secondary-action" type="button" data-go="plans">查看其他方案</button><p class="button-note">商品版本 ' + offer.skuVersionId + '</p></div>';
+        const delivery = product.type === "SUBSCRIPTION" ? '<div class="checkout-row"><span>权益发放</span><strong style="max-width:190px">' + grantText(product) + '</strong></div>' : '';
+        return '<div class="screen-pad"><p class="eyebrow">'+(product.type === "SUBSCRIPTION" ? "订阅套餐" : "按需购买")+' · DEMO_NOT_APPROVED</p><h3 class="page-heading">' + product.name + '</h3><p class="page-lead">' + product.description + '</p>' + cyclePicker + '<div class="checkout-summary"><div class="checkout-row total"><span>'+(cycleLabels[product.billingCycle]||"当前")+'价格</span><strong>' + priceHtml(product) + '</strong></div><div class="checkout-row"><span>有效期</span><strong>' + validityText(product) + '</strong></div>' + delivery + '<div class="checkout-row"><span>支持渠道</span><strong>' + product.channels.join(" / ") + '</strong></div><div class="checkout-row"><span>续费方式</span><strong>不自动续费</strong></div></div><h4 class="section-title">包含权益</h4><div class="benefit-list">' + benefits + '</div><div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>叠加、抵扣顺序和续购规则待确认；订单只冻结本次独立购买快照。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="purchaseConfirm">确认购买 ' + priceHtml(product) + '</button><button class="secondary-action" type="button" data-go="plans">查看其他方案</button><p class="button-note">商品版本 ' + product.versionId + '</p></div>';
       }
 
       function purchaseConfirmHtml() {
         const product = selectedOffer();
-        const rights = product.benefits.map(function (item) { return item[0] + ' ' + item[1]; }).join(' · ');
-        const cycle = product.type === "SUBSCRIPTION" ? '<div class="checkout-row"><span>购买周期</span><strong>' + product.billingCycleLabel + '</strong></div><div class="checkout-row"><span>权益发放</span><strong style="max-width:190px">' + product.grantSchedule + '</strong></div>' : '';
-        return '<div class="screen-pad"><p class="eyebrow">订单确认</p><h3 class="page-heading">确认本次购买</h3><p class="page-lead">订单创建时会锁定本页显示的商品版本、价格与权益，支付结果以微信支付服务端通知为准。</p><div class="checkout-summary"><div class="checkout-row"><span>商品</span><strong>' + productContext + '</strong></div>' + cycle + '<div class="checkout-row"><span>' + (product.type === "SUBSCRIPTION" ? "每期权益" : "包含权益") + '</span><strong style="max-width:190px">' + rights + '</strong></div><div class="checkout-row"><span>生效与有效期</span><strong style="max-width:190px">' + product.validity + '</strong></div><div class="checkout-row"><span>续费</span><strong>不自动续费</strong></div><div class="checkout-row total"><span>微信支付</span><strong>' + priceHtml(product) + '</strong></div></div><div class="check-list"><label class="check-row"><input class="consent-input" type="checkbox" data-order-confirm><span class="check-copy">我已核对商品、价格、购买周期、有效期、权益发放方式及退款规则，并确认本商品不包含未列明的公证书办理费用。</span></label></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>客户端不提交或计算订单金额；服务端将依据商品版本 ' + product.skuVersionId + ' 创建订单并向微信支付发起请求。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-purchase-submit data-go="paymentSuccess" disabled>微信支付 ' + priceHtml(product) + '</button><button class="secondary-action" type="button" data-go="productDetail">返回修改</button></div>';
+        if(!product)return productDetailHtml();
+        const rights = rightsList(product).map(function (item) { return item[0] + ' ' + item[1]; }).join(' · ');
+        const cycle = product.type === "SUBSCRIPTION" ? '<div class="checkout-row"><span>购买周期</span><strong>' + cycleLabels[product.billingCycle] + '</strong></div><div class="checkout-row"><span>权益发放</span><strong>' + grantText(product) + '</strong></div>' : '';
+        return '<div class="screen-pad"><p class="eyebrow">订单确认</p><h3 class="page-heading">确认本次购买</h3>'+(review.notice?'<div class="notice">'+review.notice+'；请返回商品重新选择。</div>':'')+'<p class="page-lead">创建订单时锁定共享商品快照；支付结果与权益发放分别推进。</p><div class="checkout-summary"><div class="checkout-row"><span>商品</span><strong>' + product.name + '</strong></div>' + cycle + '<div class="checkout-row"><span>包含权益</span><strong style="max-width:190px">' + rights + '</strong></div><div class="checkout-row"><span>有效期</span><strong>' + validityText(product) + '</strong></div><div class="checkout-row total"><span>模拟支付金额</span><strong>' + priceHtml(product) + '</strong></div></div><div class="check-list"><label class="check-row"><input class="consent-input" type="checkbox" data-order-confirm><span class="check-copy">我已核对商品、价格、周期、有效期与权益发放，并明确同意本次购买。</span></label></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>精确版本 ' + product.versionId + ' 与 version token 会在创建订单时重新校验。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-purchase-submit data-action="create-order" disabled>创建订单 ' + priceHtml(product) + '</button><button class="secondary-action" type="button" data-go="productDetail">返回修改</button></div>';
       }
 
       function paymentSuccessHtml() {
-        const product = selectedOffer();
-        const target = productContext === "30分钟通话包" ? "call" : "captureReady";
-        const targetLabel = productContext === "30分钟通话包" ? "去打取证电话" : (productContext === "单次固证包" ? "继续保存材料" : "开始使用新权益");
-        const cycle = product.type === "SUBSCRIPTION" ? '<div class="checkout-row"><span>购买周期</span><strong>' + product.billingCycleLabel + '</strong></div><div class="checkout-row"><span>权益发放</span><strong style="max-width:190px">' + product.grantSchedule + '</strong></div>' : '';
-        return '<div class="screen-pad centered"><div class="hero-mark success"><i data-lucide="badge-check" aria-hidden="true"></i></div><h3 class="page-heading">支付成功，权益已到账</h3><p class="page-lead">' + productContext + ' 已按订单中的商品版本' + (product.type === "SUBSCRIPTION" ? '发放首期权益' : '发放权益') + '。多个号码共享账户权益，实际用量仍记录到对应号码和证据。</p><div class="checkout-summary" style="text-align:left"><div class="checkout-row"><span>订单号</span><strong>OC20261019026</strong></div><div class="checkout-row"><span>实付金额</span><strong>' + priceHtml(product) + '</strong></div>' + cycle + '<div class="checkout-row"><span>商品版本</span><strong>' + product.skuVersionId + '</strong></div><div class="checkout-row"><span>有效期</span><strong style="max-width:190px">' + product.validity + '</strong></div></div><div class="notice" style="text-align:left"><i data-lucide="circle-check" aria-hidden="true"></i><span>权益到账和支付分别保留不可变流水。重复支付通知不会重复发放权益' + (product.type === "SUBSCRIPTION" ? '，后续各期按订单计划自动发放' : '') + '。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="' + target + '">' + targetLabel + '</button><button class="secondary-action" type="button" data-go="orders">查看订单</button></div>';
+        const order=currentOrder();if(!order||order.payment!=="PAID")return paymentIssueHtml();const issued=order.entitlement==="ISSUED",failed=order.entitlement==="FAILED";
+        return '<div class="screen-pad centered"><div class="hero-mark '+(issued?'success':'warning')+'"><i data-lucide="'+(issued?'badge-check':'clock-3')+'" aria-hidden="true"></i></div><h3 class="page-heading">'+(issued?'权益已到账':failed?'支付成功，权益发放失败':'支付成功，权益待发放')+'</h3><p class="page-lead">支付与权益是独立状态；只有发放完成后才显示到账。</p><div class="checkout-summary" style="text-align:left"><div class="checkout-row"><span>订单号</span><strong>'+order.id+'</strong></div><div class="checkout-row"><span>商品</span><strong>'+order.snapshot.name+'</strong></div><div class="checkout-row"><span>支付</span><strong>'+B.labels.payment[order.payment]+'</strong></div><div class="checkout-row"><span>权益</span><strong>'+B.labels.entitlement[order.entitlement]+'</strong></div><div class="checkout-row"><span>冻结版本</span><strong>'+order.snapshot.versionId+'</strong></div></div><div class="spacer"></div>'+(issued?'<button class="primary-action" type="button" data-go="orders">查看订单与权益</button>':'<button class="primary-action" type="button" data-action="issue-entitlements">模拟独立发放权益</button>')+'<button class="secondary-action" type="button" data-go="plans">返回套餐</button></div>';
       }
 
       function paymentIssueHtml() {
-        const product = selectedOffer();
-        const cycle = product.type === "SUBSCRIPTION" ? '<div class="checkout-row"><span>购买周期</span><strong>' + product.billingCycleLabel + '</strong></div>' : '';
-        return '<div class="screen-pad centered"><div class="hero-mark warning"><i data-lucide="circle-alert" aria-hidden="true"></i></div><h3 class="page-heading">支付尚未完成</h3><p class="page-lead">当前没有收到微信支付成功通知，' + productContext + ' 尚未发放权益，也不会产生用量。</p><div class="checkout-summary" style="text-align:left"><div class="checkout-row"><span>商品</span><strong>' + productContext + '</strong></div>' + cycle + '<div class="checkout-row"><span>应付金额</span><strong>' + priceHtml(product) + '</strong></div><div class="checkout-row"><span>订单状态</span><strong>待支付</strong></div></div><div class="notice" style="text-align:left"><i data-lucide="info" aria-hidden="true"></i><span>如果已经完成支付，请先查询订单结果，不要连续重复付款。服务端确认到账后才会发放权益。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="purchaseConfirm">重新支付</button><button class="secondary-action" type="button" data-go="orders">查看订单状态</button></div>';
+        const order=currentOrder();if(!order)return '<div class="screen-pad centered"><div class="hero-mark warning"><i data-lucide="circle-alert" aria-hidden="true"></i></div><h3 class="page-heading">尚未创建订单</h3><p class="page-lead">请先从当前共享目录选择商品并明确同意购买。</p><button class="primary-action" type="button" data-go="plans">选择商品</button></div>';
+        const unknown=order.payment==="UNKNOWN";
+        return '<div class="screen-pad centered"><div class="hero-mark warning"><i data-lucide="circle-alert" aria-hidden="true"></i></div><h3 class="page-heading">'+(unknown?'支付结果待确认':'订单已创建，等待模拟结果')+'</h3><p class="page-lead">'+(unknown?'必须查询原订单，不会创建第二笔订单。':'原型仅接受标明“模拟服务端支付结果”的推进。')+'</p><div class="checkout-summary" style="text-align:left"><div class="checkout-row"><span>订单号</span><strong>'+order.id+'</strong></div><div class="checkout-row"><span>商品快照</span><strong>'+order.snapshot.name+'</strong></div><div class="checkout-row"><span>支付</span><strong>'+B.labels.payment[order.payment]+'</strong></div><div class="checkout-row"><span>权益</span><strong>'+B.labels.entitlement[order.entitlement]+'</strong></div></div><div class="spacer"></div>'+(unknown?'<button class="primary-action" type="button" data-action="query-payment">查询原订单模拟结果</button>':'<button class="primary-action" type="button" data-action="simulate-payment" data-result="PAID">模拟服务端：支付成功</button><button class="secondary-action" type="button" data-action="simulate-payment" data-result="UNKNOWN">模拟服务端：结果待确认</button>')+'<button class="text-action" type="button" data-go="orders">查看订单历史</button></div>';
       }
 
       function nav(active, captureTarget) {
@@ -4389,7 +4336,39 @@
       let selectedCallerId = "phone-6208";
       let callerReturnPage = "call";
       let callMode = "paid";
-      let pendingBinding = {mask: "138 **** 6208", method: "微信平台验证"};
+      let pendingBinding = null;
+
+      function activateBoundNumber(button) {
+        const isSms=current==="phoneSms";
+        const verified=!isSms||(screen.querySelector("#oc-mobile").value.replace(/\s/g,"")==="18600004471"&&screen.querySelector("#oc-code").value==="628104");
+        const mask=isSms?"186 **** 4471":"138 **** 6208";
+        const method=isSms?"短信验证码验证":"微信平台验证";
+        const confirmed=screen.querySelector("[data-phone-confirm]")?.checked===true;
+        const candidate=clone(business);
+        const matches=candidate.subjects.filter(function(item){return item.maskedNumber.replace(/\s/g,"")===mask.replace(/\s/g,"");});
+        let target=matches[0],result;
+        if(!verified)result={ok:false,code:"VERIFICATION_REQUIRED"};
+        else if(matches.length>1||(target&&target.accountId!==review.accountId))result={ok:false,code:"OWNERSHIP_CONFLICT"};
+        else {
+          if(!target){
+            const identity=candidate.subjects.find(function(item){return item.accountId===review.accountId&&item.source!=="IVR";})?.identity||"UNVERIFIED";
+            target={id:isSms?"MINI-PHONE-18600004471":"MINI-PHONE-WECHAT-6208",maskedNumber:mask,numberType:"MOBILE",source:"MINIAPP",accountId:review.accountId,identity:identity,activation:"INACTIVE",revision:1,claimRisk:"NONE"};
+            candidate.subjects.push(target);
+          }
+          result=B.activateService(candidate,{subjectId:target.id,channel:"MINIAPP",verified:verified,consentVersion:B.labels.consentVersion,confirmed:confirmed,eventId:"MINI-ACTIVATE-"+target.id},new Date());
+          if(result.ok)result=B.loadReviewSnapshot(business,candidate);
+        }
+        if(!result.ok){
+          let error=screen.querySelector("[data-activation-error]");
+          if(!error){error=document.createElement("p");error.dataset.activationError="";error.className="field-help";error.setAttribute("role","alert");button.before(error);}
+          error.textContent=({VERIFICATION_REQUIRED:"未完成实名或号码验证，请检查验证码并完成实名认证。",SUSPENDED:"该号码业务已停用，请联系人工客服。",OWNERSHIP_CONFLICT:"该号码需要账户核验，请使用认领流程或联系人工客服。",CONSENT_REQUIRED:"请先明确同意本次号码授权。"}[result.code]||"开通未完成，请重试或联系人工客服。")+"（"+result.code+"）";
+          return false;
+        }
+        review.subjectId=target.id;
+        selectedCallerId=isSms?"phone-4471":"phone-6208";
+        pendingBinding={subjectId:target.id,mask:mask,method:method};
+        return true;
+      }
 
       function selectedCaller() {
         return callerOptions.find(function (item) { return item.id === selectedCallerId; }) || callerOptions[0];
@@ -4409,11 +4388,12 @@
       }
 
       function callPreparationHtml(isTrial) {
+        const target=currentSubject();const status=target?B.trialStatus(business,target.id,new Date()):{ok:false};const remaining=status.ok?status.value.remainingSeconds:0;
         const intro = isTrial
-          ? '<p class="eyebrow">本次最多可录 03:18</p><h3 class="page-heading">确认本次试用电话</h3><p class="page-lead">此前已累计使用 01:42；本次达到剩余上限时，系统将主动结束通话。</p><div class="trial-usage"><div class="trial-usage-head"><span>拨号前可用时长</span><strong class="trial-remaining">03:18</strong></div><div class="trial-progress" role="progressbar" aria-label="免费试用剩余 3 分 18 秒，共 5 分钟" aria-valuenow="198" aria-valuemin="0" aria-valuemax="300"><span style="width:66%"></span></div><div class="trial-usage-meta"><span>跨通话累计</span><span>用完不继续计费</span></div></div>'
+          ? '<p class="eyebrow">本次最多可录 '+formatSeconds(remaining)+'</p><h3 class="page-heading">确认本次试用电话</h3><p class="page-lead">额度来自原 IVR 试用快照；达到剩余上限时，系统将结束本次录音模拟。</p><div class="trial-usage"><div class="trial-usage-head"><span>拨号前可用时长</span><strong class="trial-remaining">'+formatSeconds(remaining)+'</strong></div><div class="trial-usage-meta"><span>跨通话累计</span><span>用完不自动转付费</span></div></div>'
           : '<p class="eyebrow">小程序拨号 · 仅支持手机号</p><h3 class="page-heading">确认本次取证电话</h3><p class="page-lead">先确认被叫和本次手机主叫号码，再由系统拨号页完成呼出。固话请改用声讯短号。</p>';
         const tips = isTrial ? '' : '<details class="disclosure" style="margin-top:14px;border-top:1px solid var(--oc-line);border-bottom:1px solid var(--oc-line)"><summary><span>打之前看三点</span><span class="disclosure-action"><span class="expand-label">查看</span><span class="collapse-label">收起</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="disclosure-body"><ul class="compact-list"><li>开头确认双方姓名和关系。</li><li>金额、日期和承诺逐项说清。</li><li>保持完整上下文并依法使用录音。</li></ul></div></details>';
-        return '<div class="screen-pad">' + intro + '<h4 class="section-title">拨给谁</h4><div class="phone-number"><span>139 **** 3816</span><i data-lucide="contact" aria-hidden="true"></i></div><h4 class="section-title">本次主叫号码</h4>' + callerSelectButton(isTrial ? 'trialCall' : 'call') + '<p class="field-help">若系统要求选择电话卡，请选择尾号 ' + selectedCaller().mask.slice(-4) + ' 对应的 SIM 卡</p>' + tips + '<div class="switch-row"><div><strong>通话录音提示音</strong><span>默认开启，可在本次通话前关闭</span></div><span class="switch" role="switch" aria-checked="true" aria-label="通话录音提示音已开启"></span></div><div class="notice"><i data-lucide="radio-tower" aria-hidden="true"></i><span>小程序不能指定双卡手机的呼出 SIM。运营商将在接通前核验真实主叫；不一致时立即阻止，不扣录音分钟，也不生成证据。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="dialHandoff" data-call-mode="' + (isTrial ? 'trial' : 'paid') + '">' + (isTrial ? '下一步（最多 03:18）' : '下一步，打开系统拨号盘') + '</button></div>';
+        return '<div class="screen-pad">' + intro + '<h4 class="section-title">拨给谁</h4><div class="phone-number"><span>139 **** 3816</span><i data-lucide="contact" aria-hidden="true"></i></div><h4 class="section-title">本次主叫号码</h4>' + callerSelectButton(isTrial ? 'trialCall' : 'call') + '<p class="field-help">若系统要求选择电话卡，请选择尾号 ' + selectedCaller().mask.slice(-4) + ' 对应的 SIM 卡</p>' + tips + '<div class="switch-row"><div><strong>通话录音提示音</strong><span>默认开启，可在本次通话前关闭</span></div><span class="switch" role="switch" aria-checked="true" aria-label="通话录音提示音已开启"></span></div><div class="notice"><i data-lucide="radio-tower" aria-hidden="true"></i><span>小程序不能指定双卡手机的呼出 SIM。通信侧将在接通前核验真实主叫；不一致时立即阻止，不扣录音分钟，也不生成证据。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="dialHandoff" data-call-mode="' + (isTrial ? 'trial' : 'paid') + '" '+(isTrial&&!remaining?'disabled':'')+'>' + (isTrial ? '下一步（最多 '+formatSeconds(remaining)+'）' : '下一步，打开系统拨号盘') + '</button></div>';
       }
 
       function dialHandoffHtml() {
@@ -4427,11 +4407,21 @@
       }
 
       function bindingAuthorizationHtml(mask) {
-        return '<h4 class="section-title has-lead">本次授权内容</h4><p class="section-lead">授权仅适用于 ' + mask + '，新增号码需要重新验证和授权。</p><div class="authorization-summary"><div class="authorization-item"><i data-lucide="file-check-2" aria-hidden="true"></i><div><strong>协议与公证条件</strong><span>适用《一通话服务协议》和《隐私与数据说明》；申请公证书前需另行完成姓名、身份证号和手机号三要素核验。</span></div></div></div><div class="check-list"><label class="check-row"><input class="consent-input" type="checkbox" data-phone-confirm><span class="check-copy">我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通运营商局端录音及进行必要的数据共享。</span></label></div><p class="field-help">授权协议版本：ONECALL-CARRIER-2026.10 · 将保存本页授权内容快照、账户、号码、时间、设备、IP 和请求编号</p>';
+        return '<h4 class="section-title has-lead">本次授权内容</h4><p class="section-lead">授权仅适用于 ' + mask + '，新增号码需要重新验证和授权。</p><div class="authorization-summary"><div class="authorization-item"><i data-lucide="file-check-2" aria-hidden="true"></i><div><strong>协议与公证条件</strong><span>适用《一通话服务协议》和《隐私与数据说明》；申请公证书前需另行完成姓名、身份证号和手机号三要素核验。</span></div></div></div><div class="check-list"><label class="check-row"><input class="consent-input" type="checkbox" data-phone-confirm><span class="check-copy">我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。</span></label></div><p class="field-help">授权协议版本：ONECALL-SERVICE-2026.10 · 将保存本页授权内容快照、账户、号码、时间、设备、IP 和请求编号</p>';
       }
 
       function provisioningHtml() {
-        return '<div class="screen-pad centered">' + steps(4, "开通结果") + '<div class="hero-mark success"><i data-lucide="badge-check" aria-hidden="true"></i></div><h3 class="page-heading">局端录音已开通</h3><p class="page-lead">运营商已同步返回 ' + pendingBinding.mask + ' 开通成功。免费试用录音时长也已到账。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">开通结果</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>成功</span></div><div class="meta-grid"><div class="meta-item"><span>号码验证</span><strong>' + pendingBinding.method + '</strong></div><div class="meta-item"><span>运营商结果</span><strong>开通成功</strong></div><div class="meta-item"><span>免费试用</span><strong>05:00 已到账</strong></div><div class="meta-item"><span>公证资格</span><strong>尚未核验</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="timer" aria-hidden="true"></i><span>5 分钟可分多次拨打，按有效录音时长累计；累计用完时当前通话会主动挂断。申请线下公证书前仍需完成三要素核验。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="trialHome">开始免费试用</button><button class="secondary-action" type="button" data-go="numbers">管理号码</button></div>';
+        const target=pendingBinding&&business.subjects.find(function(item){return item.id===pendingBinding.subjectId&&item.accountId===review.accountId;});
+        if(!target||!business.activations.some(function(item){return item.subjectId===target.id&&item.channel==="MINIAPP";})||target.activation!=="ACTIVE")return '<div class="screen-pad"><h3 class="page-heading">尚未完成内部开通</h3><p class="page-lead">请先完成实名、号码验证和明确授权，再查看开通结果。</p><button class="primary-action" type="button" data-go="phone">验证号码并开通</button></div>';
+        const status=B.trialStatus(business,target.id,new Date());const trial=status.ok?status.value:null;
+        return '<div class="screen-pad centered">' + steps(4, "开通结果") + '<div class="hero-mark success"><i data-lucide="badge-check" aria-hidden="true"></i></div><h3 class="page-heading">ONECALL 内部服务已开通</h3><p class="page-lead">' + pendingBinding.mask + ' 已完成号码验证、明确同意和内部开通；这不是运营商产品订购回执。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">内部开通结果</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>'+B.labels.activation[target?.activation||"ACTIVE"]+'</span></div><div class="meta-grid"><div class="meta-item"><span>号码验证</span><strong>' + pendingBinding.method + '</strong></div><div class="meta-item"><span>服务同意</span><strong>'+B.labels.consentVersion+'</strong></div><div class="meta-item"><span>试用状态</span><strong>'+(trial?B.labels.trial[trial.status]:"未领取")+'</strong></div><div class="meta-item"><span>试用剩余</span><strong>'+(trial?formatSeconds(trial.remainingSeconds):"00:00")+'</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="timer" aria-hidden="true"></i><span>试用只在主体 + FIRST-TRIAL 首次领取；重复开通、认领或跨端不会重发。支付与权益另行处理。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="trialHome">查看试用状态</button><button class="secondary-action" type="button" data-go="numbers">管理号码</button></div>';
+      }
+
+      function ordersHtml() {
+        const rows=accountOrders().slice().reverse();return '<div class="screen-pad"><h3 class="page-heading">订单历史</h3><p class="page-lead">每笔订单展示创建时锁定的商品、价格、渠道、支付与权益状态。退款和发票仅由线下人工客服承接。</p>'+(rows.length?rows.map(function(order){return '<div class="order-card"><div class="record-top"><div><strong style="font-size:14px">'+order.snapshot.name+'</strong><p class="micro" style="margin:4px 0 0">'+order.id+' · '+order.channel+'</p></div><span class="state '+(order.entitlement==="ISSUED"?'':'warning')+'"><i data-lucide="'+(order.entitlement==="ISSUED"?'circle-check':'clock-3')+'" aria-hidden="true"></i>'+B.labels.entitlement[order.entitlement]+'</span></div><div class="meta-grid"><div class="meta-item"><span>冻结金额</span><strong>'+priceHtml(order.snapshot)+'</strong></div><div class="meta-item"><span>支付</span><strong>'+B.labels.payment[order.payment]+'</strong></div><div class="meta-item"><span>商品版本</span><strong>'+order.snapshot.versionId+'</strong></div><div class="meta-item"><span>有效期</span><strong>'+order.snapshot.validDays+' 天</strong></div></div><button class="text-action" type="button" data-go="support">退款 / 发票联系人工客服</button></div>';}).join(''):'<div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>当前没有共享业务订单。</span></div>')+'<div class="notice"><i data-lucide="headphones" aria-hidden="true"></i><span>'+B.support.contactLabel+'。不提供在线退款、开票提交或成功回执。</span></div></div>';
+      }
+      function profileHtml() {
+        const claimed=business.subjects.find(function(item){return item.accountId===review.accountId&&item.source==="IVR";});const target=claimed||purchaseSubject();return '<div class="screen-pad"><div class="profile-head"><span class="avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><div class="profile-name">'+(target?.maskedNumber||"DEMO 账户")+'</div><div class="profile-sub">'+(target?B.labels.identity[target.identity]+' · '+B.labels.activation[target.activation]:"未关联业务主体")+'</div></div></div><div class="metric-strip"><div class="metric"><strong>'+business.evidence.filter(function(item){return target&&item.subjectId===target.id;}).length+'</strong><span>录音元数据</span></div><div class="metric"><strong>'+accountOrders().length+'</strong><span>订单</span></div><div class="metric"><strong>'+accountEntitlements().length+'</strong><span>权益</span></div></div><h4 class="section-title">账户与权益</h4><div class="row-list">'+row("phone-incoming","认领 IVR 已有业务",claimed?"已关联；可查看元数据":"登录并验证同一号码","ivrReturn")+row("phone","主叫号码与录音设置","手机号、固话、授权和内部开通","numbers")+row("wallet-cards","套餐与用量","共享目录、试用和独立付费权益","plans")+row("receipt-text","订单历史","退款和发票联系人工客服","orders")+'</div><h4 class="section-title">帮助与设置</h4><div class="row-list">'+row("book-open","取证小贴士","依法使用录音与材料整理建议","tips")+row("shield","隐私与数据说明","处理目的、保存期限与用户权利","privacy")+row("headphones","线下人工客服",B.support.contactLabel,"support")+'</div></div>';
       }
 
       const pages = {
@@ -4442,10 +4432,14 @@
           navTarget: "capture",
           html: captureHomeHtml
         },
+        ivrReturn: {title:"认领已有业务",back:true,html:ivrReturnHtml},
+        claimVerify: {title:"同号验证",back:true,html:claimVerifyHtml},
+        claimResult: {title:"认领结果",back:true,html:claimResultHtml},
+        claimBlocked: {title:"线下核验",back:true,html:claimBlockedHtml},
         intro: {
-          title: "开通局端录音",
+          title: "开通内部录音服务",
           back: true,
-          html: '<div class="screen-pad">' + steps(1, "开通授权说明") + '<p class="eyebrow">运营商通信网络侧录音</p><p class="page-lead">录音由运营商在通信网络侧生成，不依赖手机本地录音。你需完成三项操作，系统会按四个节点展示开通状态；首次开通成功后领取累计 5 分钟免费试用。</p><div class="step-list"><div class="step-row"><span class="step-num">01</span><span class="step-copy"><strong>实名认证</strong><span>姓名与大陆居民身份证二要素核验；异常时可能升级活体核验</span></span></div><div class="step-row"><span class="step-num">02</span><span class="step-copy"><strong>绑定本人使用的主叫号码</strong><span>手机号可使用微信或短信验证；独立固话直线使用运营商主叫验证</span></span></div><div class="step-row"><span class="step-num">03</span><span class="step-copy"><strong>确认授权并获取结果</strong><span>在绑定页确认每个号码的授权内容；提交后取得开通成功或失败结果</span></span></div></div><div class="disclosure-list"><details class="disclosure"><summary><span>能力与证据边界</span><span class="disclosure-action"><span class="expand-label">查看详情</span><span class="collapse-label">收起</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="disclosure-body"><ul class="compact-list"><li>小程序直接拨号仅支持手机号；固话需从已绑定座机拨打运营商声讯短号。</li><li>运营商覆盖地区、号码类型、漫游或特殊通话可能影响开通和录音。</li><li>收到原始录音后记录哈希、可信时间和处理日志，并按规则提交合作公证处存证。</li><li>存证有助于说明来源和完整性，不代表法院或其他机关必然采信。</li></ul></div></details><details class="disclosure"><summary><span>数据、费用和撤销</span><span class="disclosure-action"><span class="expand-label">查看详情</span><span class="collapse-label">收起</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="disclosure-body"><ul class="compact-list"><li>身份、主叫号码、录音及必要运营商数据仅按协议约定用途处理；正式保存期限以法务版本为准。</li><li>免费试用可分多次使用，累计有效录音达到 5 分钟时当前通话会主动挂断；手机号和固话共用账户权益。</li><li>撤销只影响后续录音，不修改既有证据；手机号和固话申请公证书时分别按公证机构规则核验号码归属。</li></ul></div></details></div><div class="notice"><i data-lucide="scale" aria-hidden="true"></i><span>请依法使用录音，并根据适用场景履行必要的通话告知义务。每个号码的授权内容将在绑定号码页内确认。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="identity">同意授权并开始开通</button><p class="button-note">可查看完整服务协议、隐私与数据说明及费用规则</p></div>'
+          html: '<div class="screen-pad">' + steps(1, "开通授权说明") + '<p class="eyebrow">ONECALL 内部服务</p><p class="page-lead">普通开通仍需实名认证、号码验证和明确同意；内部开通不等于运营商产品订购。</p><div class="step-list"><div class="step-row"><span class="step-num">01</span><span class="step-copy"><strong>实名认证</strong><span>普通购买路径保持身份核验要求</span></span></div><div class="step-row"><span class="step-num">02</span><span class="step-copy"><strong>验证本人使用的主叫号码</strong><span>手机号使用微信或短信；独立固话使用主叫挑战</span></span></div><div class="step-row"><span class="step-num">03</span><span class="step-copy"><strong>确认服务同意并内部开通</strong><span>记录版本化同意快照，不生成运营商业务回执</span></span></div></div><div class="notice"><i data-lucide="scale" aria-hidden="true"></i><span>试用按主体永久一次。若已通过 IVR 试用，请走认领入口，避免重复开通。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="identity">同意并开始普通开通</button><button class="secondary-action" type="button" data-go="ivrReturn">已通过 IVR 试用，认领已有业务</button></div>'
         },
         identity: {
           title: "实名认证",
@@ -4485,7 +4479,7 @@
         landlineBind: {
           title: "绑定固话号码",
           back: true,
-          html: '<div class="screen-pad"><p class="eyebrow">新增主叫号码 · 固话</p><h3 class="page-heading">绑定本人或本企业使用的固话</h3><p class="page-lead">填写带区号的完整号码。验证时需要使用该座机拨打运营商提供的声讯短号。</p><div class="field"><label for="oc-landline">固话号码</label><div class="input-wrap"><input id="oc-landline" value="010-88886688" aria-label="带区号的固话号码"></div><p class="field-help">号码将按国家码、区号和本地号码标准化保存；分机号不作为主叫号码</p></div><div class="notice"><i data-lucide="phone" aria-hidden="true"></i><span><strong>仅支持独立固话直线</strong><br>运营商必须能够返回与所填号码一致的真实主叫。企业总机、PBX 和仅显示统一外呼号的分机暂不支持。</span></div><div class="authorization-summary"><div class="authorization-item"><i data-lucide="file-check-2" aria-hidden="true"></i><div><strong>授权与号码归属边界</strong><span>主叫验证只证明可从该线路完成验证呼叫，不代表运营商登记人或号码产权已经与账户身份一致；申请公证书时按公证机构规则另行核验。</span></div></div></div><div class="check-list"><label class="check-row"><input class="consent-input" type="checkbox" data-landline-confirm><span class="check-copy">我确认本人或本企业对该固话具有合法使用和管理权限，并同意按上述范围处理号码及通话相关敏感信息、开通运营商局端录音及进行必要的数据共享。</span></label></div><div class="spacer"></div><button class="primary-action" type="button" data-landline-submit data-go="landlineVerify" disabled>同意并开始主叫验证</button><button class="secondary-action" type="button" data-go="phone">改绑手机号</button></div>'
+          html: '<div class="screen-pad"><p class="eyebrow">新增主叫号码 · 固话</p><h3 class="page-heading">绑定本人或本企业使用的固话</h3><p class="page-lead">填写带区号的完整号码。验证时需要使用该座机完成真实主叫挑战。</p><div class="field"><label for="oc-landline">固话号码</label><div class="input-wrap"><input id="oc-landline" value="010-88886688" aria-label="带区号的固话号码"></div><p class="field-help">号码将按国家码、区号和本地号码标准化保存；分机号不作为主叫号码</p></div><div class="notice"><i data-lucide="phone" aria-hidden="true"></i><span><strong>仅支持独立固话直线</strong><br>运营商必须能够返回与所填号码一致的真实主叫。企业总机、PBX 和仅显示统一外呼号的分机暂不支持。</span></div><div class="authorization-summary"><div class="authorization-item"><i data-lucide="file-check-2" aria-hidden="true"></i><div><strong>授权与号码归属边界</strong><span>主叫验证只证明可从该线路完成验证呼叫，不代表运营商登记人或号码产权已经与账户身份一致；申请公证书时按公证机构规则另行核验。</span></div></div></div><div class="check-list"><label class="check-row"><input class="consent-input" type="checkbox" data-landline-confirm><span class="check-copy">我确认本人或本企业对该固话具有合法使用和管理权限，并同意按上述范围处理号码及通话相关敏感信息、开通一通话内部录音服务及进行必要的数据共享。</span></label></div><div class="spacer"></div><button class="primary-action" type="button" data-landline-submit data-go="landlineVerify" disabled>同意并开始主叫验证</button><button class="secondary-action" type="button" data-go="phone">改绑手机号</button></div>'
         },
         landlineVerify: {
           title: "固话主叫验证",
@@ -4493,14 +4487,14 @@
           html: '<div class="screen-pad"><p class="eyebrow">验证 010 **** 6688</p><h3 class="page-heading">用这部座机完成一次验证呼叫</h3><p class="page-lead">运营商将读取本次呼叫的真实主叫，并与待绑定号码完全匹配。</p><div class="checkout-summary"><div class="checkout-row total"><span>验证声讯短号</span><strong>95XXX</strong></div><div class="checkout-row"><span>验证短码</span><strong>483 621</strong></div><div class="checkout-row"><span>有效时间</span><strong>10 分钟</strong></div></div><div class="step-list"><div class="step-row"><span class="step-num">01</span><span class="step-copy"><strong>拿起待绑定座机</strong><span>必须使用 010 **** 6688 对应的实际线路</span></span></div><div class="step-row"><span class="step-num">02</span><span class="step-copy"><strong>拨打页面显示的声讯短号</strong><span>95XXX 为原型占位，正式号码由后台按运营商覆盖下发</span></span></div><div class="step-row"><span class="step-num">03</span><span class="step-copy"><strong>按语音提示输入 483 621</strong><span>短码一次有效，超时或使用后不能重放</span></span></div></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>主叫不可识别、号码不一致、线路未覆盖或短码失效时验证失败，不会绑定其他实际主叫号码。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="landlineReady">我已完成呼叫，查询结果</button><button class="secondary-action" type="button" data-go="landlineBind">重新填写号码</button></div>'
         },
         landlineReady: {
-          title: "固话开通成功",
+          title: "固话内部服务",
           back: true,
-          html: '<div class="screen-pad centered"><div class="hero-mark success"><i data-lucide="badge-check" aria-hidden="true"></i></div><h3 class="page-heading">固话已验证并开通</h3><p class="page-lead">运营商返回的真实主叫与 010 **** 6688 完全一致，局端录音服务已开通。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">主叫号码</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="meta-grid"><div class="meta-item"><span>号码类型</span><strong>独立固话直线</strong></div><div class="meta-item"><span>验证方式</span><strong>运营商主叫验证</strong></div><div class="meta-item"><span>局端录音</span><strong>已授权并开通</strong></div><div class="meta-item"><span>公证资格</span><strong>需另行核验归属</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="info" aria-hidden="true"></i><span>小程序不会直接拨打固话取证电话。后续请使用这部座机拨打声讯短号，录音分钟与账户下其他主叫号码共享。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="landlineCall">查看固话取证方式</button><button class="secondary-action" type="button" data-go="numbers">查看全部主叫号码</button></div>'
+          html: '<div class="screen-pad centered"><div class="hero-mark success"><i data-lucide="badge-check" aria-hidden="true"></i></div><h3 class="page-heading">固话已验证并开通</h3><p class="page-lead">真实主叫挑战与 010 **** 6688 完全一致；ONECALL 内部录音服务已开通。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">主叫号码</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="meta-grid"><div class="meta-item"><span>号码类型</span><strong>独立固话直线</strong></div><div class="meta-item"><span>验证方式</span><strong>主叫挑战</strong></div><div class="meta-item"><span>内部服务</span><strong>已同意并开通</strong></div><div class="meta-item"><span>公证资格</span><strong>需另行核验归属</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="info" aria-hidden="true"></i><span>小程序不会直接拨打固话取证电话。后续请使用这部座机拨打声讯短号，录音分钟与账户下其他主叫号码共享。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="landlineCall">查看固话取证方式</button><button class="secondary-action" type="button" data-go="numbers">查看全部主叫号码</button></div>'
         },
         provisioningFailed: {
           title: "开通失败",
           back: true,
-          html: '<div class="screen-pad centered">' + steps(4, "开通结果") + '<div class="hero-mark danger"><i data-lucide="circle-x" aria-hidden="true"></i></div><h3 class="page-heading">本次开通未成功</h3><p class="page-lead">运营商同步返回：当前号码或所在地区暂不支持该服务。页面不会展示供应商内部错误码。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">开通结果</span><span class="state danger"><i data-lucide="circle-x" aria-hidden="true"></i>失败</span></div><div class="meta-grid"><div class="meta-item"><span>失败记录</span><strong>已保留</strong></div><div class="meta-item"><span>号码状态</span><strong>未开通</strong></div><div class="meta-item"><span>再次提交</span><strong>可立即重试</strong></div><div class="meta-item"><span>历史证据</span><strong>不受影响</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="shield-alert" aria-hidden="true"></i><span>重试不会覆盖本次失败记录；连续失败或原因不明确时转人工处理。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="provisioning">重新提交开通</button><button class="secondary-action" type="button" data-go="support">联系人工客服</button></div>'
+          html: '<div class="screen-pad centered">' + steps(4, "开通结果") + '<div class="hero-mark danger"><i data-lucide="circle-x" aria-hidden="true"></i></div><h3 class="page-heading">本次开通未成功</h3><p class="page-lead">ONECALL 内部服务本次未完成开通。通信主叫识别与内部业务开通分别处理。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">开通结果</span><span class="state danger"><i data-lucide="circle-x" aria-hidden="true"></i>失败</span></div><div class="meta-grid"><div class="meta-item"><span>失败记录</span><strong>已保留</strong></div><div class="meta-item"><span>号码状态</span><strong>未开通</strong></div><div class="meta-item"><span>再次提交</span><strong>可立即重试</strong></div><div class="meta-item"><span>历史证据</span><strong>不受影响</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="shield-alert" aria-hidden="true"></i><span>重试不会覆盖本次失败记录；连续失败或原因不明确时转人工处理。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="provisioning">重新提交开通</button><button class="secondary-action" type="button" data-go="support">联系人工客服</button></div>'
         },
         provisioning: {
           title: "开通成功",
@@ -4522,7 +4516,7 @@
         trialLimit: {
           title: "通话已结束",
           back: true,
-          html: '<div class="screen-pad centered"><div class="hero-mark warning"><i data-lucide="phone-off" aria-hidden="true"></i></div><h3 class="page-heading">免费试用时长已用完</h3><p class="page-lead">累计有效录音达到 05:00，系统已主动挂断本次通话，不会继续产生录音用量。</p><div class="surface" style="margin-top:22px;text-align:left"><div class="record-top"><span class="record-label">本次通话</span><span class="state warning"><i data-lucide="timer-off" aria-hidden="true"></i>达到上限</span></div><div class="meta-grid"><div class="meta-item"><span>此前已用</span><strong>01:42</strong></div><div class="meta-item"><span>本次录音</span><strong>03:18</strong></div><div class="meta-item"><span>累计录音</span><strong>05:00</strong></div><div class="meta-item"><span>录音状态</span><strong>正在固证</strong></div></div></div><div class="notice" style="text-align:left"><i data-lucide="shield-check" aria-hidden="true"></i><span>已录制的 03:18 会按正常流程完成哈希复核、内部固证和公证处存证；试用结束不会删除已形成的证据。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="productDetail" data-product="个人基础">选择套餐，继续取证</button><button class="secondary-action" type="button" data-go="evidenceBox">查看证据箱</button></div>'
+          html: function(){const target=currentSubject(),r=target?B.trialStatus(business,target.id,new Date()):{ok:false},t=r.ok?r.value:null,g=t?.grant;return '<div class="screen-pad centered"><div class="hero-mark warning"><i data-lucide="phone-off" aria-hidden="true"></i></div><h3 class="page-heading">试用通话已结束</h3><p class="page-lead">达到有效录音上限时系统会主动挂断；实际用量以原试用流水为准。</p><div class="checkout-summary"><div class="checkout-row"><span>原发放</span><strong>'+formatSeconds(g?.grantedSeconds||0)+'</strong></div><div class="checkout-row"><span>累计已用</span><strong>'+formatSeconds(g?.usedSeconds||0)+'</strong></div><div class="checkout-row"><span>剩余</span><strong>'+formatSeconds(t?.remainingSeconds||0)+'</strong></div><div class="checkout-row"><span>规则</span><strong>'+(g?'v'+g.ruleVersion:'未领取')+'</strong></div></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>已形成的录音元数据正在固证；试用结束不会删除已有证据。本页为状态展示，不新增用量。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="plans">选择独立购买权益</button><button class="secondary-action" type="button" data-go="evidenceBox">查看证据箱</button></div>';}
         },
         captureReady: {
           title: "一通话",
@@ -4678,7 +4672,7 @@
         numbers: {
           title: "主叫号码",
           back: true,
-          html: '<div class="screen-pad"><div class="record-top"><div><h3 class="page-heading" style="font-size:22px;line-height:29px">已绑定 3 / 3 个主叫号码</h3><p class="page-lead">2 个手机号和 1 个固话均可用于取证，共享账户套餐额度并分别统计录音。</p></div></div><div class="number-card" style="margin-top:18px"><div class="number-top"><span class="number-mask">138 **** 6208</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="number-meta"><div><span>号码类型</span><strong>手机号</strong></div><div><span>号码验证</span><strong>微信平台验证</strong></div><div><span>接入方式</span><strong>小程序拨号</strong></div><div><span>本账期录音</span><strong>5.7 分钟</strong></div></div><div class="tag-row"><span class="tag">默认手机主叫</span><span class="tag">套餐额度共享</span></div></div><div class="number-card"><div class="number-top"><span class="number-mask">186 **** 4471</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="number-meta"><div><span>号码类型</span><strong>手机号</strong></div><div><span>号码验证</span><strong>短信验证码验证</strong></div><div><span>接入方式</span><strong>小程序拨号</strong></div><div><span>本账期录音</span><strong>0 分钟</strong></div></div><div class="tag-row"><span class="tag">公证资格已过期</span><span class="tag">套餐额度共享</span></div></div><div class="number-card"><div class="number-top"><span class="number-mask">010 **** 6688</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="number-meta"><div><span>号码类型</span><strong>独立固话直线</strong></div><div><span>号码验证</span><strong>运营商主叫验证</strong></div><div><span>接入方式</span><strong>拨打声讯短号</strong></div><div><span>本账期录音</span><strong>17.3 分钟</strong></div></div><div class="tag-row"><span class="tag">归属待公证前核验</span><span class="tag">套餐额度共享</span></div><button class="text-action" type="button" data-go="landlineCall">查看固话取证方式</button></div><div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>个人账户手机号与固话合计最多三个。号码验证证明的范围不同，均不直接代表运营商实名或号码产权一致；申请公证书时按号码类型核验。</span></div><div class="spacer"></div><button class="primary-action" type="button" disabled>已达到 3 个主叫号码上限</button><button class="secondary-action" type="button" data-go="revokeAuth">停用或撤销授权</button></div>'
+          html: function(){const selected=currentSubject();return '<div class="screen-pad"><p class="page-lead" data-selected-subject="'+(selected?.id||"")+'">当前业务号码：'+(selected?.maskedNumber||"未选择")+'</p><div class="record-top"><div><h3 class="page-heading" style="font-size:22px;line-height:29px">已绑定 3 / 3 个主叫号码</h3><p class="page-lead">2 个手机号和 1 个固话均可用于取证，共享账户套餐额度并分别统计录音。</p></div></div><div class="number-card" style="margin-top:18px"><div class="number-top"><span class="number-mask">138 **** 6208</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="number-meta"><div><span>号码类型</span><strong>手机号</strong></div><div><span>号码验证</span><strong>微信平台验证</strong></div><div><span>接入方式</span><strong>小程序拨号</strong></div><div><span>本账期录音</span><strong>5.7 分钟</strong></div></div><div class="tag-row"><span class="tag">默认手机主叫</span><span class="tag">套餐额度共享</span></div></div><div class="number-card"><div class="number-top"><span class="number-mask">186 **** 4471</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="number-meta"><div><span>号码类型</span><strong>手机号</strong></div><div><span>号码验证</span><strong>短信验证码验证</strong></div><div><span>接入方式</span><strong>小程序拨号</strong></div><div><span>本账期录音</span><strong>0 分钟</strong></div></div><div class="tag-row"><span class="tag">公证资格已过期</span><span class="tag">套餐额度共享</span></div></div><div class="number-card"><div class="number-top"><span class="number-mask">010 **** 6688</span><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可取证</span></div><div class="number-meta"><div><span>号码类型</span><strong>独立固话直线</strong></div><div><span>号码验证</span><strong>运营商主叫验证</strong></div><div><span>接入方式</span><strong>拨打声讯短号</strong></div><div><span>本账期录音</span><strong>17.3 分钟</strong></div></div><div class="tag-row"><span class="tag">归属待公证前核验</span><span class="tag">套餐额度共享</span></div><button class="text-action" type="button" data-go="landlineCall">查看固话取证方式</button></div><div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>个人账户手机号与固话合计最多三个。号码验证证明的范围不同，均不直接代表运营商实名或号码产权一致；申请公证书时按号码类型核验。</span></div><div class="spacer"></div><button class="primary-action" type="button" disabled>已达到 3 个主叫号码上限</button><button class="secondary-action" type="button" data-go="revokeAuth">停用或撤销授权</button></div>';}
         },
         revokeAuth: {
           title: "停用或撤销授权",
@@ -4712,15 +4706,15 @@
           html: '<div class="screen-pad"><h3 class="page-heading">可验证、可交付的材料</h3><p class="page-lead">下载链接短期有效且可撤销。公证处存证验证报告不等同于公证书。</p><h4 class="section-title">可查看</h4><div class="order-card"><div class="record-top"><div><strong style="font-size:14px">公证处存证验证报告</strong><p class="micro" style="margin:4px 0 0">关联证据：5万元借款确认</p></div><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>可查看</span></div><div class="meta-grid"><div class="meta-item"><span>公证处记录号</span><strong>YUZHANG-7F2A</strong></div><div class="meta-item"><span>获取时间</span><strong>10 月 13 日 16:42</strong></div><div class="meta-item"><span>报告哈希</span><strong>6ad2...a91</strong></div><div class="meta-item"><span>链接有效期</span><strong>24 小时</strong></div></div><button class="text-action" type="button" data-go="progress">查看报告记录</button></div><h4 class="section-title">生成中</h4><div class="order-card"><div class="record-top"><div><strong style="font-size:14px">完整证据包</strong><p class="micro" style="margin:4px 0 0">订单 OC20261014018</p></div><span class="state warning"><i data-lucide="clock-3" aria-hidden="true"></i>生成中</span></div><button class="text-action" type="button" data-go="progress">查看进度</button></div></div>'
         },
         orders: {
-          title: "订单与发票",
+          title: "订单历史",
           back: true,
-          html: '<div class="screen-pad"><h3 class="page-heading">支付、退款与开票记录</h3><div class="order-card" style="margin-top:18px"><div class="record-top"><div><strong style="font-size:14px">30分钟通话包</strong><p class="micro" style="margin:4px 0 0">OC20261019026 · 今天 09:12</p></div><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>权益已到账</span></div><div class="record-top" style="margin-top:14px"><span class="record-label">实付金额</span><span class="order-amount">¥18.9</span></div><div class="tag-row"><span class="tag">微信支付</span><span class="tag">可申请发票</span></div><button class="text-action" type="button" data-go="usageDetail">查看权益与用量</button></div><div class="order-card"><div class="record-top"><div><strong style="font-size:14px">个人基础 · 包年</strong><p class="micro" style="margin:4px 0 0">OC20261001008 · 10 月 1 日</p></div><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>使用中</span></div><div class="record-top" style="margin-top:14px"><span class="record-label">实付金额</span><span class="order-amount">¥390</span></div><div class="tag-row"><span class="tag">12 期 · 首期已到账</span><span class="tag">PLAN-BASIC-Y1-2026.10-A</span><span class="tag">可申请发票</span></div><button class="text-action" type="button" data-go="usageDetail">查看权益发放计划</button></div><div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>订单展示购买时锁定的商品、周期、价格与权益快照；后台后续调价不会修改历史金额或后续待发放权益。线下公证费用另行确认。</span></div></div>'
+          html: ordersHtml
         },
         profile: {
           title: "我的",
           back: false,
           nav: "profile",
-          html: '<div class="screen-pad"><div class="profile-head"><span class="avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><div class="profile-name">138 **** 6208</div><div class="profile-sub">已实名 · 3 个主叫号码已开通局端录音</div></div></div><div class="metric-strip"><div class="metric"><strong>3</strong><span>已固证</span></div><div class="metric"><strong>0</strong><span>公证书</span></div><div class="metric"><strong>可用</strong><span>账户状态</span></div></div><h4 class="section-title">账户与权益</h4><div class="row-list">' + row("phone", "主叫号码与录音设置", "手机号、固话、授权、开通和用量", "numbers") + row("wallet-cards", "套餐与用量", "查看全部号码额度、流水和加量包", "plans") + row("badge-check", "我的证书与报告", "下载记录和有效期限", "documentCenter") + row("receipt-text", "订单与发票", "支付、退款和开票记录", "orders") + '</div><h4 class="section-title">帮助与设置</h4><div class="row-list">' + row("book-open", "取证小贴士", "依法使用录音与材料整理建议", "tips") + row("shield", "隐私与数据说明", "处理目的、保存期限与用户权利", "privacy") + row("headphones", "联系客服", "异常开通、补件和权益问题", "support") + '</div><div class="trust-strip"><span class="trust-item"><i data-lucide="lock-keyhole" aria-hidden="true"></i>加密保存</span><span class="trust-item"><i data-lucide="stamp" aria-hidden="true"></i>时间防篡改</span><span class="trust-item"><i data-lucide="file-check-2" aria-hidden="true"></i>支持出证</span></div></div>'
+          html: profileHtml
         },
         tips: {
           title: "取证小贴士",
@@ -4733,9 +4727,9 @@
           html: '<div class="screen-pad"><p class="eyebrow">版本 ONECALL-PRIVACY-2026.10</p><h3 class="page-heading">你的数据如何被使用</h3><p class="page-lead">身份信息、号码、录音和证据材料只按明确目的处理；不同处理活动分别记录授权。</p><div class="disclosure-list"><details class="disclosure" open><summary><span>身份与号码信息</span><span class="disclosure-action"><span class="expand-label">查看详情</span><span class="collapse-label">收起</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="disclosure-body"><ul class="compact-list"><li>姓名和身份证号用于实名核验；身份证号加密保存，检索使用不可逆索引。</li><li>微信/短信用于验证手机号；运营商真实主叫用于验证独立固话。以上结果均不直接代表运营商实名、登记归属或号码产权一致。</li><li>每次取证电话均以运营商识别的真实主叫为准。申请线下公证书前，手机号另做三要素核验，固话按公证机构规则核验登记归属或合法使用权。</li></ul></div></details><details class="disclosure"><summary><span>录音、证据与 AI</span><span class="disclosure-action"><span class="expand-label">查看详情</span><span class="collapse-label">收起</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="disclosure-body"><ul class="compact-list"><li>原始材料用于加密保存、完整性校验、存证和用户申请的出证。</li><li>AI 转写和摘要是派生内容，不覆盖原始录音；处理范围以用户授权和权益为准。</li><li>公证处默认接收经批准的最小元数据和哈希，不默认接收完整正文或身份信息。</li></ul></div></details><details class="disclosure"><summary><span>保存、撤销与用户权利</span><span class="disclosure-action"><span class="expand-label">查看详情</span><span class="collapse-label">收起</span><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary><div class="disclosure-body"><ul class="compact-list"><li>正式保存期限、删除和法定留存规则由上线法务版本确认。</li><li>撤销号码授权只停止后续录音，不修改既有证据。</li><li>用户可申请查阅、更正、导出、注销或投诉；依法不能立即删除时说明理由。</li></ul></div></details></div><div class="spacer"></div><button class="secondary-action" type="button" data-go="support">咨询数据与隐私问题</button></div>'
         },
         support: {
-          title: "联系客服",
+          title: "线下人工客服",
           back: true,
-          html: '<div class="screen-pad"><h3 class="page-heading">告诉我们遇到的问题</h3><p class="page-lead">开通失败、存证异常、补件、订单和权益问题会生成咨询记录，客服只能查看完成处理所需的最少信息。</p><h4 class="section-title">选择问题类型</h4><div class="row-list">' + row("radio-tower", "开通或号码问题", "实名、短信、授权和运营商开通", null, null, 'data-action="support-type"') + row("shield-alert", "证据或存证异常", "上传、哈希、处理状态和公证处记录", null, null, 'data-action="support-type"') + row("file-check-2", "出证与补件", "资格核验、材料、受理和交付", null, null, 'data-action="support-type"') + row("wallet-cards", "套餐、支付与发票", "额度、扣减、退款和开票", null, null, 'data-action="support-type"') + '</div><div class="field"><label for="oc-support-detail">问题说明</label><div class="input-wrap textarea-wrap"><textarea id="oc-support-detail" aria-label="问题说明">请描述问题发生时间和页面，不要填写完整身份证号、验证码或证据正文。</textarea></div></div><div data-support-result hidden></div><div class="spacer"></div><button class="primary-action" type="button" data-action="support-start">提交咨询</button><p class="button-note">提交后可在订单与咨询记录中查看处理进度</p></div>'
+          html: function(){return supportHtml(review.blockedCode?"claim":"consultation");}
         }
       };
 
@@ -4750,6 +4744,7 @@
 
       function show(pageId, pushHistory) {
         if (!pages[pageId]) return;
+        if (pageId === "purchaseConfirm" && current !== pageId) { checkoutOffer = clone(selectedProduct()); review.notice = ""; }
         if (pushHistory !== false && current !== pageId) history.push(current);
         if (pageId === "trialCall") callMode = "trial";
         if (pageId === "call") callMode = "paid";
@@ -4783,7 +4778,7 @@
         const billingCycleButton = event.target.closest("[data-billing-cycle]");
         if (billingCycleButton && root.contains(billingCycleButton)) {
           const product = selectedProduct();
-          if (product.type === "SUBSCRIPTION" && product.billingOptions[billingCycleButton.dataset.billingCycle]) {
+          if (product && product.type === "SUBSCRIPTION" && personalOffers().some(function(item){return item.productCode===product.productCode&&item.billingCycle===billingCycleButton.dataset.billingCycle;})) {
             billingCycleContext = billingCycleButton.dataset.billingCycle;
             show("productDetail", false);
             remember();
@@ -4877,15 +4872,31 @@
             actionButton.setAttribute("aria-pressed", "true");
             return;
           }
-          if (action === "support-start") {
-            const result = screen.querySelector("[data-support-result]");
-            if (result) {
-              result.hidden = false;
-              result.className = "support-result";
-              result.textContent = "咨询已提交 · 编号 CS20261014027。证据原文和敏感信息不会自动附带。";
-            }
-            actionButton.disabled = true;
-            actionButton.textContent = "咨询已提交";
+          if (action === "claim-submit") {
+            const target=currentSubject();
+            const result=target?B.claimSubject(business,{subjectId:target.id,accountId:review.accountId,verification:{verified:true,subjectId:target.id,method:target.numberType==="LANDLINE"?"CALLER_CHALLENGE":"WECHAT_PHONE"},requestId:"MINI-CLAIM-"+target.id+"-"+review.accountId},new Date()):{ok:false,code:"NOT_FOUND"};
+            if(result.ok){review.blockedCode=null;show("claimResult");}else if(["CLAIM_CONFLICT","RECYCLED_NUMBER_REVIEW"].includes(result.code)){review.blockedCode=result.code;show("claimBlocked");}else{review.notice=result.code;show("claimVerify",false);}
+            return;
+          }
+          if (action === "complete-identity") {
+            const target=currentSubject(),candidate=B.snapshot(business).value,copy=candidate.subjects.find(function(item){return target&&item.id===target.id;});
+            if(copy){copy.identity="VERIFIED";copy.revision+=1;const loaded=B.loadReviewSnapshot(business,candidate);if(loaded.ok)show("claimResult",false);}
+            return;
+          }
+          if (action === "create-order") {
+            const offer=selectedOffer(),target=purchaseSubject();
+            const result=offer&&target?B.createOrder(business,{subjectId:target.id,accountId:target.accountId,channel:"MINIAPP",versionId:offer.versionId,versionToken:offer.versionToken||B.offerVersionToken(offer),confirmed:true,consentVersion:B.labels.consentVersion,idempotencyKey:"MINI-ORDER-"+target.id+"-"+offer.versionId},new Date()):{ok:false,code:"VERIFICATION_REQUIRED"};
+            if(result.ok){review.orderId=result.value.id;show(result.value.payment==="PAID"?"paymentSuccess":"paymentIssue");}else{review.notice=result.code;show(target&&target.identity!=="VERIFIED"?"claimResult":"purchaseConfirm",false);}
+            return;
+          }
+          if (action === "simulate-payment" || action === "query-payment") {
+            const order=currentOrder(),paymentResult=action==="query-payment"?"PAID":actionButton.dataset.result;
+            const result=order?B.applyPaymentResult(business,{orderId:order.id,result:paymentResult,eventId:"MINI-PAY-"+order.id+"-"+paymentResult},new Date()):{ok:false,code:"NOT_FOUND"};
+            if(result.ok){review.orderId=result.value.id;show(paymentResult==="PAID"?"paymentSuccess":"paymentIssue",false);}return;
+          }
+          if (action === "issue-entitlements") {
+            const order=currentOrder(),result=order?B.issueEntitlements(business,{orderId:order.id,eventId:"MINI-ISSUE-"+order.id},new Date()):{ok:false,code:"NOT_FOUND"};
+            if(result.ok)show("paymentSuccess",false);
             return;
           }
           if (action === "sms-resend") {
@@ -4926,8 +4937,8 @@
           }
           if (goButton.dataset.returnPage) callerReturnPage = goButton.dataset.returnPage;
           if (goButton.dataset.callMode) callMode = goButton.dataset.callMode;
-          if (goButton.dataset.bindingMask) {
-            pendingBinding = {mask: goButton.dataset.bindingMask, method: goButton.dataset.bindingMethod || "号码验证"};
+          if (goButton.dataset.phoneSubmit !== undefined || goButton.hasAttribute("data-phone-submit")) {
+            if(!activateBoundNumber(goButton))return;
           }
           if (goButton.dataset.go === "captureResult" && captureEntitlementMode === "free" && freeEvidenceRemaining > 0) {
             freeEvidenceRemaining = 0;
@@ -4988,8 +4999,8 @@
       if (savedEvidenceKind && captureProfiles[savedEvidenceKind]) captureContext = captureProfiles[savedEvidenceKind];
       if (savedEvidenceMode === "time" || savedEvidenceMode === "matter") evidenceMode = savedEvidenceMode;
       if (["all", "call", "photo", "video", "audio", "file"].indexOf(savedEvidenceFilter) > -1) evidenceFilter = savedEvidenceFilter;
-      if (savedProduct && catalogProducts[savedProduct]) productContext = savedProduct;
-      if (selectedProduct().type === "SUBSCRIPTION" && selectedProduct().billingOptions[savedBillingCycle]) billingCycleContext = savedBillingCycle;
+      if (savedProduct && productCodes[savedProduct]) productContext = savedProduct;
+      if (["MONTHLY","QUARTERLY","ANNUAL"].includes(savedBillingCycle)) billingCycleContext = savedBillingCycle;
       if (callerOptions.some(function (item) { return item.id === savedCallerId && item.active; })) selectedCallerId = savedCallerId;
       if (savedCaptureEntitlementMode === "free" || savedCaptureEntitlementMode === "plan") captureEntitlementMode = savedCaptureEntitlementMode;
       if (savedFreeEvidenceRemaining === 0 || savedFreeEvidenceRemaining === 1) freeEvidenceRemaining = savedFreeEvidenceRemaining;
@@ -5015,8 +5026,8 @@
         if (stateEvidenceKind && captureProfiles[stateEvidenceKind]) captureContext = captureProfiles[stateEvidenceKind];
         if (stateEvidenceMode === "time" || stateEvidenceMode === "matter") evidenceMode = stateEvidenceMode;
         if (["all", "call", "photo", "video", "audio", "file"].indexOf(stateEvidenceFilter) > -1) evidenceFilter = stateEvidenceFilter;
-        if (stateProduct && catalogProducts[stateProduct]) productContext = stateProduct;
-        if (selectedProduct().type === "SUBSCRIPTION" && selectedProduct().billingOptions[stateBillingCycle]) billingCycleContext = stateBillingCycle;
+        if (stateProduct && productCodes[stateProduct]) productContext = stateProduct;
+        if (["MONTHLY","QUARTERLY","ANNUAL"].includes(stateBillingCycle)) billingCycleContext = stateBillingCycle;
         if (callerOptions.some(function (item) { return item.id === stateCallerId && item.active; })) selectedCallerId = stateCallerId;
         if (stateCaptureEntitlementMode === "free" || stateCaptureEntitlementMode === "plan") captureEntitlementMode = stateCaptureEntitlementMode;
         if (stateFreeEvidenceRemaining === 0 || stateFreeEvidenceRemaining === 1) freeEvidenceRemaining = stateFreeEvidenceRemaining;
@@ -5024,6 +5035,17 @@
         if (statePage) show(statePage, false);
       });
 
+      window.__onecallMini = {
+        businessSnapshot:function(){const result=B.snapshot(business);if(!result.ok)throw Error(result.code);return result.value;},
+        loadReviewSnapshot:function(candidate){const result=B.loadReviewSnapshot(business,candidate);if(result.ok){pendingBinding=null;const linked=business.subjects.find(function(item){return item.accountId===review.accountId&&item.source==="IVR";})||business.subjects.find(function(item){return item.accountId===review.accountId;});if(linked)review.subjectId=linked.id;show(current,false);}return clone(result);},
+        setReviewScenario:function(name){
+          const selectors={returning:function(item){return item.source==="IVR"&&item.claimRisk==="NONE"&&!item.accountId&&item.activation!=="SUSPENDED";},fixed:function(item){return item.numberType==="LANDLINE"&&item.source==="IVR"&&!item.accountId;},conflict:function(item){return item.claimRisk==="CONFLICT";},recycled:function(item){return item.claimRisk==="RECYCLED";},suspended:function(item){return item.activation==="SUSPENDED";},expired:function(item){return item.id==="SUBJ-EXPIRED-001";},exhausted:function(item){return item.id==="SUBJ-EXHAUSTED-001";}};
+          if(name==="payment-pending"||name==="payment-failed"||name==="payment-unknown"){const expected={"payment-pending":"PENDING","payment-failed":"FAILED","payment-unknown":"NOT_ISSUED"}[name];const order=business.orders.slice().reverse().find(function(item){return name==="payment-unknown"?item.payment==="UNKNOWN":item.entitlement===expected;});if(!order)return {ok:false,code:"NOT_FOUND"};review.orderId=order.id;show(name==="payment-unknown"?"paymentIssue":"paymentSuccess",false);return {ok:true,orderId:order.id};}
+          const selector=selectors[name]||selectors.returning;const sessions=business.sessions.filter(function(item){return item.status==="CONFIRMED";}).slice().reverse();let target=sessions.map(function(item){return business.subjects.find(function(subject){return subject.id===item.subjectId;});}).find(selector)||business.subjects.find(selector);if(!target)return {ok:false,code:"NOT_FOUND"};review.scenario=name;review.subjectId=target.id;review.blockedCode=null;show(name==="conflict"||name==="recycled"?"ivrReturn":"ivrReturn",false);return {ok:true,subjectId:target.id};
+        },
+        navigate:function(pageId){if(!pages[pageId])return {ok:false,code:"NOT_FOUND"};show(pageId,false);return {ok:true,pageId:pageId};},
+        currentPage:function(){return current;}
+      };
       show(current, false);
     })();
   </script>

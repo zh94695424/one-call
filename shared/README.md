@@ -10,6 +10,7 @@
 | `build-prototypes.js` | 将同一模块写入三个 HTML 源文件的受控标记区 |
 | `qa/business.test.js` | 套餐、IVR、试用、认领、订单、快照与生成一致性测试 |
 | `qa/runner-exit.test.js` | 验证 Web QA runner 不会吞掉 Node 失败码 |
+| `qa/cross-channel.js` | Playwright/Edge 通过三个本地 preview 与校验快照验证目录、IVR、认领、支付及导入边界 |
 
 ## 生成
 
@@ -44,5 +45,7 @@ node .\shared\build-prototypes.js --check
 
 当前目录交叉字段也属于共享不变量：企业版本必须是 `ENTERPRISE + QUOTE + billingCycle=QUOTE + priceCents=null`，只能咨询；个人版本不能是 `QUOTE`，也不能包含企业席位或固话权益。订单导入和权益发放会再次拒绝非个人交易快照。
 
-S1 已引入并验证规则底座；S2 运营后台已接入同一业务状态、完整套餐/试用设置与独立员工流程。小程序、Web 和完整 IVR 分支展示仍在 S3 接入。在此之前，客户页面仍可能展示旧业务文案，不能据此判断规则模块未生效或真实系统已经同步。员工、凭据和登录会话独立于共享业务快照。
+S1 规则底座、S2 运营后台及 S3 小程序/Web/IVR 展示已接入同一演示契约。各端保留本地内存状态，员工、凭据和登录会话独立于业务快照。`__onecallOps`、`__onecallMini`、`__onecallWeb` 的业务快照 hooks 只用于显式 fixture 交接；不代表网络同步、真实身份验证、IVR 或支付联调。发布真实客户端须关闭这些 hooks。
+
+先运行三个 `qa/run.ps1` 生成最新 preview，再执行 `node shared/qa/cross-channel.js`。S3 已通过运营发布目录/试用 → 客户展示 → 动态 IVR 取证/认领 → WEB、MINIAPP 订单/支付/独立发放的往返；同时覆盖冻结旧 token、下架/移除渠道、事件重放、五类主体引用篡改及逐类禁入顶层字段的原子拒绝。完整命令结果见 S3 implementation artifact。所有规则参数仍为 DEMO_NOT_APPROVED，客服联系方式保持未配置。
 

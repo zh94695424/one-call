@@ -35,7 +35,7 @@ async function screenshot(page, name, width, height = 900) {
   await page.setViewportSize({ width, height });
   await page.waitForTimeout(80);
   await assertNoPageOverflow(page, width);
-  await page.screenshot({ path: path.join(screenshotDir, name), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, 'alignment-'+name), fullPage: true });
 }
 
 async function openRoute(page, route) {
@@ -238,7 +238,7 @@ async function openRoute(page, route) {
     await page.locator('[data-action="number-add-verify"]').click();
     await page.locator('#number-add-agree').check();
     await page.locator('[data-action="number-add-submit"]').click();
-    await expectText(page, '#content', 'CARRIER-ACK-742810');
+    await expectText(page, '#content', 'ACT-');
     await screenshot(page, 'number-add-synchronous-result-1280.png', 1280);
     await openRoute(page, 'numbers');
     expect(await page.locator('[data-number-id]').count() === 3, 'Personal account must allow up to three active caller numbers');
@@ -391,56 +391,98 @@ async function openRoute(page, route) {
     await expectText(page, '#content', '补件审核中');
     await screenshot(page, 'certificate-supplement-submitted-1024.png', 1024, 1000);
 
-    await openRoute(page, 'rights');
-    await openRoute(page, 'plans');
-    expect(await page.locator('[data-plan-cycle]').count() === 3, 'Personal catalog must offer monthly, quarterly, and yearly cycles');
-    await page.locator('[data-plan-cycle="quarter"]').click();
-    await expectText(page, '#content', '¥269');
-    await page.locator('[data-plan-id="basic"]').click();
-    await expectText(page, '#content', '¥105');
-    await screenshot(page, 'personal-plans-1440.png', 1440);
-    await screenshot(page, 'personal-plans-1024.png', 1024, 900);
-    await page.locator('[data-addon-type="recording"]').click();
-    await expectText(page, '#content', '以下演示价格、有效期和版本均由后台已发布商品配置返回');
-    await page.locator('[data-addon-sku="CALL-100"]').click();
-    await page.locator('[data-action="addon-review"]').click();
-    await expectText(page, '#content', 'CALL-PACK-2026.10-R2');
-    expect(await page.locator('[data-action="addon-pay"]').isDisabled(), 'Add-on payment must require explicit agreement');
-    await page.locator('#addon-agree').check();
-    await screenshot(page, 'addon-checkout-1024.png', 1024);
-    await page.locator('[data-action="addon-pay"]').click();
-    await expectText(page, '#content', '录音分钟包购买成功');
-    await openRoute(page, 'orders');
-    await expectText(page, '#content', 'OC-ADDON-261019-031');
-    await page.locator('[data-order-id="OC-ADDON-261019-031"]').click();
-    await expectText(page, '#content', '加量商品');
-    await screenshot(page, 'addon-order-detail-1024.png', 1024);
-    await page.evaluate(() => go('plans'));
-    await openRoute(page, 'checkout');
-    await expectText(page, '#content', 'PERSONAL-2026.10-R3');
+    await openRoute(page,'rights');
+    await openRoute(page,'plans');
+    await expectText(page,'#content','DEMO_NOT_APPROVED');
+    expect(await page.locator('[data-web-offer]').count()===7,'All subscription cycles and one-time offer must be visible');
+    expect((await page.locator('[data-offer-version="PERSONAL_BASIC_QUARTERLY-V1"]').innerText()).includes('每 1 个月发放一次，共 3 期'),'Quarterly catalog must show its grant schedule');
+    await screenshot(page,'personal-plans-1440.png',1440);
+    await screenshot(page,'personal-plans-1024.png',1024);
+    await page.locator('[data-web-offer="PERSONAL_BASIC_QUARTERLY-V1"]').click();
+    await expectText(page,'#content','¥105.00');
+    await expectText(page,'#content','每期录音');
+    await expectText(page,'[data-grant-schedule]','每 1 个月发放一次，共 3 期');
+    expect(await page.locator('[data-action="checkout-pay"]').isDisabled(),'Create order needs consent');
     await page.locator('#checkout-agree').check();
-    expect(await page.locator('[data-action="checkout-pay"]').isEnabled(), 'Checkout payment action must enable after agreement');
-    await screenshot(page, 'personal-checkout-1280.png', 1280);
     await page.locator('[data-action="checkout-pay"]').click();
-    await expectText(page, '#content', '订购成功');
-
-    await openRoute(page, 'orders');
-    await expectText(page, '#content', '购买时锁定的商品、周期、金额、权益与开票状态');
-    await screenshot(page, 'personal-orders-1440.png', 1440);
-    await page.locator('[data-order-id="OC20261001008"]').click();
-    await expectText(page, '#content', '不可变商品快照');
-    await expectText(page, '#content', '后台后续调整只生成新版本，不覆盖本订单');
-    await screenshot(page, 'personal-order-detail-1280.png', 1280);
-    await screenshot(page, 'personal-order-detail-1024.png', 1024);
-    await openRoute(page, 'invoice-apply');
-    expect(await page.locator('[data-action="invoice-submit"]').isDisabled(), 'Invoice submission must require explicit information confirmation');
-    await page.locator('#invoice-agree').check();
-    expect(await page.locator('[data-action="invoice-submit"]').isEnabled(), 'Invoice submission must enable after confirmation');
-    await screenshot(page, 'invoice-apply-1280.png', 1280);
-    await screenshot(page, 'invoice-apply-1024.png', 1024);
-    await page.locator('[data-action="invoice-submit"]').click();
-    await expectText(page, '#content', '开票申请已提交');
-    await screenshot(page, 'invoice-submitted-1280.png', 1280);
+    let b=await page.evaluate(()=>window.__onecallWeb.businessSnapshot()),order=b.orders.at(-1),frozen=JSON.stringify(order.snapshot);
+    expect(order.channel==='WEB'&&order.payment==='UNPAID','Web order creation must not imply payment');
+    await page.locator('[data-action="web-payment"][data-result="UNKNOWN"]').click();
+    await expectText(page,'#content','支付结果待确认');
+    const orderCount=b.orders.length;
+    await page.locator('[data-action="web-payment"][data-result="PAID"]').click();
+    b=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    expect(b.orders.length===orderCount&&b.orders.at(-1).entitlement==='PENDING'&&!b.entitlements.length,'Paid must await independent issue');
+    await screenshot(page,'payment-pending-1280.png',1280);
+    await page.locator('[data-action="web-issue"]').click();
+    b=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    expect(b.entitlements.length===1&&b.orders.at(-1).entitlement==='ISSUED'&&JSON.stringify(b.orders.at(-1).snapshot)===frozen,'Issue and frozen snapshot mismatch');
+    await openRoute(page,'orders');
+    await expectText(page,'#content',order.id);
+    await page.locator('[data-order-id="'+order.id+'"]').click();
+    await expectText(page,'#content','PERSONAL_BASIC_QUARTERLY-V1');
+    await expectText(page,'[data-grant-schedule]','每 1 个月发放一次，共 3 期');
+    await screenshot(page,'personal-order-detail-1024.png',1024);
+    const scheduleBase=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    for(const custom of [false,true]){
+      const fixture=JSON.parse(JSON.stringify(scheduleBase));
+      const live=fixture.catalog.find(item=>item.versionId==='PERSONAL_BASIC_ANNUAL-V1');
+      if(custom){live.installments=4;live.grantIntervalMonths=3;live.description='每三个月发放的年度演示套餐';}
+      expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),fixture)).ok,'Valid schedule fixture import');
+      await page.evaluate(()=>window.__onecallWeb.navigate('plans'));
+      const card=page.locator('[data-offer-version="PERSONAL_BASIC_ANNUAL-V1"]');
+      const schedule='每 '+(custom?3:1)+' 个月发放一次，共 '+(custom?4:12)+' 期';
+      expect((await card.innerText()).includes(schedule),'Live annual card must show derived schedule');
+      await screenshot(page,'schedule-'+(custom?'custom':'annual')+'-catalog-1024.png',1024);
+      await page.locator('[data-web-offer="PERSONAL_BASIC_ANNUAL-V1"]').click();
+      await expectText(page,'[data-grant-schedule]',schedule);await expectText(page,'#content','每期录音');
+      await screenshot(page,'schedule-'+(custom?'custom':'annual')+'-checkout-1024.png',1024);
+      await page.locator('#checkout-agree').check();await page.locator('[data-action="checkout-pay"]').click();
+      const created=await page.evaluate(()=>window.__onecallWeb.businessSnapshot()),historical=created.orders.at(-1);
+      expect(historical.snapshot.installments===(custom?4:12)&&historical.snapshot.grantIntervalMonths===(custom?3:1),'Frozen schedule fields');
+      await expectText(page,'[data-grant-schedule]',schedule);
+      const revised=JSON.parse(JSON.stringify(created)),changed=revised.catalog.find(item=>item.versionId===live.versionId);
+      changed.installments=2;changed.grantIntervalMonths=6;changed.rights.recordingMinutes=17;changed.description='后续目录调整演示';
+      expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),revised)).ok,'Later live catalog change must remain valid');
+      await page.evaluate(()=>window.__onecallWeb.navigate('plans'));
+      expect((await page.locator('[data-offer-version="PERSONAL_BASIC_ANNUAL-V1"]').innerText()).includes('每 6 个月发放一次，共 2 期'),'Live catalog must reflect later schedule');
+      await page.evaluate(()=>window.__onecallWeb.navigate('orders'));await page.locator('[data-order-id="'+historical.id+'"]').click();
+      await expectText(page,'[data-grant-schedule]',schedule);await expectText(page,'#content','60 分钟');
+      expect(JSON.stringify((await page.evaluate(()=>window.__onecallWeb.businessSnapshot())).orders.at(-1).snapshot)===JSON.stringify(historical.snapshot),'History must retain its original rights and schedule');
+      await screenshot(page,'schedule-'+(custom?'custom':'annual')+'-history-1024.png',1024);
+    }
+    expect((await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),scheduleBase)).ok,'Restore schedule test baseline');
+    await page.evaluate(()=>window.__onecallWeb.navigate('plans'));
+    await page.locator('[data-web-offer="EVIDENCE_ONE-V1"]').click();
+    await expectText(page,'[data-grant-schedule]','一次性发放，共 1 期');
+    await page.evaluate(()=>window.__onecallWeb.navigate('invoice-apply'));
+    await expectText(page,'#content','人工客服联系方式待配置');
+    expect(await page.locator('#content input,#content textarea,[data-action="invoice-submit"]').count()===0,'Offline support must not offer invoice submission');
+    expect(!/INV-|CS20|400-/.test(await page.locator('#content').innerText()),'Offline support fabricated a contact or receipt');
+    await screenshot(page,'support-1024.png',1024);
+    const canonical=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+    for(const scenario of ['returning','conflict','recycled']){
+      const r=await page.evaluate(name=>window.__onecallWeb.setReviewScenario(name),scenario);
+      expect(r.ok,'Missing claim scenario '+scenario);
+      expect(JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(canonical),'Review selection mutated business');
+      expect(!/EVID-|TRIAL-/.test(await page.locator('#content').innerText()),'Preverification history leak');
+      await page.locator('[data-route="subject-claim"]').click();
+      await page.locator('[data-action="claim-subject"]').click();
+      if(scenario==='returning'){
+        const after=await page.evaluate(()=>window.__onecallWeb.businessSnapshot());
+        expect(after.subjects.find(item=>item.id===r.subjectId).identity==='UNVERIFIED','Claim silently verified identity');
+        expect(JSON.stringify(after.evidence)===JSON.stringify(canonical.evidence)&&JSON.stringify(after.trialGrants)===JSON.stringify(canonical.trialGrants),'Claim rewrote history');
+      }else{
+        await expectText(page,'#content','人工客服联系方式待配置');
+        expect(!/EVID-|TRIAL-/.test(await page.locator('#content').innerText()),'Blocked claim history leak');
+      }
+      await screenshot(page,'claim-'+scenario+'-1024.png',1024);
+      await page.evaluate(data=>window.__onecallWeb.loadReviewSnapshot(data),canonical);
+    }
+    for(const key of ['employees','customerAuthSession','uiSession']){
+      const r=await page.evaluate(({b,key})=>window.__onecallWeb.loadReviewSnapshot({...b,[key]:{}}),{b:canonical,key});
+      expect(!r.ok&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(canonical),'Forbidden snapshot import must reject atomically');
+    }
 
     await page.locator('#workspace-select').selectOption('enterprise');
     await expectText(page, '#content', '华启科技 · 企业总览');
@@ -485,33 +527,17 @@ async function openRoute(page, route) {
 
     await openRoute(page, 'rights');
     await openRoute(page, 'plans');
-    await expectText(page, '#content', '企业管理员可在这里发起订购、续费、扩容或方案变更');
-    await expectText(page, '#content', '企业基础版');
-    await expectText(page, '#content', '续费 / 扩容');
-    await expectText(page, '#content', '后台商品版本配置');
-    await screenshot(page, 'enterprise-plans-1440.png', 1440);
-    await page.locator('[data-action="enterprise-consult"]').last().click();
-    await expectText(page, '#content', '企业订购与变更');
-    expect(await page.locator('[data-action="enterprise-order-submit"]').isDisabled(), 'Enterprise request must require explicit confirmation');
-    await page.locator('#enterprise-order-agree').check();
-    await page.locator('[data-action="enterprise-order-submit"]').click();
-    await expectText(page, '#content', '报价处理中');
-    await page.locator('[data-action="enterprise-order-quote"]').click();
-    await expectText(page, '#content', '待确认报价');
-    await expectText(page, '#content', 'QUO-20261019');
-    await page.locator('[data-action="enterprise-order-accept"]').click();
-    await expectText(page, '#content', '待合同生效');
-    await page.locator('[data-action="enterprise-order-effective"]').click();
-    await expectText(page, '#content', '已按合同版本生效');
-    await screenshot(page, 'enterprise-order-effective-1440.png', 1440);
-    await screenshot(page, 'enterprise-order-effective-1024.png', 1024);
-
-    await openRoute(page, 'orders');
-    await expectText(page, '#content', '企业订单与合同');
-    await expectText(page, '#content', '报价处理中');
+    await expectText(page,'#content','联系报价');
+    await expectText(page,'#content','DEMO_NOT_APPROVED');
+    expect(await page.locator('[data-web-offer]').count()===0,'Enterprise quote must not have personal checkout');
+    await page.locator('[data-route="support"]').last().click();
+    await expectText(page,'#content','人工客服联系方式待配置');
+    await screenshot(page,'enterprise-consultation-1440.png',1440);
+    await page.evaluate(()=>go('orders'));
+    await expectText(page,'#content','历史合同样例 DEMO');
     await page.locator('[data-order-id="ENT20261001001"]').click();
-    await expectText(page, '#content', 'ENTERPRISE-2026.10-R2');
-    await screenshot(page, 'enterprise-order-detail-1280.png', 1280);
+    await expectText(page,'#content','ENTERPRISE-HISTORY-DEMO');
+    await screenshot(page,'enterprise-order-detail-1280.png',1280);
 
     await openRoute(page, 'access');
     await expectText(page, '#content', '企业管理员默认不能无条件播放所有录音');
@@ -595,7 +621,7 @@ async function openRoute(page, route) {
     await page.evaluate(() => go('evidence'));
     await expectText(page, '#content', '审计概览 · 王璐');
 
-    for (const width of [1024, 1280, 1440]) {
+    for (const width of [720, 1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: 800 });
       await page.reload({ waitUntil: 'load' });
       await page.waitForSelector('[data-action="wechat-login"]');
@@ -604,7 +630,7 @@ async function openRoute(page, route) {
       await page.waitForSelector('#content .page-head');
       await assertNoPageOverflow(page, width);
       if (width === 1024) {
-        await page.screenshot({ path: path.join(screenshotDir, 'personal-overview-1024.png'), fullPage: true });
+        await page.screenshot({ path: path.join(screenshotDir, 'alignment-personal-overview-1024.png'), fullPage: true });
       }
     }
 

@@ -1,5 +1,6 @@
 const { chromium } = require('C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/.pnpm/playwright@1.60.0/node_modules/playwright');
 const path = require('path');
+const assert = require('node:assert/strict');
 const { pathToFileURL } = require('url');
 
 const prototypeRoot = path.resolve(__dirname, '..');
@@ -7,13 +8,13 @@ const screenshotRoot = path.join(__dirname, 'screenshots');
 const previewUrl = pathToFileURL(path.join(prototypeRoot, 'preview.html')).href;
 const newPages = [
   'phoneWechatConfirm', 'phoneWechatIssue', 'phoneWechatConflict', 'phoneSms', 'landlineBind', 'landlineVerify', 'landlineReady',
-  'trialHome', 'trialCall', 'trialLimit', 'freeEvidenceLimit',
+  'ivrReturn', 'claimVerify', 'claimResult', 'claimBlocked', 'trialHome', 'trialCall', 'trialLimit', 'freeEvidenceLimit',
   'callerSelect', 'dialHandoff', 'landlineCall', 'callerMismatch', 'callerUnavailable',
   'evidenceBox', 'evidenceEmpty', 'matterCreate', 'aiCorrection',
   'usageDetail', 'enterprisePlans', 'productDetail', 'purchaseConfirm', 'paymentSuccess', 'paymentIssue', 'revokeAuth', 'evidenceSelect',
   'documentCenter', 'orders', 'tips', 'privacy', 'support',
 ];
-const authorizationCopy = '我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通运营商局端录音及进行必要的数据共享。';
+const authorizationCopy = '我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。';
 
 async function getFrame(page) {
   const handle = await page.locator('iframe').elementHandle();
@@ -50,6 +51,7 @@ async function assertNoOverflow(frame, label) {
     executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   });
   const page = await browser.newPage({ viewport: { width: 760, height: 1100 }, deviceScaleFactor: 1 });
+  try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
@@ -57,7 +59,7 @@ async function assertNoOverflow(frame, label) {
   const frame = await getFrame(page);
 
   const count = await frame.locator('.index-button').count();
-  if (count !== 57) throw new Error(`Expected 57 visible pages, got ${count}`);
+  if (count !== 61) throw new Error(`Expected 61 visible pages, got ${count}`);
   if (await frame.locator('[data-page="consent"], [data-go="consent"]').count()) {
     throw new Error('Standalone authorization page is still reachable');
   }
@@ -70,6 +72,70 @@ async function assertNoOverflow(frame, label) {
     if (!(await frame.locator('#oc-screen').innerText()).trim()) throw new Error(`Empty screen for ${pageId}`);
   }
 
+  const ordinaryInitial=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  await openPage(frame,'provisioning');
+  assert.ok(!(await frame.locator('#oc-screen').innerText()).includes('内部服务已开通'));
+  // A failed verification or shared activation rejection must stay on the actual form.
+  for(const mode of ['wrong-code','wrong-number','unverified','suspended']){
+    const fixture=JSON.parse(JSON.stringify(ordinaryInitial));
+    if(mode==='unverified')fixture.subjects.find(item=>item.id==='MINI-ACCOUNT-001').identity='UNVERIFIED';
+    if(mode==='suspended')fixture.subjects.find(item=>item.id==='MINI-ACCOUNT-001').activation='SUSPENDED';
+    assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),fixture)).ok,true);
+    await openPage(frame,mode==='wrong-code'||mode==='wrong-number'?'phoneSms':'phoneWechatConfirm');
+    if(mode==='wrong-code')await frame.locator('#oc-code').fill('000000');
+    if(mode==='wrong-number')await frame.locator('#oc-mobile').fill('18600009999');
+    await frame.locator('[data-phone-confirm]').check();await frame.locator('[data-phone-submit]').click();
+    assert.equal(await frame.evaluate(()=>window.__onecallMini.currentPage()),mode==='wrong-code'||mode==='wrong-number'?'phoneSms':'phoneWechatConfirm');
+    assert.ok((await frame.locator('[data-activation-error]').innerText()).includes(mode==='suspended'?'SUSPENDED':'VERIFICATION_REQUIRED'));
+    assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),fixture);
+  }
+  const alternateSeed=JSON.parse(JSON.stringify(ordinaryInitial));
+  alternateSeed.subjects.find(item=>item.id==='MINI-ACCOUNT-001').maskedNumber='137 **** 1000';
+  assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),alternateSeed)).ok,true);
+  for(const pageId of ['phoneWechatConfirm','phoneSms']){
+    await openPage(frame,pageId);await frame.locator('[data-phone-confirm]').check();await frame.locator('[data-phone-submit]').click();
+    assert.equal(await frame.evaluate(()=>window.__onecallMini.currentPage()),'provisioning');
+  }
+  const createdNumbers=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  const createdTargets=['138 **** 6208','186 **** 4471'].map(mask=>createdNumbers.subjects.find(item=>item.maskedNumber===mask));
+  assert.ok(createdTargets.every(item=>item&&item.accountId==='ACCOUNT-DEMO-001'&&item.activation==='ACTIVE'));
+  assert.notEqual(createdTargets[0].id,createdTargets[1].id,'New WeChat and SMS numbers need distinct subjects');
+  for(const target of createdTargets){
+    assert.equal(createdNumbers.activations.filter(item=>item.subjectId===target.id).length,1);
+    assert.equal(createdNumbers.trialGrants.filter(item=>item.subjectId===target.id).length,1);
+  }
+  assert.equal((await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),ordinaryInitial)).ok,true);
+  async function assertOrdinaryActivation(mask,method){
+    const state=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+    const target=state.subjects.find(item=>item.maskedNumber===mask&&item.accountId==='ACCOUNT-DEMO-001');
+    assert.ok(target,'Verified number must resolve to the current account subject');
+    assert.equal(target.identity,'VERIFIED');assert.equal(target.activation,'ACTIVE');
+    const activation=state.activations.find(item=>item.subjectId===target.id&&item.channel==='MINIAPP');
+    const grants=state.trialGrants.filter(item=>item.subjectId===target.id);
+    assert.ok(activation);assert.equal(grants.length,1);assert.equal(activation.consentVersion,'ONECALL-SERVICE-2026.10');
+    assert.deepEqual(state.evidence,ordinaryInitial.evidence);
+    assert.deepEqual(state.trialGrants.filter(item=>item.subjectId!==target.id&&item.subjectId!=='MINI-ACCOUNT-001'),ordinaryInitial.trialGrants);
+    assert.ok((await frame.locator('#oc-screen').innerText()).includes(method));
+    const shotName=method==='微信平台验证'?'wechat':'sms';
+    const captureOrdinary=async stage=>{
+      await frame.locator('#oc-screen').evaluate(screen=>{screen.scrollTop=0;});
+      await frame.waitForTimeout(100);
+      await frame.locator('.phone').screenshot({path:path.join(screenshotRoot,'alignment-ordinary-'+shotName+'-'+stage+'-393.png'),animations:'disabled'});
+    };
+    await page.setViewportSize({width:393,height:852});await assertNoOverflow(frame,'ordinary result');
+    await captureOrdinary('result');
+    await frame.locator('[data-go="trialHome"]').click();
+    assert.equal(await frame.locator('[data-selected-subject]').getAttribute('data-selected-subject'),target.id);
+    assert.ok((await frame.locator('[data-selected-subject]').innerText()).includes(mask));
+    assert.equal(await frame.locator('.trial-remaining').innerText(),'05:00');
+    await captureOrdinary('trial');
+    await frame.locator('[data-go="numbers"]').click();
+    assert.equal(await frame.locator('[data-selected-subject]').getAttribute('data-selected-subject'),target.id);
+    assert.ok((await frame.locator('[data-selected-subject]').innerText()).includes(mask));
+    await captureOrdinary('numbers');
+    await page.setViewportSize({width:760,height:1100});
+    return target.id;
+  }
   await openPage(frame, 'phone');
   const phoneText = await frame.locator('#oc-screen').innerText();
   if (!phoneText.includes('微信授权获取手机号') || !phoneText.includes('短信验证码绑定其他手机号') || !phoneText.includes('绑定固话座机')) {
@@ -94,6 +160,7 @@ async function assertNoOverflow(frame, label) {
   if ((await frame.locator('.progress-step').count()) !== 4 || (await frame.locator('.progress-head strong').innerText()) !== '4 / 4') {
     throw new Error('Opening result must be step 4 of the four-step flow');
   }
+  await assertOrdinaryActivation('138 **** 6208','微信平台验证');
 
   await openPage(frame, 'phoneSms');
   const smsPhoneSubmit = frame.locator('[data-phone-submit]');
@@ -107,6 +174,11 @@ async function assertNoOverflow(frame, label) {
   await smsPhoneSubmit.click();
   const smsResultText = await frame.locator('#oc-screen').innerText();
   if (!smsResultText.includes('短信验证码验证') || !smsResultText.includes('186 **** 4471')) throw new Error('SMS verification context did not reach the opening result');
+  const smsSubjectId=await assertOrdinaryActivation('186 **** 4471','短信验证码验证');
+  const activated=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  await openPage(frame,'phoneSms');await frame.locator('[data-phone-confirm]').check();await frame.locator('[data-phone-submit]').click();
+  assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),activated,'Repeat activation must not regrant trial');
+  assert.equal(activated.activations.at(-1).subjectId,smsSubjectId);
 
   await openPage(frame, 'landlineBind');
   const landlineSubmit = frame.locator('[data-landline-submit]');
@@ -121,7 +193,7 @@ async function assertNoOverflow(frame, label) {
   if (!landlineVerifyText.includes('95XXX') || !landlineVerifyText.includes('483 621') || !landlineVerifyText.includes('真实主叫')) throw new Error('Landline caller verification instructions are incomplete');
   await frame.locator('[data-go="landlineReady"]').click();
   const landlineReadyText = await frame.locator('#oc-screen').innerText();
-  if (!landlineReadyText.includes('010 **** 6688') || !landlineReadyText.includes('运营商主叫验证') || !landlineReadyText.includes('独立固话直线')) throw new Error('Landline provisioning result is incomplete');
+  if (!landlineReadyText.includes('010 **** 6688') || !landlineReadyText.includes('主叫挑战') || !landlineReadyText.includes('独立固话直线')) throw new Error('Landline provisioning result is incomplete');
 
   await openPage(frame, 'numbers');
   if (await frame.locator('.number-card').count() !== 3) throw new Error('Number management must show three bound numbers');
@@ -129,43 +201,16 @@ async function assertNoOverflow(frame, label) {
   if (!numbersText.includes('2 个手机号和 1 个固话均可用于取证') || !numbersText.includes('拨打声讯短号') || !numbersText.includes('17.3 分钟')) throw new Error('Mixed mobile and landline number management is incomplete');
 
   await openPage(frame, 'capture');
-  const captureText = await frame.locator('#oc-screen').innerText();
-  if (!captureText.includes('新用户免费试用') || !captureText.includes('5 分钟') || !captureText.includes('主动挂断')) {
-    throw new Error('Unopened capture home is missing the five-minute trial guidance');
-  }
-  if (!captureText.includes('完成 3 步安全开通即可领取') || captureText.includes('实名认证')) {
-    throw new Error('Unopened capture home still leads with identity-verification friction');
-  }
-  if (!captureText.includes('首份材料免费固证') || !captureText.includes('1 份可用') || (await frame.locator('[data-entitlement-mode="free"]').count()) !== 4) {
-    throw new Error('Unopened capture home is missing the four-tool free evidence entitlement');
-  }
-  await frame.locator('[data-go="intro"]').click();
-  if (!(await frame.locator('#oc-screen').innerText()).includes('累计 5 分钟免费试用')) throw new Error('Trial opening flow guidance missing');
-
-  await openPage(frame, 'trialHome');
-  const trialHomeText = await frame.locator('#oc-screen').innerText();
-  if (!trialHomeText.includes('03:18') || !trialHomeText.includes('01:42') || !trialHomeText.includes('05:00')) throw new Error('Trial cumulative usage is incomplete');
-  const upgradeAction = frame.locator('.upgrade-action');
-  if ((await upgradeAction.count()) !== 1 || !(await upgradeAction.innerText()).includes('选择套餐，解锁更多录音时长') || !(await upgradeAction.innerText()).includes('录音、AI 转写和存储权益')) {
-    throw new Error('Trial conversion action is incomplete');
-  }
-  if (!trialHomeText.includes('首份材料免费固证') || !trialHomeText.includes('1 份可用') || (await frame.locator('[data-entitlement-mode="free"]').count()) !== 4) {
-    throw new Error('Trial home is missing the four-tool free evidence entitlement');
-  }
+  const captureText=await frame.locator('#oc-screen').innerText();
+  if(!captureText.includes('DEMO_NOT_APPROVED')||!captureText.includes('05:00')||!captureText.includes('主动挂断'))throw Error('Current shared trial rule missing');
+  if((await frame.locator('[data-entitlement-mode="free"]').count())!==4)throw Error('Four free capture tools missing');
+  await openPage(frame,'trialHome');
+  const trialText=await frame.locator('#oc-screen').innerText();
+  if(!trialText.includes('186 **** 4471')||!trialText.includes('00:00')||!trialText.includes('05:00'))throw Error('Successful ordinary subject trial continuity missing');
   await frame.locator('[data-go="trialCall"]').click();
-  if (!(await frame.locator('#oc-screen').innerText()).includes('系统将主动结束通话')) throw new Error('Trial dial cap warning missing');
-  await frame.locator('[data-go="dialHandoff"]').click();
-  if (!(await frame.locator('#oc-screen').innerText()).includes('微信只能打开系统拨号盘')) throw new Error('Trial SIM handoff guidance missing');
-  await frame.locator('[data-go="trialLimit"]').click();
-  const trialLimitText = await frame.locator('#oc-screen').innerText();
-  if (!trialLimitText.includes('系统已主动挂断') || !trialLimitText.includes('正在固证')) throw new Error('Trial limit result is incomplete');
-  await frame.locator('[data-go="productDetail"][data-product="个人基础"]').click();
-  if (!(await frame.locator('#oc-screen').innerText()).includes('个人基础')) throw new Error('Trial exhaustion did not carry the paid-plan context');
-
-  await openPage(frame, 'trialHome');
-  await frame.locator('[data-go="plans"]').click();
-  const activePlanText = await frame.locator('#oc-screen').innerText();
-  if (!activePlanText.includes('03:18') || !activePlanText.includes('免费录音剩余')) throw new Error('Active trial balance is inconsistent on the plans page');
+  if(!(await frame.locator('#oc-screen').innerText()).includes('剩余'))throw Error('Trial balance guidance missing');
+  await openPage(frame,'trialLimit');
+  if(!(await frame.locator('#oc-screen').innerText()).includes('正在固证'))throw Error('Trial result preservation missing');
 
   await openPage(frame, 'captureReady');
   const readyText = await frame.locator('#oc-screen').innerText();
@@ -192,62 +237,33 @@ async function assertNoOverflow(frame, label) {
   await frame.locator('[data-go="aiCorrection"]').click();
   if (!(await frame.locator('#oc-screen').innerText()).includes('版本和生成时间保持不变')) throw new Error('AI correction version boundary missing');
 
-  await openPage(frame, 'plans');
-  const planText = await frame.locator('#oc-screen').innerText();
-  if ((await frame.locator('[data-core-product]').count()) !== 4) throw new Error('Plans page must show four core purchasable products');
-  if (!planText.includes('按需购买') || !planText.includes('订阅套餐') || !planText.includes('需要时再加量')) throw new Error('Plans page hierarchy is incomplete');
-  if (!planText.includes('季付 ¥105') || !planText.includes('包年 ¥390') || !planText.includes('季付 ¥240') || !planText.includes('包年 ¥890')) throw new Error('Subscription cards are missing quarterly or annual pricing');
-  if (planText.includes('价格待发布') || planText.includes('¥--')) throw new Error('Published catalog price is missing from the plans page');
-  await frame.locator('[data-go="enterprisePlans"]').click();
-  const enterpriseText = await frame.locator('#oc-screen').innerText();
-  if (!enterpriseText.includes('企业基础版') || !enterpriseText.includes('企业旗舰版') || !enterpriseText.includes('5 个') || !enterpriseText.includes('20 个') || !enterpriseText.includes('后台配置')) throw new Error('Enterprise package structure is incomplete');
-  if (!enterpriseText.includes('企业总机、PBX、分机归属和坐席 PIN 暂不设计')) throw new Error('Enterprise switchboard exclusion is missing');
-  await openPage(frame, 'plans');
-  await frame.locator('[data-product="30分钟通话包"]').click();
-  const callPackDetail = await frame.locator('#oc-screen').innerText();
-  if (!callPackDetail.includes('30分钟通话包') || !callPackDetail.includes('30 分钟') || !callPackDetail.includes('¥18.9')) throw new Error('Call pack detail did not use the published catalog snapshot');
-  const productPurchase = frame.locator('.primary-action[data-go="purchaseConfirm"]');
-  if ((await productPurchase.count()) !== 1 || await productPurchase.isDisabled()) throw new Error('Published product must allow checkout');
-  await productPurchase.click();
-  const purchaseSubmit = frame.locator('[data-purchase-submit]');
-  if (!(await purchaseSubmit.isDisabled())) throw new Error('Purchase submit must start disabled until the order rules are confirmed');
-  const confirmText = await frame.locator('#oc-screen').innerText();
-  if (!confirmText.includes('30分钟通话包') || !confirmText.includes('¥18.9') || !confirmText.includes('不自动续费')) throw new Error('Checkout snapshot differs from product detail');
-  await frame.locator('[data-order-confirm]').check();
-  if (await purchaseSubmit.isDisabled()) throw new Error('Purchase confirmation did not unlock payment');
-  await purchaseSubmit.click();
-  const paymentSuccessText = await frame.locator('#oc-screen').innerText();
-  if (!paymentSuccessText.includes('支付成功，权益已到账') || !paymentSuccessText.includes('OC20261019026') || !paymentSuccessText.includes('CALL-30M-2026.10-A')) throw new Error('Payment success receipt is incomplete');
-  await openPage(frame, 'paymentIssue');
-  const paymentIssueText = await frame.locator('#oc-screen').innerText();
-  if (!paymentIssueText.includes('尚未发放权益') || !paymentIssueText.includes('待支付')) throw new Error('Incomplete payment state must not grant entitlement');
-
-  await openPage(frame, 'plans');
+  // Shared catalog and separate order/payment/entitlement transitions.
+  await openPage(frame,'plans');
+  if(!(await frame.locator('#oc-screen').innerText()).includes('DEMO_NOT_APPROVED'))throw Error('Demo catalog policy label missing');
   await frame.locator('[data-product="个人基础"]').click();
-  if ((await frame.locator('[data-billing-cycle]').count()) !== 3) throw new Error('Subscription detail must offer monthly, quarterly, and annual billing');
-  if ((await frame.locator('[data-billing-cycle="MONTHLY"]').getAttribute('aria-checked')) !== 'true') throw new Error('Monthly billing should remain the default selection');
+  if(await frame.locator('[data-billing-cycle]').count()!==3)throw Error('Three subscription cycles missing');
   await frame.locator('[data-billing-cycle="QUARTERLY"]').click();
-  const quarterlyText = await frame.locator('#oc-screen').innerText();
-  if (!quarterlyText.includes('¥105') || !quarterlyText.includes('约 9 折') || !quarterlyText.includes('省 ¥12') || !quarterlyText.includes('共 3 期') || !quarterlyText.includes('PLAN-BASIC-Q1-2026.10-A')) throw new Error('Quarterly subscription offer is incomplete');
+  if(!(await frame.locator('#oc-screen').innerText()).includes('PERSONAL_BASIC_QUARTERLY-V1'))throw Error('Canonical catalog version missing');
   await frame.locator('[data-go="purchaseConfirm"]').click();
-  const quarterlyOrderText = await frame.locator('#oc-screen').innerText();
-  if (!quarterlyOrderText.includes('按季度') || !quarterlyOrderText.includes('¥105') || !quarterlyOrderText.includes('共 3 期')) throw new Error('Quarterly checkout did not preserve the selected offer');
-  await openPage(frame, 'productDetail');
-  await frame.locator('[data-billing-cycle="ANNUAL"]').click();
-  const annualText = await frame.locator('#oc-screen').innerText();
-  if (!annualText.includes('¥390') || !annualText.includes('约 8.3 折') || !annualText.includes('省 ¥78') || !annualText.includes('共 12 期') || !annualText.includes('PLAN-BASIC-Y1-2026.10-A')) throw new Error('Annual subscription offer is incomplete');
-  await frame.locator('[data-go="purchaseConfirm"]').click();
-  const annualOrderText = await frame.locator('#oc-screen').innerText();
-  if (!annualOrderText.includes('包年') || !annualOrderText.includes('¥390') || !annualOrderText.includes('共 12 期')) throw new Error('Annual checkout did not preserve the selected offer');
+  if(!await frame.locator('[data-purchase-submit]').isDisabled())throw Error('Order needs consent');
   await frame.locator('[data-order-confirm]').check();
   await frame.locator('[data-purchase-submit]').click();
-  const annualSuccessText = await frame.locator('#oc-screen').innerText();
-  if (!annualSuccessText.includes('包年') || !annualSuccessText.includes('¥390') || !annualSuccessText.includes('PLAN-BASIC-Y1-2026.10-A') || !annualSuccessText.includes('后续各期按订单计划自动发放')) throw new Error('Annual payment result is missing billing-cycle fulfillment details');
-
-  await openPage(frame, 'orders');
-  const orderText = await frame.locator('#oc-screen').innerText();
-  if (!orderText.includes('¥18.9') || !orderText.includes('¥390') || !orderText.includes('个人基础 · 包年') || !orderText.includes('12 期 · 首期已到账') || !orderText.includes('订单展示购买时锁定')) throw new Error('Order history is missing immutable price and billing-cycle snapshots');
-  if (orderText.includes('¥ --') || orderText.includes('正式价格')) throw new Error('Order history still contains unpublished-price placeholders');
+  let snapshot=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  const order=snapshot.orders.at(-1),frozen=JSON.stringify(order.snapshot);
+  if(order.channel!=='MINIAPP'||order.payment!=='UNPAID'||snapshot.entitlements.length)throw Error('Order creation conflates payment');
+  await frame.locator('[data-action="simulate-payment"][data-result="UNKNOWN"]').click();
+  const beforeQuery=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  if(beforeQuery.orders.at(-1).payment!=='UNKNOWN')throw Error('Unknown payment missing');
+  await frame.locator('[data-action="query-payment"]').click();
+  snapshot=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  if(snapshot.orders.length!==beforeQuery.orders.length||snapshot.orders.at(-1).entitlement!=='PENDING'||snapshot.entitlements.length)throw Error('Payment must await issue');
+  await frame.locator('[data-action="issue-entitlements"]').click();
+  snapshot=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  if(snapshot.entitlements.length!==1||snapshot.orders.at(-1).entitlement!=='ISSUED'||JSON.stringify(snapshot.orders.at(-1).snapshot)!==frozen)throw Error('Frozen order or issue mismatch');
+  await openPage(frame,'enterprisePlans');
+  if(await frame.locator('[data-purchase-submit]').count()||!(await frame.locator('#oc-screen').innerText()).includes('QUOTE'))throw Error('Enterprise must be consultation only');
+  await openPage(frame,'orders');
+  if(!(await frame.locator('#oc-screen').innerText()).includes(order.id))throw Error('Canonical order history missing');
 
   await openPage(frame, 'revokeAuth');
   const revokeSubmit = frame.locator('[data-revoke-submit]');
@@ -255,17 +271,20 @@ async function assertNoOverflow(frame, label) {
   await frame.locator('[data-revoke-confirm]').check();
   if (await revokeSubmit.isDisabled()) throw new Error('Revoke submit did not unlock');
 
-  await openPage(frame, 'support');
-  await frame.locator('[data-action="support-type"]').first().click();
-  await frame.locator('[data-action="support-start"]').click();
-  if (!(await frame.locator('[data-support-result]').innerText()).includes('CS20261014027')) throw new Error('Support receipt missing');
+  await openPage(frame,'support');
+  const supportText=await frame.locator('#oc-screen').innerText();
+  if(!supportText.includes('人工客服联系方式待配置')||await frame.locator('#oc-screen input, #oc-screen textarea, [data-action="support-start"]').count()||/CS20|INV-|400-/.test(supportText))throw Error('Offline support must not accept submissions');
 
   await openPage(frame, 'call');
   const callText = await frame.locator('#oc-screen').innerText();
-  if (!callText.includes('小程序不能指定双卡手机') || !callText.includes('小程序拨号 · 仅支持手机号') || !callText.includes('138 **** 6208')) throw new Error('Call preparation lacks mobile-only or dual-SIM boundary');
+  if (!callText.includes('小程序不能指定双卡手机') || !callText.includes('小程序拨号 · 仅支持手机号') || !callText.includes('186 **** 4471')) throw new Error('Call preparation lacks the activated mobile or dual-SIM boundary');
   await frame.locator('[data-go="callerSelect"]').click();
   if (await frame.locator('.caller-option').count() !== 2) throw new Error('Mini Program caller selector must show only the two mobile numbers');
   if (!(await frame.locator('#oc-screen').innerText()).includes('固话号码不会出现在这里')) throw new Error('Mobile caller selector does not explain the landline path');
+  await frame.locator('[data-caller-id="phone-6208"]').click();
+  await frame.locator('.primary-action[data-go="call"]').click();
+  if (!(await frame.locator('#oc-screen').innerText()).includes('138 **** 6208')) throw new Error('Caller selection did not switch to the other mobile');
+  await frame.locator('[data-go="callerSelect"]').click();
   await frame.locator('[data-caller-id="phone-4471"]').click();
   await frame.locator('.primary-action[data-go="call"]').click();
   if (!(await frame.locator('#oc-screen').innerText()).includes('186 **** 4471')) throw new Error('Selected caller did not return to call preparation');
@@ -296,49 +315,39 @@ async function assertNoOverflow(frame, label) {
     await assertNoOverflow(frame, `${pageId}@320`);
   }
   await openPage(frame, 'evidenceBox');
-  await page.screenshot({ path: path.join(screenshotRoot, 'evidence-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-evidence-320.png'), fullPage: true });
   await openPage(frame, 'trialHome');
-  await page.screenshot({ path: path.join(screenshotRoot, 'trial-home-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-trial-home-320.png'), fullPage: true });
   await openPage(frame, 'capture');
-  await page.screenshot({ path: path.join(screenshotRoot, 'trial-entry-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-trial-entry-320.png'), fullPage: true });
   await openPage(frame, 'trialLimit');
-  await page.screenshot({ path: path.join(screenshotRoot, 'trial-limit-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-trial-limit-320.png'), fullPage: true });
   await openPage(frame, 'phone');
-  await page.screenshot({ path: path.join(screenshotRoot, 'phone-methods-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-phone-methods-320.png'), fullPage: true });
   await openPage(frame, 'phoneWechatConfirm');
-  await page.screenshot({ path: path.join(screenshotRoot, 'phone-wechat-authorization-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-phone-wechat-authorization-320.png'), fullPage: true });
   await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
-  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'phone-wechat-authorization-bottom-320.png') });
+  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-phone-wechat-authorization-bottom-320.png') });
   await openPage(frame, 'phoneSms');
-  await page.screenshot({ path: path.join(screenshotRoot, 'phone-sms-authorization-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-phone-sms-authorization-320.png'), fullPage: true });
   await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
-  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'phone-sms-authorization-bottom-320.png') });
+  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-phone-sms-authorization-bottom-320.png') });
   await openPage(frame, 'dialHandoff');
-  await page.screenshot({ path: path.join(screenshotRoot, 'dial-handoff-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-dial-handoff-320.png'), fullPage: true });
   await openPage(frame, 'landlineCall');
-  await page.screenshot({ path: path.join(screenshotRoot, 'landline-call-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-landline-call-320.png'), fullPage: true });
   await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
-  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'landline-call-bottom-320.png') });
+  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-landline-call-bottom-320.png') });
   await openPage(frame, 'numbers');
-  await page.screenshot({ path: path.join(screenshotRoot, 'mixed-numbers-320.png'), fullPage: true });
-  await openPage(frame, 'plans');
-  await page.screenshot({ path: path.join(screenshotRoot, 'plans-320.png'), fullPage: true });
-  await openPage(frame, 'enterprisePlans');
-  await page.screenshot({ path: path.join(screenshotRoot, 'enterprise-plans-320.png'), fullPage: true });
-  await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
-  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'enterprise-plans-bottom-320.png') });
-  await openPage(frame, 'plans');
-  await frame.locator('[data-product="个人基础"]').click();
-  await page.screenshot({ path: path.join(screenshotRoot, 'subscription-annual-320.png'), fullPage: true });
-  await frame.locator('[data-go="purchaseConfirm"]').click();
-  await page.screenshot({ path: path.join(screenshotRoot, 'purchase-confirm-320.png'), fullPage: true });
-  await frame.locator('[data-order-confirm]').check();
-  await frame.locator('[data-purchase-submit]').click();
-  await page.screenshot({ path: path.join(screenshotRoot, 'payment-success-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-mixed-numbers-320.png'), fullPage: true });
+  await openPage(frame,'plans');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-plans-320.png'),fullPage:true});
+  await openPage(frame,'enterprisePlans');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-enterprise-plans-320.png'),fullPage:true});
 
   await openPage(frame, 'capture');
   await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
-  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'free-toolbox-320.png') });
+  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-free-toolbox-320.png') });
   const freePhotoEntry = frame.locator('[data-entitlement-mode="free"][data-go="photoCapture"]');
   if ((await freePhotoEntry.count()) !== 1) throw new Error('Free photo evidence entry missing before entitlement use');
   await freePhotoEntry.click();
@@ -348,9 +357,9 @@ async function assertNoOverflow(frame, label) {
   await frame.locator('[data-material-submit]').click();
   const freeResultText = await frame.locator('#oc-screen').innerText();
   if (!freeResultText.includes('首份材料已完成免费固证') || !freeResultText.includes('免费固证权益已使用')) throw new Error('Free evidence completion state is incomplete');
-  await page.screenshot({ path: path.join(screenshotRoot, 'free-evidence-result-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-free-evidence-result-320.png'), fullPage: true });
   await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
-  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'free-evidence-result-actions-320.png') });
+  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-free-evidence-result-actions-320.png') });
 
   await openPage(frame, 'capture');
   const exhaustedHomeText = await frame.locator('#oc-screen').innerText();
@@ -359,18 +368,57 @@ async function assertNoOverflow(frame, label) {
   const freeLimitText = await frame.locator('#oc-screen').innerText();
   if (!freeLimitText.includes('免费固证额度已用完') || !freeLimitText.includes('进入相机、麦克风或文件选择器前先校验权益')) throw new Error('Free evidence limit must block before native capture or selection');
   if ((await frame.locator('[data-action="photo-shoot"], [data-action="video-start"], [data-action="audio-start"]').count()) !== 0) throw new Error('Capture control is reachable after the free evidence entitlement is exhausted');
-  await page.screenshot({ path: path.join(screenshotRoot, 'free-evidence-limit-320.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-free-evidence-limit-320.png'), fullPage: true });
   await frame.locator('[data-product="单次固证包"]').click();
   const singleEvidenceText = await frame.locator('#oc-screen').innerText();
-  if (!singleEvidenceText.includes('单次固证包') || !singleEvidenceText.includes('工具材料固证\n1 份') || !singleEvidenceText.includes('¥12.9')) throw new Error('Single evidence package detail is incomplete');
+  if (!singleEvidenceText.includes('单次出证权益') || !singleEvidenceText.includes('单项证据保存') || !singleEvidenceText.includes('¥12.90')) throw new Error('Single evidence package detail is incomplete');
 
+  // Review selection is read-only. Same-number claim changes association only.
+  const canonical=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  for(const scenario of ['returning','conflict','recycled','expired','exhausted','suspended']){
+    const before=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+    const result=await frame.evaluate(name=>window.__onecallMini.setReviewScenario(name),scenario);
+    if(!result.ok)throw Error('Missing scenario '+scenario);
+    if(JSON.stringify(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()))!==JSON.stringify(before))throw Error('Scenario selection changed business');
+    const hidden=await frame.locator('#oc-screen').innerText();
+    if(/TRIAL-|EVID-|到期 20/.test(hidden))throw Error('Preverification history leak');
+    await frame.locator('[data-go="claimVerify"]').click();
+    await frame.locator('[data-action="claim-submit"]').click();
+    const resultText=await frame.locator('#oc-screen').innerText();
+    if(['conflict','recycled'].includes(scenario)){
+      if(!resultText.includes('人工客服联系方式待配置')||/TRIAL-|EVID-/.test(resultText))throw Error('Blocked claim history leak');
+      await page.screenshot({path:path.join(screenshotRoot,'alignment-claim-'+scenario+'-320.png'),fullPage:true});
+    }else{
+      const after=await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),target=after.subjects.find(item=>item.id===result.subjectId);
+      if(target.identity!=='UNVERIFIED'||JSON.stringify(before.trialGrants)!==JSON.stringify(after.trialGrants)||JSON.stringify(before.evidence)!==JSON.stringify(after.evidence)||JSON.stringify(before.sessions)!==JSON.stringify(after.sessions))throw Error('Claim rewrote history');
+      await page.screenshot({path:path.join(screenshotRoot,'alignment-claim-'+scenario+'-320.png'),fullPage:true});
+      if(scenario==='returning'){
+        await openPage(frame,'plans');await frame.locator('[data-product="个人基础"]').click();await frame.locator('[data-go="purchaseConfirm"]').click();await frame.locator('[data-order-confirm]').check();await frame.locator('[data-purchase-submit]').click();
+        if((await frame.evaluate(()=>window.__onecallMini.businessSnapshot())).orders.length!==before.orders.length)throw Error('Unverified claimed subject bought through unrelated verified subject');
+      }
+    }
+    await frame.evaluate(data=>window.__onecallMini.loadReviewSnapshot(data),canonical);
+  }
+  const beforeInvalid=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  for(const key of ['employees','customerAuthSession','widgetState']){
+    const result=await frame.evaluate(({b,key})=>window.__onecallMini.loadReviewSnapshot({...b,[key]:{}}),{b:beforeInvalid,key});
+    if(result.ok||JSON.stringify(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()))!==JSON.stringify(beforeInvalid))throw Error('Non-atomic forbidden import');
+  }
+
+  await page.setViewportSize({ width: 393, height: 852 });
+  for (const pageId of ['ivrReturn','claimVerify','claimResult','claimBlocked','plans','purchaseConfirm','paymentSuccess','support']) {
+    await openPage(frame, pageId); await assertNoOverflow(frame, pageId + ' 393px');
+  }
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-support-393.png'), fullPage: true });
   await page.setViewportSize({ width: 760, height: 1100 });
   await openPage(frame, 'profile');
-  await page.screenshot({ path: path.join(screenshotRoot, 'profile-760.png'), fullPage: true });
+  await frame.locator('#oc-screen').evaluate(screen=>{screen.scrollTop=0;});
+  await frame.waitForTimeout(100);
+  await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-profile-760.png'), animations: 'disabled' });
 
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  await browser.close();
-  console.log('PASS: 57-page navigation, mobile and independent-landline caller flows, enterprise package structure, configurable catalog checkout, carrier fail-closed checks, all-caller usage aggregation, and 320px layout verified.');
+  console.log('PASS: 61-page navigation, mobile and independent-landline caller flows, enterprise package structure, configurable catalog checkout, carrier fail-closed checks, all-caller usage aggregation, and 320px layout verified.');
+  } finally { await browser.close(); }
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

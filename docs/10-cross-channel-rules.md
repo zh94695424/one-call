@@ -1,12 +1,12 @@
 # 跨端套餐与状态规则
 
-> 当前状态：S1 共享规则及 S2 运营后台接入已实现，2026-10-20。本文定义本地原型的统一演示语义；小程序、Web 与完整 IVR 分支展示接入安排在 S3。演示数据不是生产定价、真实支付或真实 IVR 能力。
+> 当前状态：S1/S2/S3 本地实现与规定 QA 已通过，2026-10-20；正式评审/验收由主控后续 gate 决定。本文定义三个本地原型的统一演示语义。演示数据不是生产定价、真实支付或真实 IVR 能力。
 
 ## 1. 单一规则源
 
 `shared/onecall-business.js` 是当前套餐样例、状态标签、线下客服配置和窄业务转换的唯一可执行来源。三个原型通过受控内联生成段使用同一份模块，以兼容 `file://` 和小程序预览的 `srcdoc` 沙箱。各页面仍保留自己的内存状态；刷新重置，浏览器标签之间不会自动同步。
 
-后续跨端 QA 传递的是经过校验的本地评审快照，不是网络服务、生产接口或真实系统联调。快照仅包含业务字段，不包含员工、凭据、客户登录会话或 UI 状态。快照中的 `sequence` 只是本地 ID 分配提示，不是唯一性证明；分配器会跳过对应业务集合中已占用的下一候选 ID，成功状态提交前还会执行完整校验。
+跨端 QA 传递经过校验的本地评审快照，不是网络服务、生产接口或真实系统联调。`__onecallOps`、`__onecallMini`、`__onecallWeb` 的 snapshot/import/navigation hooks 仅供本地评审，上线构建须关闭。快照仅含业务字段，不含员工、凭据、客户登录会话或 UI 状态。`sequence` 只是本地 ID 分配提示，不是唯一性证明；分配器跳过已占用候选 ID，提交前完整校验。
 
 ## 2. 状态独立性
 
@@ -60,11 +60,13 @@ PAID -> PENDING -> ISSUED（或保留 FAILED 后重试）
 
 ## 6. 线下人工客服
 
-统一配置为 `mode=OFFLINE`、`configured=false`，联系方式和工作时间为空。页面接入后只展示“人工客服联系方式待配置”以及咨询、退款、发票、认领所需信息，不提供在线提交、审批、成功回执、处理进度、虚构电话/邮箱/微信或 SLA 承诺。
+统一配置为 `mode=OFFLINE`、`configured=false`，联系方式和工作时间为空。三端仅展示“人工客服联系方式待配置”以及咨询、退款、发票、认领所需信息，不提供在线提交、审批、成功回执、处理进度、虚构电话/邮箱/微信或 SLA 承诺。Web 的 invoice-apply 旧路由同样只显示线下指南。
 
 真实联系方式、退款规则、发票 SOP 和生产商品参数需要产品、运营与财务另行确认；未确认前必须阻断生产发布，不能用演示值代替。
 
 ## 7. 本地验证
+
+S3 修复回归另覆盖普通微信/短信开通的主体、同意、试用与后续页面连续性，拒绝分支的原子性；共享 helper 生成的混合账户在当前账户零/一/两个号码有订单时的订单与权益范围；季付、年付和自定义发放间隔的目录、确认及冻结历史展示。短信 `18600004471 / 628104` 是本地 fixture，不发送或验证真实短信。结果与精确截图增量见 [S3 fix](gateflow/cross-channel-alignment-s3-fix.md)，仍需主控安排复审和裁决。
 
 ```powershell
 node --check .\shared\onecall-business.js
@@ -72,9 +74,13 @@ node --check .\shared\build-prototypes.js
 node --test .\shared\qa\business.test.js
 node --test .\shared\qa\runner-exit.test.js
 node .\shared\build-prototypes.js --check
+powershell -ExecutionPolicy Bypass -File .\operations-prototype\qa\run.ps1
+powershell -ExecutionPolicy Bypass -File .\prototype\qa\run.ps1
+powershell -ExecutionPolicy Bypass -File .\web-prototype\qa\run.ps1
+node .\shared\qa\cross-channel.js
 ```
 
 运营后台 S2 已使用同一业务状态，六个主导航为概览、用户、套餐、订单、员工和操作记录。开通/IVR 为用户子导航，试用为套餐子导航。独立员工登录、两类权限、至少一个启用管理员、会话撤销和员工身份审计均为本地演示；真实身份与后端鉴权仍属生产服务工作。新增/编辑草稿、已发布复制、发布退市、上下架和完整历史检查不覆盖订单及已发试用。旧 PKG 样例仅作只读历史版本。
 
-三个原型 runner 会验证共享模块的生成一致性。S2 的后台 QA 还覆盖权限伪造、过期确认、员工/套餐完整流程及 1440/1280/1024/720 视口；小程序/Web 的旧文案与展示仍由 S3 迁移，不能把当前状态描述为已经完成跨端同步。
+三个 runner 和跨端 QA 已通过；覆盖后台员工/套餐、十二 IVR 场景，Mini 61 页与 393/320px，Web 既有角色/证据等回归与 1440/1280/1024/720px。跨端脚本先在后台真实演示登录并发布套餐/试用，再检查两端可见版本/价格/权益/有效期/渠道、冻结结算与下架/移除渠道拒绝、动态 IVR 原试用/证据认领、WEB 与 MINIAPP 订单、支付与独立发放、事件重放、五类主体引用篡改、逐类禁止字段原子拒绝及模块哈希相同。运行记录和目视截图见 [S3 implementation](gateflow/cross-channel-alignment-s3-implementation.md)。这些是本地 fixture 验证，生产并发、支付验签、证据权限和持久化仍未实现。
 

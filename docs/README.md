@@ -5,7 +5,9 @@
 > 基线日期：2026-10-20
 > 适用范围：微信小程序、客户 Web、自建 IVR、Java 服务端、精简运营后台
 
-当前开通/订购与本期后台范围以 [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) 为准，统一演示套餐、状态转换和线下客服口径见 [10-cross-channel-rules.md](10-cross-channel-rules.md)。01—08 中运营商开通接口、未实名禁止全部取证、55 路由和在线工单/退款/发票的旧约束已被当前基线覆盖。共享规则底座已建立；运营后台与客户页面仍等待后续切片接入，不应据旧页面反推当前业务规则，也不应把 S1 描述为已完成跨端改版。
+当前开通/订购与本期后台范围以 [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) 为准，统一演示套餐、状态转换和线下客服见 [10-cross-channel-rules.md](10-cross-channel-rules.md)。S1 共享规则、S2 运营后台与 S3 客户页面/IVR 展示已实现并通过本地 QA，证据见 [S3 implementation](gateflow/cross-channel-alignment-s3-implementation.md)；后续评审与验收仍由主控 gate 决定。01—08 中运营商订购、未实名禁止全部取证、旧路由及在线工单/退款/发票约束为历史稿；当前跨端交接为显式本地 fixture，不代表生产联调。
+
+S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix](gateflow/cross-channel-alignment-s3-fix.md)；其结论仅为修复交接，不替代复审与验收。
 
 ## 1. 文档目的
 

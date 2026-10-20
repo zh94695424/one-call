@@ -114,9 +114,22 @@ fs.mkdirSync(screenshotDir, { recursive: true });
   await action('demo-confirm');await text('#demo-outcome','不重复开通');assert.equal((await business()).trialGrants.filter(g=>g.subjectId===sid).length,1);
   await action('demo-use');const evidence=(await business()).evidence.find(e=>e.subjectId===sid);assert.equal(evidence.recordedSeconds,60);assert.equal(evidence.identityAtCapture,'UNVERIFIED');
   const links=(await business()).sessions.map(s=>[s.id,s.subjectId,s.confirmedSubjectId]);await action('demo-claim');b=await business();assert.equal(b.subjects.find(s=>s.id===sid).identity,'UNVERIFIED');assert.deepEqual(b.evidence.find(e=>e.id===evidence.id),evidence);assert.deepEqual(b.sessions.map(s=>[s.id,s.subjectId,s.confirmedSubjectId]),links);
-  const count=b.orders.length;await action('demo-guide');await text('#demo-outcome','未创建付费订单');assert.equal((await business()).orders.length,count);await action('demo-use');await action('demo-use');await text('#modal-error','剩余试用权益');await close();await go('/users/'+sid);await text('#content','已耗尽');await shot('user-trial-1440');
-  for(const scenario of ['no-caller','no-consent']){const prev=await business();await demo(scenario);await action('demo-confirm');await text('#modal-error','不发试用');await action('demo-use');const after=await business();assert.deepEqual(after.trialGrants,prev.trialGrants);assert.deepEqual(after.evidence,prev.evidence);assert.deepEqual(after.activations,prev.activations);assert.equal(after.subjects.length,prev.subjects.length);await close();}
-  await demo('expired');await action('demo-confirm');await action('demo-use');await text('#modal-error','未到期');await close();await demo('conflict');await action('demo-confirm');await action('demo-claim');await text('#modal-error','绑定冲突');await close();
+  const count=b.orders.length;await action('demo-guide');await text('#demo-outcome','未创建付费订单');assert.equal((await business()).orders.length,count);const consumed=await business();await action('demo-use');await action('demo-use');assert.deepEqual(await business(),consumed);await close();await go('/users/'+sid);await text('#content','试用中');await shot('user-trial-1440');
+  for(const scenario of ['missing','timeout','wrong']){const prev=await business();await demo(scenario);await action('demo-confirm');await text('#modal-error','不发试用');await action('demo-use');const after=await business();assert.deepEqual(after.trialGrants,prev.trialGrants);assert.deepEqual(after.evidence,prev.evidence);assert.deepEqual(after.activations,prev.activations);assert.equal(after.subjects.length,prev.subjects.length);await close();}
+  await demo('expired');await action('demo-confirm');await action('demo-use');await text('#modal-error','已过期');await close();await demo('conflict');await action('demo-confirm');await action('demo-claim');await text('#modal-error','绑定冲突');await close();
+  for(const scenario of ['fixed','repeat','suspended','disabled','exhausted','recycled']){
+    const before=await business();await demo(scenario);await text('.modal','录音告知');await text('.modal','按键 1');await text('.modal','ONECALL-SERVICE-2026.10');
+    if(scenario==='fixed'){await text('.modal','微信搜索小程序');await text('.modal','主叫挑战');}
+    await action('demo-confirm');
+    if(scenario==='suspended'){await text('#modal-error','暂停');}
+    else if(scenario==='disabled'){await text('#demo-outcome','新试用领取已关闭');assert.equal((await business()).rule.enabled,true);}
+    else if(scenario==='exhausted'){await action('demo-use');const b=await business(),e=b.evidence.at(-1);assert.equal(e.recordedSeconds,20);assert.equal(b.trialGrants.find(g=>g.subjectId===e.subjectId).usedSeconds,300);const after=await business();await action('demo-use');assert.deepEqual(await business(),after);await shot('ivr-exhausted-1440');}
+    else if(scenario==='recycled'){await action('demo-claim');await text('#modal-error','回收');}
+    else if(scenario==='repeat'){assert.equal((await business()).trialGrants.filter(g=>g.subjectId==='SUBJ-REPEAT-001').length,1);}
+    const count=(await business()).orders.length;await action('demo-guide');assert.equal((await business()).orders.length,count);assert.equal((await business()).sessions.at(-1).guidanceStatus,'GUIDED');
+    if(['repeat','suspended','disabled'].includes(scenario))assert.deepEqual((await business()).trialGrants,before.trialGrants);
+    await close();
+  }
   await go('/users/SUB-1002');await action('suspend');await confirm();const oldGrant=(await business()).trialGrants.find(g=>g.subjectId==='SUB-1002');await action('resume');await confirm();assert.deepEqual((await business()).trialGrants.find(g=>g.subjectId==='SUB-1002'),oldGrant);
   await go('/users');await page.selectOption('[name="source"]','IVR');await page.selectOption('[name="status"]','pending');await page.locator('#user-filter button').click();await text('tbody','SUB-1002');await page.fill('[name="q"]','absent');await page.locator('#user-filter button').click();await text('#content','暂无符合条件');
   await go('/orders/ORD-602');await text('#content','支付成功');await text('#content','待发放');assert.equal(await page.locator('#content [data-action]').count(),0);
@@ -141,6 +154,6 @@ fs.mkdirSync(screenshotDir, { recursive: true });
   // Disabled new grants use a fresh known caller; existing first-trial grants survive.
   await login();await go('/trial-settings');const existingGrants=(await business()).trialGrants;await action('edit-trial');await page.selectOption('#trial-enabled','false');await confirm();await demo('new');await action('demo-confirm');await text('#demo-outcome','新试用领取已关闭');assert.deepEqual((await business()).trialGrants,existingGrants);await action('demo-use');await text('#modal-error','剩余试用权益');await close();
   assert.deepEqual(errors,[]);
-  console.log('Alignment S2 operations QA passed: six primary entries; independent employee login/create/edit/enable/disable/reset; last admin and self session revocation; DOM/route guards; frozen stale/double/cancel confirmations; complete versioned canonical catalog and trial; historical snapshots; IVR basic regression; responsive 1440/1280/1024/720.');
+  console.log('Alignment S3 operations QA passed: six primary entries; independent employee login/create/edit/enable/disable/reset; last admin and self session revocation; DOM/route guards; frozen stale/double/cancel confirmations; complete versioned canonical catalog and trial; historical snapshots; all twelve IVR cases, stable confirm/consume replay, bounded remaining usage; responsive 1440/1280/1024/720.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e.stack||e);process.exit(1);});
