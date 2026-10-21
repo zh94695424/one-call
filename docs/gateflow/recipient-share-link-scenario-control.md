@@ -17,7 +17,8 @@
 - Accepted plan commit: `041069c`.
 - S1 implementation: `docs/gateflow/recipient-share-link-scenario-s1-implementation.md`; Web QA and PC/mobile visual inspection passed.
 - S1 code review/re-review: `docs/reviews/code-review-20261021-145219.md`; `pass-with-risks`, no findings or fix required.
-- Current gate / next entry point: `accepted slice commit`.
+- Aggregate deepreview: `docs/reviews/code-review-20261021-145535.md`; `pass-with-risks`, no findings or fix required.
+- Current gate / next entry point: `accepted aggregate deepreview commit`.
 - R1: 静态 fixture、模拟播放器和本地 query URL 不代表生产分享服务。Assigned to production share/media work unit, owner: backend/media.
 - R2: 浏览器设备模拟不替代真实 iOS/Android 浏览器兼容测试。Assigned to production device QA work unit, owner: frontend QA.
 - R3: repository has no remote; publication/PR gates require maintainer configuration. Assigned to repository maintainer.
