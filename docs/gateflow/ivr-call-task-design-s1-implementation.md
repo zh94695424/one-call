@@ -21,7 +21,7 @@
 
 ## Validation
 
-- `git diff --check`：pass，仅有 Windows 工作区预期的 LF/CRLF warning，无 whitespace error。
+- 工作区 `git diff --check` 首次未覆盖当时尚未跟踪的 13；提交范围复核发现其元数据三行含 Markdown 硬换行尾空格，已在 aggregate validation fix 中移除。最终 `git diff --check 13f23ae..HEAD` 以修复后结果为准。
 - 本地 Markdown 链接检查：10 个变更设计文件中的 `.md` 链接全部存在。
 - Markdown 围栏检查：12/13 的代码围栏成对。
 - 定向检索：旧架构中的强制 FreeSWITCH 表述已从当前生产链路替换为自研 IVR；保留“不得按最新被叫回退”的显式保护。

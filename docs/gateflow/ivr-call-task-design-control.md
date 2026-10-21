@@ -22,11 +22,13 @@
 | S1 fix / re-review | no-change pass；无 accepted findings |
 | accepted slice commit | pass；`1fde04a` |
 | aggregate deepreview | pass；`../reviews/code-review-20261021-181631.md`，未发现实质性问题 |
-| aggregate fix / re-review | no-change pass；无 accepted findings |
+| aggregate validation fix | fixed；`ivr-call-task-design-aggregate-fix.md`，移除 13 的三处尾空格并纠正首次验证记录 |
+| aggregate re-review | pass；`../reviews/code-review-20261021-182316.md`，设计语义无变化 |
+| accepted deepreview commit | `2ef84dd` 记录首次 review；最终 validation fix commit 待创建 |
 
 ## Current gate / next entry point
 
-accepted deepreview commit。
+final accepted deepreview commit。
 
 ## Residual risks
 
