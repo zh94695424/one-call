@@ -78,7 +78,14 @@ async function assertNoOverflow(frame, label) {
   assert.ok(initialAccount.identities.every(item=>!Object.hasOwn(item,'providerSubject')));
   await openPage(frame,'accountSecurity');
   const accountSecurityText=await frame.locator('#oc-screen').innerText();
-  assert.ok(accountSecurityText.includes('非登录身份'));
+  assert.ok(accountSecurityText.includes('手机号登录'));
+  assert.ok(accountSecurityText.includes('业务用途'));
+  assert.ok(accountSecurityText.includes('绑定、验证或认领业务号码不会把它加入登录身份'));
+  assert.ok(!accountSecurityText.includes('非登录身份'));
+  const loginPhone=initialAccount.identities.find(item=>item.provider==='PHONE').maskedLabel;
+  assert.ok(accountSecurityText.includes(loginPhone));
+  const businessPhone=ordinaryInitial.subjects.find(item=>item.accountId===initialAccount.account.id&&item.numberType==='MOBILE').maskedNumber;
+  assert.ok(accountSecurityText.includes(businessPhone));
   assert.ok(accountSecurityText.includes('企业权限来自组织成员关系'));
   await frame.locator('.phone').screenshot({path:path.join(screenshotRoot,'alignment-account-security-760.png'),animations:'disabled'});
   await openPage(frame,'provisioning');

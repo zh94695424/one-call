@@ -34,7 +34,10 @@
 - S2 implementation: `docs/gateflow/account-identity-workspaces-s2-implementation.md`.
 - S2 code review/re-review: `docs/reviews/code-review-20261021-103742.md`; S2-01 / S2-02 accepted and `已修复`; final Web QA passed.
 - S2 fix artifact: `docs/gateflow/account-identity-workspaces-s2-fix.md`.
-- Current gate / next entry point: `accepted S2 commit`。
+- Accepted S2 commit: `b167e1b`.
+- Aggregate deepreview / re-review: `docs/reviews/code-review-20261021-105625.md`; `pass-with-risks`; AG-01 accepted and `已修复`.
+- Aggregate fix: `docs/gateflow/account-identity-workspaces-aggregate-fix.md`; complete Mini QA and generated check passed, screenshots reviewed.
+- Current gate / next entry point: `accepted deepreview commit`。
 - External state: repository has no configured remote; push and draft PR gates are expected to remain unavailable and must be reported, not fabricated.
 
 ## Residual risk register
