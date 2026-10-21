@@ -1,3 +1,5 @@
+> 后续修订说明（2026-10-21）：本文记录原 S1 实施时的规则；“确认后预占”及“用被叫确认防止迟到呼入误拨”已由 [自动外呼修订计划](ivr-call-task-auto-dial-plan.md) 的后续文档 slice 取代。当前行为以 13 和后续 implementation 记录为准；本页仅保留原 gate 历史。
+
 # IVR 呼叫任务系统设计 S1 实施记录
 
 ## Gate / scope

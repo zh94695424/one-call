@@ -13,7 +13,7 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 
 生产目标技术选型、模块边界、部署拓扑、IVR 机房连接、数据真源和首发实施顺序见 [12-technology-stack-and-system-architecture.md](12-technology-stack-and-system-architecture.md)。该文档采用适合 5 人团队的模块化单体方案，不把当前静态原型视为生产实现。
 
-微信小程序拨号与现有自研 IVR 声讯平台的生产对接见 [13-ivr-call-task-and-inbound-design.md](13-ivr-call-task-and-inbound-design.md)：同一主叫单一待拨任务、默认 30 秒可配置有效期、独立呼入决策、原子领取、外呼桥接、通话/时长/录音上传和跨端状态均以该文档为准。
+微信小程序拨号与现有自研 IVR 声讯平台的生产对接见 [13-ivr-call-task-and-inbound-design.md](13-ivr-call-task-and-inbound-design.md)：同一主叫单一待拨任务、默认 30 秒可配置有效期、首次有效呼入原子领取并预占、按冻结被叫自动外呼、接通桥接录音（任务路径无需确认被叫号码）、通话/时长/录音上传和跨端状态均以该文档为准。
 
 ## 1. 文档目的
 
@@ -44,7 +44,7 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 | [10-cross-channel-rules.md](10-cross-channel-rules.md) | 当前共享演示规则：套餐、状态转换、快照边界与线下客服口径 | 产品、研发、运营、测试 |
 | [11-account-identity-and-workspaces.md](11-account-identity-and-workspaces.md) | 账号表职责、登录身份、企业成员空间、业务号码边界和原型评审入口 | 产品、研发、安全、测试 |
 | [12-technology-stack-and-system-architecture.md](12-technology-stack-and-system-architecture.md) | 生产目标技术栈、模块化单体、IVR/网络/部署拓扑、数据真源、安全、运维和实施顺序 | 架构、前后端、IVR、测试、安全、运维 |
-| [13-ivr-call-task-and-inbound-design.md](13-ivr-call-task-and-inbound-design.md) | 小程序待拨任务、自研 IVR 呼入决策、30 秒失效、原子领取、外呼桥接、通话/时长/录音上传和验收 | 产品、小程序、服务端、IVR、测试、安全 |
+| [13-ivr-call-task-and-inbound-design.md](13-ivr-call-task-and-inbound-design.md) | 小程序待拨任务、自研 IVR 呼入决策、30 秒失效、原子领取/预占、自动外呼桥接录音、通话/时长/录音上传和验收 | 产品、小程序、服务端、IVR、测试、安全 |
 
 ## 3. 已锁定的产品基线
 
