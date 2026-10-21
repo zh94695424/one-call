@@ -25,7 +25,8 @@ The resolve response freezes an authorization deadline, but the prior design did
 - `git diff --check`: pass.
 - Focused semantic re-review: pass; the design identifies the existing event endpoint, idempotency identity, required terminal reason, IVR proof condition and backend reservation-settlement condition. Uncertain line outcomes remain in reconciliation.
 - Aggregate deepreview re-review: pass; finding `C1` fixed and accepted in `../reviews/code-review-20261021-215258.md`.
-- Accepted deepreview commit: pending.
+- Accepted deepreview commit: `f31ddc3` (`gateflow: accept deepreview for ivr-call-task-auto-dial`).
+- Push / draft PR: blocked because `git remote -v` is empty.
 
 ## Residual risk
 

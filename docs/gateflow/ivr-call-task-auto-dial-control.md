@@ -22,12 +22,12 @@
 | S1 code review | pass；`../reviews/code-review-20261021-213414.md`；无实质性 finding；静态文档校验通过 |
 | accepted slice commit | pass；`dc72b58` (`gateflow: accept ivr-call-task-auto-dial S1`) |
 | aggregate deepreview | pass；finding C1 已修复并 re-review accepted；`../reviews/code-review-20261021-215258.md` |
-| accepted deepreview commit | pending；仅提交本 work unit 文档与 review artifact |
-| push / draft PR | not reached；`git remote -v` is empty |
+| accepted deepreview commit | pass；`f31ddc3` (`gateflow: accept deepreview for ivr-call-task-auto-dial`) |
+| push / draft PR | blocked；`git remote -v` is empty |
 
 ## Current gate / next entry point
 
-accepted deepreview commit。C1 修复明确授权截止后禁止新 B 路请求，并规定 `OUTBOUND_NOT_STARTED / AUTHORIZATION_EXPIRED` 终态及幂等预占释放；提交范围排除用户已有 QA 截图和未跟踪的重复计划评审草稿。
+push / draft PR；需要先为仓库配置 Git remote。C1 修复与复审已本地提交；范围排除用户已有 QA 截图和未跟踪的重复计划评审草稿。
 
 ## Residual risks
 
