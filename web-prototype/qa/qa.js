@@ -72,6 +72,28 @@ async function loginByPhone(page, phone, workspaceId = null) {
     await page.goto(previewUrl, { waitUntil: 'load' });
     await page.waitForSelector('#auth-root .auth-card');
 
+    const recipientPage = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+    recipientPage.on('pageerror', error => pageErrors.push(`recipient: ${error.message}`));
+    recipientPage.on('console', message => { if (message.type() === 'error') consoleErrors.push(`recipient: ${message.text()}`); });
+    await recipientPage.goto(`${previewUrl}?share=SHR-RECIPIENT-DEMO`, { waitUntil: 'load' });
+    await recipientPage.waitForSelector('.public-share-page');
+    await expectText(recipientPage, '.public-share-page', '李晓分享给你一段通话录音');
+    await expectText(recipientPage, '.public-share-page', '免验证 · 无需登录');
+    await expectText(recipientPage, '.public-share-page', '录音播放副本');
+    await expectText(recipientPage, '.public-share-page', '第 1 / 20 次成功访问');
+    expect(await recipientPage.locator('#share-code-input,.auth-card').count() === 0, 'Direct recipient link must not require login or an extraction code');
+    expect((await recipientPage.evaluate(() => window.__onecallWeb.currentRoute())) === 'share-access', 'Share query must bootstrap the public recipient route before login');
+    expect(!(await recipientPage.locator('.public-share-page').innerText()).includes('original.wav'), 'Direct recipient link must not expose an original storage address');
+    await screenshot(recipientPage, 'share-recipient-link-pc-1440.png', 1440, 960);
+    await recipientPage.locator('[data-action="toggle-audio"]').click();
+    expect(await recipientPage.locator('[data-action="toggle-audio"]').getAttribute('aria-label') === '暂停', 'PC recipient must be able to start playback');
+    await recipientPage.locator('[data-action="toggle-audio"]').click();
+    expect(await recipientPage.locator('[data-action="toggle-audio"]').getAttribute('aria-label') === '播放', 'PC recipient must be able to pause playback');
+    await screenshot(recipientPage, 'share-recipient-link-mobile-393.png', 393, 852);
+    expect((await recipientPage.locator('.public-share-main').boundingBox()).width <= 393, 'Mobile recipient content must fit the viewport');
+    await expectText(recipientPage, '.public-share-page', '第 1 / 20 次成功访问');
+    await recipientPage.close();
+
     await expectText(page, '#auth-root', '登录证枢能力中枢');
     expect(await page.locator('[data-login-method]').count() === 2, 'Login must offer WeChat QR and mobile verification code');
     await screenshot(page, 'login-wechat-1440.png', 1440);
@@ -613,6 +635,7 @@ async function loginByPhone(page, phone, workspaceId = null) {
 
     await page.evaluate(() => { state.session='signedIn'; state.shareAccessState='entry'; state.shareCodeAttempts=0; state.shareCodeInput=''; go('shares'); });
     await expectText(page, '#content', '管理已经创建的受控播放授权');
+    expect(await page.locator('[data-action="share-recipient-demo"]').count() === 1, 'Share management must expose the recipient scenario entry');
     await expectText(page, '#content', '已过期');
     await expectText(page, '#content', '已撤销');
     await screenshot(page, 'shares-management-1440.png', 1440);
