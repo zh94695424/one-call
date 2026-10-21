@@ -11,6 +11,8 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 
 账号体系与当前原型入口见 [11-account-identity-and-workspaces.md](11-account-identity-and-workspaces.md)：自然人账户统一，微信 / 登录手机号、企业成员关系和业务号码分域；企业使用成员工作空间，运营员工账号独立。
 
+生产目标技术选型、模块边界、部署拓扑、IVR 机房连接、数据真源和首发实施顺序见 [12-technology-stack-and-system-architecture.md](12-technology-stack-and-system-architecture.md)。该文档采用适合 5 人团队的模块化单体方案，不把当前静态原型视为生产实现。
+
 ## 1. 文档目的
 
 本目录将现有 PRD、页面截图、Logo 资产和公证处存证接口资料整理为一套统一、可追踪的产品评审基线。它用于产品、设计、研发、测试、安全、法务和外部供应商共同评审，不等同于已经完成的法律意见、正式供应商接口协议或生产上线批准。
@@ -39,6 +41,7 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 | [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) | 当前业务基线：自建 IVR、三入口开通订购、免实名试用、认领和 5 人团队精简后台 | 产品、研发、运营、测试 |
 | [10-cross-channel-rules.md](10-cross-channel-rules.md) | 当前共享演示规则：套餐、状态转换、快照边界与线下客服口径 | 产品、研发、运营、测试 |
 | [11-account-identity-and-workspaces.md](11-account-identity-and-workspaces.md) | 账号表职责、登录身份、企业成员空间、业务号码边界和原型评审入口 | 产品、研发、安全、测试 |
+| [12-technology-stack-and-system-architecture.md](12-technology-stack-and-system-architecture.md) | 生产目标技术栈、模块化单体、IVR/网络/部署拓扑、数据真源、安全、运维和实施顺序 | 架构、前后端、IVR、测试、安全、运维 |
 
 ## 3. 已锁定的产品基线
 

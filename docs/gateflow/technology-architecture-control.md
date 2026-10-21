@@ -15,8 +15,12 @@
 
 - Plan: `docs/gateflow/technology-architecture-plan.md`.
 - Plan review: `docs/reviews/plan-review-20261021-152509.md`; `pass-with-risks`, no findings or fix required.
-- Current gate / next entry point: `accepted plan commit`.
+- Accepted plan commit: `44a5642`.
+- S1 implementation: `docs/gateflow/technology-architecture-s1-implementation.md`; architecture document and navigation complete, structural validation passed.
+- S1 code review: `docs/reviews/code-review-20261021-153413.md`; re-review `pass-with-risks`, all three accepted findings `已修复`: atomic IVR reservation, Outbox-only publication and preservation of the last admitted share session.
+- S1 fix: `docs/gateflow/technology-architecture-s1-fix.md`.
+- S1 acceptance: code/document review and structural validation passed; accepted slice commit records this artifact.
+- Current gate / next entry point: `aggregate deepreview`.
 - R1: FreeSWITCH/SIP 接入、线路容量和运营商机房网络条件仍需线路供应商与运维验证。Assigned to IVR integration work unit, owner: telephony/backend.
 - R2: 对象存储 WORM、KMS、境内部署及公证/AI供应商必须在采购和安全评审中定型。Assigned to infrastructure/security work unit.
 - R3: SLO、RPO/RTO 和容量数字缺少真实业务量输入。Assigned to capacity and production-readiness work unit.
-

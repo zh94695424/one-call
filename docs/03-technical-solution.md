@@ -1,5 +1,7 @@
 # 一通话 ONECALL 技术方案
 
+> 当前生产技术栈、模块边界和部署拓扑已收敛到 [12 技术栈与系统架构设计](12-technology-stack-and-system-architecture.md)。本文继续提供领域模型、状态机和接口域细节；其中 `CarrierProvisioning`、运营商订购开通及全局实名前置属于历史设计，不再作为实现依据。
+
 > 2026-10-20 架构覆盖：以 [09 当前业务基线](09-business-activation-and-lean-admin.md) 的自建 IVR、稳定 BusinessSubject、ConsentRecord、内部 ServiceActivation、一次 TrialGrant 和追加 SubjectClaim 为准。下文 CarrierProvisioning/运营商订购开通接口与全局实名前置状态机属旧稿，已被覆盖；IVR 负责通信采集与控制，后台负责开通/订购/权益，运营商仅提供基础通信承载。支付仍需可信服务端确认；未实名 IVR 可试用产证，但不等于公证资格。
 
 > 状态：技术评审稿  
