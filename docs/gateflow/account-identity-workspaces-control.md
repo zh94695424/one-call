@@ -27,7 +27,10 @@
 - Baseline: `e01ed1c`。
 - Plan artifact: `docs/gateflow/account-identity-workspaces-plan.md`.
 - Plan review: `docs/reviews/plan-review-20261021-093554.md`; conclusion `pass-with-risks`; PR-01 and PR-02 fixed in plan.
-- Current gate / next entry point: `accepted plan commit`。
+- Accepted plan commit: `7d1ac9b`.
+- S1 implementation: `docs/gateflow/account-identity-workspaces-s1-implementation.md`; validation passed.
+- S1 code review: `docs/reviews/code-review-20261021-094700.md`; `pass-with-risks`, no findings and no fix/re-review required.
+- Current gate / next entry point: `accepted S1 commit`。
 - External state: repository has no configured remote; push and draft PR gates are expected to remain unavailable and must be reported, not fabricated.
 
 ## Residual risk register

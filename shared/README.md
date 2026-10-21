@@ -33,7 +33,9 @@ node .\shared\build-prototypes.js --check
 
 ## 接口与边界
 
-模块导出 `schemaVersion`、`labels`、`support`、`demoCatalog` 以及套餐可见性、内部开通、开通状态迁移、IVR 会话确认、一次性试用、认领、录音计量、订单、支付结果、权益发放和评审快照函数。`setActivationStatus` 是暂停/恢复内部服务的共享所有者：Mini/Web 客户端与运营后台分别使用明确的 `MINIAPP`、`WEB`、`OPERATIONS` 迁移来源；函数更新主体状态和修订号，追加可审计的 `activationTransitions` 记录，且不会重新发放试用。每条迁移冻结 `fromRevision` / `toRevision`，并要求 `toRevision = fromRevision + 1`。`visibleOffers` 为每个可见版本附加共享契约生成的 `versionToken`；调用方也可通过 `offerVersionToken` 为同一版本生成与对象属性顺序无关的 token。`createOrder` 必须提交当前 `ACTIVE` 版本的 token，缺失、空值、目录内容变化、草稿或下架状态都会原子拒绝。历史订单及其事件结果仍校验冻结的下单时快照，不会因当前目录下架或发布新版本而失效。修改类函数接收显式业务状态；拒绝时不部分写入。
+模块导出 `schemaVersion`、`labels`、`support`、`demoCatalog` 以及套餐可见性、内部开通、开通状态迁移、IVR 会话确认、一次性试用、认领、录音计量、订单、支付结果、权益发放和评审快照函数。它还提供独立的客户账号演示契约：`resolveDemoLogin` 只把已启用的微信/手机号登录身份解析为自然人账户，`workspacesForAccount` 只从有效组织成员关系返回工作空间与只读角色。`demoAccountDirectory` 是不含原始 provider subject 的脱敏只读投影；`createAccountDirectoryFixture` 只供本地测试和原型评审，不是生产账号接口。企业没有共享登录凭据，业务绑定手机号/固话也不会自动进入登录身份目录。
+
+`setActivationStatus` 是暂停/恢复内部服务的共享所有者：Mini/Web 客户端与运营后台分别使用明确的 `MINIAPP`、`WEB`、`OPERATIONS` 迁移来源；函数更新主体状态和修订号，追加可审计的 `activationTransitions` 记录，且不会重新发放试用。每条迁移冻结 `fromRevision` / `toRevision`，并要求 `toRevision = fromRevision + 1`。`visibleOffers` 为每个可见版本附加共享契约生成的 `versionToken`；调用方也可通过 `offerVersionToken` 为同一版本生成与对象属性顺序无关的 token。`createOrder` 必须提交当前 `ACTIVE` 版本的 token，缺失、空值、目录内容变化、草稿或下架状态都会原子拒绝。历史订单及其事件结果仍校验冻结的下单时快照，不会因当前目录下架或发布新版本而失效。修改类函数接收显式业务状态；拒绝时不部分写入。
 
 事件幂等记录按 `ACTIVATION`、`ACTIVATION_STATUS`、`CLAIM`、`IVR_CONFIRM`、`EVIDENCE`、`ORDER`、`PAYMENT`、`ENTITLEMENT` 分域。同一字符串可在不同动作域独立使用；同域同键只允许完全相同的规范化输入重放，并返回首次处理时保存的结果快照。同域同键但输入不同会原子拒绝。创建类事件身份与副作用对象保持域内一一对应：`claims[].requestId`、`orders[].idempotencyKey` 分别唯一，非 IVR 与 IVR 激活的 `eventId` 分别在 `ACTIVATION`、`IVR_CONFIRM` 域内唯一；每条证据和每条开通状态迁移都必须分别由且仅由一条 `EVIDENCE`、`ACTIVATION_STATUS` 事件拥有，事件也只能拥有对应的一条规范结果。权益对象不能被同域多个创建记录重复声明。`PAYMENT` 是明确例外，多个不同回调事件可按状态机推进同一订单。导入与重放共用同一套域级校验：结果必须符合该动作的结构，输入与结果的稳定主体/会话/订单身份必须一致，冻结快照和业务引用必须存在；支付状态、试用已用秒数等首次历史值可以早于当前状态。事件键使用安全编码，`__proto__`、`constructor`、`prototype` 等字符串不会改变对象原型。
 
@@ -43,7 +45,7 @@ node .\shared\build-prototypes.js --check
 
 `consumeTrial` 在读取幂等结果前先验证唯一 `CONFIRMED` 会话、相等的两个冻结主体字段、唯一主体及所有证据引用。只有结构上下文合法后才能重放；额度耗尽和时间到期属于首次成功后的可变状态，不会阻止旧事件返回首次结果。
 
-`snapshot` / `loadReviewSnapshot` 只允许 schemaVersion 1 的业务字段。当前 schemaVersion 1 形状严格要求迁移修订锚点，不兼容修复过程中曾出现但未被接受的无锚点临时快照。员工账号、登录凭据、客户认证会话及 UI 状态不能进入快照。快照内的 `sequence` 只是下一次本地分配的提示值；各 ID 分配器会跳过对应集合中已占用的候选值，每次成功替换状态前还会完整复验。评审快照用于后续本地跨端 fixture 传递，不是生产 API、持久化或真实联调。
+`snapshot` / `loadReviewSnapshot` 只允许 schemaVersion 1 的业务字段。当前 schemaVersion 1 形状严格要求迁移修订锚点，不兼容修复过程中曾出现但未被接受的无锚点临时快照。员工账号、客户账号目录、登录凭据、客户认证会话及 UI 状态不能进入快照。快照内的 `sequence` 只是下一次本地分配的提示值；各 ID 分配器会跳过对应集合中已占用的候选值，每次成功替换状态前还会完整复验。评审快照用于后续本地跨端 fixture 传递，不是生产 API、持久化或真实联调。
 
 当前目录交叉字段也属于共享不变量：企业版本必须是 `ENTERPRISE + QUOTE + billingCycle=QUOTE + priceCents=null`，只能咨询；个人版本不能是 `QUOTE`，也不能包含企业席位或固话权益。套餐类型还约束计费与发放矩阵：`SUBSCRIPTION` 只接受 `MONTHLY / QUARTERLY / ANNUAL` 且期数、发放间隔均为正整数；`ONE_TIME / ADD_ON` 必须是 `ONCE + 1 期 + 0 月间隔`；`QUOTE` 必须是 `QUOTE + 1 期 + 0 月间隔`。例如自定义 `3 months / 4 installments` 的订阅仍合法。订单导入和权益发放会再次拒绝不符合矩阵或非个人交易的快照。
 

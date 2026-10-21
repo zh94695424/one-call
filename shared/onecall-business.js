@@ -39,6 +39,64 @@
     billingCycle: new Set(['ONCE', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'QUOTE']),
   };
 
+  const ACCOUNT_ENUMS = {
+    status: new Set(['ACTIVE', 'DISABLED']),
+    provider: new Set(['WECHAT', 'PHONE']),
+    realNameStatus: new Set(['UNVERIFIED', 'VERIFIED']),
+    role: new Set(['ADMIN', 'MEMBER', 'EVIDENCE_MANAGER', 'AUDITOR']),
+  };
+  const ROLE_LABELS = deepFreeze({
+    ADMIN: '企业管理员',
+    MEMBER: '普通成员',
+    EVIDENCE_MANAGER: '证据管理员',
+    AUDITOR: '企业审计员',
+  });
+  const ACCOUNT_DIRECTORY = deepFreeze({
+    accounts: [
+      { id: 'ACCOUNT-DEMO-001', displayName: '李晓', status: 'ACTIVE' },
+      { id: 'ACCOUNT-DEMO-002', displayName: '陈雨', status: 'ACTIVE' },
+      { id: 'ACCOUNT-DEMO-003', displayName: '周宁', status: 'ACTIVE' },
+      { id: 'ACCOUNT-DEMO-004', displayName: '王璐', status: 'ACTIVE' },
+      { id: 'ACCOUNT-DEMO-099', displayName: '停用账户', status: 'DISABLED' },
+    ],
+    authIdentities: [
+      { id: 'AUTH-WX-LI', accountId: 'ACCOUNT-DEMO-001', provider: 'WECHAT', providerSubject: 'WX-DEMO-LI', maskedLabel: '微信账户 · 李晓', status: 'ACTIVE' },
+      { id: 'AUTH-PHONE-LI', accountId: 'ACCOUNT-DEMO-001', provider: 'PHONE', providerSubject: '13800006208', maskedLabel: '138 **** 6208', status: 'ACTIVE' },
+      { id: 'AUTH-WX-CHEN', accountId: 'ACCOUNT-DEMO-002', provider: 'WECHAT', providerSubject: 'WX-DEMO-CHEN', maskedLabel: '微信账户 · 陈雨', status: 'ACTIVE' },
+      { id: 'AUTH-PHONE-CHEN', accountId: 'ACCOUNT-DEMO-002', provider: 'PHONE', providerSubject: '13900007812', maskedLabel: '139 **** 7812', status: 'ACTIVE' },
+      { id: 'AUTH-WX-ZHOU', accountId: 'ACCOUNT-DEMO-003', provider: 'WECHAT', providerSubject: 'WX-DEMO-ZHOU', maskedLabel: '微信账户 · 周宁', status: 'ACTIVE' },
+      { id: 'AUTH-PHONE-ZHOU', accountId: 'ACCOUNT-DEMO-003', provider: 'PHONE', providerSubject: '18600003360', maskedLabel: '186 **** 3360', status: 'ACTIVE' },
+      { id: 'AUTH-WX-WANG', accountId: 'ACCOUNT-DEMO-004', provider: 'WECHAT', providerSubject: 'WX-DEMO-WANG', maskedLabel: '微信账户 · 王璐', status: 'ACTIVE' },
+      { id: 'AUTH-PHONE-WANG', accountId: 'ACCOUNT-DEMO-004', provider: 'PHONE', providerSubject: '13700004102', maskedLabel: '137 **** 4102', status: 'ACTIVE' },
+      { id: 'AUTH-PHONE-DISABLED', accountId: 'ACCOUNT-DEMO-099', provider: 'PHONE', providerSubject: '13600009999', maskedLabel: '136 **** 9999', status: 'ACTIVE' },
+    ],
+    identityProfiles: [
+      { accountId: 'ACCOUNT-DEMO-001', realNameStatus: 'VERIFIED', maskedCredential: '310***********241X' },
+      { accountId: 'ACCOUNT-DEMO-002', realNameStatus: 'VERIFIED', maskedCredential: '320***********518X' },
+      { accountId: 'ACCOUNT-DEMO-003', realNameStatus: 'VERIFIED', maskedCredential: '310***********372X' },
+      { accountId: 'ACCOUNT-DEMO-004', realNameStatus: 'VERIFIED', maskedCredential: '110***********460X' },
+      { accountId: 'ACCOUNT-DEMO-099', realNameStatus: 'UNVERIFIED', maskedCredential: null },
+    ],
+    organizations: [
+      { id: 'ORG-HUAQI-001', name: '华启科技有限公司', shortName: '华启科技', status: 'ACTIVE' },
+      { id: 'ORG-YUNTU-001', name: '云拓商贸有限公司', shortName: '云拓商贸', status: 'ACTIVE' },
+      { id: 'ORG-DISABLED-001', name: '停用组织', shortName: '停用组织', status: 'DISABLED' },
+    ],
+    memberships: [
+      { id: 'MEM-HUAQI-LI', accountId: 'ACCOUNT-DEMO-001', organizationId: 'ORG-HUAQI-001', role: 'ADMIN', department: '采购部', status: 'ACTIVE' },
+      { id: 'MEM-YUNTU-LI', accountId: 'ACCOUNT-DEMO-001', organizationId: 'ORG-YUNTU-001', role: 'MEMBER', department: '采购部', status: 'ACTIVE' },
+      { id: 'MEM-HUAQI-CHEN', accountId: 'ACCOUNT-DEMO-002', organizationId: 'ORG-HUAQI-001', role: 'MEMBER', department: '采购部', status: 'ACTIVE' },
+      { id: 'MEM-HUAQI-ZHOU', accountId: 'ACCOUNT-DEMO-003', organizationId: 'ORG-HUAQI-001', role: 'EVIDENCE_MANAGER', department: '法务部', status: 'ACTIVE' },
+      { id: 'MEM-HUAQI-WANG', accountId: 'ACCOUNT-DEMO-004', organizationId: 'ORG-HUAQI-001', role: 'AUDITOR', department: '合规部', status: 'ACTIVE' },
+      { id: 'MEM-YUNTU-CHEN-DISABLED', accountId: 'ACCOUNT-DEMO-002', organizationId: 'ORG-YUNTU-001', role: 'MEMBER', department: '采购部', status: 'DISABLED' },
+      { id: 'MEM-DISABLED-ACCOUNT', accountId: 'ACCOUNT-DEMO-099', organizationId: 'ORG-HUAQI-001', role: 'ADMIN', department: '测试部', status: 'ACTIVE' },
+      { id: 'MEM-DISABLED-ORG', accountId: 'ACCOUNT-DEMO-001', organizationId: 'ORG-DISABLED-001', role: 'ADMIN', department: '测试部', status: 'ACTIVE' },
+    ],
+  });
+  const demoAccountDirectory = deepFreeze(redactAccountDirectory(ACCOUNT_DIRECTORY));
+
+  if (!validateAccountDirectory(ACCOUNT_DIRECTORY).ok) throw new Error('Invalid demo account directory');
+
   const labels = deepFreeze({
     schemaVersion,
     consentVersion: 'ONECALL-SERVICE-2026.10',
@@ -64,6 +122,129 @@
       claim: '请准备脱敏号码、验证方式和冲突说明，由人工客服线下核验；原型不要求上传完整证件。',
     },
   });
+
+  function createAccountDirectoryFixture() {
+    return clone(ACCOUNT_DIRECTORY);
+  }
+
+  function redactAccountDirectory(directory) {
+    const output = clone(directory);
+    output.authIdentities = output.authIdentities.map(({ providerSubject, ...identity }) => identity);
+    return output;
+  }
+
+  function validateAccountDirectory(candidate) {
+    if (!plain(candidate) || !exactKeys(candidate, ['accounts', 'authIdentities', 'identityProfiles', 'organizations', 'memberships'])) return fail('INVALID_ACCOUNT_DIRECTORY');
+    if (Object.values(candidate).some(value => !Array.isArray(value))) return fail('INVALID_ACCOUNT_DIRECTORY');
+    if (!unique(candidate.accounts) || !unique(candidate.authIdentities) || !unique(candidate.identityProfiles, 'accountId') || !unique(candidate.organizations) || !unique(candidate.memberships)) return fail('INVALID_ACCOUNT_DIRECTORY');
+    const accounts = new Set(candidate.accounts.map(item => item.id));
+    const organizations = new Set(candidate.organizations.map(item => item.id));
+    const providerSubjects = new Set();
+    const activeMemberships = new Set();
+    for (const account of candidate.accounts) {
+      if (!exactKeys(account, ['id', 'displayName', 'status']) || !id(account.id) || !textBetween(account.displayName, 1, 40) || !ACCOUNT_ENUMS.status.has(account.status)) return fail('INVALID_ACCOUNT_DIRECTORY');
+    }
+    for (const identity of candidate.authIdentities) {
+      if (!exactKeys(identity, ['id', 'accountId', 'provider', 'providerSubject', 'maskedLabel', 'status']) || !id(identity.id) || !accounts.has(identity.accountId) || !ACCOUNT_ENUMS.provider.has(identity.provider) || !id(identity.providerSubject) || !textBetween(identity.maskedLabel, 1, 80) || !ACCOUNT_ENUMS.status.has(identity.status)) return fail('INVALID_ACCOUNT_DIRECTORY');
+      if (identity.provider === 'PHONE' && !/^1\d{10}$/.test(identity.providerSubject)) return fail('INVALID_ACCOUNT_DIRECTORY');
+      const providerKey = `${identity.provider}:${identity.providerSubject}`;
+      if (providerSubjects.has(providerKey)) return fail('INVALID_ACCOUNT_DIRECTORY');
+      providerSubjects.add(providerKey);
+    }
+    for (const profile of candidate.identityProfiles) {
+      if (!exactKeys(profile, ['accountId', 'realNameStatus', 'maskedCredential']) || !accounts.has(profile.accountId) || !ACCOUNT_ENUMS.realNameStatus.has(profile.realNameStatus)) return fail('INVALID_ACCOUNT_DIRECTORY');
+      if (profile.maskedCredential !== null && !textBetween(profile.maskedCredential, 1, 40)) return fail('INVALID_ACCOUNT_DIRECTORY');
+    }
+    if (candidate.accounts.some(account => !candidate.identityProfiles.some(profile => profile.accountId === account.id))) return fail('INVALID_ACCOUNT_DIRECTORY');
+    for (const organization of candidate.organizations) {
+      if (!exactKeys(organization, ['id', 'name', 'shortName', 'status']) || !id(organization.id) || !textBetween(organization.name, 1, 80) || !textBetween(organization.shortName, 1, 40) || !ACCOUNT_ENUMS.status.has(organization.status)) return fail('INVALID_ACCOUNT_DIRECTORY');
+    }
+    for (const membership of candidate.memberships) {
+      if (!exactKeys(membership, ['id', 'accountId', 'organizationId', 'role', 'department', 'status']) || !id(membership.id) || !accounts.has(membership.accountId) || !organizations.has(membership.organizationId) || !ACCOUNT_ENUMS.role.has(membership.role) || !textBetween(membership.department, 1, 40) || !ACCOUNT_ENUMS.status.has(membership.status)) return fail('INVALID_ACCOUNT_DIRECTORY');
+      if (membership.status === 'ACTIVE') {
+        const membershipKey = `${membership.accountId}:${membership.organizationId}`;
+        if (activeMemberships.has(membershipKey)) return fail('INVALID_ACCOUNT_DIRECTORY');
+        activeMemberships.add(membershipKey);
+      }
+    }
+    return ok({ valid: true });
+  }
+
+  function accountById(accountId) {
+    const account = ACCOUNT_DIRECTORY.accounts.find(item => item.id === accountId && item.status === 'ACTIVE');
+    if (!account) return fail('NOT_FOUND');
+    const profile = ACCOUNT_DIRECTORY.identityProfiles.find(item => item.accountId === account.id);
+    return ok({ account: clone(account), profile: clone(profile) });
+  }
+
+  function loginIdentitiesForAccount(accountId) {
+    const accountResult = accountById(accountId);
+    if (!accountResult.ok) return accountResult;
+    const identities = ACCOUNT_DIRECTORY.authIdentities
+      .filter(item => item.accountId === accountId && item.status === 'ACTIVE')
+      .map(({ providerSubject, ...identity }) => clone(identity));
+    return ok(identities);
+  }
+
+  function workspacesForAccount(accountId) {
+    const accountResult = accountById(accountId);
+    if (!accountResult.ok) return accountResult;
+    const account = accountResult.value.account;
+    const personal = {
+      id: `personal:${account.id}`,
+      type: 'PERSONAL',
+      accountId: account.id,
+      name: '个人空间',
+      organizationId: null,
+      organizationName: null,
+      membershipId: null,
+      role: 'PERSONAL',
+      roleLabel: '个人用户',
+      department: null,
+    };
+    const organizations = ACCOUNT_DIRECTORY.memberships
+      .filter(item => item.accountId === account.id && item.status === 'ACTIVE')
+      .map(membership => ({ membership, organization: ACCOUNT_DIRECTORY.organizations.find(item => item.id === membership.organizationId && item.status === 'ACTIVE') }))
+      .filter(item => item.organization)
+      .map(({ membership, organization }) => ({
+        id: `organization:${organization.id}`,
+        type: 'ORGANIZATION',
+        accountId: account.id,
+        name: organization.shortName,
+        organizationId: organization.id,
+        organizationName: organization.name,
+        membershipId: membership.id,
+        role: membership.role,
+        roleLabel: ROLE_LABELS[membership.role],
+        department: membership.department,
+      }));
+    return ok([personal, ...organizations]);
+  }
+
+  function resolveDemoLogin(input) {
+    if (!plain(input) || !['PHONE', 'WECHAT'].includes(input.method)) return fail('INVALID_CREDENTIALS');
+    let identity = null;
+    if (input.method === 'PHONE') {
+      const phone = typeof input.phone === 'string' ? input.phone.replace(/\s/g, '') : '';
+      if (!/^1\d{10}$/.test(phone) || input.code !== '482916') return fail('INVALID_CREDENTIALS');
+      identity = ACCOUNT_DIRECTORY.authIdentities.find(item => item.provider === 'PHONE' && item.providerSubject === phone && item.status === 'ACTIVE');
+    } else {
+      if (!id(input.providerSubject)) return fail('INVALID_CREDENTIALS');
+      identity = ACCOUNT_DIRECTORY.authIdentities.find(item => item.provider === 'WECHAT' && item.providerSubject === input.providerSubject && item.status === 'ACTIVE');
+    }
+    if (!identity) return fail('INVALID_CREDENTIALS');
+    const accountResult = accountById(identity.accountId);
+    if (!accountResult.ok) return fail('INVALID_CREDENTIALS');
+    const identities = loginIdentitiesForAccount(identity.accountId);
+    const workspaces = workspacesForAccount(identity.accountId);
+    if (!identities.ok || !workspaces.ok) return fail('INVALID_CREDENTIALS');
+    return ok({
+      account: accountResult.value.account,
+      profile: accountResult.value.profile,
+      identities: identities.value,
+      workspaces: workspaces.value,
+    });
+  }
 
   function rights(recordingMinutes, aiMinutes, evidenceCount, storageGB, seats, fixedLines) {
     return { recordingMinutes, aiMinutes, evidenceCount, storageGB, seats, fixedLines };
@@ -928,6 +1109,13 @@
     labels,
     support,
     demoCatalog,
+    demoAccountDirectory,
+    createAccountDirectoryFixture,
+    validateAccountDirectory,
+    resolveDemoLogin,
+    workspacesForAccount,
+    accountById,
+    loginIdentitiesForAccount,
     createDemoState,
     validateCatalogVersion,
     visibleOffers,

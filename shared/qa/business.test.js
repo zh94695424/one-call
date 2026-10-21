@@ -61,6 +61,67 @@ function startAndConfirm(state, scenario, suffix) {
   return confirmed.value;
 }
 
+test('customer login identities resolve exact natural-person accounts and active workspaces', () => {
+  const cases = [
+    ['13800006208', 'ACCOUNT-DEMO-001', ['PERSONAL', 'ADMIN', 'MEMBER']],
+    ['13900007812', 'ACCOUNT-DEMO-002', ['PERSONAL', 'MEMBER']],
+    ['18600003360', 'ACCOUNT-DEMO-003', ['PERSONAL', 'EVIDENCE_MANAGER']],
+    ['13700004102', 'ACCOUNT-DEMO-004', ['PERSONAL', 'AUDITOR']],
+  ];
+  for (const [phone, accountId, roles] of cases) {
+    const login = business.resolveDemoLogin({ method: 'PHONE', phone, code: '482916' });
+    assert.equal(login.ok, true, phone);
+    assert.equal(login.value.account.id, accountId);
+    assert.deepEqual(login.value.workspaces.map(item => item.role), roles);
+    assert.ok(login.value.identities.every(item => !Object.hasOwn(item, 'providerSubject')));
+  }
+  const wechat = business.resolveDemoLogin({ method: 'WECHAT', providerSubject: 'WX-DEMO-LI' });
+  assert.equal(wechat.ok, true);
+  assert.equal(wechat.value.account.id, 'ACCOUNT-DEMO-001');
+  assert.equal(wechat.value.profile.realNameStatus, 'VERIFIED');
+  assert.deepEqual(wechat.value.workspaces.map(item => item.name), ['个人空间', '华启科技', '云拓商贸']);
+});
+
+test('customer login fails closed and business numbers never become login identities', () => {
+  for (const input of [
+    { method: 'PHONE', phone: '13800006208', code: '000000' },
+    { method: 'PHONE', phone: '18800001234', code: '482916' },
+    { method: 'PHONE', phone: '18600004471', code: '482916' },
+    { method: 'PHONE', phone: '01088886688', code: '482916' },
+    { method: 'PHONE', phone: '13600009999', code: '482916' },
+    { method: 'WECHAT', providerSubject: 'WX-UNKNOWN' },
+  ]) assert.equal(business.resolveDemoLogin(input).code, 'INVALID_CREDENTIALS');
+
+  const beforeDirectory = business.createAccountDirectoryFixture();
+  const state = business.createDemoState(NOW);
+  state.subjects.push({ id: 'SUBJ-BUSINESS-ONLY', maskedNumber: '186 **** 4471', numberType: 'MOBILE', source: 'MINIAPP', accountId: 'ACCOUNT-DEMO-001', identity: 'VERIFIED', activation: 'INACTIVE', revision: 1, claimRisk: 'NONE' });
+  assert.equal(business.activateService(state, { subjectId: 'SUBJ-BUSINESS-ONLY', channel: 'MINIAPP', verified: true, confirmed: true, consentVersion: business.labels.consentVersion, eventId: 'BUSINESS-ONLY-ACTIVATION' }, NOW).ok, true);
+  assert.deepEqual(business.createAccountDirectoryFixture(), beforeDirectory);
+  assert.equal(business.resolveDemoLogin({ method: 'PHONE', phone: '18600004471', code: '482916' }).code, 'INVALID_CREDENTIALS');
+  assert.equal(Object.hasOwn(business.snapshot(state).value, 'accounts'), false);
+  assert.equal(Object.hasOwn(business.snapshot(state).value, 'authIdentities'), false);
+});
+
+test('account directory validation rejects ambiguous identities and active memberships', () => {
+  const baseline = business.createAccountDirectoryFixture();
+  assert.equal(business.validateAccountDirectory(baseline).ok, true);
+  assert.ok(business.demoAccountDirectory.authIdentities.every(item => !Object.hasOwn(item, 'providerSubject')));
+  assert.ok(Object.isFrozen(business.demoAccountDirectory));
+
+  const duplicateIdentity = copy(baseline);
+  duplicateIdentity.authIdentities.push({ ...copy(duplicateIdentity.authIdentities[0]), id: 'AUTH-DUPLICATE' });
+  assert.equal(business.validateAccountDirectory(duplicateIdentity).code, 'INVALID_ACCOUNT_DIRECTORY');
+
+  const duplicateMembership = copy(baseline);
+  duplicateMembership.memberships.push({ ...copy(duplicateMembership.memberships[0]), id: 'MEM-DUPLICATE' });
+  assert.equal(business.validateAccountDirectory(duplicateMembership).code, 'INVALID_ACCOUNT_DIRECTORY');
+
+  const disabledOrganization = business.workspacesForAccount('ACCOUNT-DEMO-001');
+  assert.equal(disabledOrganization.ok, true);
+  assert.equal(disabledOrganization.value.some(item => item.organizationId === 'ORG-DISABLED-001'), false);
+  assert.equal(business.workspacesForAccount('ACCOUNT-DEMO-099').code, 'NOT_FOUND');
+});
+
 test('canonical catalog, labels and offline support are internally valid', () => {
   const state = business.createDemoState(NOW);
   assert.equal(business.schemaVersion, 1);
