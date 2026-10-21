@@ -1,0 +1,22 @@
+# Technology stack and system architecture — control
+
+- Work unit: `technology-stack-system-architecture`; baseline: `d0ca57a`; branch: `feat/operations-admin-prototype`.
+- Binding goal: 输出一份可供研发评审的生产目标技术栈与系统架构设计，覆盖小程序、客户 Web、接收方分享页、运营后台、自建 IVR、Java 服务端、数据与基础设施。
+- Motivation: `docs/03-technical-solution.md` 已包含领域与状态机，但仍混有被当前业务覆盖的运营商订购对象，并未收敛前后端、IVR、部署单元、网络边界和 5 人团队首发形态；现有静态原型也不能代表生产技术栈。
+- Success signal: 新文档能够让研发继续拆分前端、后端、IVR、数据和运维任务；明确确定项、推荐项与待决策项；与账号、套餐、免实名 IVR 试用、录音分享和线下客服边界一致；文档导航可达。
+- Scope: 新增 `docs/12-technology-stack-and-system-architecture.md`，更新 `docs/README.md` 导航及必要的架构指向；仅文档变更。
+- Non-goals: 字段级 DDL、完整 OpenAPI、生产容量报价、供应商采购结论、应用代码、基础设施脚本、原型页面改造。
+- Architecture boundary: 首发采用模块化单体 + 独立异步 Worker + 独立 IVR 媒体节点；不提前拆微服务，不把 Kubernetes 设为上线前提。
+- Direct evidence: 当前产品基线已锁定原生微信小程序、客户 Web、自建 IVR、Spring Boot、PostgreSQL、Redis、对象存储和消息队列；账号域、共享业务规则及精简后台边界分别见 09—11 文档。
+- Overdesign guard: 只给出足以指导首发实现和后续拆分的模块、接口、部署与质量边界；扩容阈值、供应商型号和详细表结构保留为后续专项设计。
+- Blocking questions: none; user confirmed the stated scope on 2026-10-21.
+
+## Gate state
+
+- Plan: `docs/gateflow/technology-architecture-plan.md`.
+- Plan review: `docs/reviews/plan-review-20261021-152509.md`; `pass-with-risks`, no findings or fix required.
+- Current gate / next entry point: `accepted plan commit`.
+- R1: FreeSWITCH/SIP 接入、线路容量和运营商机房网络条件仍需线路供应商与运维验证。Assigned to IVR integration work unit, owner: telephony/backend.
+- R2: 对象存储 WORM、KMS、境内部署及公证/AI供应商必须在采购和安全评审中定型。Assigned to infrastructure/security work unit.
+- R3: SLO、RPO/RTO 和容量数字缺少真实业务量输入。Assigned to capacity and production-readiness work unit.
+
