@@ -57,10 +57,11 @@
       width: 100%; height: 42px; margin: 18px 0 16px; padding: 0 34px 0 12px; border: 1px solid var(--line);
       border-radius: 7px; background: var(--panel-soft); color: var(--text); font-weight: 550;
     }
-    .role-preview { display: none; margin: -7px 0 14px; padding: 0 2px; }
+    .role-preview { display: none; margin: -7px 0 14px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
     .role-preview.visible { display: block; }
-    .role-preview label { display: block; margin: 0 0 5px 3px; color: var(--faint); font-size: 11px; font-weight: 600; }
-    .role-preview .select { width: 100%; background: var(--panel); font-size: 13px; }
+    .role-preview span, .role-preview strong { display: block; }
+    .role-preview span { color: var(--faint); font-size: 11px; }
+    .role-preview strong { margin-top: 4px; font-size: 13px; }
     .nav-scroll { flex: 1; overflow-y: auto; scrollbar-width: thin; }
     .nav-label { margin: 16px 10px 7px; color: var(--faint); font-size: 11px; font-weight: 650; }
     .nav-item {
@@ -572,18 +573,10 @@
         <img src="../logo/onecall-logo-b-icon.svg" alt="一通话">
         <div><strong>证枢能力中枢</strong><span>ONECALL EVIDENCE HUB</span></div>
       </div>
-      <select id="workspace-select" class="workspace-select" aria-label="切换工作空间">
-        <option value="personal">个人空间 · 李晓</option>
-        <option value="enterprise">企业空间 · 华启科技</option>
-      </select>
+      <select id="workspace-select" class="workspace-select" aria-label="切换工作空间"></select>
       <div class="role-preview" id="role-preview">
-        <label for="role-select">视角预览</label>
-        <select id="role-select" class="select" aria-label="切换企业角色视角">
-          <option value="admin">企业管理员 · 李晓</option>
-          <option value="member">普通成员 · 陈雨</option>
-          <option value="evidence">证据管理员 · 周宁</option>
-          <option value="auditor">企业审计员 · 王璐</option>
-        </select>
+        <span>当前组织角色</span>
+        <strong id="membership-role">由成员关系确定</strong>
       </div>
       <nav class="nav-scroll" id="side-nav" aria-label="主导航"></nav>
       <div class="sidebar-foot">
@@ -1814,6 +1807,12 @@
       ]}
     ];
 
+    const accountStarterNav = [
+      { label: '当前账户', items: [
+        ['overview', 'layout-dashboard', '账户概览'], ['numbers', 'contact', '业务号码']
+      ]}
+    ];
+
     const evidence = [
       { id:'OC-E1042', type:'call', name:'与王经理｜设备款支付确认', source:'运营商电话', time:'今天 10:26', size:'08:42', status:'已存证', ai:'已生成', matter:'设备采购争议', owner:'李晓', dept:'采购部' },
       { id:'OC-E1041', type:'photo', name:'设备到货外包装照片', source:'现场拍照', time:'今天 09:18', size:'4.8 MB', status:'已存证', ai:'未处理', matter:'设备采购争议', owner:'陈雨', dept:'采购部' },
@@ -1842,7 +1841,7 @@
     ];
 
     const state = {
-      workspace:'personal', enterpriseRole:'admin', route:'overview', evidenceType:'all', evidenceView:'table', detailTab:'info', callTab:'ai', memberTab:'profile',
+      workspace:'personal', currentWorkspaceId:null, accountId:null, enterpriseRole:'personal', route:'overview', evidenceType:'all', evidenceView:'table', detailTab:'info', callTab:'ai', memberTab:'profile',
       selectedEvidence:[], audioPlaying:false, audioSeconds:94, importStep:1, importFiles:[], importDone:false,
       certificateStep:1, certificateType:'report', certificateDone:false, billingCycle:'year', selectedPlan:'advanced',
       checkoutAgreed:false, paymentDone:false, activeMember:'member-li', enterpriseName:'华启科技',
@@ -1868,6 +1867,8 @@
       ], aiCompare:false,
       activeAddonType:'recording', selectedAddonSku:'CALL-100', addonStep:'catalog', addonAgreed:false, addonPaid:false
     };
+    const initialUiState=JSON.parse(JSON.stringify(state));
+    const sessionUiKeys=['workspace','currentWorkspaceId','accountId','enterpriseRole','route','enterpriseName','session','authView','loginMethod','qrState','authScenario','loginIntent','firstLogin','privacyAgreed','sessionExpired','returnRoute','loginPhone','loginCode','phoneSent','phoneError','phoneSendCount'];
 
     const memberDirectory={
       'member-li':{name:'李晓',dept:'采购部',role:'企业管理员',identity:'已实名',seat:'已分配',phone:'138 **** 6208',usage:'426'},
@@ -1885,20 +1886,41 @@
     ];
     const B=window.OnecallBusiness, cloneBusiness=value=>JSON.parse(JSON.stringify(value));
     const business=B.createDemoState(new Date());
-    function seedWebNumber(id,maskedNumber,numberType,at){
-      business.subjects.push({id,maskedNumber,numberType,source:'WEB',accountId:'ACCOUNT-DEMO-001',identity:'VERIFIED',activation:'INACTIVE',revision:1,claimRisk:'NONE'});
+    function seedWebNumber(id,maskedNumber,numberType,accountId,at){
+      business.subjects.push({id,maskedNumber,numberType,source:'WEB',accountId,identity:'VERIFIED',activation:'INACTIVE',revision:1,claimRisk:'NONE'});
       const result=B.activateService(business,{subjectId:id,channel:'WEB',verified:true,consentVersion:B.labels.consentVersion,confirmed:true,eventId:'WEB-SEED-ACTIVATE-'+id},new Date(at));
       if(!result.ok)throw Error('Web 默认号码开通失败：'+id+' / '+result.code);
       return result.value.activation;
     }
-    const webAccountActivation=seedWebNumber('WEB-ACCOUNT-001','138 **** 6208','MOBILE','2026-10-19T00:56:12.000Z');
-    const webLandline6688Activation=seedWebNumber('WEB-LANDLINE-0106688','010 **** 6688','LANDLINE','2026-10-19T00:56:13.000Z');
-    const webLandline9056Activation=seedWebNumber('WEB-LANDLINE-0219056','021 **** 9056','LANDLINE','2026-10-19T00:56:14.000Z');
-    const webMember7812Activation=seedWebNumber('WEB-MEMBER-1397812','139 **** 7812','MOBILE','2026-10-19T00:56:15.000Z');
-    const webMember3360Activation=seedWebNumber('WEB-MEMBER-1863360','186 **** 3360','MOBILE','2026-10-19T00:56:16.000Z');
+    const webAccountActivation=seedWebNumber('WEB-ACCOUNT-001','138 **** 6208','MOBILE','ACCOUNT-DEMO-001','2026-10-19T00:56:12.000Z');
+    const webLandline6688Activation=seedWebNumber('WEB-LANDLINE-0106688','010 **** 6688','LANDLINE','ACCOUNT-DEMO-001','2026-10-19T00:56:13.000Z');
+    const webLandline9056Activation=seedWebNumber('WEB-LANDLINE-0219056','021 **** 9056','LANDLINE','ACCOUNT-DEMO-001','2026-10-19T00:56:14.000Z');
+    const webMember7812Activation=seedWebNumber('WEB-MEMBER-1397812','139 **** 7812','MOBILE','ACCOUNT-DEMO-002','2026-10-19T00:56:15.000Z');
+    const webMember3360Activation=seedWebNumber('WEB-MEMBER-1863360','186 **** 3360','MOBILE','ACCOUNT-DEMO-003','2026-10-19T00:56:16.000Z');
     const businessReview={subjectId:'SUBJ-REPEAT-001',accountId:'ACCOUNT-DEMO-001',verified:false,claimCode:'',claimRequestId:null,orderId:null,offer:null,error:''};
+    const roleKeys={ADMIN:'admin',MEMBER:'member',EVIDENCE_MANAGER:'evidence',AUDITOR:'auditor'};
+    function accountWorkspaces(){const result=state.accountId?B.workspacesForAccount(state.accountId):{ok:false};return result.ok?result.value:[];}
+    function selectedWorkspace(){return accountWorkspaces().find(item=>item.id===state.currentWorkspaceId)||null;}
+    function accountDetails(){const result=state.accountId?B.accountById(state.accountId):{ok:false};return result.ok?result.value:null;}
+    function accountIdentities(){const result=state.accountId?B.loginIdentitiesForAccount(state.accountId):{ok:false};return result.ok?result.value:[];}
+    function accountProfile(){const details=accountDetails(),phone=accountIdentities().find(item=>item.provider==='PHONE');return {name:details?.account.displayName||'未登录',role:'个人用户',dept:'个人',avatar:(details?.account.displayName||'用').slice(0,1),phone:phone?.maskedLabel||'—'};}
+    function resetScopedUi(){
+      stopAudio();
+      const sessionUi=Object.fromEntries(sessionUiKeys.map(key=>[key,state[key]]));
+      for(const key of Object.keys(state))delete state[key];
+      Object.assign(state,cloneBusiness(initialUiState),sessionUi);
+      clearTimeout(showToast.timer);
+      const toast=document.getElementById('toast');toast.classList.remove('visible');toast.textContent='';
+      document.getElementById('modal-backdrop').classList.remove('visible');
+      document.querySelectorAll('#modal-backdrop input').forEach(input=>{input.value='';});
+    }
+    function bindAuthenticatedAccount(login){
+      state.accountId=login.account.id;businessReview.accountId=login.account.id;
+      const target=business.subjects.find(item=>item.accountId===login.account.id&&item.source==='WEB')||business.subjects.find(item=>item.accountId===login.account.id&&item.source==='IVR');businessReview.subjectId=target?.id||null;
+      businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;businessReview.orderId=null;businessReview.offer=null;businessReview.error='';
+    }
     function reviewSubject(){return business.subjects.find(item=>item.id===businessReview.subjectId);}
-    function purchaseSubject(){const target=reviewSubject();return target?.accountId===businessReview.accountId?target:business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source!=='IVR')||target;}
+    function purchaseSubject(){const target=reviewSubject();return target?.accountId===businessReview.accountId?target:business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source!=='IVR')||null;}
     function accountOrders(){return business.orders.filter(item=>item.accountId===businessReview.accountId);}
     function accountEntitlements(){return business.entitlements.filter(item=>item.ownerAccountId===businessReview.accountId);}
     function webOffers(audience='PERSONAL'){const r=B.visibleOffers(business,{channel:'WEB',audience});return r.ok?r.value:[];}
@@ -1915,7 +1937,7 @@
       const trial=B.trialStatus(business,target.id,new Date()).value,records=business.evidence.filter(item=>item.subjectId===target.id);
       return head('号码业务已关联','主体、试用授予、录音与证据归属保持不变。',button('线下人工客服','headphones','data-route="support"'))+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>业务状态</h2></div><div class="panel-body"><div class="meta-list">'+meta('主体',target.id)+meta('实名认证',B.labels.identity[target.identity])+meta('内部服务',B.labels.activation[target.activation])+meta('试用',B.labels.trial[trial.status]+' · '+formatTime(trial.remainingSeconds))+meta('试用到期',trial.grant?.expiresAt||'尚未授予')+'</div><div class="workflow-actions">'+(target.identity==='UNVERIFIED'?button('演示：继续身份核验','user-check','data-action="verify-identity"','primary'):button('订购套餐','shopping-bag','data-route="plans"','primary'))+'</div></div></section><section class="panel"><div class="panel-head"><h2>历史录音元数据</h2></div><div class="panel-body">'+(records.length?records.map(item=>'<div class="meta-list">'+meta('证据',item.id)+meta('录音时身份',item.identityAtCapture)+meta('固证',item.preservationStatus)+meta('时长',item.recordedSeconds+' 秒')+'</div>').join(''):'<p>暂无录音元数据</p>')+'</div></section></div>';
     }
-    function setBusinessScenario(name){const selectors={returning:item=>item.source==='IVR'&&item.claimRisk==='NONE'&&!item.accountId&&item.activation!=='SUSPENDED',fixed:item=>item.source==='IVR'&&item.numberType==='LANDLINE'&&!item.accountId,conflict:item=>item.claimRisk==='CONFLICT',recycled:item=>item.claimRisk==='RECYCLED',expired:item=>item.id==='SUBJ-EXPIRED-001',exhausted:item=>item.id==='SUBJ-EXHAUSTED-001',suspended:item=>item.activation==='SUSPENDED'};const select=selectors[name];if(!select)return {ok:false,code:'NOT_FOUND'};const target=business.sessions.slice().reverse().map(item=>business.subjects.find(s=>s.id===item.subjectId)).find(item=>item&&select(item))||business.subjects.find(select);if(!target)return {ok:false,code:'NOT_FOUND'};businessReview.subjectId=target.id;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;state.session='signedIn';state.workspace='personal';go('ivr-return');return {ok:true,subjectId:target.id};}
+    function setBusinessScenario(name){const selectors={returning:item=>item.source==='IVR'&&item.claimRisk==='NONE'&&!item.accountId&&item.activation!=='SUSPENDED',fixed:item=>item.source==='IVR'&&item.numberType==='LANDLINE'&&!item.accountId,conflict:item=>item.claimRisk==='CONFLICT',recycled:item=>item.claimRisk==='RECYCLED',expired:item=>item.id==='SUBJ-EXPIRED-001',exhausted:item=>item.id==='SUBJ-EXHAUSTED-001',suspended:item=>item.activation==='SUSPENDED'};const select=selectors[name];if(!select)return {ok:false,code:'NOT_FOUND'};const target=business.sessions.slice().reverse().map(item=>business.subjects.find(s=>s.id===item.subjectId)).find(item=>item&&select(item))||business.subjects.find(select);if(!target)return {ok:false,code:'NOT_FOUND'};const login=B.resolveDemoLogin({method:'WECHAT',providerSubject:'WX-DEMO-LI'});if(!login.ok)return login;bindAuthenticatedAccount(login.value);businessReview.subjectId=target.id;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;enterWorkspace('personal:ACCOUNT-DEMO-001','ivr-return');return {ok:true,subjectId:target.id};}
     function addonCatalogFor(type){const conf={recording:['CALL','录音分钟包'],ai:['AI_ADDON','AI 分钟包'],storage:['STORAGE','存储扩容包']}[type]||['CALL','录音分钟包'];return {name:conf[1],items:webOffers().filter(item=>item.productCode===conf[0])};}
 
     const authorizationVersion='ONECALL-SERVICE-2026.10';
@@ -1929,34 +1951,32 @@
     ];
     const authorizationEvents=[];
     const exportJobs=[
-      {id:'EXP-261019-004',source:'evidence-list',purpose:'争议处理',scope:'证据清单、脱敏元数据',redaction:'脱敏',status:'可下载',createdAt:'2026-10-19 09:14',expiresAt:'2026-10-20 09:14',total:12,failed:0,progress:100},
-      {id:'EXP-261018-011',source:'audit-records',purpose:'内部审计',scope:'当前授权范围审计事件',redaction:'脱敏',status:'部分失败',createdAt:'2026-10-18 16:32',expiresAt:'2026-10-19 16:32',total:18,failed:2,progress:100,errorSummary:'2 条记录超出当前角色可导出范围，已跳过并记录原因。'},
-      {id:'EXP-261016-002',source:'call-original',purpose:'争议处理',scope:'OC-C2034 原始录音与固证清单',redaction:'原始文件不改写',status:'已失效',createdAt:'2026-10-16 10:05',expiresAt:'2026-10-17 10:05',total:1,failed:0,progress:100}
+      {id:'EXP-261019-004',accountId:'ACCOUNT-DEMO-001',workspaceId:'personal:ACCOUNT-DEMO-001',source:'evidence-list',purpose:'争议处理',scope:'证据清单、脱敏元数据',redaction:'脱敏',status:'可下载',createdAt:'2026-10-19 09:14',expiresAt:'2026-10-20 09:14',total:12,failed:0,progress:100},
+      {id:'EXP-261018-011',accountId:'ACCOUNT-DEMO-004',workspaceId:'organization:ORG-HUAQI-001',source:'audit-records',purpose:'内部审计',scope:'当前授权范围审计事件',redaction:'脱敏',status:'部分失败',createdAt:'2026-10-18 16:32',expiresAt:'2026-10-19 16:32',total:18,failed:2,progress:100,errorSummary:'2 条记录超出当前角色可导出范围，已跳过并记录原因。'},
+      {id:'EXP-261016-002',accountId:'ACCOUNT-DEMO-001',workspaceId:'personal:ACCOUNT-DEMO-001',source:'call-original',purpose:'争议处理',scope:'OC-C2034 原始录音与固证清单',redaction:'原始文件不改写',status:'已失效',createdAt:'2026-10-16 10:05',expiresAt:'2026-10-17 10:05',total:1,failed:0,progress:100}
     ];
 
     const iconForType = { call:'phone-call', photo:'image', video:'video', audio:'mic', file:'file-text', screenshot:'messages-square' };
     const labelForType = { call:'通话录音', photo:'照片', video:'视频', audio:'现场录音', file:'文件', screenshot:'聊天截图' };
 
-    const enterpriseProfiles = {
-      admin:{ name:'李晓', role:'企业管理员', dept:'采购部', avatar:'李', phone:'138 **** 6208' },
-      member:{ name:'陈雨', role:'企业普通成员', dept:'采购部', avatar:'陈', phone:'139 **** 7812' },
-      evidence:{ name:'周宁', role:'证据管理员', dept:'法务部', avatar:'周', phone:'186 **** 3360' },
-      auditor:{ name:'王璐', role:'企业审计员', dept:'合规部', avatar:'王', phone:'—' }
-    };
-
     function isEnterprise(){ return state.workspace==='enterprise'; }
-    function enterpriseProfile(){ return enterpriseProfiles[state.enterpriseRole]||enterpriseProfiles.admin; }
+    function enterpriseProfile(){ const base=accountProfile(),workspace=selectedWorkspace();return {...base,role:workspace?.roleLabel||'企业成员',dept:workspace?.department||'未分配'}; }
     function isEnterpriseAdmin(){ return isEnterprise()&&state.enterpriseRole==='admin'; }
     function isEvidenceManager(){ return isEnterprise()&&state.enterpriseRole==='evidence'; }
     function isEnterpriseAuditor(){ return isEnterprise()&&state.enterpriseRole==='auditor'; }
     function isEnterpriseMember(){ return isEnterprise()&&state.enterpriseRole==='member'; }
+    function isFixturePersonalWorkspace(){return !isEnterprise()&&state.accountId==='ACCOUNT-DEMO-001';}
+    function isHuaqiWorkspace(){return isEnterprise()&&selectedWorkspace()?.organizationId==='ORG-HUAQI-001';}
+    function hasWorkspaceDemoData(){return isFixturePersonalWorkspace()||isHuaqiWorkspace();}
     function visibleEvidence(){
+      if(!hasWorkspaceDemoData())return [];
       if(!isEnterprise()||isEnterpriseAdmin()) return evidence;
       if(isEnterpriseMember()) return evidence.filter(item=>item.owner===enterpriseProfile().name);
       if(isEvidenceManager()) return evidence.filter(item=>item.dept===enterpriseProfile().dept);
       return [];
     }
     function visibleCalls(){
+      if(!hasWorkspaceDemoData())return [];
       if(!isEnterprise()||isEnterpriseAdmin()) return calls;
       if(isEnterpriseMember()) return calls.filter(item=>item.owner===enterpriseProfile().name);
       if(isEvidenceManager()) return calls.filter(item=>item.dept===enterpriseProfile().dept);
@@ -2018,7 +2038,9 @@
       return '<section class="auth-card"><div class="auth-heading"><h2>确认隐私与服务规则</h2><p>首次使用 Web 工作台前，请确认当前版本。</p></div><div class="privacy-copy"><strong>我们如何处理你的数据</strong>为提供证据管理、固证、AI 转写摘要和出证服务，我们会按你主动使用的功能处理账户信息、身份核验结果、主叫号码、原始材料和操作日志。身份证号加密保存，检索使用不可逆索引；页面和日志仅展示脱敏信息。<br><br><strong>你可以控制什么</strong>你可以查看授权记录、停止号码后续录音授权、申请访问或更正账户信息。撤销授权不修改或删除已形成的历史证据；保存期限和删除规则以法律要求及当前协议为准。</div><label class="check-line" style="margin-top:15px"><input type="checkbox" id="privacy-agree" '+(state.privacyAgreed?'checked':'')+'> <span>我已阅读并同意《用户协议》《隐私政策》及敏感个人信息处理规则</span></label><div class="auth-actions"><button class="btn" data-action="privacy-back">返回登录</button><button class="btn primary" id="privacy-continue" data-action="privacy-continue" '+(state.privacyAgreed?'':'disabled')+'>同意并继续</button></div></section>';
     }
     function workspacePage(){
-      return '<section class="auth-card wide"><div class="auth-heading"><h2>选择工作空间</h2><p>你的角色和数据范围由服务端会话返回；切换空间不会合并个人与企业数据。</p></div><div class="workspace-grid"><button class="workspace-option" data-workspace-choice="personal">'+icon('user-round')+'<strong>个人空间</strong><span>李晓 · 管理本人的证据、号码、权益和出证申请</span><small>个人用户</small></button><button class="workspace-option" data-workspace-choice="enterprise" data-enterprise-name="华启科技" data-enterprise-role="admin">'+icon('building-2')+'<strong>华启科技</strong><span>组织证据、成员、坐席、共享权益与权限配置</span><small>企业管理员</small></button><button class="workspace-option" data-workspace-choice="enterprise" data-enterprise-name="云拓商贸" data-enterprise-role="member">'+icon('building')+'<strong>云拓商贸</strong><span>仅进入本人证据、通话、号码和组织权益使用范围</span><small>普通成员</small></button></div><div class="notice" style="margin-top:16px">'+icon('shield-check')+'<span>企业角色和组织归属不能在生产环境自行切换；当前原型中的“视角预览”仅供产品评审。</span></div></section>';
+      const profile=accountProfile();
+      const cards=accountWorkspaces().map(workspace=>'<button class="workspace-option" data-workspace-choice="'+workspace.id+'">'+icon(workspace.type==='PERSONAL'?'user-round':'building-2')+'<strong>'+workspace.name+'</strong><span>'+(workspace.type==='PERSONAL'?profile.name+' · 管理本人的证据、号码、权益和出证申请':workspace.organizationName+' · '+workspace.department+' · 权限由组织成员关系确定')+'</span><small>'+workspace.roleLabel+'</small></button>').join('');
+      return '<section class="auth-card wide"><div class="auth-heading"><h2>选择工作空间</h2><p>'+profile.name+'（'+state.accountId+'）可进入以下空间；个人与企业数据不会合并。</p></div><div class="workspace-grid">'+cards+'</div><div class="notice" style="margin-top:16px">'+icon('shield-check')+'<span>企业空间和角色来自当前账户的有效成员关系，不能在页面中自行切换或借用他人角色。</span></div></section>';
     }
     function invitePage(){
       return '<section class="auth-card"><div class="auth-heading"><h2>确认加入企业</h2><p>登录成功，请核对本次邀请。</p></div><div class="invite-meta"><div class="meta-list">'+meta('企业','华启科技有限公司')+meta('邀请角色','普通成员')+meta('所属部门','采购部')+meta('邀请人','李晓 · 企业管理员')+meta('有效期','2026-10-26 18:00 前')+'</div></div><div class="notice warning">'+icon('shield-alert')+'<span>加入企业不代表企业可以查看你的个人空间。组织内证据范围仍由角色、部门和单独授权共同决定。</span></div><div class="auth-actions"><button class="btn" data-action="invite-reject">暂不加入</button><button class="btn primary" data-action="invite-accept">接受邀请</button></div></section>';
@@ -2047,16 +2069,26 @@
       if(window.lucide)lucide.createIcons();
       window.scrollTo(0,0);
     }
-    function finishLogin(){
+    function finishLogin(login){
       state.phoneError='';
+      const previousWorkspaceId=state.currentWorkspaceId,previousAccountId=state.accountId;
+      if(previousAccountId&&previousAccountId!==login.account.id)resetScopedUi();
+      bindAuthenticatedAccount(login);
+      state.currentWorkspaceId=null;state.workspace='personal';state.enterpriseRole='personal';state.enterpriseName='';
       if(state.loginIntent==='invite'){state.authView='invite';render();return;}
       if(state.firstLogin){state.authView='privacy';render();return;}
-      if(state.returnRoute){const target=state.returnRoute;state.returnRoute=null;state.sessionExpired=false;state.session='signedIn';state.route=target;render();return;}
+      if(state.returnRoute){const target=state.returnRoute,resume=login.workspaces.find(item=>item.id===previousWorkspaceId);state.returnRoute=null;if(resume){enterWorkspace(resume.id,target);return;}}
       state.authView='workspace';render();
     }
-    function enterWorkspace(workspace,role='admin',name='华启科技'){
-      state.session='signedIn';state.workspace=workspace;state.enterpriseRole=role;state.enterpriseName=name;state.route='overview';state.selectedEvidence=[];state.authScenario='normal';state.loginIntent='standard';state.firstLogin=false;state.sessionExpired=false;render();
+    function enterWorkspace(workspaceId,route='overview'){
+      const workspace=accountWorkspaces().find(item=>item.id===workspaceId);if(!workspace){state.session='signedOut';state.authView='workspace';render();return false;}
+      if(state.currentWorkspaceId&&state.currentWorkspaceId!==workspace.id)resetScopedUi();
+      state.session='signedIn';state.currentWorkspaceId=workspace.id;state.workspace=workspace.type==='ORGANIZATION'?'enterprise':'personal';state.enterpriseRole=workspace.type==='ORGANIZATION'?(roleKeys[workspace.role]||'member'):'personal';state.enterpriseName=workspace.name;state.route=route;state.selectedEvidence=[];state.authScenario='normal';state.loginIntent='standard';state.firstLogin=false;state.sessionExpired=false;
+      const visibleIds=new Set(visibleEvidence().map(item=>item.id));
+      for(const key of ['matterEvidence','matterDetailEvidence','matterEvidenceDraft'])state[key]=state[key].filter(id=>visibleIds.has(id));
+      render();return true;
     }
+    function expireSession(route=state.route){state.session='signedOut';state.authView='login';state.authScenario='session-expired';state.loginMethod='wechat';state.sessionExpired=true;state.returnRoute=route;state.phoneError='';render();return true;}
 
     function icon(name) { return '<i data-lucide="'+name+'" aria-hidden="true"></i>'; }
     function status(text, kind='success', symbol='circle-check') { return '<span class="status '+kind+'">'+icon(symbol)+text+'</span>'; }
@@ -2065,7 +2097,8 @@
     function accessDeniedPage(title,description){return head('访问受限','当前视角不能访问该页面。')+'<section class="panel success-state"><div><span class="success-icon" style="background:var(--amber-soft);color:var(--amber)">'+icon('shield-alert')+'</span><h2>'+title+'</h2><p>'+description+'</p><div class="success-actions">'+button('返回工作台','layout-dashboard','data-route="overview"','primary')+'</div></div></section>';}
 
     function currentNav() {
-      if(!isEnterprise()) return personalNav.concat([{label:'业务与帮助',items:[['ivr-return','phone-incoming','认领 IVR 业务'],['support','headphones','线下人工客服']]}]);
+      if(!isEnterprise()) return (isFixturePersonalWorkspace()?personalNav:accountStarterNav).concat([{label:'业务与帮助',items:[['ivr-return','phone-incoming','认领 IVR 业务'],['support','headphones','线下人工客服']]}]);
+      if(!isHuaqiWorkspace())return [{label:'当前账户',items:[['overview','layout-dashboard','账户概览']]},{label:'业务与帮助',items:[['support','headphones','线下人工客服']]}];
       if(state.enterpriseRole==='member') return enterpriseMemberNav;
       if(state.enterpriseRole==='evidence') return enterpriseEvidenceNav;
       if(state.enterpriseRole==='auditor') return enterpriseAuditorNav;
@@ -2075,24 +2108,30 @@
       const nav = currentNav().map(group => '<div class="nav-label">'+group.label+'</div>'+group.items.map(item => '<button class="nav-item '+(state.route===item[0]?'active':'')+'" data-route="'+item[0]+'">'+icon(item[1])+'<span>'+item[2]+'</span>'+(item[3]?'<span class="count">'+item[3]+'</span>':'')+'</button>').join('')).join('');
       document.getElementById('side-nav').innerHTML = nav;
       document.getElementById('space-crumb').textContent = isEnterprise() ? state.enterpriseName : '个人空间';
-      document.querySelector('#workspace-select option[value="enterprise"]').textContent='企业空间 · '+state.enterpriseName;
+      const workspaceSelect=document.getElementById('workspace-select'),workspaces=accountWorkspaces();
+      workspaceSelect.innerHTML=workspaces.map(item=>'<option value="'+item.id+'">'+(item.type==='PERSONAL'?'个人空间 · '+accountProfile().name:'企业空间 · '+item.name)+'</option>').join('');
+      workspaceSelect.value=state.currentWorkspaceId;
       const rolePreview=document.getElementById('role-preview');
       rolePreview.classList.toggle('visible',isEnterprise());
-      document.getElementById('role-select').value=state.enterpriseRole;
-      const profile=isEnterprise()?enterpriseProfile():{name:'李晓',role:'个人用户',avatar:'李'};
+      document.getElementById('membership-role').textContent=isEnterprise()?enterpriseProfile().role+' · '+enterpriseProfile().dept:'个人用户';
+      const profile=isEnterprise()?enterpriseProfile():accountProfile();
       document.querySelector('.user-card .avatar').textContent=profile.avatar;
       document.querySelector('.user-copy strong').textContent=profile.name;
       document.getElementById('user-role').textContent=profile.role;
       const subscriptionEntry=document.getElementById('subscription-entry');
-      const canManageSubscription=!isEnterprise()||isEnterpriseAdmin();
+      const canManageSubscription=isFixturePersonalWorkspace()||(isEnterpriseAdmin()&&isHuaqiWorkspace());
       subscriptionEntry.hidden=!canManageSubscription;
       subscriptionEntry.querySelector('span').textContent=isEnterprise()?'续费 / 扩容':'订阅 / 升级';
     }
 
     function overviewPage() {
+      if(!hasWorkspaceDemoData()){
+        const profile=isEnterprise()?enterpriseProfile():accountProfile(),workspace=selectedWorkspace(),numbers=isEnterprise()?0:business.subjects.filter(item=>item.accountId===state.accountId).length;
+        return head('下午好，'+profile.name,(workspace?.name||'当前工作空间')+'已按当前账户权限进入。')+'<section class="panel success-state"><div><span class="success-icon" style="background:var(--primary-soft);color:var(--primary)">'+icon(isEnterprise()?'building-2':'user-round')+'</span><h2>当前工作空间暂无演示业务数据</h2><p>'+(isEnterprise()?'此原型不会把华启科技的证据、号码或订单带入其他组织。':'此演示账户没有个人证据或订单样例；企业数据也不会带入个人空间。')+'</p><div class="meta-list" style="margin-top:18px;text-align:left">'+meta('自然人账户',state.accountId)+meta('工作空间',workspace?.name||'—')+meta('当前角色',workspace?.roleLabel||'—')+meta('已关联业务号码',String(numbers))+'</div><div class="success-actions">'+button('查看账号与登录身份','settings','data-route="settings"','primary')+(isEnterprise()?'':button('查看业务号码','contact','data-route="numbers"'))+'</div></div></section>';
+      }
       if(isEnterpriseAuditor()) return auditorOverviewPage();
-      const profile=isEnterprise()?enterpriseProfile():null;
-      let title='下午好，李晓';
+      const profile=isEnterprise()?enterpriseProfile():accountProfile();
+      let title='下午好，'+profile.name;
       let desc='从这里查看最近证据、待办、录音用量和出证进度。';
       let kpis=[['全部证据','36','本月新增 8 份','archive'],['录音分钟','23.0','手机号 5.7 · 固话 17.3','phone-call'],['待处理出证','2','1 项等待补件','badge-check'],['可用存储','19.2 GB','已使用 0.8 GB','hard-drive']];
       if(isEnterpriseAdmin()){
@@ -2332,15 +2371,18 @@
     }
 
     function numberRecords(){
+      if(isEnterprise()&&!isHuaqiWorkspace())return [];
       let cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'默认手机主叫',usage:'5.7 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'归属待公证前核验',usage:'17.3 分钟',eligibility:'未核验',authorized:'已开通'}];
+      if(!isEnterprise()&&!isFixturePersonalWorkspace())cards=business.subjects.filter(item=>item.accountId===state.accountId).map((item,index)=>({id:'account-number-'+index,subjectId:item.id,accountId:state.accountId,number:item.maskedNumber,type:item.numberType==='LANDLINE'?'独立固话直线':'手机号',verify:item.numberType==='LANDLINE'?'主叫挑战':'号码持有验证',access:'业务使用',owner:accountProfile().name,usage:'暂无用量',eligibility:item.identity==='VERIFIED'?'已匹配':'未核验',authorized:B.labels.activation[item.activation]}));
       if(!isEnterprise()&&state.addedNumbers.length) cards=cards.concat(state.addedNumbers);
       if(isEnterpriseAdmin()) cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'李晓 · 采购部',usage:'426 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'法务部',usage:'512 分钟',eligibility:'未核验',authorized:'已开通'},{id:'fixed-9056',number:'021 **** 9056',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'客服部',usage:'346 分钟',eligibility:'未核验',authorized:'已开通'}];
       if(isEnterpriseAdmin()&&state.addedNumbers.length) cards=cards.concat(state.addedNumbers);
-      else if(isEnterprise()){const profile=enterpriseProfile();cards=[{id:'member-phone',number:profile.phone,type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:profile.name+' · '+profile.dept,usage:isEvidenceManager()?'87 分钟':'118 分钟',eligibility:'已匹配',authorized:'已开通'}];}
+      else if(isEnterprise()&&!isEnterpriseAdmin()){const profile=enterpriseProfile(),subject=business.subjects.find(item=>item.accountId===state.accountId&&item.numberType==='MOBILE');cards=[{id:'member-phone',subjectId:subject?.id,accountId:state.accountId,number:profile.phone,type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:profile.name+' · '+profile.dept,usage:isEvidenceManager()?'87 分钟':'118 分钟',eligibility:'已匹配',authorized:'已开通'}];}
       return cards.filter(item=>!state.deletedNumbers.includes(item.id));
     }
     function resolveNumberSubject(record){
       if(!record?.number)return {ok:false,code:'NOT_FOUND'};
+      if(record.subjectId){const subject=business.subjects.find(item=>item.id===record.subjectId&&item.maskedNumber===record.number);if(!subject)return {ok:false,code:'NOT_FOUND'};const matches=business.subjects.filter(item=>item.maskedNumber===record.number&&item.accountId===subject.accountId);return matches.length===1&&matches[0].id===subject.id?{ok:true,value:subject}:{ok:false,code:'INVALID_TRANSITION'};}
       const accountId=record.accountId||businessReview.accountId;
       const matches=business.subjects.filter(item=>item.maskedNumber===record.number&&item.accountId===accountId);
       return matches.length===1?{ok:true,value:matches[0]}:{ok:false,code:matches.length?'INVALID_TRANSITION':'NOT_FOUND'};
@@ -2494,7 +2536,7 @@
       return head('成员详情',member.name+' · '+member.dept,button('返回成员列表','arrow-left','data-route="members"')+button('编辑成员','user-cog','data-action="member-edit-start"','primary'))+'<div class="member-tabs" role="tablist"><button class="member-tab '+(state.memberTab==='profile'?'active':'')+'" data-member-tab="profile">资料与坐席</button><button class="member-tab '+(state.memberTab==='usage'?'active':'')+'" data-member-tab="usage">权益用量</button><button class="member-tab '+(state.memberTab==='audit'?'active':'')+'" data-member-tab="audit">操作记录</button></div>'+body;
     }
 
-    function orderRecords(){if(isEnterprise())return [{id:'ENT20261001001',product:'企业旗舰版 · 历史合同样例 DEMO',time:'2026-10-01 09:18',amount:'报价待确认',payment:'历史样例',entitlement:'合同权益样例；正式政策待确认',invoice:B.support.contactLabel,version:'ENTERPRISE-HISTORY-DEMO',period:'历史合同样例'}].concat(state.enterpriseOrderRequests.map(r=>({id:r.id,product:r.product+' · '+r.actionLabel,time:r.createdAt,amount:'DEMO 报价待确认',payment:'报价处理中',entitlement:'正式政策待确认',invoice:B.support.contactLabel,version:r.version,period:r.term,enterpriseRequest:r})));return accountOrders().map(o=>({id:o.id,product:o.snapshot.name,time:o.createdAt,amount:money(o.snapshot.priceCents),payment:B.labels.payment[o.payment],entitlement:B.labels.entitlement[o.entitlement],invoice:B.support.contactLabel,version:o.snapshot.versionId,period:o.snapshot.validDays+' 天',businessOrder:o}));}
+    function orderRecords(){if(isEnterprise())return isHuaqiWorkspace()?[{id:'ENT20261001001',product:'企业旗舰版 · 历史合同样例 DEMO',time:'2026-10-01 09:18',amount:'报价待确认',payment:'历史样例',entitlement:'合同权益样例；正式政策待确认',invoice:B.support.contactLabel,version:'ENTERPRISE-HISTORY-DEMO',period:'历史合同样例'}].concat(state.enterpriseOrderRequests.map(r=>({id:r.id,product:r.product+' · '+r.actionLabel,time:r.createdAt,amount:'DEMO 报价待确认',payment:'报价处理中',entitlement:'正式政策待确认',invoice:B.support.contactLabel,version:r.version,period:r.term,enterpriseRequest:r}))):[];return accountOrders().map(o=>({id:o.id,product:o.snapshot.name,time:o.createdAt,amount:money(o.snapshot.priceCents),payment:B.labels.payment[o.payment],entitlement:B.labels.entitlement[o.entitlement],invoice:B.support.contactLabel,version:o.snapshot.versionId,period:o.snapshot.validDays+' 天',businessOrder:o}));}
     function ordersPage(){const rows=orderRecords();return head(isEnterprise()?'企业订单与合同':'订单与线下支持','商品快照、支付与权益分别记录。',button('退款 / 发票：人工客服','headphones','data-route="support"'))+'<div class="table-wrap"><table><thead><tr><th>订单</th><th>商品 / 版本</th><th>金额</th><th>支付状态</th><th>权益状态</th><th></th></tr></thead><tbody>'+rows.map(o=>'<tr><td>'+o.id+'</td><td>'+o.product+'<div class="micro">'+o.version+' · DEMO_NOT_APPROVED</div></td><td>'+o.amount+'</td><td>'+o.payment+'</td><td>'+o.entitlement+'</td><td>'+button('详情','chevron-right','data-order-id="'+o.id+'"')+'</td></tr>').join('')+'</tbody></table></div>'+(!rows.length?'<section class="panel"><div class="panel-body">暂无订单</div></section>':'');}
     function orderDetailPage(){const o=orderRecords().find(item=>item.id===state.activeOrder)||orderRecords()[0];if(!o)return ordersPage();return head('订单详情',o.id+' · DEMO_NOT_APPROVED',button('返回订单','arrow-left','data-route="orders"')+button('退款 / 发票：人工客服','headphones','data-route="support"'))+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>不可变商品快照</h2></div><div class="panel-body"><div class="meta-list">'+meta('商品',o.product)+meta('版本',o.version)+meta('金额',o.amount)+meta('有效期',o.period)+meta('支付',o.payment)+meta('权益',o.entitlement)+'</div></div></section><section class="panel"><div class="panel-head"><h2>购买时权益</h2></div><div class="panel-body">'+(o.businessOrder?offerRights(o.businessOrder.snapshot):'<p>历史企业合同样例；正式规格待确认。</p>')+'</div></section></div>';}
     function invoiceApplyPage(){return supportPage();}
@@ -2505,6 +2547,7 @@
       return record.requiresReconfirm?'待重新确认':'有效';
     }
     function visibleAgreementRecords(){
+      if(isEnterprise()&&!isHuaqiWorkspace())return [];
       let rows=authorizationRecords.filter(record=>record.space===(isEnterprise()?'enterprise':'personal'));
       if(isEnterpriseMember()||isEvidenceManager()) rows=rows.filter(record=>record.number===enterpriseProfile().phone||record.account.startsWith(enterpriseProfile().name+' ·'));
       return rows;
@@ -2551,6 +2594,7 @@
 
     function exportSourceLabel(source){return ({'evidence-list':'证据清单','evidence-original':'原始证据文件','call-list':'通话记录清单','call-original':'原始通话录音','member-list':'成员清单','audit-records':'组织审计记录','usage-ledger':'权益用量流水','order-proof':'订单或合同凭证'})[source]||'当前页面数据';}
     function exportJobStatus(job){if(job.status==='可下载'&&Date.parse(job.expiresAt.replace(' ','T'))<Date.now())return '已失效';return job.status;}
+    function visibleExportJobs(){return exportJobs.filter(job=>job.accountId===state.accountId&&job.workspaceId===state.currentWorkspaceId&&(!isEnterpriseAuditor()||job.source==='audit-records'));}
     function nextExportJobId(){
       const prefix='EXP-261019-';const used=new Set(exportJobs.map(item=>item.id));
       const max=exportJobs.reduce((current,item)=>{if(!item.id.startsWith(prefix))return current;const suffix=item.id.slice(prefix.length);return /^\d+$/.test(suffix)?Math.max(current,Number(suffix)):current;},0);
@@ -2566,7 +2610,7 @@
       return head('申请下载与导出',exportSourceLabel(state.exportSource)+' · 导出文件为临时副本，原始证据不会被改写。',button('查看导出任务','history','data-route="export-tasks"'))+'<div class="workflow-grid"><section class="panel"><div class="panel-head"><h2>导出范围与用途</h2></div><div class="panel-body"><div class="meta-list">'+meta('数据来源',exportSourceLabel(state.exportSource))+meta('包含内容',items)+meta('当前空间',isEnterprise()?'华启科技企业空间':'个人空间')+'</div><div class="form-grid" style="margin-top:16px"><div class="field"><label for="export-purpose">使用目的</label><select id="export-purpose" class="select"><option value="dispute">争议处理 / 诉讼举证</option><option value="notary">申请线下公证</option><option value="internal">内部审计</option><option value="other">其他合法用途</option></select></div><div class="field"><label for="export-range">导出范围</label><select id="export-range" class="select"><option value="current">当前记录 / 当前筛选结果</option><option value="selected">仅已选记录</option><option value="period">指定时间范围</option></select></div></div>'+redactionOptions+'<div class="field" style="margin-top:14px"><label for="export-code">二次验证验证码</label><div class="code-field"><input id="export-code" class="input" inputmode="numeric" autocomplete="one-time-code" placeholder="输入短信验证码" value="'+state.exportCode+'"><button class="btn" data-action="export-send-code">获取验证码</button></div><span class="field-hint">原型演示验证码：482916。验证码仅用于确认本次敏感导出。</span></div>'+(state.exportError?'<div class="notice warning" role="alert">'+icon('triangle-alert')+'<span>'+state.exportError+'</span></div>':'')+'<div class="workflow-actions">'+button('提交导出申请','download','data-action="export-submit"','primary')+'</div></div></section><aside class="panel"><div class="panel-head"><h2>文件与访问控制</h2></div><div class="panel-body">'+quickRule('clock-3','任务状态可追踪','生成中、可下载、部分失败和已失效分别展示')+quickRule('shield-check','链接短时有效','下载链接到期或撤销后失效，不公开对象存储地址')+quickRule('file-warning','部分失败有原因','越权字段或不可用文件会单独列出，不扩大导出范围')+quickRule('history','访问留审计','申请、生成、下载和失败原因均写入审计')+'</div></aside></div>';
     }
     function exportTasksPage(){
-      const rows=exportJobs.slice().reverse();
+      const rows=visibleExportJobs().slice().reverse();
       return head('下载与导出任务','查看文件生成进度、部分失败原因和临时下载有效期。',button('新建导出','download','data-action="export-new-from-tasks"','primary'))+'<div class="table-wrap"><table><thead><tr><th>任务编号</th><th>数据范围</th><th>申请用途</th><th>脱敏方式</th><th>进度</th><th>状态</th><th>有效期至</th><th></th></tr></thead><tbody>'+rows.map(job=>{const current=exportJobStatus(job);const tone=current==='可下载'?'success':current==='部分失败'?'pending':current==='准备中'?'info':'neutral';return '<tr><td class="mono">'+job.id+'</td><td>'+exportSourceLabel(job.source)+'<div class="micro">'+job.scope+'</div></td><td>'+job.purpose+'</td><td>'+job.redaction+'</td><td><div class="progress-row"><div class="progress-copy"><span>'+job.progress+'%</span><span>'+job.failed+' 条失败</span></div><div class="progress-track"><div class="progress-fill" style="width:'+job.progress+'%"></div></div></div></td><td>'+status(current,tone,current==='可下载'?'circle-check':current==='准备中'?'loader-circle':current==='部分失败'?'triangle-alert':'clock-3')+'</td><td>'+job.expiresAt+'</td><td><div class="tag-row">'+(current==='准备中'?button('模拟处理完成','check','data-action="export-complete" data-export-job="'+job.id+'"','primary'):current==='可下载'||current==='部分失败'?button(current==='部分失败'?'下载成功部分':'下载文件','download','data-action="export-download" data-export-job="'+job.id+'"','primary'):button('重新申请','rotate-cw','data-action="export-retry" data-export-job="'+job.id+'"'))+'</div></td></tr>';}).join('')+'</tbody></table></div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>下载文件是受当前权限约束的临时副本；下载成功不代表接收方无法另存或录屏。文件过期后必须重新授权生成。</span></div>';
     }
 
@@ -2596,11 +2640,17 @@
       return head('消息与待办','集中查看当前角色范围内的补件、权益和处理状态通知。',button('全部标为已读','check-check','data-action="notification-read-all" '+(!unread?'disabled':'')))+'<div class="toolbar"><div class="segmented" role="tablist" aria-label="消息筛选">'+[['all','全部 '+available.length],['unread','未读 '+unread],['todo','待处理 '+available.filter(item=>item.type==='todo').length]].map(item=>'<button class="'+(state.notificationFilter===item[0]?'active':'')+'" data-notification-filter="'+item[0]+'">'+item[1]+'</button>').join('')+'</div></div><section class="panel">'+(rows.length?'<div class="notification-list">'+rows.map(item=>'<article class="notification-row '+(!item.read?'unread':'')+'"><span class="quick-icon">'+icon(icons[item.type]||'bell')+'</span><div class="notification-copy"><strong>'+item.title+'</strong><span>'+item.detail+' · '+item.time+'</span></div><div class="notification-actions">'+(!item.read?'<span class="unread-dot" title="未读"></span>'+button('标为已读','check','data-notification-read="'+item.id+'"','ghost'):'')+button(item.type==='todo'?'去处理':'查看','arrow-right','data-notification-open="'+item.id+'"','primary')+'</div></article>').join('')+'</div>':'<div class="empty">'+icon('check-check')+'<div><h3>当前筛选下没有消息</h3><p>新的待办或处理结果会出现在这里。</p></div></div>')+'</section><div class="notice" style="margin-top:14px">'+icon('shield-check')+'<span>消息只展示当前账户与角色有权访问的对象；标记已读不会改变出证、存证、权益或审计事件的业务状态。</span></div>';
     }
 
-    function settingsPage(){ const profile=isEnterprise()?enterpriseProfile():{name:'李晓',phone:'138 **** 6208'}; const identity=profile.name+' · '+(profile.name==='陈雨'?'320***********518X':profile.name==='周宁'?'310***********372X':profile.name==='王璐'?'110***********460X':'310***********241X'); return head('设置与隐私','管理当前登录账户的安全、通知、隐私权利和数据访问记录。')+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>账户与安全</h2></div><div class="panel-body"><div class="meta-list">'+meta('登录手机号',profile.phone)+meta('实名认证',identity)+meta('最近登录','今天 09:02 · Windows · 上海')+meta('二次验证','高风险操作时启用')+'</div></div></section><section class="panel"><div class="panel-head"><h2>隐私与数据</h2></div><div class="panel-body"><div class="quick-list">'+quick('file-check-2','隐私与数据说明','查看当前版本与处理范围','agreements')+(isEnterprise()?quick('history','数据访问记录','仅查看当前角色授权范围内的操作','audit-center'):quick('history','数据访问记录','查看、下载、分享和出证操作','settings'))+quick('user-x','账户注销','按保存期限和法定留存规则处理','settings')+'</div></div></section></div>'; }
+    function settingsPage(){
+      const profile=isEnterprise()?enterpriseProfile():accountProfile(),details=accountDetails(),workspace=selectedWorkspace(),identities=accountIdentities();
+      const loginLabels=identities.map(item=>(item.provider==='WECHAT'?'微信登录':'手机号登录')+' · '+item.maskedLabel).join('<br>')||'未配置';
+      const businessNumbers=(isEnterprise()&&!isHuaqiWorkspace()?[]:business.subjects.filter(item=>item.accountId===state.accountId)).map(item=>item.maskedNumber+' · '+(item.numberType==='LANDLINE'?'固话':'手机号')).join('<br>')||'暂未绑定';
+      return head('设置与隐私','管理当前自然人账户的登录身份、工作空间、隐私权利和数据访问记录。')+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>账户与登录身份</h2></div><div class="panel-body"><div class="meta-list">'+meta('自然人账户',profile.name+' · '+state.accountId)+meta('实名认证',(details?.profile.realNameStatus==='VERIFIED'?'已实名':'未实名')+' · '+(details?.profile.maskedCredential||'未提供'))+meta('可登录身份',loginLabels)+meta('当前工作空间',(workspace?.name||'未选择')+' · '+(workspace?.roleLabel||'—'))+meta('最近登录','今天 09:02 · Windows · 上海')+'</div></div></section><section class="panel"><div class="panel-head"><h2>业务号码</h2></div><div class="panel-body"><div class="meta-list">'+meta('已关联号码',businessNumbers)+meta('登录规则','这些号码用于录音、试用和订购，不会自动成为登录手机号')+'</div><div class="notice" style="margin-top:14px">'+icon('shield-check')+'<span>新增、认领或验证业务号码只更新业务主体关联；只有账户安全中明确验证的登录身份可用于登录。</span></div></div></section><section class="panel"><div class="panel-head"><h2>隐私与数据</h2></div><div class="panel-body"><div class="quick-list">'+quick('file-check-2','隐私与数据说明','查看当前版本与处理范围','agreements')+(isEnterprise()?quick('history','数据访问记录','仅查看当前角色授权范围内的操作','audit-center'):quick('history','数据访问记录','查看、下载、分享和出证操作','settings'))+quick('user-x','账户注销','按保存期限和法定留存规则处理','settings')+'</div></div></section></div>';
+    }
 
     const pageTitles={'ivr-return':'认领 IVR 已有业务','subject-claim':'号码持有验证',support:'线下人工客服',overview:'工作台',evidence:'证据箱',evidenceDetail:'证据详情','import-evidence':'导入证据',calls:'通话录音',callDetail:'呼叫详情',shares:'录音分享','share-create':'创建录音分享','share-access':'录音播放副本',matters:'事情档案','matter-new':'新建事情','matter-detail':'事情详情',certificates:'出证中心','certificate-new':'发起出证',application:'出证申请',numbers:'主叫号码','number-detail':'号码详情','number-add':'新增主叫号码',rights:'套餐与权益',plans:'订购套餐',addon:'购买加量包',checkout:'确认订单',orders:'订单与发票','order-detail':'订单详情','invoice-apply':'申请电子发票',agreements:'协议与授权','agreement-detail':'授权记录详情','enterprise-order-new':'企业订购与变更','export-new':'申请下载与导出','export-tasks':'下载与导出任务',members:'成员与坐席','member-detail':'成员详情',access:'部门与权限',organization:'企业设置与审计','audit-center':'组织审计记录',notifications:'消息与待办',settings:'设置与隐私'};
     function routeAllowed(route){
       if(route==='support')return true;
+      if(!hasWorkspaceDemoData())return isEnterprise()?['overview','settings'].includes(route):['overview','numbers','number-detail','number-add','ivr-return','subject-claim','settings'].includes(route);
       if(!isEnterprise()) return !['members','member-detail','access','organization','audit-center','enterprise-order-new'].includes(route);
       if(isEnterpriseAdmin()) return !['checkout','invoice-apply','addon'].includes(route);
       if(isEnterpriseAuditor()) return ['overview','audit-center','agreements','agreement-detail','export-new','export-tasks','notifications','settings'].includes(route);
@@ -2641,7 +2691,7 @@
       const exportSource=event.target.closest('[data-export-source]'); if(exportSource){startExport(exportSource.dataset.exportSource);return;}
       const route=event.target.closest('[data-route]'); if(route){if(route.dataset.route==='share-create')state.shareCreated=false;if(route.dataset.route==='matter-new'){state.matterStep=1;state.matterCreated=false;}go(route.dataset.route);return;}
       const loginMethod=event.target.closest('[data-login-method]'); if(loginMethod){state.loginMethod=loginMethod.dataset.loginMethod;state.phoneError='';render();return;}
-      const workspaceChoice=event.target.closest('[data-workspace-choice]'); if(workspaceChoice){enterWorkspace(workspaceChoice.dataset.workspaceChoice,workspaceChoice.dataset.enterpriseRole||'admin',workspaceChoice.dataset.enterpriseName||'华启科技');return;}
+      const workspaceChoice=event.target.closest('[data-workspace-choice]'); if(workspaceChoice){enterWorkspace(workspaceChoice.dataset.workspaceChoice);return;}
       const ev=event.target.closest('[data-evidence-id]'); if(ev){state.activeEvidence=ev.dataset.evidenceId;state.detailTab='info';go('evidenceDetail');return;}
       const call=event.target.closest('[data-call-id]'); if(call){state.activeCall=call.dataset.callId;state.callTab='ai';state.shareCreated=false;go('callDetail');return;}
       const matter=event.target.closest('[data-matter-id]'); if(matter){state.activeMatter=matter.dataset.matterId;go('matter-detail');return;}
@@ -2677,7 +2727,7 @@
       if(action.dataset.action==='web-issue'){const order=activeBusinessOrder();if(order){const r=B.issueEntitlements(business,{orderId:order.id,eventId:'WEB-ISSUE-'+order.id},new Date());businessReview.error=r.ok?'':r.code;}render();return;}
 
       if(action.dataset.action==='toast'&&(action.querySelector('svg[data-lucide="download"]')||/导出|下载/.test(action.innerText||''))){startExport(exportSourceForRoute());return;}
-      if(action.dataset.action==='wechat-login'){finishLogin();return;}
+      if(action.dataset.action==='wechat-login'){const login=B.resolveDemoLogin({method:'WECHAT',providerSubject:'WX-DEMO-LI'});if(login.ok)finishLogin(login.value);else{state.phoneError='invalid';render();}return;}
       if(action.dataset.action==='qr-refresh'){state.qrState='ready';state.authScenario='normal';render();return;}
       if(action.dataset.action==='send-login-code'){
         const phone=(document.getElementById('login-phone')?.value||'').replace(/\s/g,'');state.loginPhone=phone;
@@ -2689,18 +2739,18 @@
       if(action.dataset.action==='phone-login'){
         state.loginPhone=(document.getElementById('login-phone')?.value||'').replace(/\s/g,'');state.loginCode=(document.getElementById('login-code')?.value||'').trim();
         if(state.phoneError==='locked')return;
-        if(/^1\d{10}$/.test(state.loginPhone)&&state.loginCode==='482916'){finishLogin();return;}
+        const login=B.resolveDemoLogin({method:'PHONE',phone:state.loginPhone,code:state.loginCode});if(login.ok){finishLogin(login.value);return;}
         state.phoneError='invalid';render();return;
       }
       if(action.dataset.action==='privacy-back'){state.authView='login';state.firstLogin=false;state.privacyAgreed=false;state.authScenario='normal';render();return;}
       if(action.dataset.action==='privacy-continue'&&state.privacyAgreed){state.authView='onboarding';render();return;}
       if(action.dataset.action==='invite-accept'){state.loginIntent='standard';state.authView='workspace';state.authScenario='normal';render();return;}
       if(action.dataset.action==='invite-reject'){state.loginIntent='standard';state.authView='login';state.authScenario='normal';render();return;}
-      if(action.dataset.action==='enter-personal'){enterWorkspace('personal');return;}
+      if(action.dataset.action==='enter-personal'){if(!state.accountId){const login=B.resolveDemoLogin({method:'WECHAT',providerSubject:'WX-DEMO-LI'});if(login.ok)bindAuthenticatedAccount(login.value);}enterWorkspace('personal:'+state.accountId);return;}
       if(action.dataset.action==='mini-program-onboarding'){showToast('微信小程序是可选入口，也可在 Web 完成内部开通');return;}
       if(action.dataset.action==='back-login'){state.authView='login';state.authScenario='normal';state.loginIntent='standard';state.qrState='ready';render();return;}
       if(action.dataset.action==='contact-support'){state.session='signedIn';go('support');return;}
-      if(action.dataset.action==='logout'){stopAudio();state.session='signedOut';state.authView='login';state.authScenario='normal';state.loginIntent='standard';state.returnRoute=null;state.sessionExpired=false;state.qrState='ready';render();return;}
+      if(action.dataset.action==='logout'){resetScopedUi();Object.assign(businessReview,{subjectId:null,accountId:null,verified:false,claimCode:'',claimRequestId:null,orderId:null,offer:null,error:''});state.session='signedOut';state.accountId=null;state.currentWorkspaceId=null;state.workspace='personal';state.enterpriseRole='personal';state.enterpriseName='';state.route='overview';state.authView='login';state.authScenario='normal';state.loginIntent='standard';state.returnRoute=null;state.sessionExpired=false;state.qrState='ready';state.loginPhone='';state.loginCode='';state.phoneSent=false;state.phoneError='';state.phoneSendCount=0;render();return;}
       if(action.dataset.action==='toast')showToast(action.dataset.message||'操作已完成');
       if(action.dataset.action==='open-modal')document.getElementById('modal-backdrop').classList.add('visible');
       if(action.dataset.action==='close-modal')document.getElementById('modal-backdrop').classList.remove('visible');
@@ -2870,17 +2920,18 @@
         const id=nextExportJobId();
         const now=new Date();const expiry=new Date(now.getTime()+24*60*60*1000);const pad=value=>String(value).padStart(2,'0');
         const job={id,source:state.exportSource,purpose:purposeLabels[document.getElementById('export-purpose')?.value||state.exportPurpose]||'争议处理',scope:(document.getElementById('export-range')?.selectedOptions[0]?.textContent||'当前筛选结果')+' · '+exportSourceLabel(state.exportSource),redaction:state.exportRedaction==='full'?'申请原始字段':'脱敏',status:'准备中',createdAt:now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+' '+pad(now.getHours())+':'+pad(now.getMinutes()),expiresAt:expiry.getFullYear()+'-'+pad(expiry.getMonth()+1)+'-'+pad(expiry.getDate())+' '+pad(expiry.getHours())+':'+pad(expiry.getMinutes()),total:state.exportSource==='audit-records'?18:12,failed:0,progress:42,errorSummary:'',partialOnComplete:state.exportSource==='audit-records'||document.getElementById('export-range')?.value==='selected'};
+        Object.assign(job,{accountId:state.accountId,workspaceId:state.currentWorkspaceId});
         exportJobs.push(job);state.activeExportJobId=id;state.exportDone=true;state.exportError='';state.route='export-tasks';render();return;
       }
       if(action.dataset.action==='export-complete'){
-        const job=exportJobs.find(item=>item.id===action.dataset.exportJob);if(!job||job.status!=='准备中')return;
+        const job=visibleExportJobs().find(item=>item.id===action.dataset.exportJob);if(!job||job.status!=='准备中')return;
         job.status=job.partialOnComplete?'部分失败':'可下载';job.progress=100;job.failed=job.partialOnComplete?1:0;job.errorSummary=job.partialOnComplete?'1 条记录不在当前角色导出范围内，已跳过并记录原因。':'';showToast(job.partialOnComplete?'文件已生成，1 条记录被跳过':'文件已生成，可在有效期内下载');render();return;
       }
       if(action.dataset.action==='export-download'){
-        const job=exportJobs.find(item=>item.id===action.dataset.exportJob);if(!job||!['可下载','部分失败'].includes(exportJobStatus(job))){showToast('下载链接已失效，请重新申请导出');render();return;}
+        const job=visibleExportJobs().find(item=>item.id===action.dataset.exportJob);if(!job||!['可下载','部分失败'].includes(exportJobStatus(job))){showToast('下载链接已失效，请重新申请导出');render();return;}
         job.downloadedAt='2026-10-19 12:32';showToast('受控下载已开始；链接不会公开对象存储地址');render();return;
       }
-      if(action.dataset.action==='export-retry'){const job=exportJobs.find(item=>item.id===action.dataset.exportJob);startExport(job?.source||'evidence-list');return;}
+      if(action.dataset.action==='export-retry'){const job=visibleExportJobs().find(item=>item.id===action.dataset.exportJob);if(job)startExport(job.source);return;}
       if(action.dataset.action==='seat-change')showToast('坐席变更需要二次确认；历史证据和用量归属不会改变');
       if(action.dataset.action==='share-create'){state.shareCreated=true;render();return;}
       if(action.dataset.action==='share-preview-new'){state.activeShare=isEnterprise()?'SHR-ENT-6H2N':'SHR-261019-8Q4K';state.shareAccessState='entry';state.shareCodeInput='';state.shareCodeError='';state.shareCodeAttempts=0;go('share-access');return;}
@@ -2905,8 +2956,7 @@
         render();return;
       }
       if(event.target.id==='privacy-agree'){state.privacyAgreed=event.target.checked;const next=document.getElementById('privacy-continue');if(next)next.disabled=!state.privacyAgreed;return;}
-      if(event.target.id==='workspace-select'){state.workspace=event.target.value;state.route='overview';state.selectedEvidence=[];state.memberTab='profile';render();}
-      if(event.target.id==='role-select'){state.enterpriseRole=event.target.value;state.route='overview';state.selectedEvidence=[];state.evidenceType='all';state.activeEvidence=null;state.activeCall=null;render();}
+      if(event.target.id==='workspace-select'){enterWorkspace(event.target.value);}
       if(event.target.matches('[data-evidence-check]')){const id=event.target.dataset.evidenceCheck;if(event.target.checked&&!state.selectedEvidence.includes(id))state.selectedEvidence.push(id);if(!event.target.checked)state.selectedEvidence=state.selectedEvidence.filter(x=>x!==id);render();}
       if(event.target.matches('[data-matter-evidence]')){const id=event.target.dataset.matterEvidence;if(event.target.checked&&!state.matterEvidence.includes(id))state.matterEvidence.push(id);if(!event.target.checked)state.matterEvidence=state.matterEvidence.filter(x=>x!==id);render();}
       if(event.target.matches('[data-matter-manage-evidence]')){const id=event.target.dataset.matterManageEvidence;if(event.target.checked&&!state.matterEvidenceDraft.includes(id))state.matterEvidenceDraft.push(id);if(!event.target.checked)state.matterEvidenceDraft=state.matterEvidenceDraft.filter(x=>x!==id);render();}
@@ -2938,7 +2988,7 @@
     });
     function startAudio(){stopAudio();state.audioTimer=setInterval(()=>{if(!state.audioPlaying)return;state.audioSeconds=Math.min(522,state.audioSeconds+1);const progress=document.getElementById('audio-progress');const current=document.getElementById('audio-current');if(progress)progress.style.width=(state.audioSeconds/522*100)+'%';if(current)current.textContent=formatTime(state.audioSeconds);if(state.audioSeconds>=522){state.audioPlaying=false;stopAudio();render();}},1000);}
     function stopAudio(){if(state.audioTimer){clearInterval(state.audioTimer);state.audioTimer=null;}}
-    window.__onecallWeb={businessSnapshot(){const r=B.snapshot(business);if(!r.ok)throw Error(r.code);return r.value;},loadReviewSnapshot(candidate){const r=B.loadReviewSnapshot(business,candidate);if(r.ok){const linked=business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source==='IVR')||business.subjects.find(item=>item.accountId===businessReview.accountId);if(linked)businessReview.subjectId=linked.id;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;if(!business.orders.some(item=>item.id===businessReview.orderId))businessReview.orderId=null;render();}return cloneBusiness(r);},setReviewScenario:setBusinessScenario,setClaimRequestId(requestId){businessReview.claimRequestId=requestId;return {ok:true};},applyActivationStatus(input){const r=B.setActivationStatus(business,input,new Date());if(r.ok)render();return cloneBusiness(r);},navigate(route){if(!Object.hasOwn(pageTitles,route))return {ok:false,code:'NOT_FOUND'};go(route);return {ok:true,route};},currentRoute(){return state.route;}};
+    window.__onecallWeb={businessSnapshot(){const r=B.snapshot(business);if(!r.ok)throw Error(r.code);return r.value;},accountContext(){return cloneBusiness({accountId:state.accountId,workspace:selectedWorkspace(),identities:accountIdentities(),workspaces:accountWorkspaces()});},expireSession(route){return expireSession(route);},loadReviewSnapshot(candidate){const r=B.loadReviewSnapshot(business,candidate);if(r.ok){const linked=business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source==='IVR')||business.subjects.find(item=>item.accountId===businessReview.accountId);businessReview.subjectId=linked?.id||null;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;if(!business.orders.some(item=>item.id===businessReview.orderId))businessReview.orderId=null;render();}return cloneBusiness(r);},setReviewScenario:setBusinessScenario,setClaimRequestId(requestId){businessReview.claimRequestId=requestId;return {ok:true};},applyActivationStatus(input){const r=B.setActivationStatus(business,input,new Date());if(r.ok)render();return cloneBusiness(r);},navigate(route){if(!Object.hasOwn(pageTitles,route))return {ok:false,code:'NOT_FOUND'};go(route);return {ok:true,route};},currentRoute(){return state.route;}};
     window.addEventListener('beforeunload',stopAudio);
     render();
   </script>

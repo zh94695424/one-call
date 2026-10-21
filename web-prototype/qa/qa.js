@@ -43,6 +43,16 @@ async function openRoute(page, route) {
   await page.waitForTimeout(30);
 }
 
+async function loginByPhone(page, phone, workspaceId = null) {
+  if (await page.locator('[data-action="logout"]').isVisible()) await page.locator('[data-action="logout"]').click();
+  await page.locator('[data-login-method="phone"]').click();
+  await page.locator('#login-phone').fill(phone);
+  await page.locator('#login-code').fill('482916');
+  await page.locator('[data-action="phone-login"]').click();
+  await page.waitForSelector('[data-workspace-choice]');
+  if (workspaceId) await page.locator(`[data-workspace-choice="${workspaceId}"]`).click();
+}
+
 (async () => {
   expect(fs.existsSync(previewPath), `Preview file not found: ${previewPath}`);
 
@@ -89,10 +99,27 @@ async function openRoute(page, route) {
     await screenshot(page, 'login-enterprise-invite-1280.png', 1280);
     await page.locator('[data-action="invite-reject"]').click();
 
-    await page.locator('#auth-review-select').selectOption('session-expired');
+    await page.locator('[data-action="wechat-login"]').click();
+    await page.locator('[data-workspace-choice="personal:ACCOUNT-DEMO-001"]').click();
+    await openRoute(page, 'evidence');
+    await page.locator('.row-link[data-evidence-id="OC-E1041"]').click();
+    await page.evaluate(() => __onecallWeb.expireSession('evidenceDetail'));
     await expectText(page, '#auth-root', '登录状态已过期');
     await page.locator('[data-action="wechat-login"]').click();
     await expectText(page, '#content', '设备到货外包装照片');
+
+    await page.locator('#workspace-select').selectOption('organization:ORG-HUAQI-001');
+    await page.evaluate(() => __onecallWeb.navigate('members'));
+    await page.evaluate(() => __onecallWeb.expireSession('members'));
+    await page.locator('[data-login-method="phone"]').click();
+    await page.locator('#login-phone').fill('13900007812');
+    await page.locator('#login-code').fill('482916');
+    await page.locator('[data-action="phone-login"]').click();
+    await expectText(page, '#content', '下午好，陈雨');
+    const recoveredMember=await page.evaluate(()=>__onecallWeb.accountContext());
+    expect(recoveredMember.accountId==='ACCOUNT-DEMO-002','Session recovery must bind the newly authenticated account');
+    expect(recoveredMember.workspace.role==='MEMBER','Session recovery must rederive membership instead of inheriting the previous admin role');
+    expect(await page.locator('[data-route="members"]').count()===0,'Recovered member session must not retain admin navigation');
     await page.locator('[data-action="logout"]').click();
 
     await page.locator('#auth-review-select').selectOption('member-removed');
@@ -105,21 +132,123 @@ async function openRoute(page, route) {
     await page.locator('#login-code').fill('000000');
     await page.locator('[data-action="phone-login"]').click();
     await expectText(page, '#auth-root', '验证码不正确或已失效');
+    await page.locator('#login-phone').fill('18800001234');
     await page.locator('#login-code').fill('482916');
+    await page.locator('[data-action="phone-login"]').click();
+    await expectText(page, '#auth-root', '验证码不正确或已失效');
+    for (const phone of ['18600004471','13600009999']) {
+      await page.locator('#login-phone').fill(phone);
+      await page.locator('[data-action="phone-login"]').click();
+      await expectText(page, '#auth-root', '验证码不正确或已失效');
+    }
+    await page.locator('#login-phone').fill('13800006208');
     await page.locator('[data-action="phone-login"]').click();
     await expectText(page, '#auth-root', '选择工作空间');
     expect(await page.locator('[data-workspace-choice]').count() === 3, 'Workspace chooser must list personal and multiple enterprise memberships');
     await page.waitForTimeout(2700);
     await screenshot(page, 'login-workspace-selection-1440.png', 1440);
-    await page.locator('[data-workspace-choice="personal"]').click();
+    await page.locator('[data-workspace-choice="personal:ACCOUNT-DEMO-001"]').click();
     await page.waitForSelector('#content .page-head');
 
-    expect(await page.locator('#workspace-select').inputValue() === 'personal', 'Default workspace must be personal');
+    expect(await page.locator('#workspace-select').inputValue() === 'personal:ACCOUNT-DEMO-001', 'Default workspace must be personal');
+    expect(await page.locator('#role-select').count() === 0, 'Signed-in users must not have a mutable role selector');
     await expectText(page, '#content', '下午好，李晓');
     expect(await page.locator('#side-nav [data-route="plans"]').count() === 1, 'Personal navigation must expose subscription and upgrade');
     expect(await page.locator('#subscription-entry').isVisible(), 'Personal top bar must expose subscription and upgrade');
     await expectText(page, '#subscription-entry', '订阅 / 升级');
     await screenshot(page, 'personal-overview-1440.png', 1440);
+
+    await openRoute(page, 'settings');
+    await expectText(page, '#content', '自然人账户');
+    await expectText(page, '#content', '不会自动成为登录手机号');
+    await expectText(page, '#content', '138 **** 6208');
+    await screenshot(page, 'account-identities-settings-1280.png', 1280);
+    await openRoute(page, 'overview');
+
+    const boundaryPage=await browser.newPage({viewport:{width:1280,height:900}});
+    boundaryPage.on('pageerror',error=>pageErrors.push(error.message));
+    boundaryPage.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
+    try{
+      await boundaryPage.goto(previewUrl,{waitUntil:'load'});
+      await loginByPhone(boundaryPage,'13800006208','organization:ORG-YUNTU-001');
+      const yuntu=await boundaryPage.evaluate(()=>__onecallWeb.accountContext());
+      expect(yuntu.workspace.organizationId==='ORG-YUNTU-001'&&yuntu.workspace.role==='MEMBER','Yuntu workspace must come from Li membership');
+      await expectText(boundaryPage,'#content','当前工作空间暂无演示业务数据');
+      const yuntuContent=await boundaryPage.locator('#content').innerText();
+      expect(!yuntuContent.includes('设备采购争议')&&!yuntuContent.includes('OC-E1042'),'Yuntu workspace must not expose Huaqi business records');
+      expect(await boundaryPage.locator('#side-nav [data-route="evidence"]').count()===0,'Non-fixture organization must not expose Huaqi evidence navigation');
+      await screenshot(boundaryPage,'workspace-isolation-yuntu-1280.png',1280);
+      await openRoute(boundaryPage,'settings');
+      await expectText(boundaryPage,'#content','暂未绑定');
+      const yuntuSettings=await boundaryPage.locator('#content').innerText();
+      expect(!yuntuSettings.includes('010 **** 6688')&&!yuntuSettings.includes('021 **** 9056'),'Yuntu settings must not list Huaqi business numbers');
+      expect(await boundaryPage.evaluate(()=>numberRecords().length)===0,'Non-fixture organization number resolver must remain empty');
+      await boundaryPage.evaluate(()=>{const select=document.getElementById('workspace-select'),option=document.createElement('option');option.value='organization:ORG-DISABLED-001';option.textContent='伪造工作空间';select.append(option);select.value=option.value;select.dispatchEvent(new Event('change',{bubbles:true}));});
+      await expectText(boundaryPage,'#auth-root','选择工作空间');
+      expect(!(await boundaryPage.locator('#auth-root').innerText()).includes('伪造工作空间'),'Unknown workspace injection must fail closed');
+    }finally{await boundaryPage.close();}
+
+    const isolationPage=await browser.newPage({viewport:{width:1280,height:900}});
+    isolationPage.on('pageerror',error=>pageErrors.push(error.message));
+    isolationPage.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
+    try{
+      await isolationPage.goto(previewUrl,{waitUntil:'load'});
+      await loginByPhone(isolationPage,'13800006208','personal:ACCOUNT-DEMO-001');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('number-add'));
+      await isolationPage.locator('[data-action="number-add-next"]').click();
+      await isolationPage.locator('[data-action="number-add-verify"]').click();
+      await isolationPage.locator('#number-add-agree').check();
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('export-new'));
+      await isolationPage.locator('#export-code').fill('482916');
+      await isolationPage.locator('[data-action="export-submit"]').click();
+      const privateJob=await isolationPage.locator('[data-action="export-complete"]').first().getAttribute('data-export-job');
+      expect(Boolean(privateJob),'Isolation scenario must create a private export job');
+      await loginByPhone(isolationPage,'13800006208','personal:ACCOUNT-DEMO-001');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('number-add'));
+      await isolationPage.locator('[data-action="number-add-next"]').click();
+      expect(await isolationPage.locator('[data-action="number-add-submit"]').isDisabled(),'Logout must discard number verification and authorization');
+      expect(!(await isolationPage.locator('#number-add-agree').isChecked()),'Logout must clear number consent');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('export-tasks'));
+      expect(await isolationPage.locator(`[data-export-job="${privateJob}"]`).count()===1,'A persisted task must still belong to its original account and workspace');
+      await isolationPage.locator('#workspace-select').selectOption('organization:ORG-HUAQI-001');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('numbers'));
+      await expectText(isolationPage,'#content','010 **** 6688');
+      await expectText(isolationPage,'#content','021 **** 9056');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('export-tasks'));
+      expect(await isolationPage.locator(`[data-export-job="${privateJob}"]`).count()===0,'Personal export must not appear in enterprise space');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('import-evidence'));
+      await isolationPage.locator('#import-file').setInputFiles({name:'private-li-draft.pdf',mimeType:'application/pdf',buffer:Buffer.from('private draft')});
+      await isolationPage.locator('[data-action="import-next"]').click();
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('calls'));
+      await isolationPage.locator('[data-call-id="OC-C2038"]').first().click();
+      await isolationPage.locator('[data-action="ai-correction-start"]').click();
+      await isolationPage.locator('#ai-correction-text').fill('PRIVATE-LI-CORRECTION');
+      await isolationPage.locator('[data-action="ai-correction-submit"]').click();
+      await expectText(isolationPage,'#content','PRIVATE-LI-CORRECTION');
+      const businessBeforeSwitch=await isolationPage.evaluate(()=>JSON.stringify(__onecallWeb.businessSnapshot()));
+      await isolationPage.evaluate(()=>__onecallWeb.expireSession('calls'));
+      await isolationPage.locator('[data-login-method="phone"]').click();
+      await isolationPage.locator('#login-phone').fill('13900007812');
+      await isolationPage.locator('#login-code').fill('482916');
+      await isolationPage.locator('[data-action="phone-login"]').click();
+      expect((await isolationPage.evaluate(()=>__onecallWeb.accountContext())).accountId==='ACCOUNT-DEMO-002','Reauthentication must enter Chen account');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('import-evidence'));
+      expect(!(await isolationPage.locator('#content').innerText()).includes('private-li-draft.pdf'),'New account must not see previous import filename');
+      expect(await isolationPage.locator('[data-action="import-next"]').isDisabled(),'New account must begin import with an empty file list');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('calls'));
+      await isolationPage.locator('[data-call-id="OC-C2034"]').first().click();
+      expect(!(await isolationPage.locator('#content').innerText()).includes('PRIVATE-LI-CORRECTION'),'New account must not see another account AI suggestion');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('matter-new'));
+      await isolationPage.locator('[data-action="matter-next"]').click();
+      const selection=await isolationPage.evaluate(()=>({selected:state.matterEvidence,visible:visibleEvidence().map(item=>item.id)}));
+      expect(selection.selected.every(id=>selection.visible.includes(id)),'New account matter selection must contain only visible evidence');
+      await isolationPage.evaluate(()=>__onecallWeb.navigate('export-tasks'));
+      expect(await isolationPage.locator(`[data-export-job="${privateJob}"]`).count()===0,'Chen must not see Li private export');
+      expect(await isolationPage.evaluate(()=>JSON.stringify(__onecallWeb.businessSnapshot()))===businessBeforeSwitch,'UI cleanup must not mutate canonical business facts or recordings');
+      await isolationPage.locator('[data-action="logout"]').click();
+      await isolationPage.locator('[data-login-method="phone"]').click();
+      expect(await isolationPage.locator('#login-phone').inputValue()===''&&await isolationPage.locator('#login-code').inputValue()==='','Logout must clear login phone and code');
+    }finally{await isolationPage.close();}
 
     await openRoute(page, 'notifications');
     await expectText(page, '#content', '消息与待办');
@@ -581,7 +710,7 @@ async function openRoute(page, route) {
       expect(!r.ok&&JSON.stringify(await page.evaluate(()=>window.__onecallWeb.businessSnapshot()))===JSON.stringify(canonical),'Forbidden snapshot import must reject atomically');
     }
 
-    await page.locator('#workspace-select').selectOption('enterprise');
+    await page.locator('#workspace-select').selectOption('organization:ORG-HUAQI-001');
     await expectText(page, '#content', '华启科技 · 企业总览');
     for (const route of ['plans', 'orders', 'members', 'access', 'organization']) {
       expect(await page.locator(`[data-route="${route}"]`).count() > 0, `Enterprise navigation is missing ${route}`);
@@ -651,7 +780,8 @@ async function openRoute(page, route) {
     await expectText(page, '#content', '重新确认新版协议');
     await screenshot(page, 'authorization-reconfirmed-1280.png', 1280);
 
-    await page.locator('#role-select').selectOption('member');
+    await loginByPhone(page,'13900007812','organization:ORG-HUAQI-001');
+    expect((await page.evaluate(()=>__onecallWeb.accountContext())).accountId==='ACCOUNT-DEMO-002','Member login must resolve Chen account');
     await expectText(page, '#content', '下午好，陈雨');
     expect(await page.locator('[data-route="members"]').count() === 0, 'Ordinary member must not see member management');
     expect(await page.locator('[data-route="access"]').count() === 0, 'Ordinary member must not see permission management');
@@ -680,7 +810,8 @@ async function openRoute(page, route) {
     await page.evaluate(() => go('orders'));
     await expectText(page, '#content', '下午好，陈雨');
 
-    await page.locator('#role-select').selectOption('evidence');
+    await loginByPhone(page,'18600003360','organization:ORG-HUAQI-001');
+    expect((await page.evaluate(()=>__onecallWeb.accountContext())).accountId==='ACCOUNT-DEMO-003','Evidence manager login must resolve Zhou account');
     await expectText(page, '#content', '证据工作台 · 周宁');
     expect(await page.locator('[data-route="members"]').count() === 0, 'Evidence manager must not see member management');
     expect(await page.locator('#side-nav [data-route="shares"]').count() === 1, 'Evidence manager must be able to manage shares within authorized department scope');
@@ -696,7 +827,8 @@ async function openRoute(page, route) {
     await expectText(page, '#content', '仅展示法务部授权范围内的呼叫记录');
     await expectText(page, 'table', '010 **** 6688');
 
-    await page.locator('#role-select').selectOption('auditor');
+    await loginByPhone(page,'13700004102','organization:ORG-HUAQI-001');
+    expect((await page.evaluate(()=>__onecallWeb.accountContext())).accountId==='ACCOUNT-DEMO-004','Auditor login must resolve Wang account');
     await expectText(page, '#content', '审计概览 · 王璐');
     expect(!(await page.locator('#subscription-entry').isVisible()), 'Auditor must not see enterprise subscription action');
     expect(await page.locator('[data-route="evidence"]').count() === 0, 'Auditor must not see evidence navigation');
@@ -724,10 +856,7 @@ async function openRoute(page, route) {
       current.on('pageerror',error=>pageErrors.push(error.message));
       current.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
       await current.goto(previewUrl,{waitUntil:'load'});
-      await current.locator('[data-action="wechat-login"]').click();
-      await current.locator('[data-workspace-choice="personal"]').click();
-      await current.locator('#workspace-select').selectOption('enterprise');
-      if(role!=='admin')await current.locator('#role-select').selectOption(role);
+      await loginByPhone(current,{admin:'13800006208',member:'13900007812',evidence:'18600003360',auditor:'13700004102'}[role],'organization:ORG-HUAQI-001');
       await openRoute(current,'agreements');
       return current;
     };
@@ -743,12 +872,12 @@ async function openRoute(page, route) {
       await expectText(current,'#toast','撤销失败：PERMISSION_DENIED');
     };
     for(const item of [
-      {id:'auth-6688',number:'010 **** 6688',role:'admin'},
-      {id:'auth-9056',number:'021 **** 9056',role:'admin'},
-      {id:'auth-3360',number:'186 **** 3360',role:'admin'},
-      {id:'auth-7812',number:'139 **** 7812',role:'admin',reconfirm:true},
-      {id:'auth-7812',number:'139 **** 7812',role:'member',reconfirm:true},
-      {id:'auth-3360',number:'186 **** 3360',role:'evidence'},
+      {id:'auth-6688',number:'010 **** 6688',owner:'ACCOUNT-DEMO-001',role:'admin'},
+      {id:'auth-9056',number:'021 **** 9056',owner:'ACCOUNT-DEMO-001',role:'admin'},
+      {id:'auth-3360',number:'186 **** 3360',owner:'ACCOUNT-DEMO-003',role:'admin'},
+      {id:'auth-7812',number:'139 **** 7812',owner:'ACCOUNT-DEMO-002',role:'admin',reconfirm:true},
+      {id:'auth-7812',number:'139 **** 7812',owner:'ACCOUNT-DEMO-002',role:'member',reconfirm:true},
+      {id:'auth-3360',number:'186 **** 3360',owner:'ACCOUNT-DEMO-003',role:'evidence'},
     ]){
       const current=await freshAgreementPage(item.role);
       try{
@@ -762,8 +891,8 @@ async function openRoute(page, route) {
         });
         if(item.reconfirm)expect(activeId!==item.id,item.id+' reconfirm must create a new authorization version');
         const before=await current.evaluate(()=>__onecallWeb.businessSnapshot());
-        const matches=before.subjects.filter(subject=>subject.accountId==='ACCOUNT-DEMO-001'&&subject.maskedNumber===item.number);
-        expect(matches.length===1&&matches[0].activation==='ACTIVE'&&matches[0].revision===2,item.id+' must resolve a unique active same-account subject in fresh state');
+        const matches=before.subjects.filter(subject=>subject.maskedNumber===item.number);
+        expect(matches.length===1&&matches[0].accountId===item.owner&&matches[0].activation==='ACTIVE'&&matches[0].revision===2,item.id+' must resolve its unique canonical owner subject in fresh state');
         const subject=matches[0],consent=await current.locator('.proof-list').innerHTML();
         await current.locator('[data-action="agreement-revoke"]').click();
         const after=await current.evaluate(()=>__onecallWeb.businessSnapshot()),transition=after.activationTransitions.at(-1);
@@ -828,7 +957,7 @@ async function openRoute(page, route) {
       await page.reload({ waitUntil: 'load' });
       await page.waitForSelector('[data-action="wechat-login"]');
       await page.locator('[data-action="wechat-login"]').click();
-      await page.locator('[data-workspace-choice="personal"]').click();
+      await page.locator('[data-workspace-choice="personal:ACCOUNT-DEMO-001"]').click();
       await page.waitForSelector('#content .page-head');
       await assertNoPageOverflow(page, width);
       if (width === 1024) {

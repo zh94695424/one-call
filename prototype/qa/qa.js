@@ -12,7 +12,7 @@ const newPages = [
   'callerSelect', 'dialHandoff', 'landlineCall', 'callerMismatch', 'callerUnavailable',
   'evidenceBox', 'evidenceEmpty', 'matterCreate', 'aiCorrection',
   'usageDetail', 'enterprisePlans', 'productDetail', 'purchaseConfirm', 'paymentSuccess', 'paymentIssue', 'revokeAuth', 'evidenceSelect',
-  'documentCenter', 'orders', 'tips', 'privacy', 'support',
+  'documentCenter', 'orders', 'accountSecurity', 'tips', 'privacy', 'support',
 ];
 const authorizationCopy = '我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。';
 
@@ -59,7 +59,7 @@ async function assertNoOverflow(frame, label) {
   const frame = await getFrame(page);
 
   const count = await frame.locator('.index-button').count();
-  if (count !== 61) throw new Error(`Expected 61 visible pages, got ${count}`);
+  if (count !== 62) throw new Error(`Expected 62 visible pages, got ${count}`);
   if (await frame.locator('[data-page="consent"], [data-go="consent"]').count()) {
     throw new Error('Standalone authorization page is still reachable');
   }
@@ -73,6 +73,14 @@ async function assertNoOverflow(frame, label) {
   }
 
   const ordinaryInitial=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  const initialAccount=await frame.evaluate(()=>window.__onecallMini.accountContext());
+  assert.equal(initialAccount.account.id,'ACCOUNT-DEMO-001');
+  assert.ok(initialAccount.identities.every(item=>!Object.hasOwn(item,'providerSubject')));
+  await openPage(frame,'accountSecurity');
+  const accountSecurityText=await frame.locator('#oc-screen').innerText();
+  assert.ok(accountSecurityText.includes('非登录身份'));
+  assert.ok(accountSecurityText.includes('企业权限来自组织成员关系'));
+  await frame.locator('.phone').screenshot({path:path.join(screenshotRoot,'alignment-account-security-760.png'),animations:'disabled'});
   await openPage(frame,'provisioning');
   assert.ok(!(await frame.locator('#oc-screen').innerText()).includes('内部服务已开通'));
   // A failed verification or shared activation rejection must stay on the actual form.
@@ -97,6 +105,8 @@ async function assertNoOverflow(frame, label) {
     assert.equal(await frame.evaluate(()=>window.__onecallMini.currentPage()),'provisioning');
   }
   const createdNumbers=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
+  assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.accountContext()),initialAccount,'Business binding must not change login identities');
+  assert.equal((await frame.evaluate(()=>OnecallBusiness.resolveDemoLogin({method:'PHONE',phone:'18600004471',code:'482916'}))).ok,false);
   const createdTargets=['138 **** 6208','186 **** 4471'].map(mask=>createdNumbers.subjects.find(item=>item.maskedNumber===mask));
   assert.ok(createdTargets.every(item=>item&&item.accountId==='ACCOUNT-DEMO-001'&&item.activation==='ACTIVE'));
   assert.notEqual(createdTargets[0].id,createdTargets[1].id,'New WeChat and SMS numbers need distinct subjects');
@@ -449,10 +459,14 @@ async function assertNoOverflow(frame, label) {
   }
 
   await page.setViewportSize({ width: 393, height: 852 });
-  for (const pageId of ['ivrReturn','claimVerify','claimResult','claimBlocked','plans','purchaseConfirm','paymentSuccess','support']) {
+  for (const pageId of ['accountSecurity','ivrReturn','claimVerify','claimResult','claimBlocked','plans','purchaseConfirm','paymentSuccess','support']) {
     await openPage(frame, pageId); await assertNoOverflow(frame, pageId + ' 393px');
+    if(pageId==='accountSecurity')await page.screenshot({path:path.join(screenshotRoot,'alignment-account-security-393.png'),fullPage:true});
   }
   await page.screenshot({ path: path.join(screenshotRoot, 'alignment-support-393.png'), fullPage: true });
+  await page.setViewportSize({ width: 320, height: 760 });
+  await openPage(frame,'accountSecurity');await assertNoOverflow(frame,'accountSecurity 320px');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-account-security-320.png'),fullPage:true});
   await page.setViewportSize({ width: 760, height: 1100 });
   await openPage(frame, 'profile');
   await frame.locator('#oc-screen').evaluate(screen=>{screen.scrollTop=0;});
@@ -460,7 +474,7 @@ async function assertNoOverflow(frame, label) {
   await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-profile-760.png'), animations: 'disabled' });
 
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS: 61-page navigation, mobile and independent-landline caller flows, enterprise package structure, configurable catalog checkout, carrier fail-closed checks, all-caller usage aggregation, and 320px layout verified.');
+  console.log('PASS: 62-page navigation, account/login identity separation, mobile and independent-landline caller flows, configurable catalog checkout, IVR trial, account scope, and responsive layout verified.');
   } finally { await browser.close(); }
 })().catch((error) => {
   console.error(error);

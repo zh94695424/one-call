@@ -70,9 +70,11 @@ flowchart TD
 
 ## 4. 最小领域契约（后端规划）
 
+客户账号规则以 [11](11-account-identity-and-workspaces.md) 为准：自然人账户统一，微信 / 登录手机号单独登记为登录身份；企业访问来自成员关系。业务手机号与固话只承担取证业务，绑定或认领不自动授予登录权。运营后台员工账号保持独立。
+
 | 对象 / 状态 | 权威事实与约束 |
 | --- | --- |
-| `BusinessSubject` | 稳定主体 ID、号码 HMAC 索引/密文、来源、小程序账户关联、实名状态；手机号不作为公开 ID |
+| `BusinessSubject` | 稳定主体 ID、号码 HMAC 索引/密文、来源、客户账户关联、实名状态；手机号不作为公开 ID；当前原型 `accountId` 为简化自然人关联，组织所有权待生产模型落地 |
 | `ServiceActivation` | `INACTIVE / ACTIVE / SUSPENDED`；后台负责，无运营商订购接口；激活及后续暂停/恢复由共享事件拥有，运营后台来源明确为 `OPERATIONS`；状态迁移带来源、前后值、时间及 `fromRevision` / `toRevision`，每次严格 `+1`；客服暂停只阻止新使用，保留历史且不重发试用 |
 | `ConsentRecord` | 渠道、协议/提示词版本、明确同意事件、IVR 会话/按键和时间；小程序/Web 同意保留快照 |
 | `TrialGrant` | `subjectId + campaignId` 唯一；额度、有效期、规则版本在发放时锁定；到期/耗尽不删除证据，演示场景重开也不得回拨累计用量 |

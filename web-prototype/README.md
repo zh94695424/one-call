@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File .\web-prototype\qa\run.ps1
 
 运行成功后直接打开 `D:\codex-call\web-prototype\preview.html`。
 
-预览默认进入登录页。微信扫码区域在原型中可点击模拟登录；手机号验证码演示值为 `482916`。登录页底部“原型评审”下拉框可切换二维码异常、首次隐私确认、企业邀请、会话过期、账户停用、成员移除和坐席未分配等状态。
+预览默认进入登录页。微信扫码区域在原型中可点击模拟李晓登录；手机号验证码演示值为 `482916`，只有目录中的演示登录身份可用。李晓 `13800006208`、陈雨 `13900007812`、周宁 `18600003360`、王璐 `13700004102` 分别演示华启管理员、普通成员、证据管理员和审计员。未知手机号、停用账户和仅用于取证的 `18600004471` 不能登录。登录页底部“原型评审”下拉框可切换二维码异常、首次隐私确认、企业邀请、会话过期、账户停用、成员移除和坐席未分配等状态。
 
 ## 当前范围
 
@@ -42,7 +42,9 @@ powershell -ExecutionPolicy Bypass -File .\web-prototype\qa\run.ps1
 
 共享生成段由 `node shared/build-prototypes.js` 维护，runner 生成 preview 后执行 QA；禁止手改生成段。`window.__onecallWeb` 提供 `businessSnapshot()`、`loadReviewSnapshot(data)`、`setReviewScenario(name)`、`navigate(route)`、`currentRoute()`，仅用于经校验的本地 fixture 交接，不含员工、凭据、登录或 UI 状态。不是实时同步或生产 API；上线构建须关闭 hooks。三端验收运行 `node shared/qa/cross-channel.js`，执行证据和目视截图清单见 `docs/gateflow/cross-channel-alignment-s3-implementation.md`。
 
-原型中的“视角预览”仅用于产品评审。生产环境的企业角色必须由服务端会话和授权策略决定，不能由用户在前端任意切换。
+角色由当前自然人账户的有效成员关系派生，界面只读；已移除任意角色切换。空间下拉框只展示该账户可进入的个人及企业空间。会话过期重新登录会重建账户与成员权限，不继承前一人的管理员角色。云拓与未配置个人样例的账户显示明确空态，不显示华启或李晓的业务记录。
+
+“设置”分开展示自然人账户、登录身份、当前成员角色和业务号码；绑定、开通和 IVR 认领均不会自动把业务号码变成登录身份。`accountContext()`、`expireSession(route)` 是新增本地评审 hooks，业务快照导入不会替换账号目录或会话。账号表职责与生产边界见 `docs/11-account-identity-and-workspaces.md`；前端角色 / 样例过滤不代替生产服务端鉴权。
 
 S3-01/02/03 修复和新增回归证据见 `docs/gateflow/cross-channel-alignment-s3-fix.md`，不替代后续复审或验收。混合账户 fixture 由共享开通、订单、支付和权益 helper 生成；发放周期覆盖季付、年付及非默认间隔，并验证调整当前目录后历史快照仍保持原值。
 

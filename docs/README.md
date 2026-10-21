@@ -1,13 +1,15 @@
 # 一通话 ONECALL 产品需求与技术方案
 
 > 文档状态：产品评审稿  
-> 文档版本：v0.6
-> 基线日期：2026-10-20
+> 文档版本：v0.7
+> 基线日期：2026-10-21
 > 适用范围：微信小程序、客户 Web、自建 IVR、Java 服务端、精简运营后台
 
 当前开通/订购与本期后台范围以 [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) 为准，统一演示套餐、状态转换和线下客服见 [10-cross-channel-rules.md](10-cross-channel-rules.md)。S1 共享规则、S2 运营后台与 S3 客户页面/IVR 展示已实现并通过本地 QA，证据见 [S3 implementation](gateflow/cross-channel-alignment-s3-implementation.md)；后续评审与验收仍由主控 gate 决定。01—08 中运营商订购、未实名禁止全部取证、旧路由及在线工单/退款/发票约束为历史稿；当前跨端交接为显式本地 fixture，不代表生产联调。
 
 S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix](gateflow/cross-channel-alignment-s3-fix.md)；其结论仅为修复交接，不替代复审与验收。
+
+账号体系与当前原型入口见 [11-account-identity-and-workspaces.md](11-account-identity-and-workspaces.md)：自然人账户统一，微信 / 登录手机号、企业成员关系和业务号码分域；企业使用成员工作空间，运营员工账号独立。
 
 ## 1. 文档目的
 
@@ -36,6 +38,7 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 | [08-operations-admin-prototype-plan.md](08-operations-admin-prototype-plan.md) | 平台运营后台原型的独立 IAM、权限、路由、状态机、实施切片和 QA 计划 | 产品、运营、安全、法务、设计、Web、测试 |
 | [09-business-activation-and-lean-admin.md](09-business-activation-and-lean-admin.md) | 当前业务基线：自建 IVR、三入口开通订购、免实名试用、认领和 5 人团队精简后台 | 产品、研发、运营、测试 |
 | [10-cross-channel-rules.md](10-cross-channel-rules.md) | 当前共享演示规则：套餐、状态转换、快照边界与线下客服口径 | 产品、研发、运营、测试 |
+| [11-account-identity-and-workspaces.md](11-account-identity-and-workspaces.md) | 账号表职责、登录身份、企业成员空间、业务号码边界和原型评审入口 | 产品、研发、安全、测试 |
 
 ## 3. 已锁定的产品基线
 
@@ -44,6 +47,7 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 | 客户端 | 原生微信小程序、客户 Web、自建 IVR |
 | 服务端 | Spring Boot、PostgreSQL、Redis、对象存储、消息队列 |
 | 用户范围 | IVR 号码级未实名用户可开通试用；平台身份、公证资格单独管理，未成年人政策待法务确认 |
+| 账号与企业空间 | 一个自然人客户账户，通过已登记登录身份登录；企业权限来自成员关系，业务号码不自动获得登录权；运营员工账号独立 |
 | 号码数量 | 个人账户手机号与独立固话合计最多三个；企业成员手机号上限与组织独立固话名额分开配置；每个号码独立验证、授权和开通 |
 | 号码验证与公证 | 手机号可用微信/短信验证，公证前做三要素；独立固话使用运营商真实主叫验证，公证前按机构规则核验登记归属或合法使用权 |
 | 电话接入 | 小程序直接拨号仅支持手机号；用户也可呼入自建 IVR 声讯号码开通试用，固话由独立线路接入；企业总机、PBX、分机和坐席 PIN 暂不设计 |

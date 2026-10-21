@@ -3021,7 +3021,7 @@
   <div class="suite">
     <aside class="screen-index" aria-label="页面目录">
       <h1 class="index-title">一通话页面集</h1>
-      <p class="index-meta">61 个核心页面 · 点击切换评审</p>
+      <p class="index-meta">62 个核心页面 · 点击切换评审</p>
 
       <section class="index-group">
         <h2 class="index-label">开通</h2>
@@ -3108,6 +3108,7 @@
         <h2 class="index-label">账户</h2>
         <div class="index-items">
           <button class="index-button" type="button" data-page="profile"><i data-lucide="user-round" aria-hidden="true"></i>我的</button>
+          <button class="index-button" type="button" data-page="accountSecurity"><i data-lucide="key-round" aria-hidden="true"></i>账号与登录身份</button>
           <button class="index-button" type="button" data-page="tips"><i data-lucide="book-open" aria-hidden="true"></i>取证小贴士</button>
           <button class="index-button" type="button" data-page="privacy"><i data-lucide="shield" aria-hidden="true"></i>隐私与数据说明</button>
           <button class="index-button" type="button" data-page="support"><i data-lucide="headphones" aria-hidden="true"></i>联系客服</button>
@@ -4283,9 +4284,12 @@
       const back = root.querySelector("#oc-back");
       const bottomNav = root.querySelector("#oc-bottom-nav");
       const B = window.OnecallBusiness;
+      const miniLogin = B.resolveDemoLogin({method:"WECHAT",providerSubject:"WX-DEMO-LI"});
+      if(!miniLogin.ok) throw Error("小程序演示账户无法登录："+miniLogin.code);
+      const accountContext = miniLogin.value;
       let business = B.createDemoState(new Date());
-      business.subjects.push({id:"MINI-ACCOUNT-001",maskedNumber:"138 **** 6208",numberType:"MOBILE",source:"MINIAPP",accountId:"ACCOUNT-DEMO-001",identity:"VERIFIED",activation:"ACTIVE",revision:1,claimRisk:"NONE"});
-      const review = {scenario:"returning",subjectId:"SUBJ-REPEAT-001",accountId:"ACCOUNT-DEMO-001",claimRequestId:null,orderId:null,notice:"",blockedCode:null};
+      business.subjects.push({id:"MINI-ACCOUNT-001",maskedNumber:"138 **** 6208",numberType:"MOBILE",source:"MINIAPP",accountId:accountContext.account.id,identity:"VERIFIED",activation:"ACTIVE",revision:1,claimRisk:"NONE"});
+      const review = {scenario:"returning",subjectId:"SUBJ-REPEAT-001",accountId:accountContext.account.id,claimRequestId:null,orderId:null,notice:"",blockedCode:null};
 
       function clone(value) { return JSON.parse(JSON.stringify(value)); }
       function formatSeconds(value) { const seconds=Math.max(0,Number(value)||0);return String(Math.floor(seconds/60)).padStart(2,"0")+":"+String(seconds%60).padStart(2,"0"); }
@@ -4437,7 +4441,7 @@
 
       function ivrReturnHtml() {
         const target=currentSubject();
-        return '<div class="screen-pad"><p class="eyebrow">IVR 回流 · 仅本地演示/评审</p><h3 class="page-heading">认领已有试用业务</h3><p class="page-lead">先登录，再验证与 IVR 主体一致的号码。验证前不展示历史录音、证据列表、试用使用量或到期时间。</p><div class="surface" style="margin-top:18px"><div class="record-top"><span class="record-label">待验证主体</span><span class="state warning"><i data-lucide="lock-keyhole" aria-hidden="true"></i>历史已隐藏</span></div><div class="meta-grid"><div class="meta-item"><span>号码</span><strong>'+(target?.maskedNumber||"待选择")+'</strong></div><div class="meta-item"><span>号码类型</span><strong>'+(target?.numberType==="LANDLINE"?"独立固话":"手机号")+'</strong></div><div class="meta-item"><span>登录</span><strong>DEMO 账户已登录</strong></div><div class="meta-item"><span>实名</span><strong>认领不会改变</strong></div></div></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>手机号使用微信手机号或短信演示验证；独立固话使用主叫挑战，不强制发送短信。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="claimVerify">登录并验证同一号码</button><button class="secondary-action" type="button" data-go="intro">走普通实名开通流程</button></div>';
+        return '<div class="screen-pad"><p class="eyebrow">IVR 回流 · 仅本地演示/评审</p><h3 class="page-heading">认领已有试用业务</h3><p class="page-lead">先登录，再验证与 IVR 主体一致的号码。验证前不展示历史录音、证据列表、试用使用量或到期时间。</p><div class="surface" style="margin-top:18px"><div class="record-top"><span class="record-label">待验证主体</span><span class="state warning"><i data-lucide="lock-keyhole" aria-hidden="true"></i>历史已隐藏</span></div><div class="meta-grid"><div class="meta-item"><span>号码</span><strong>'+(target?.maskedNumber||"待选择")+'</strong></div><div class="meta-item"><span>号码类型</span><strong>'+(target?.numberType==="LANDLINE"?"独立固话":"手机号")+'</strong></div><div class="meta-item"><span>登录</span><strong>'+accountContext.account.displayName+' · '+accountContext.account.id+'</strong></div><div class="meta-item"><span>实名</span><strong>认领不会改变</strong></div></div></div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>手机号使用微信手机号或短信演示验证；独立固话使用主叫挑战，不强制发送短信。</span></div><div class="spacer"></div><button class="primary-action" type="button" data-go="claimVerify">登录并验证同一号码</button><button class="secondary-action" type="button" data-go="intro">走普通实名开通流程</button></div>';
       }
       function claimVerifyHtml() {
         const target=currentSubject();const fixed=target?.numberType==="LANDLINE";return '<div class="screen-pad"><p class="eyebrow">可信号码验证 · DEMO</p><h3 class="page-heading">'+(fixed?'用原固话完成主叫挑战':'验证当前可使用同一手机号')+'</h3><p class="page-lead">登录本身不算号码验证；本页只模拟可信验证结果，不发送真实短信或发起电话。</p><div class="checkout-summary"><div class="checkout-row"><span>目标主体</span><strong>'+(target?.id||"不存在")+'</strong></div><div class="checkout-row"><span>脱敏号码</span><strong>'+(target?.maskedNumber||"待选择")+'</strong></div><div class="checkout-row"><span>验证方式</span><strong>'+(fixed?'CALLER_CHALLENGE':'WECHAT_PHONE')+'</strong></div><div class="checkout-row"><span>风险检查</span><strong>'+(target?.claimRisk||"未知")+'</strong></div></div><div class="spacer"></div><button class="primary-action" type="button" data-action="claim-submit">模拟可信验证并认领</button><button class="secondary-action" type="button" data-go="ivrReturn">返回</button></div>';
@@ -4721,7 +4725,13 @@
         const rows=accountOrders().slice().reverse();return '<div class="screen-pad"><h3 class="page-heading">订单历史</h3><p class="page-lead">每笔订单展示创建时锁定的商品、价格、渠道、支付与权益状态。退款和发票仅由线下人工客服承接。</p>'+(rows.length?rows.map(function(order){return '<div class="order-card"><div class="record-top"><div><strong style="font-size:14px">'+order.snapshot.name+'</strong><p class="micro" style="margin:4px 0 0">'+order.id+' · '+order.channel+'</p></div><span class="state '+(order.entitlement==="ISSUED"?'':'warning')+'"><i data-lucide="'+(order.entitlement==="ISSUED"?'circle-check':'clock-3')+'" aria-hidden="true"></i>'+B.labels.entitlement[order.entitlement]+'</span></div><div class="meta-grid"><div class="meta-item"><span>冻结金额</span><strong>'+priceHtml(order.snapshot)+'</strong></div><div class="meta-item"><span>支付</span><strong>'+B.labels.payment[order.payment]+'</strong></div><div class="meta-item"><span>商品版本</span><strong>'+order.snapshot.versionId+'</strong></div><div class="meta-item"><span>有效期</span><strong>'+order.snapshot.validDays+' 天</strong></div></div><button class="text-action" type="button" data-go="support">退款 / 发票联系人工客服</button></div>';}).join(''):'<div class="notice"><i data-lucide="info" aria-hidden="true"></i><span>当前没有共享业务订单。</span></div>')+'<div class="notice"><i data-lucide="headphones" aria-hidden="true"></i><span>'+B.support.contactLabel+'。不提供在线退款、开票提交或成功回执。</span></div></div>';
       }
       function profileHtml() {
-        const claimed=business.subjects.find(function(item){return item.accountId===review.accountId&&item.source==="IVR";});const target=claimed||purchaseSubject();return '<div class="screen-pad"><div class="profile-head"><span class="avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><div class="profile-name">'+(target?.maskedNumber||"DEMO 账户")+'</div><div class="profile-sub">'+(target?B.labels.identity[target.identity]+' · '+B.labels.activation[target.activation]:"未关联业务主体")+'</div></div></div><div class="metric-strip"><div class="metric"><strong>'+business.evidence.filter(function(item){return target&&item.subjectId===target.id;}).length+'</strong><span>录音元数据</span></div><div class="metric"><strong>'+accountOrders().length+'</strong><span>订单</span></div><div class="metric"><strong>'+accountEntitlements().length+'</strong><span>权益</span></div></div><h4 class="section-title">账户与权益</h4><div class="row-list">'+row("phone-incoming","认领 IVR 已有业务",claimed?"已关联；可查看元数据":"登录并验证同一号码","ivrReturn")+row("phone","主叫号码与录音设置","手机号、固话、授权和内部开通","numbers")+row("wallet-cards","套餐与用量","共享目录、试用和独立付费权益","plans")+row("receipt-text","订单历史","退款和发票联系人工客服","orders")+'</div><h4 class="section-title">帮助与设置</h4><div class="row-list">'+row("book-open","取证小贴士","依法使用录音与材料整理建议","tips")+row("shield","隐私与数据说明","处理目的、保存期限与用户权利","privacy")+row("headphones","线下人工客服",B.support.contactLabel,"support")+'</div></div>';
+        const claimed=business.subjects.find(function(item){return item.accountId===review.accountId&&item.source==="IVR";});const target=claimed||purchaseSubject();return '<div class="screen-pad"><div class="profile-head"><span class="avatar"><i data-lucide="user-round" aria-hidden="true"></i></span><div><div class="profile-name">'+accountContext.account.displayName+'</div><div class="profile-sub">自然人账户 · '+accountContext.account.id+'</div></div></div><div class="metric-strip"><div class="metric"><strong>'+business.evidence.filter(function(item){return target&&item.subjectId===target.id;}).length+'</strong><span>录音元数据</span></div><div class="metric"><strong>'+accountOrders().length+'</strong><span>订单</span></div><div class="metric"><strong>'+accountEntitlements().length+'</strong><span>权益</span></div></div><h4 class="section-title">账户与权益</h4><div class="row-list">'+row("key-round","账号与登录身份","微信、登录手机号和工作空间","accountSecurity")+row("phone-incoming","认领 IVR 已有业务",claimed?"已关联；可查看元数据":"登录并验证同一号码","ivrReturn")+row("phone","主叫号码与录音设置","手机号、固话、授权和内部开通","numbers")+row("wallet-cards","套餐与用量","共享目录、试用和独立付费权益","plans")+row("receipt-text","订单历史","退款和发票联系人工客服","orders")+'</div><h4 class="section-title">帮助与设置</h4><div class="row-list">'+row("book-open","取证小贴士","依法使用录音与材料整理建议","tips")+row("shield","隐私与数据说明","处理目的、保存期限与用户权利","privacy")+row("headphones","线下人工客服",B.support.contactLabel,"support")+'</div></div>';
+      }
+      function accountSecurityHtml(){
+        const identities=accountContext.identities.map(function(item){return '<div class="usage-row"><div><strong>'+(item.provider==="WECHAT"?"微信登录":"手机号登录")+'</strong><span>'+item.maskedLabel+'</span></div><span class="state"><i data-lucide="circle-check" aria-hidden="true"></i>已验证</span></div>';}).join("");
+        const workspaces=accountContext.workspaces.map(function(item){return '<div class="usage-row"><div><strong>'+item.name+'</strong><span>'+(item.type==="PERSONAL"?"个人空间":item.organizationName+' · '+item.department)+'</span></div><span class="state pending">'+item.roleLabel+'</span></div>';}).join("");
+        const numbers=business.subjects.filter(function(item){return item.accountId===review.accountId;}).map(function(item){return '<div class="usage-row"><div><strong>'+item.maskedNumber+'</strong><span>'+(item.numberType==="LANDLINE"?"独立固话":"业务手机号")+' · 用于录音/试用/订购</span></div><span class="state warning">非登录身份</span></div>';}).join("");
+        return '<div class="screen-pad"><p class="eyebrow">账户安全</p><h3 class="page-heading">'+accountContext.account.displayName+' · '+accountContext.account.id+'</h3><p class="page-lead">个人和企业入口共用同一个自然人账户；企业权限来自组织成员关系，不使用企业共享账号。</p><h4 class="section-title has-lead">可登录身份</h4><div class="surface">'+identities+'</div><h4 class="section-title has-lead">可进入工作空间</h4><div class="surface">'+workspaces+'</div><h4 class="section-title has-lead">业务号码</h4><div class="surface">'+(numbers||'<p class="page-lead">暂未关联业务号码</p>')+'</div><div class="notice"><i data-lucide="shield-check" aria-hidden="true"></i><span>绑定、验证或认领业务号码不会把它加入登录身份；固话永远不能登录。登录手机号需在账户安全中单独验证。</span></div></div>';
       }
 
       const pages = {
@@ -5016,6 +5026,7 @@
           nav: "profile",
           html: profileHtml
         },
+        accountSecurity: {title:"账号与登录身份",back:true,html:accountSecurityHtml},
         tips: {
           title: "取证小贴士",
           back: true,
@@ -5338,6 +5349,7 @@
       });
 
       window.__onecallMini = {
+        accountContext:function(){return clone(accountContext);},
         businessSnapshot:function(){const result=B.snapshot(business);if(!result.ok)throw Error(result.code);return result.value;},
         loadReviewSnapshot:function(candidate){const result=B.loadReviewSnapshot(business,candidate);if(result.ok){pendingBinding=null;review.claimRequestId=null;const linked=business.subjects.find(function(item){return item.accountId===review.accountId&&item.source==="IVR";})||business.activations.slice().reverse().map(function(item){return business.subjects.find(function(subject){return subject.id===item.subjectId;});}).find(function(item){return item&&item.accountId===review.accountId;})||business.subjects.find(function(item){return item.accountId===review.accountId;});if(linked)review.subjectId=linked.id;show(current,false);}return clone(result);},
         setReviewScenario:function(name){

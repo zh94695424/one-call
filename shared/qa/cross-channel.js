@@ -8,7 +8,7 @@ const B = require('../onecall-business');
 const root = path.resolve(__dirname, '../..');
 const copy = value => JSON.parse(JSON.stringify(value));
 const facts = value => ({ sessions:value.sessions, evidence:value.evidence, trialGrants:value.trialGrants });
-const forbidden = ['employees','employeeLoginSession','employeeCredentials','employeeRoles','customerAuthSession','uiSession','widgetState','code'];
+const forbidden = ['employees','employeeLoginSession','employeeCredentials','employeeRoles','customerAuthSession','accounts','authIdentities','identityProfiles','organizations','memberships','uiSession','widgetState','code'];
 
 (async () => {
   const browser = await chromium.launch({ headless:true, executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
@@ -30,7 +30,7 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     assert.ok(mini);
     const surfaces = [{frame:admin,hook:'__onecallOps'},{frame:mini,hook:'__onecallMini'},{frame:web,hook:'__onecallWeb'}];
     const snapshot = s => s.frame.evaluate(h=>window[h].businessSnapshot(),s.hook);
-    const load = async (s,data) => { const r=await s.frame.evaluate(({h,data})=>window[h].loadReviewSnapshot(data),{h:s.hook,data});assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(await snapshot(s),data); };
+    const load = async (s,data) => { const context=await s.frame.evaluate(h=>window[h].accountContext?.()||null,s.hook);const r=await s.frame.evaluate(({h,data})=>window[h].loadReviewSnapshot(data),{h:s.hook,data});assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(await snapshot(s),data);assert.deepEqual(await s.frame.evaluate(h=>window[h].accountContext?.()||null,s.hook),context,'Business import must preserve authenticated identities and workspaces'); };
     const [a,m,w] = surfaces;
     const ago = route => admin.evaluate(route=>window.__onecallOps.go(route),route);
     const mgo = route => mini.evaluate(route=>window.__onecallMini.navigate(route),route);
@@ -42,7 +42,11 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     const shot = async (page,dir,name) => {const p=path.join(root,dir,'qa/screenshots','alignment-cross-'+name+'.png');fs.mkdirSync(path.dirname(p),{recursive:true});await page.screenshot({path:p,fullPage:true});};
 
     await admin.fill('#login-name','admin.lin');await admin.fill('#login-code','482916');await admin.locator('#login-form button').click();
-    await web.locator('[data-action="wechat-login"]').click();await web.locator('[data-workspace-choice="personal"]').click();
+    await web.locator('[data-action="wechat-login"]').click();await web.locator('[data-workspace-choice="personal:ACCOUNT-DEMO-001"]').click();
+    const miniAccount=await mini.evaluate(()=>__onecallMini.accountContext()),webAccount=await web.evaluate(()=>__onecallWeb.accountContext());
+    assert.equal(miniAccount.account.id,webAccount.accountId);assert.equal(webAccount.accountId,'ACCOUNT-DEMO-001');assert.deepEqual(miniAccount.identities,webAccount.identities);
+    const identityDirectory=copy(B.demoAccountDirectory);
+    for(const key of ['accounts','authIdentities','identityProfiles','organizations','memberships'])for(const s of surfaces)assert.equal(Object.hasOwn(await snapshot(s),key),false);
     const initial = await snapshot(a), historical=copy(initial.orders);
     await ago('/catalog/PERSONAL_BASIC_MONTHLY-V1');await act('edit-product');
     await admin.fill('#pkg-price','41.25');await admin.fill('#pkg-aiMinutes','77');await admin.fill('#pkg-recordingMinutes','83');await admin.fill('#pkg-days','45');await confirm();
@@ -221,19 +225,19 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     }
     // Visible enterprise authorization revocations must survive actual cross-channel imports.
     for(const item of [
-      {id:'auth-6688',number:'010 **** 6688'},
-      {id:'auth-9056',number:'021 **** 9056'},
-      {id:'auth-3360',number:'186 **** 3360'},
-      {id:'auth-7812',number:'139 **** 7812',reconfirm:true},
+      {id:'auth-6688',number:'010 **** 6688',owner:'ACCOUNT-DEMO-001'},
+      {id:'auth-9056',number:'021 **** 9056',owner:'ACCOUNT-DEMO-001'},
+      {id:'auth-3360',number:'186 **** 3360',owner:'ACCOUNT-DEMO-003'},
+      {id:'auth-7812',number:'139 **** 7812',owner:'ACCOUNT-DEMO-002',reconfirm:true},
     ]){
       await web.reload({waitUntil:'load'});
-      await web.locator('[data-action="wechat-login"]').click();await web.locator('[data-workspace-choice="personal"]').click();
-      await web.locator('#workspace-select').selectOption('enterprise');
+      await web.locator('[data-action="wechat-login"]').click();await web.locator('[data-workspace-choice="personal:ACCOUNT-DEMO-001"]').click();
+      await web.locator('#workspace-select').selectOption('organization:ORG-HUAQI-001');
       await web.locator('#side-nav [data-route="agreements"]').click();
       await web.locator('[data-agreement-id="'+item.id+'"]').filter({hasText:'查看快照'}).click();
       if(item.reconfirm)await web.locator('[data-action="agreement-reconfirm"]').click();
-      const before=await snapshot(w),matches=before.subjects.filter(subject=>subject.accountId==='ACCOUNT-DEMO-001'&&subject.maskedNumber===item.number);
-      assert.equal(matches.length,1);const original=matches[0];assert.equal(original.activation,'ACTIVE');assert.equal(original.revision,2);
+      const before=await snapshot(w),matches=before.subjects.filter(subject=>subject.maskedNumber===item.number);
+      assert.equal(matches.length,1);const original=matches[0];assert.equal(original.accountId,item.owner);assert.equal(original.activation,'ACTIVE');assert.equal(original.revision,2);
       await web.locator('[data-action="agreement-revoke-confirm"]').click();
       const recordId=await web.locator('[data-action="agreement-revoke"]').getAttribute('data-agreement-id');
       if(item.reconfirm)assert.notEqual(recordId,item.id);
@@ -260,6 +264,8 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     }
     await shot(admin,'operations-prototype','support-1440');await shot(miniPage,'prototype','support-393');await shot(web,'web-prototype','support-1280');
     const hashes=[];for(const s of surfaces)hashes.push(await s.frame.locator('[data-onecall-business-sha256]').getAttribute('data-onecall-business-sha256'));
+    assert.deepEqual(B.demoAccountDirectory,identityDirectory);
+    for(const s of [m,w])assert.deepEqual(await s.frame.evaluate(()=>OnecallBusiness.demoAccountDirectory),identityDirectory);
     assert.ok(hashes[0]);assert.equal(new Set(hashes).size,1);assert.deepEqual(errors,[]);
     console.log('PASS: admin publication -> both clients; frozen stale/off-sale/channel checkout; dynamic IVR claim/recording/trial continuity; WEB + MINIAPP UNKNOWN/PAID/PENDING/FAILED/ISSUED; all event replays; fixed/conflict/recycled; forbidden imports and five reference tamper cases; account-owned orders/rights (empty, one, two subjects) exclude other accounts; four enterprise admin authorization revocations import into Operations and Mini; support and generated hash equality; no browser errors.');
   } finally {await browser.close();}
