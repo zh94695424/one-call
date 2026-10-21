@@ -45,4 +45,6 @@
 - Aggregate deepreview: `docs/reviews/code-review-20261021-231557.md`, `pass-with-risks`; A-01 (VPC/COS boundary wording) accepted and fixed in `docs/gateflow/tencent-cloud-deployment-aggregate-fix.md`.
 - Validation: focused architecture/control consistency scan and `git diff --check` passed; no runtime tests apply.
 - Accepted S1 slice commit: `b91914e` (`gateflow: accept tencent-cloud-deployment-decision S1`).
-- Current gate / next entry point: accepted deepreview commit, then push. Existing prototype QA image changes remain outside this work unit.
+- Accepted deepreview commit: `e77861a` (`gateflow: accept deepreview for tencent-cloud-deployment-decision`).
+- Local readiness: `docs/gateflow/tencent-cloud-deployment-local-readiness.md`; the scoped commit range and documentation validation pass.
+- Current gate / next entry point: push, blocked because no Git remote is configured. No push or PR was attempted; existing prototype QA image changes remain outside this work unit.
