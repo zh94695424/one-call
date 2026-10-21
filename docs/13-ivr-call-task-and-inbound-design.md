@@ -199,13 +199,15 @@ POST /api/v1/ivr/inbound/resolve
 
 `calleeNumber` 只在 IVR 内部响应中返回，不能写入普通日志。对 `DIAL_TASK_CALLEE`，`reservationId`、`authorizedRecordingSeconds` 与 `authorizationExpiresAt` 是本次外呼的冻结授权；`availableRecordingSeconds` 仅作分流快照，不能覆盖授权额度。
 
+`authorizationExpiresAt` 是启动新的 B 路外呼操作的最后时刻，不是已建立通话的结束时间。IVR 必须使用受监控的校时钟；授权过期且 B 路尚未启动时不得补拨，应上报未外呼终态并释放预占。若 B 路操作已在截止时间前启动，之后即使授权时间已过，也按原授权时长完成当前通话并等待终态结算；线路结果不明时进入对账，不得把过期当作重拨许可。
+
 首版稳定枚举：`callerState = UNREGISTERED / INACTIVE / ACTIVE / SUSPENDED`；`taskMatch = CLAIMED / NONE / EXPIRED / REJECTED / CONFLICT`；`action` 只使用下表所列动作。`CONFLICT` 表示数据异常或迁移遗留的多个候选，必须拒绝并告警，不能由 IVR 选择其一。未知枚举按协议不兼容失败处理，不能默认为允许外呼。
 
 ### 6.3 决策顺序与动作
 
 后台在一个短事务中执行：鉴权与防重放 → `callId` 幂等检查 → 号码标准化 → 取得主叫锁 → 创建/复用 `IVRSession` → 读取主体/开通状态和事务型余额投影 → 使已过期待拨任务失效 → 核验唯一任务、当前空间权限、主体状态和可用权益。只有所有条件均满足时，才在同一事务内将任务从 `PENDING` 条件更新为 `CLAIMED`、绑定 `callId`、创建唯一 `UsageReservation` 并保存 `DIAL_TASK_CALLEE` 冻结决策；提交成功后才返回外呼授权。任何检查或写入失败都回滚领取和预占，不向 IVR 返回可外呼授权，也不在该事务内调用 IVR/线路。
 
-同一 `callId` 重试只返回首次已提交的决策，不再次领取任务或创建预占。收到 `DIAL_TASK_CALLEE` 后，IVR 还必须先以 `callId` 持久化唯一 B 路外呼操作，再调用线路；响应丢失或节点重启时只恢复/查询该操作，不能再次拨出。录音告知及适用的同意要求独立于被叫号码确认，按已批准策略处理；它们不是要求主叫在声讯电话中复述或核对被叫号码。
+同一 `callId` 重试只返回首次已提交的决策，不再次领取任务或创建预占。收到 `DIAL_TASK_CALLEE` 后，IVR 还必须先以 `callId` 持久化唯一 B 路外呼操作，再调用线路；只有在 `authorizationExpiresAt` 前尚未启动外呼时才允许首次发起。响应丢失或节点重启时只恢复/查询该操作，不能再次拨出。录音告知及适用的同意要求独立于被叫号码确认，按已批准策略处理；它们不是要求主叫在声讯电话中复述或核对被叫号码。
 
 | 条件 | `action` | 是否领取任务 | IVR 行为 |
 | --- | --- | --- | --- |
@@ -242,9 +244,11 @@ POST /api/v1/ivr/inbound/resolve
 | `POST /api/v1/ivr/calls/{callId}/recordings` | 登记 `recordingId`、格式、声明大小/时长/哈希，签发单对象短时上传凭证；`recordingId` 唯一 |
 | `POST /api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete` | 通知上传完成，触发服务端对象校验和证据接收；重复调用返回同一处理状态 |
 
+如果 `authorizationExpiresAt` 到达时 B 路尚未发起，IVR 只有在持久化操作记录能确认从未向线路发出外呼请求时，才可通过通话事件接口提交 `OUTBOUND_NOT_STARTED` 终态，原因 `AUTHORIZATION_EXPIRED`，并关联原 `reservationId`。业务系统按 `callId + eventId` 幂等接收；确认该 `callId` 没有已接受的外呼/应答/桥接事实后，在同一结算事务中将任务终结为 `FAILED` 并释放预占。若线路请求结果不明，不能提交此终态，必须先对账；终态后到达的矛盾线路事实应隔离并告警，不能自动重开任务或重复扣量。
+
 通话记录、时长与事件 JSON 进入业务 API；大录音字节不穿过 Java 在线请求进程，而是使用业务系统签发的受控凭证直接进入其私有对象存储，再由业务系统校验并确认接收。两条路径都属于向 ONECALL 业务系统上传，但避免大文件占满呼入决策线程和 API 内存。
 
-任务路径收到 `DIAL_TASK_CALLEE` 后，IVR 必须先以 `callId` 持久化唯一的 B 路外呼操作，再向线路发起外呼；同一 `callId` 的重试只恢复/查询该操作，不能创建第二个 B 路。被叫应答后桥接 A/B 并开始录音；任何结果不确定时先向 IVR 本地权威记录或线路状态对账，不得仅因 API 超时就再次拨打。
+任务路径收到 `DIAL_TASK_CALLEE` 后，IVR 必须先以 `callId` 持久化唯一的 B 路外呼操作，并在 `authorizationExpiresAt` 前向线路发起外呼；截止时刻及之后不得开始新的外呼。同一 `callId` 的重试只恢复/查询该操作，不能创建第二个 B 路。被叫应答后桥接 A/B 并开始录音；任何结果不确定时先向 IVR 本地权威记录或线路状态对账，不得仅因 API 超时就再次拨打。若到截止时仍未向线路发出外呼请求，IVR 按上述终态事件规则上报，后台释放预占并将任务幂等终结为失败。
 
 ## 7. 通话、时长与录音上传
 
@@ -311,6 +315,8 @@ IVR 上传的通话记录至少包含：实际主叫、被叫、接入号、A/B 
 | 任务有效但主体随后停用/权限撤销 | resolve 在同一事务重验并失败关闭；旧任务不能绕过当前状态 |
 | 余额与其他呼叫竞争 | 任务领取和录音权益预占在同一事务串行；只有成功预占才返回 `DIAL_TASK_CALLEE` |
 | resolve 响应丢失后同一 `callId` 重试 | 后台返回冻结任务/授权；IVR 通过本地持久幂等只恢复原 B 路操作，不重复外呼 |
+| `authorizationExpiresAt` 到期时 B 路尚未启动 | 确认线路外呼从未发起后，IVR 以 `callId + eventId` 上报 `OUTBOUND_NOT_STARTED / AUTHORIZATION_EXPIRED`；后台幂等失败终结任务并释放预占 |
+| B 路在授权截止前已启动、但截止后才接通 | 当前 B 路可在冻结授权秒数内继续；截止时间不自动释放预占或中断当前通话 |
 | 被叫接通 | IVR 将 A/B 接入同一双向媒体桥，由 IVR 媒体节点桥接并录音，按授权时长限时挂断；不产生额外第三个被叫 |
 | 有余额但无任务 | 进入直接 DTMF 输入被叫流程，不猜测过期或历史任务 |
 | 未注册/未实名直接呼入 | 明确按键后可内部开通及领取一次试用；不创建登录账号 |
