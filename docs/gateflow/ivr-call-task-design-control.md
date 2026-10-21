@@ -24,11 +24,13 @@
 | aggregate deepreview | pass；`../reviews/code-review-20261021-181631.md`，未发现实质性问题 |
 | aggregate validation fix | fixed；`ivr-call-task-design-aggregate-fix.md`，移除 13 的三处尾空格并纠正首次验证记录 |
 | aggregate re-review | pass；`../reviews/code-review-20261021-182316.md`，设计语义无变化 |
-| accepted deepreview commit | `2ef84dd` 记录首次 review；最终 validation fix commit 待创建 |
+| accepted deepreview commit | pass；`64d8fb0`（`2ef84dd` 为首次 aggregate review artifact commit） |
+| ready-to-open-draft-PR | pass；`ivr-call-task-design-local-readiness.md` |
+| push | blocked；`git remote -v` 为空，无可用远端 |
 
 ## Current gate / next entry point
 
-final accepted deepreview commit。
+push。当前存在 external-state blocker：无 Git remote；未进入 create draft PR / PR review / draft-PR-pass / final closeout pass。
 
 ## Residual risks
 
