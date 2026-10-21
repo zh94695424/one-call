@@ -558,6 +558,59 @@ async function loginByPhone(page, phone, workspaceId = null) {
     await expectText(page, '.public-share-page', '验证暂时锁定');
     await screenshot(page, 'share-recipient-locked-1024.png', 1024);
 
+    await page.evaluate(() => { state.session='signedIn'; state.shareAccessState='entry'; state.shareCodeAttempts=0; state.shareCodeInput=''; go('callDetail'); });
+    await page.locator('[data-route="share-create"]').click();
+    await page.locator('[data-share-group="shareAudience"][data-share-value="none"]').click();
+    await page.locator('[data-share-group="shareContent"][data-share-value="recording"]').click();
+    await page.locator('[data-share-group="shareVisits"][data-share-value="1"]').click();
+    await expectText(page, '#content', '免验证 · 链接直听');
+    await expectText(page, '#content', '任何持有链接的人均可收听');
+    await expectText(page, '#content', '验证方式\n免验证');
+    await screenshot(page, 'share-create-no-verification-1440.png', 1440, 1000);
+    await page.locator('[data-action="share-create"]').click();
+    await expectText(page, '#content', '无需验证，打开链接即可收听');
+    expect(await page.locator('[data-action="toast"][data-message*="提取码"]').count() === 0, 'No-verification success must not expose a copy-code action');
+    expect(!(await page.locator('#content').innerText()).includes('链接和验证信息通过不同渠道发送'), 'No-verification success must not instruct separate code delivery');
+    const noVerificationId = await page.evaluate(() => state.createdShareId);
+    await screenshot(page, 'share-created-no-verification-1024.png', 1024, 1000);
+
+    await page.evaluate(id => { state.session='signedOut'; openShare(id); }, noVerificationId);
+    await expectText(page, '.public-share-page', '录音播放副本');
+    await expectText(page, '.public-share-page', '第 1 / 1 次成功访问');
+    await expectText(page, '.public-share-page', '免验证链接不会核验访问者身份');
+    expect(await page.locator('#share-code-input').count() === 0, 'No-verification recipient must not see an extraction-code field');
+    expect(!(await page.locator('.public-share-page').innerText()).includes('王经理，我们确认'), 'Recording-only share must not expose transcript content');
+    const visitsBeforePlay = await page.evaluate(id => shareRecords.find(item => item.id === id).visits, noVerificationId);
+    await page.locator('[data-action="toggle-audio"]').click();
+    expect(await page.locator('[data-action="toggle-audio"]').getAttribute('aria-label') === '暂停', 'No-verification player must remain user-initiated and support play');
+    await page.locator('[data-action="toggle-audio"]').click();
+    expect(await page.locator('[data-action="toggle-audio"]').getAttribute('aria-label') === '播放', 'No-verification player must support pause');
+    expect(await page.evaluate(id => shareRecords.find(item => item.id === id).visits, noVerificationId) === visitsBeforePlay, 'Play and pause must not consume additional visits');
+    await screenshot(page, 'share-recipient-no-verification-720.png', 720, 900);
+
+    await page.evaluate(() => { state.session='signedIn'; go('shares'); });
+    const noVerificationRow = page.locator('tbody tr').filter({ hasText: noVerificationId });
+    await expectText(page, '#content', '免验证');
+    await expectText(page, '#content', '次数用尽');
+    expect(await noVerificationRow.locator('[data-share-manage="regenerate"]').count() === 0, 'No-verification share must not offer code rotation');
+    await noVerificationRow.locator('[data-share-preview]').click();
+    await expectText(page, '.public-share-page', '访问次数已用完');
+
+    await page.evaluate(id => { const item=shareRecords.find(row=>row.id===id); item.visits='0 / 1'; state.session='signedIn'; go('shares'); }, noVerificationId);
+    await page.locator(`[data-share-manage="revoke"][data-share-id="${noVerificationId}"]`).click();
+    await page.locator(`[data-share-preview="${noVerificationId}"]`).click();
+    await expectText(page, '.public-share-page', '分享已被撤销');
+    await page.evaluate(id => { const item=shareRecords.find(row=>row.id===id); item.status='有效'; item.accessState='entry'; item.visits='0 / 1'; item.expiresAt=Date.now()-1000; openShare(id); }, noVerificationId);
+    await expectText(page, '.public-share-page', '分享已过期');
+    await page.evaluate(() => { state.session='signedIn'; go('shares'); });
+    await expectText(page, '#content', '已过期');
+
+    await page.locator('[data-share-preview="SHR-261019-8Q4K"]').click();
+    await expectText(page, '.public-share-page', '提取码');
+    expect(await page.locator('#share-code-input').count() === 1, 'Existing extraction-code share must stay gated after selecting no-verification for another share');
+    await page.evaluate(() => openShare('SHR-DOES-NOT-EXIST'));
+    await expectText(page, '.public-share-page', '分享链接无效');
+
     await page.evaluate(() => { state.session='signedIn'; state.shareAccessState='entry'; state.shareCodeAttempts=0; state.shareCodeInput=''; go('shares'); });
     await expectText(page, '#content', '管理已经创建的受控播放授权');
     await expectText(page, '#content', '已过期');

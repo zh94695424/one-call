@@ -1848,7 +1848,7 @@
       session:'signedOut', authView:'login', loginMethod:'wechat', qrState:'ready', authScenario:'normal', loginIntent:'standard',
       firstLogin:false, privacyAgreed:false, sessionExpired:false, returnRoute:null, loginPhone:'13800006208', loginCode:'', phoneSent:false, phoneError:'', phoneSendCount:0,
       shareContent:'summary', shareAudience:'code', shareExpiry:'24h', shareVisits:'5', shareDownload:false, shareCreated:false,
-      activeShare:'SHR-261019-8Q4K', shareAccessState:'entry', shareCodeInput:'', shareCodeError:'', shareCodeAttempts:0, currentShareCode:'8K3P',
+      activeShare:'SHR-261019-8Q4K', createdShareId:'', sharePlaybackId:'', shareCustomExpiry:'', shareAccessState:'entry', shareCodeInput:'', shareCodeError:'', shareCodeAttempts:0,
       matterStep:1, matterCreated:false, activeMatter:'MAT-202610-018', matterEvidence:['OC-E1042','OC-E1041','OC-E1038'],
       matterDetailEvidence:['OC-E1042','OC-E1041','OC-E1040','OC-E1039','OC-E1038','OC-E1037'], matterEvidenceDraft:[], matterManageOpen:false, matterOwner:'李晓', matterArchiveConfirm:false, matterArchived:false, matterEvents:[],
       activeNumber:'phone-6208', numberDisabled:false, numberStopConfirm:false, numberDeleteConfirm:false, deletedNumbers:[],
@@ -1991,7 +1991,8 @@
       return call.owner===enterpriseProfile().name;
     }
     function visibleShares(){
-      const rows=shareRecords.filter(item=>item.space===(isEnterprise()?'enterprise':'personal'));
+      if(!hasWorkspaceDemoData())return [];
+      const rows=shareRecords.filter(item=>item.space===(isEnterprise()?'enterprise':'personal')&&(!item.workspaceId||item.workspaceId===state.currentWorkspaceId)&&(!item.accountId||item.accountId===state.accountId));
       if(!isEnterprise()) return rows;
       if(isEnterpriseMember()) return rows.filter(item=>item.owner===enterpriseProfile().name);
       if(isEvidenceManager()) return rows.filter(item=>item.dept===enterpriseProfile().dept);
@@ -2264,14 +2265,54 @@
       return '<button type="button" class="share-option '+(selected?'selected':'')+'" data-share-group="'+group+'" data-share-value="'+value+'" role="radio" aria-checked="'+selected+'">'+icon(iconName)+'<span><strong>'+title+'</strong><span>'+description+'</span></span></button>';
     }
 
+    function shareContentLabel(value){return {recording:'仅录音',transcript:'录音 + 逐字稿',summary:'录音 + 逐字稿 + AI 摘要'}[value];}
+    function shareVerifyLabel(value){return {code:'提取码',none:'免验证',sms:'指定手机验证',member:'企业成员授权'}[value];}
+    function shareLocalDateTime(at){const date=new Date(at);return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16);}
+    function shareVisitCounts(share){const parts=share.visits.split('/').map(value=>value.trim());return {used:Number(parts[0]),limit:parts[1]==='不限'?Infinity:Number(parts[1])};}
+    function shareLifecycle(share){
+      if(!share)return 'invalid';
+      if(share.status==='已撤销'||share.accessState==='revoked')return 'revoked';
+      if(share.status==='已过期'||share.accessState==='expired'||(share.expiresAt&&Date.now()>=share.expiresAt))return 'expired';
+      const visits=shareVisitCounts(share);
+      if(visits.used>=visits.limit)return 'exhausted';
+      return '';
+    }
+    function shareBlockedState(share){const lifecycle=shareLifecycle(share);return lifecycle==='exhausted'&&state.sharePlaybackId===share?.id&&state.shareAccessState==='playback'?'':lifecycle;}
+    function admitSharePlayback(share){
+      if(shareBlockedState(share))return false;
+      if(state.sharePlaybackId!==share.id||state.shareAccessState!=='playback'){
+        const visits=shareVisitCounts(share);
+        share.visits=(visits.used+1)+' / '+(Number.isFinite(visits.limit)?visits.limit:'不限');
+        share.latest='刚刚';
+      }
+      state.sharePlaybackId=share.id;state.shareAccessState='playback';state.shareCodeError='';state.audioSeconds=0;
+      return true;
+    }
+    function openShare(id){
+      stopAudio();state.audioPlaying=false;state.audioSeconds=0;state.activeShare=id;state.sharePlaybackId='';state.shareAccessState='entry';state.shareCodeInput='';state.shareCodeError='';state.shareCodeAttempts=0;go('share-access');
+    }
+    function createShareRecord(){
+      const call=visibleCalls().find(item=>item.id===(state.activeCall||'OC-C2038'));
+      if(state.session!=='signedIn'||!canShareCall(call)||!shareVerifyLabel(state.shareAudience)||(!isEnterprise()&&state.shareAudience==='member'))return false;
+      const now=Date.now(),hours={"1h":1,"24h":24,"7d":168};
+      const expiresAt=state.shareExpiry==='custom'?new Date(state.shareCustomExpiry||shareLocalDateTime(now+7*86400000)).getTime():now+hours[state.shareExpiry]*3600000;
+      if(!Number.isFinite(expiresAt)||expiresAt<=now||expiresAt>now+30*86400000){showToast('请选择未来 30 天内的失效时间');return false;}
+      const id='SHR-DEMO-'+String(shareRecords.length+1).padStart(4,'0');
+      const profile=isEnterprise()?enterpriseProfile():{name:'李晓',dept:'个人'};
+      const record={id,space:isEnterprise()?'enterprise':'personal',accountId:state.accountId,workspaceId:state.currentWorkspaceId,call:call.id,recording:call.id+' · '+call.caller+' → '+call.callee,scope:shareContentLabel(state.shareContent),verify:shareVerifyLabel(state.shareAudience),download:state.shareDownload,expiresAt,expires:shareLocalDateTime(expiresAt).replace('T',' '),visits:'0 / '+(state.shareVisits==='unlimited'?'不限':state.shareVisits),latest:'尚无访问',status:'有效',accessState:'entry',owner:profile.name,dept:profile.dept,evidenceAccess:true,link:'https://s.onecall.cn/s/'+id};
+      if(state.shareAudience==='code')record.code='8K3P';
+      shareRecords.unshift(record);state.createdShareId=id;state.shareCreated=true;
+      return true;
+    }
+
     function sharesPage(){
       const rows=visibleShares();
       const title=isEnterpriseMember()?'我的录音分享':'录音分享';
       const description=isEnterpriseAdmin()?'只展示你拥有录音访问权的分享；企业管理员身份本身不授予录音分享权限。':isEvidenceManager()?'管理法务部授权范围内的录音分享。':'管理已经创建的受控播放授权，可撤销、延长有效期或更换提取码。';
       const action=button('从通话录音创建','plus','data-route="calls"','primary');
       return head(title,description,action)+
-        '<div class="toolbar"><label class="search-field">'+icon('search')+'<input class="input" id="share-search" placeholder="搜索录音名称或分享编号"></label><select class="select" aria-label="分享状态"><option>全部状态</option><option>有效</option><option>已过期</option><option>已撤销</option></select><select class="select" aria-label="验证方式"><option>全部验证方式</option><option>提取码</option><option>指定手机验证</option><option>企业成员授权</option></select></div>'+(
-        rows.length?'<div class="table-wrap"><table><thead><tr><th>录音 / 分享编号</th><th>分享内容</th><th>验证方式</th><th>有效期</th><th>成功访问</th><th>最近访问</th><th>状态</th><th></th></tr></thead><tbody>'+rows.map(item=>'<tr><td><div class="file-copy"><strong>'+item.recording+'</strong><span class="mono">'+item.id+(isEnterprise()?' · '+item.dept+' / '+item.owner:'')+'</span></div></td><td>'+item.scope+'</td><td>'+item.verify+'</td><td>'+item.expires+'</td><td class="mono">'+item.visits+'</td><td>'+item.latest+'</td><td>'+status(item.status,item.status==='有效'?'success':item.status==='已过期'?'neutral':'error',item.status==='有效'?'circle-check':item.status==='已过期'?'clock-3':'ban')+'</td><td><div class="tag-row">'+button('预览接收页','external-link','data-share-preview="'+item.id+'"','ghost')+(item.status==='有效'?button('撤销','ban','data-share-manage="revoke" data-share-id="'+item.id+'"','danger')+button('换码','refresh-cw','data-share-manage="regenerate" data-share-id="'+item.id+'"','ghost')+button('延期','calendar-plus','data-share-manage="extend" data-share-id="'+item.id+'"','ghost'):'')+'</div></td></tr>').join('')+'</tbody></table></div>':'<section class="panel empty">'+icon('unlink')+'<div><h3>当前范围内没有分享记录</h3><p>从有访问权限的有效通话录音详情创建分享。</p></div></section>')+
+        '<div class="toolbar"><label class="search-field">'+icon('search')+'<input class="input" id="share-search" placeholder="搜索录音名称或分享编号"></label><select class="select" aria-label="分享状态"><option>全部状态</option><option>有效</option><option>已过期</option><option>已撤销</option></select><select class="select" aria-label="验证方式"><option>全部验证方式</option><option>免验证</option><option>提取码</option><option>指定手机验证</option><option>企业成员授权</option></select></div>'+(
+        rows.length?'<div class="table-wrap"><table><thead><tr><th>录音 / 分享编号</th><th>分享内容</th><th>验证方式</th><th>有效期</th><th>成功访问</th><th>最近访问</th><th>状态</th><th></th></tr></thead><tbody>'+rows.map(item=>{const lifecycle=shareLifecycle(item),label=lifecycle==='expired'?'已过期':lifecycle==='revoked'?'已撤销':lifecycle==='exhausted'?'次数用尽':'有效';return '<tr><td><div class="file-copy"><strong>'+item.recording+'</strong><span class="mono">'+item.id+(isEnterprise()?' · '+item.dept+' / '+item.owner:'')+'</span></div></td><td>'+item.scope+'</td><td>'+item.verify+'</td><td>'+item.expires+'</td><td class="mono">'+item.visits+'</td><td>'+item.latest+'</td><td>'+status(label,label==='有效'?'success':label==='已撤销'?'error':'neutral',label==='有效'?'circle-check':label==='已撤销'?'ban':label==='已过期'?'clock-3':'eye-off')+'</td><td><div class="tag-row">'+button('预览接收页','external-link','data-share-preview="'+item.id+'"','ghost')+(label==='有效'?button('撤销','ban','data-share-manage="revoke" data-share-id="'+item.id+'"','danger')+(item.verify==='提取码'?button('换码','refresh-cw','data-share-manage="regenerate" data-share-id="'+item.id+'"','ghost'):'')+button('延期','calendar-plus','data-share-manage="extend" data-share-id="'+item.id+'"','ghost'):'')+'</div></td></tr>';}).join('')+'</tbody></table></div>':'<section class="panel empty">'+icon('unlink')+'<div><h3>当前范围内没有分享记录</h3><p>从有访问权限的有效通话录音详情创建分享。</p></div></section>')+
         '<div class="notice" style="margin-top:14px">'+icon('shield-check')+'<span>分享只授予受控播放权限，不暴露原始存储地址。过期或撤销可阻止后续访问，但无法收回接收方已经下载、录屏或另行保存的内容。</span></div>';
     }
 
@@ -2280,36 +2321,51 @@
       const call=allowed.find(item=>item.id===(state.activeCall||'OC-C2038'))||allowed.find(canShareCall);
       if(!canShareCall(call)) return accessDeniedPage('当前录音不可分享','只有已形成录音证据且当前账户拥有播放与分享权限时，才能创建受控分享。');
       if(state.shareCreated){
-        const internal=state.shareAudience==='member';
-        const verifyCopy=state.shareAudience==='sms'?'接收手机号 139 **** 3816 将通过短信验证码验证':state.shareAudience==='member'?'已授权企业成员周宁访问':'提取码 '+state.currentShareCode;
-        return head('分享已创建','权限已经生效，原始录音文件仍保持不可变。')+'<section class="panel"><div class="success-state"><div><span class="success-icon">'+icon('check')+'</span><h2>'+(internal?'成员访问权限已授予':'受控分享已生成')+'</h2><p>'+(internal?'周宁可在企业空间内查看本次授权内容；成员离职、权限撤销或分享到期后将停止访问。':'请把访问链接和验证信息通过不同渠道发送，降低转发泄露风险。')+'</p><div style="width:min(620px,100%);margin:0 auto;text-align:left">'+(!internal?'<div class="credential-block"><span class="credential-label">访问链接</span><div class="credential-line"><span class="credential-value mono">https://s.onecall.cn/s/8Q4KpN7w</span>'+button('复制链接','copy','data-action="toast" data-message="访问链接已复制"')+'</div></div>':'')+'<div class="credential-block"><span class="credential-label">验证方式</span><div class="credential-line"><span class="credential-value '+(state.shareAudience==='code'?'share-code':'')+'">'+verifyCopy+'</span>'+(state.shareAudience==='code'?button('复制提取码','copy','data-action="toast" data-message="提取码已复制；请与链接分开发送"'):'')+'</div></div></div><div class="notice warning" style="margin:18px auto 0;max-width:620px;text-align:left">'+icon('shield-alert')+'<span>提取码只验证“持有码者”，不等于实名认证。分享后仍可在管理页撤销、延期或更换提取码；换码会使旧访问会话失效。</span></div><div class="success-actions" style="margin-top:20px">'+button('返回分享管理','list','data-route="shares"')+(!internal?button('预览接收页','external-link','data-action="share-preview-new"','primary'):'')+'</div></div></div></section>';
+        const created=shareRecords.find(item=>item.id===state.createdShareId);
+        if(!created){state.shareCreated=false;return shareCreatePage();}
+        const internal=created.verify==='企业成员授权',none=created.verify==='免验证';
+        const verifyCopy=created.verify==='指定手机验证'?'接收手机号 139 **** 3816 将通过短信验证码验证':internal?'已授权企业成员周宁访问':none?'无需验证，打开链接即可收听':'提取码 '+created.code;
+        const intro=internal?'周宁可在企业空间内查看本次授权内容；成员离职、权限撤销或分享到期后将停止访问。':none?'接收方打开链接即可进入播放器，无需登录、验证码或提取码。':'请把访问链接和验证信息通过不同渠道发送，降低转发泄露风险。';
+        const risk=none?'任何持有链接的人均可收听，请谨慎转发。敏感录音建议使用提取码或指定手机号；有效期、访问次数和撤销仍然生效。':'提取码只验证“持有码者”，不等于实名认证。分享后仍可在管理页撤销、延期或更换提取码；换码会使旧访问会话失效。';
+        return head('分享已创建','权限已经生效，原始录音文件仍保持不可变。')+'<section class="panel"><div class="success-state"><div><span class="success-icon">'+icon('check')+'</span><h2>'+(internal?'成员访问权限已授予':'受控分享已生成')+'</h2><p>'+intro+'</p><div style="width:min(620px,100%);margin:0 auto;text-align:left">'+(!internal?'<div class="credential-block"><span class="credential-label">访问链接</span><div class="credential-line"><span class="credential-value mono">'+created.link+'</span>'+button('复制链接','copy','data-action="toast" data-message="访问链接已复制"')+'</div></div>':'')+'<div class="credential-block"><span class="credential-label">验证方式</span><div class="credential-line"><span class="credential-value '+(created.verify==='提取码'?'share-code':'')+'">'+verifyCopy+'</span>'+(created.verify==='提取码'?button('复制提取码','copy','data-action="toast" data-message="提取码已复制；请与链接分开发送"'):'')+'</div></div></div>'+(!internal?'<div class="notice warning" style="margin:18px auto 0;max-width:620px;text-align:left">'+icon('shield-alert')+'<span>'+risk+'</span></div>':'')+'<div class="success-actions" style="margin-top:20px">'+button('返回分享管理','list','data-route="shares"')+(!internal?button('预览接收页','external-link','data-action="share-preview-new"','primary'):'')+'</div></div></div></section>';
       }
-      const audienceOptions=shareChoice('shareAudience','code','key-round','外部 · 提取码','默认方式；链接与提取码分开发送')+shareChoice('shareAudience','sms','message-square-lock','外部 · 手机验证','高敏录音绑定指定接收手机号')+(isEnterprise()?shareChoice('shareAudience','member','user-check','企业内部成员','直接授权指定成员，无需提取码'):'');
-      const contentLabel=state.shareContent==='recording'?'仅录音':state.shareContent==='transcript'?'录音 + 逐字稿':'录音 + 逐字稿 + AI 摘要';
+      const audienceOptions=shareChoice('shareAudience','code','key-round','外部 · 提取码','默认方式；链接与提取码分开发送')+shareChoice('shareAudience','none','link-2','免验证 · 链接直听','持有链接即可进入播放器')+shareChoice('shareAudience','sms','message-square-lock','外部 · 手机验证','高敏录音绑定指定接收手机号')+(isEnterprise()?shareChoice('shareAudience','member','user-check','企业内部成员','直接授权指定成员，无需提取码'):'');
+      const contentLabel=shareContentLabel(state.shareContent);
       const expiryLabel={"1h":'1 小时',"24h":'24 小时',"7d":'7 天',custom:'自定义'}[state.shareExpiry];
       const visitLabel=state.shareVisits==='unlimited'?'不限次数':state.shareVisits+' 次';
       return head('创建录音分享',call.caller+' → '+call.callee+' · '+call.duration,button('返回呼叫详情','arrow-left','data-route="callDetail"'))+
         '<div class="workflow-grid"><section class="panel"><div class="panel-head"><div><h2>访问范围</h2><p>只生成受控播放授权，不复制或修改原始录音</p></div></div><div class="panel-body">'+
           '<div class="setting-group"><h3 class="setting-title">分享内容</h3><div class="share-option-grid">'+shareChoice('shareContent','recording','audio-lines','仅录音','不包含逐字稿和 AI 结果')+shareChoice('shareContent','transcript','text-quote','录音 + 逐字稿','接收方可按时间定位文字')+shareChoice('shareContent','summary','sparkles','录音 + 逐字稿 + AI 摘要','包含带原文引用的结构化要点')+'</div></div>'+
-          '<div class="setting-group"><h3 class="setting-title">接收对象<span>外部分享默认使用提取码</span></h3><div class="share-option-grid">'+audienceOptions+'</div>'+(state.shareAudience==='sms'?'<div class="field" style="margin:14px 0 0"><label for="share-mobile">指定接收手机号</label><input id="share-mobile" class="input" value="139 0000 3816" inputmode="numeric"></div>':state.shareAudience==='member'?'<div class="field" style="margin:14px 0 0"><label for="share-member">企业成员</label><select id="share-member" class="select"><option>周宁 · 法务部</option><option>陈雨 · 采购部</option></select></div>':'')+'</div>'+
-          '<div class="setting-group"><h3 class="setting-title">有效期<span>最长 30 天</span></h3><div class="segmented">'+[['1h','1 小时'],['24h','24 小时'],['7d','7 天'],['custom','自定义']].map(item=>'<button type="button" class="'+(state.shareExpiry===item[0]?'active':'')+'" data-share-group="shareExpiry" data-share-value="'+item[0]+'">'+item[1]+'</button>').join('')+'</div>'+(state.shareExpiry==='custom'?'<div class="field" style="margin:12px 0 0"><label for="share-expire-at">失效时间</label><input id="share-expire-at" class="input" type="datetime-local" value="2026-10-26T18:30" max="2026-11-18T18:30"></div>':'')+'</div>'+
+          '<div class="setting-group"><h3 class="setting-title">接收对象<span>外部分享默认使用提取码</span></h3><div class="share-option-grid">'+audienceOptions+'</div>'+(state.shareAudience==='sms'?'<div class="field" style="margin:14px 0 0"><label for="share-mobile">指定接收手机号</label><input id="share-mobile" class="input" value="139 0000 3816" inputmode="numeric"></div>':state.shareAudience==='member'?'<div class="field" style="margin:14px 0 0"><label for="share-member">企业成员</label><select id="share-member" class="select"><option>周宁 · 法务部</option><option>陈雨 · 采购部</option></select></div>':state.shareAudience==='none'?'<div class="notice warning" style="margin-top:14px">'+icon('shield-alert')+'<span>任何持有链接的人均可收听，请谨慎转发；敏感录音建议使用提取码或指定手机号。</span></div>':'')+'</div>'+
+          '<div class="setting-group"><h3 class="setting-title">有效期<span>最长 30 天</span></h3><div class="segmented">'+[['1h','1 小时'],['24h','24 小时'],['7d','7 天'],['custom','自定义']].map(item=>'<button type="button" class="'+(state.shareExpiry===item[0]?'active':'')+'" data-share-group="shareExpiry" data-share-value="'+item[0]+'">'+item[1]+'</button>').join('')+'</div>'+(state.shareExpiry==='custom'?'<div class="field" style="margin:12px 0 0"><label for="share-expire-at">失效时间</label><input id="share-expire-at" class="input" type="datetime-local" value="'+(state.shareCustomExpiry||shareLocalDateTime(Date.now()+7*86400000))+'"></div>':'')+'</div>'+
           '<div class="setting-group"><h3 class="setting-title">成功访问次数</h3><div class="segmented">'+[['1','1 次'],['5','5 次'],['unlimited','不限次数']].map(item=>'<button type="button" class="'+(state.shareVisits===item[0]?'active':'')+'" data-share-group="shareVisits" data-share-value="'+item[0]+'">'+item[1]+'</button>').join('')+'</div><label class="check-line" style="margin-top:14px"><input id="share-download" type="checkbox" '+(state.shareDownload?'checked':'')+'><span>允许接收方下载播放副本 <span class="micro">默认关闭；即使关闭也无法完全防止录屏或另行录制</span></span></label></div>'+
           '<div class="workflow-actions">'+button('取消','x','data-route="callDetail"')+button('创建受控分享','shield-check','data-action="share-create"','primary')+'</div></div></section>'+
-        '<aside class="panel"><div class="panel-head"><h2>本次授权预览</h2></div><div class="panel-body"><div class="share-summary"><h3>'+call.id+' 录音证据</h3><div class="meta-list">'+meta('分享内容',contentLabel)+meta('验证方式',state.shareAudience==='code'?'提取码':state.shareAudience==='sms'?'指定手机号短信验证':'企业成员授权')+meta('有效期',expiryLabel)+meta('访问上限',visitLabel)+meta('允许下载',state.shareDownload?'是，播放副本':'否')+'</div></div><div class="notice warning" style="margin-top:14px">'+icon('triangle-alert')+'<span>有效期或次数到达、主动撤销或更换提取码后，后续媒体分片请求立即失效；已被接收方另行保存的内容无法远程收回。</span></div></div></aside></div>';
+        '<aside class="panel"><div class="panel-head"><h2>本次授权预览</h2></div><div class="panel-body"><div class="share-summary"><h3>'+call.id+' 录音证据</h3><div class="meta-list">'+meta('分享内容',contentLabel)+meta('验证方式',shareVerifyLabel(state.shareAudience))+meta('有效期',expiryLabel)+meta('访问上限',visitLabel)+meta('允许下载',state.shareDownload?'是，播放副本':'否')+'</div></div><div class="notice warning" style="margin-top:14px">'+icon('triangle-alert')+'<span>有效期或次数到达、主动撤销或更换提取码后，后续媒体分片请求立即失效；已被接收方另行保存的内容无法远程收回。</span></div></div></aside></div>';
     }
 
     function shareAccessPage(){
-      const share=shareRecords.find(item=>item.id===state.activeShare)||shareRecords[0];
+      const share=shareRecords.find(item=>item.id===state.activeShare);
+      const shareId=share?share.id:(state.activeShare||'无效链接');
       const shellStart='<div class="public-share-page"><header class="public-share-top"><div class="public-share-brand"><img src="../logo/onecall-logo-b-icon.svg" alt="一通话"><div><strong>一通话 · 录音分享</strong><span>受控播放页面</span></div></div><span class="status info">'+icon('shield-check')+'访问全程留痕</span></header><main class="public-share-main"><section class="public-share-card">';
-      const shellEnd='</section><p class="copy-watermark">本页面不展示原始存储地址 · 分享编号 '+share.id+'</p></main></div>';
-      if(state.shareAccessState==='expired'||state.shareAccessState==='revoked'||state.shareAccessState==='locked'){
-        const info=state.shareAccessState==='expired'?['分享已过期','该录音分享已超过有效期，无法继续验证或播放。','clock-3']:state.shareAccessState==='revoked'?['分享已被撤销','分享方已停止本次访问授权，当前链接不能继续使用。','ban']:['验证暂时锁定','提取码连续错误次数过多，请 15 分钟后再试或联系分享方。','shield-alert'];
-        return shellStart+'<div class="public-share-state"><div><span class="success-icon" style="background:var(--amber-soft);color:var(--amber)">'+icon(info[2])+'</span><h2>'+info[0]+'</h2><p>'+info[1]+'</p><span class="micro">'+share.id+' · 状态查询时间 2026-10-19 11:28</span></div></div>'+shellEnd;
+      const shellEnd='</section><p class="copy-watermark">本页面不展示原始存储地址 · 分享编号 '+shareId+'</p></main></div>';
+      let blocked=shareBlockedState(share);
+      if(state.shareAccessState==='locked')blocked='locked';
+      if(blocked){
+        stopAudio();state.audioPlaying=false;
+        const info={invalid:['分享链接无效','没有找到对应的分享记录，请向分享方确认链接是否完整。','unlink'],expired:['分享已过期','该录音分享已超过有效期，无法继续验证或播放。','clock-3'],revoked:['分享已被撤销','分享方已停止本次访问授权，当前链接不能继续使用。','ban'],exhausted:['访问次数已用完','该分享已达到成功访问次数上限，请联系分享方重新授权。','eye-off'],locked:['验证暂时锁定','提取码连续错误次数过多，请 15 分钟后再试或联系分享方。','shield-alert']}[blocked];
+        return shellStart+'<div class="public-share-state"><div><span class="success-icon" style="background:var(--amber-soft);color:var(--amber)">'+icon(info[2])+'</span><h2>'+info[0]+'</h2><p>'+info[1]+'</p><span class="micro">'+shareId+' · 已检查当前分享状态</span></div></div>'+shellEnd;
       }
+      if(share.verify==='免验证'&&state.shareAccessState!=='playback')admitSharePlayback(share);
       if(state.shareAccessState==='playback'){
-        return shellStart+'<div class="public-share-head"><h1>录音播放副本</h1><p>'+share.recording+'</p><div class="public-share-meta"><span>'+icon('clock-3')+' 剩余有效期 22 小时</span><span>'+icon('eye')+' 第 3 / 5 次成功访问</span><span>'+icon('file-key-2')+' '+share.id+'</span></div></div><div class="public-share-body"><div class="notice">'+icon('info')+'<span>这是分享方授权的播放副本，不是原始录音下载地址。播放、定位和验证结果将写入访问审计。</span></div><div class="audio-player" style="margin-top:16px;border:1px solid var(--line);border-radius:7px"><div class="audio-main"><button class="play-button" data-action="toggle-audio" aria-label="'+(state.audioPlaying?'暂停':'播放')+'">'+icon(state.audioPlaying?'pause':'play')+'</button><div class="audio-track"><div class="audio-progress" id="audio-progress" style="width:'+(state.audioSeconds/522*100)+'%"></div></div><div class="audio-time"><span id="audio-current">'+formatTime(state.audioSeconds)+'</span> / 08:42</div></div><div class="audio-tools"><button class="mini-btn">1.0×</button><span class="micro">下载未授权</span></div></div><div class="transcript" style="max-height:none">'+utterance('我','00:06','王经理，我们确认一下这批设备的付款和损坏处理。')+utterance('对方','00:14','设备款总额是十二万八千元，但损坏的两台要先换货。')+utterance('对方','00:38','我们承诺十月二十五日前把两台替换设备送到。')+'</div><div class="notice warning" style="margin-top:14px">'+icon('shield-alert')+'<span>提取码只验证持有码者，不代表平台已经核验当前访问人的真实身份。</span></div></div>'+shellEnd;
+        const visits=shareVisitCounts(share),scope=share.scope||'录音 + 逐字稿 + AI 摘要';
+        const remaining=share.expiresAt?Math.max(0,Math.ceil((share.expiresAt-Date.now())/3600000))+' 小时':share.expires;
+        const transcript=scope==='仅录音'?'':'<div class="transcript" style="max-height:none">'+utterance('我','00:06','王经理，我们确认一下这批设备的付款和损坏处理。')+utterance('对方','00:14','设备款总额是十二万八千元，但损坏的两台要先换货。')+utterance('对方','00:38','我们承诺十月二十五日前把两台替换设备送到。')+'</div>';
+        const identityNotice=share.verify==='免验证'?'免验证链接不会核验访问者身份；任何持有链接的人都可以在授权范围内收听。':'提取码只验证持有码者，不代表平台已经核验当前访问人的真实身份。';
+        return shellStart+'<div class="public-share-head"><h1>录音播放副本</h1><p>'+share.recording+'</p><div class="public-share-meta"><span>'+icon('clock-3')+' 剩余有效期 '+remaining+'</span><span>'+icon('eye')+' 第 '+visits.used+' / '+(Number.isFinite(visits.limit)?visits.limit:'不限')+' 次成功访问</span><span>'+icon('file-key-2')+' '+share.id+'</span></div></div><div class="public-share-body"><div class="notice">'+icon('info')+'<span>这是分享方授权的播放副本，不是原始录音下载地址。播放、定位和访问结果将写入审计。</span></div><div class="audio-player" style="margin-top:16px;border:1px solid var(--line);border-radius:7px"><div class="audio-main"><button class="play-button" data-action="toggle-audio" aria-label="'+(state.audioPlaying?'暂停':'播放')+'">'+icon(state.audioPlaying?'pause':'play')+'</button><div class="audio-track"><div class="audio-progress" id="audio-progress" style="width:'+(state.audioSeconds/522*100)+'%"></div></div><div class="audio-time"><span id="audio-current">'+formatTime(state.audioSeconds)+'</span> / 08:42</div></div><div class="audio-tools"><button class="mini-btn">1.0×</button><span class="micro">'+(share.download?'允许下载播放副本':'下载未授权')+'</span></div></div>'+transcript+'<div class="notice warning" style="margin-top:14px">'+icon('shield-alert')+'<span>'+identityNotice+'</span></div></div>'+shellEnd;
       }
-      return shellStart+'<div class="public-share-head"><h1>查看分享的通话录音</h1><p>'+share.recording+'</p><div class="public-share-meta"><span>'+icon('clock-3')+' 有效至今天 18:30</span><span>'+icon('eye')+' 最多成功访问 5 次</span></div></div><div class="public-share-body"><div class="public-share-form"><div class="field"><label for="share-code-input">提取码</label><input id="share-code-input" class="input" value="'+state.shareCodeInput+'" maxlength="8" autocomplete="one-time-code" placeholder="请输入分享方提供的提取码"></div>'+(state.shareCodeError?'<div class="auth-error" role="alert">'+icon('circle-alert')+'<span>'+state.shareCodeError+'</span></div>':'')+button('验证并查看','unlock-keyhole','data-action="share-verify"','primary')+'<div class="notice" style="margin-top:16px;text-align:left">'+icon('shield-check')+'<span>无需注册或登录一通话账户。提取码仅用于本次访问校验，不等于实名认证或身份核验。</span></div></div></div>'+shellEnd;
+      if(share.verify!=='提取码')return shellStart+'<div class="public-share-state"><div><span class="success-icon" style="background:var(--amber-soft);color:var(--amber)">'+icon('shield-check')+'</span><h2>等待'+share.verify+'</h2><p>该验证流程不在当前静态接收页中模拟，请按分享方提供的方式完成验证。</p><span class="micro">'+share.id+'</span></div></div>'+shellEnd;
+      const visits=shareVisitCounts(share);
+      return shellStart+'<div class="public-share-head"><h1>查看分享的通话录音</h1><p>'+share.recording+'</p><div class="public-share-meta"><span>'+icon('clock-3')+' 有效至 '+share.expires+'</span><span>'+icon('eye')+' 最多成功访问 '+(Number.isFinite(visits.limit)?visits.limit:'不限')+' 次</span></div></div><div class="public-share-body"><div class="public-share-form"><div class="field"><label for="share-code-input">提取码</label><input id="share-code-input" class="input" value="'+state.shareCodeInput+'" maxlength="8" autocomplete="one-time-code" placeholder="请输入分享方提供的提取码"></div>'+(state.shareCodeError?'<div class="auth-error" role="alert">'+icon('circle-alert')+'<span>'+state.shareCodeError+'</span></div>':'')+button('验证并查看','unlock-keyhole','data-action="share-verify"','primary')+'<div class="notice" style="margin-top:16px;text-align:left">'+icon('shield-check')+'<span>无需注册或登录一通话账户。提取码仅用于本次访问校验，不等于实名认证或身份核验。</span></div></div></div>'+shellEnd;
     }
     function utterance(speaker,time,text){return '<div class="utterance"><span class="speaker">'+speaker+'</span><button class="time-link" data-action="audio-seek" data-seconds="'+timeToSeconds(time)+'">'+time+'</button><span>'+text+'</span></div>';}
     function fact(type,text,time){return '<div class="summary-fact"><strong>'+type+'</strong><span>'+text+'</span><div class="citation">'+icon('quote')+' 原文 '+time+' · 点击定位</div></div>';}
@@ -2689,7 +2745,7 @@
 
     document.addEventListener('click',event=>{
       const exportSource=event.target.closest('[data-export-source]'); if(exportSource){startExport(exportSource.dataset.exportSource);return;}
-      const route=event.target.closest('[data-route]'); if(route){if(route.dataset.route==='share-create')state.shareCreated=false;if(route.dataset.route==='matter-new'){state.matterStep=1;state.matterCreated=false;}go(route.dataset.route);return;}
+      const route=event.target.closest('[data-route]'); if(route){if(route.dataset.route==='share-create'){state.shareCreated=false;state.createdShareId='';}if(route.dataset.route==='matter-new'){state.matterStep=1;state.matterCreated=false;}go(route.dataset.route);return;}
       const loginMethod=event.target.closest('[data-login-method]'); if(loginMethod){state.loginMethod=loginMethod.dataset.loginMethod;state.phoneError='';render();return;}
       const workspaceChoice=event.target.closest('[data-workspace-choice]'); if(workspaceChoice){enterWorkspace(workspaceChoice.dataset.workspaceChoice);return;}
       const ev=event.target.closest('[data-evidence-id]'); if(ev){state.activeEvidence=ev.dataset.evidenceId;state.detailTab='info';go('evidenceDetail');return;}
@@ -2702,8 +2758,8 @@
       const numberAddVerify=event.target.closest('[data-number-add-verify]'); if(numberAddVerify){state.numberAddVerify=numberAddVerify.dataset.numberAddVerify;state.numberAddVerified=false;render();return;}
       const exportRedaction=event.target.closest('[data-export-redaction]'); if(exportRedaction){state.exportRedaction=exportRedaction.dataset.exportRedaction;state.exportSensitiveAgreed=false;render();return;}
       const enterpriseOrderAction=event.target.closest('[data-enterprise-order-action]'); if(enterpriseOrderAction){state.enterpriseOrderAction=enterpriseOrderAction.dataset.enterpriseOrderAction;render();return;}
-      const sharePreview=event.target.closest('[data-share-preview]'); if(sharePreview){const item=shareRecords.find(row=>row.id===sharePreview.dataset.sharePreview);state.activeShare=item.id;state.shareAccessState=item.accessState;state.shareCodeInput='';state.shareCodeError='';state.shareCodeAttempts=0;go('share-access');return;}
-      const shareManage=event.target.closest('[data-share-manage]'); if(shareManage){const item=shareRecords.find(row=>row.id===shareManage.dataset.shareId);if(shareManage.dataset.shareManage==='revoke'){item.status='已撤销';item.accessState='revoked';item.expires='已立即失效';showToast('分享已撤销，后续媒体请求已失效');}if(shareManage.dataset.shareManage==='regenerate'){state.currentShareCode='M7Q2';showToast('已生成新提取码，旧提取码和既有访问会话已失效');}if(shareManage.dataset.shareManage==='extend'){item.expires='10 月 26 日 18:30';showToast('有效期已延长 7 天');}render();return;}
+      const sharePreview=event.target.closest('[data-share-preview]'); if(sharePreview){openShare(sharePreview.dataset.sharePreview);return;}
+      const shareManage=event.target.closest('[data-share-manage]'); if(shareManage){const item=shareRecords.find(row=>row.id===shareManage.dataset.shareId);if(!item)return;if(shareManage.dataset.shareManage==='revoke'){item.status='已撤销';item.accessState='revoked';item.expires='已立即失效';showToast('分享已撤销，后续媒体请求已失效');}if(shareManage.dataset.shareManage==='regenerate'&&item.verify==='提取码'){item.code='M7Q2';showToast('已生成新提取码，旧提取码和既有访问会话已失效');}if(shareManage.dataset.shareManage==='extend'){item.expiresAt=Date.now()+7*86400000;item.expires=shareLocalDateTime(item.expiresAt).replace('T',' ');showToast('有效期已延长 7 天');}render();return;}
       const type=event.target.closest('[data-evidence-type]'); if(type){state.evidenceType=type.dataset.evidenceType;render();return;}
       const view=event.target.closest('[data-view]'); if(view){state.evidenceView=view.dataset.view;render();return;}
       const detailTab=event.target.closest('[data-detail-tab]'); if(detailTab){state.detailTab=detailTab.dataset.detailTab;render();return;}
@@ -2933,11 +2989,12 @@
       }
       if(action.dataset.action==='export-retry'){const job=visibleExportJobs().find(item=>item.id===action.dataset.exportJob);if(job)startExport(job.source);return;}
       if(action.dataset.action==='seat-change')showToast('坐席变更需要二次确认；历史证据和用量归属不会改变');
-      if(action.dataset.action==='share-create'){state.shareCreated=true;render();return;}
-      if(action.dataset.action==='share-preview-new'){state.activeShare=isEnterprise()?'SHR-ENT-6H2N':'SHR-261019-8Q4K';state.shareAccessState='entry';state.shareCodeInput='';state.shareCodeError='';state.shareCodeAttempts=0;go('share-access');return;}
+      if(action.dataset.action==='share-create'){if(createShareRecord())render();return;}
+      if(action.dataset.action==='share-preview-new'){openShare(state.createdShareId);return;}
       if(action.dataset.action==='share-verify'){
+        const share=shareRecords.find(item=>item.id===state.activeShare);if(!share||share.verify!=='提取码'||shareBlockedState(share)){render();return;}
         const code=(document.getElementById('share-code-input')?.value||'').trim().toUpperCase();state.shareCodeInput=code;
-        if(code===state.currentShareCode){state.shareAccessState='playback';state.shareCodeError='';state.audioSeconds=94;render();return;}
+        if(code===(share.code||'8K3P')){admitSharePlayback(share);render();return;}
         state.shareCodeAttempts+=1;
         if(state.shareCodeAttempts>=3){state.shareAccessState='locked';state.shareCodeError='';render();return;}
         state.shareCodeError='提取码不正确，还可尝试 '+(3-state.shareCodeAttempts)+' 次。';render();return;
@@ -2965,6 +3022,7 @@
       if(event.target.id==='supplement-file'){state.supplementFiles=Array.from(event.target.files||[]).map(file=>file.name);render();}
       if(event.target.id==='checkout-agree'){state.checkoutAgreed=event.target.checked;render();}
       if(event.target.id==='share-download'){state.shareDownload=event.target.checked;render();}
+      if(event.target.id==='share-expire-at')state.shareCustomExpiry=event.target.value;
       if(event.target.id==='number-add-agree'){state.numberAddAgreed=event.target.checked;render();}
       if(event.target.id==='enterprise-order-agree'){state.enterpriseOrderAgreed=event.target.checked;render();}
       if(event.target.id==='member-edit-agree'){state.memberEditAgreed=event.target.checked;render();}
@@ -2978,6 +3036,7 @@
       if(event.target.id==='login-code')state.loginCode=event.target.value;
       if(event.target.id==='number-mobile'||event.target.id==='fixed-number')state.numberAddPhone=event.target.value;
       if(event.target.id==='number-code')state.numberAddCode=event.target.value;
+      if(event.target.id==='share-expire-at')state.shareCustomExpiry=event.target.value;
       if(event.target.id==='export-code'){state.exportCode=event.target.value;state.exportError='';}
       if(event.target.id==='evidence-search'){const q=event.target.value.trim().toLowerCase();document.querySelectorAll('tbody tr').forEach(row=>row.hidden=q&&!row.innerText.toLowerCase().includes(q));}
       if(event.target.id==='call-search'){const q=event.target.value.trim().toLowerCase();document.querySelectorAll('tbody tr').forEach(row=>row.hidden=q&&!row.innerText.toLowerCase().includes(q));}
