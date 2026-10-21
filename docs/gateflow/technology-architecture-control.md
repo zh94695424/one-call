@@ -42,5 +42,7 @@
 - Plan: `docs/gateflow/tencent-cloud-deployment-plan.md`; plan review: `docs/reviews/plan-review-20261021-230717.md`, `pass-with-risks`, no findings requiring fixes.
 - S1 implementation: `docs/gateflow/tencent-cloud-deployment-implementation.md`; code review: `docs/reviews/code-review-20261021-231012.md`, no material findings.
 - Scope: documentation only. Tencent Cloud mainland region and COS private bucket are selected for this release; exact region, products/specifications, object-retention/security controls, disaster recovery and cost remain open.
+- Aggregate deepreview: `docs/reviews/code-review-20261021-231557.md`, `pass-with-risks`; A-01 (VPC/COS boundary wording) accepted and fixed in `docs/gateflow/tencent-cloud-deployment-aggregate-fix.md`.
 - Validation: focused architecture/control consistency scan and `git diff --check` passed; no runtime tests apply.
-- Current gate / next entry point: accepted S1 slice commit, followed by aggregate deepreview. Existing prototype QA image changes remain outside this work unit.
+- Accepted S1 slice commit: `b91914e` (`gateflow: accept tencent-cloud-deployment-decision S1`).
+- Current gate / next entry point: accepted deepreview commit, then push. Existing prototype QA image changes remain outside this work unit.
