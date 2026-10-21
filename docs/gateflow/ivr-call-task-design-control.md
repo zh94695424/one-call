@@ -20,10 +20,13 @@
 | S1 implementation | complete；`ivr-call-task-design-s1-implementation.md` |
 | S1 code review | pass；`../reviews/code-review-20261021-180837.md`，未发现实质性问题 |
 | S1 fix / re-review | no-change pass；无 accepted findings |
+| accepted slice commit | pass；`1fde04a` |
+| aggregate deepreview | pass；`../reviews/code-review-20261021-181631.md`，未发现实质性问题 |
+| aggregate fix / re-review | no-change pass；无 accepted findings |
 
 ## Current gate / next entry point
 
-accepted slice commit。
+accepted deepreview commit。
 
 ## Residual risks
 
