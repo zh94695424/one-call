@@ -4,6 +4,8 @@
 
 > S3 修复：个人订单和权益明细/计数统一按账户归属读取，保留同账户多号码汇总，排除其他账户。套餐目录、确认及冻结历史详情从相应 offer 展示每期额度、`grantIntervalMonths` 和 `installments`；后续目录变化不改变历史发放安排。修复证据见 [S3 fix](gateflow/cross-channel-alignment-s3-fix.md)，后续复审与验收由主控裁决。
 
+> 2026-10-21 IVR 对接补充：生产通话任务、实际主叫匹配、IVR 外呼桥接以及通话记录/时长/录音状态以 [13](13-ivr-call-task-and-inbound-design.md) 为准。Web 首期只读这些结果，不另建“最新被叫”队列语义。
+
 > 文档状态：P1 原型已实现  
 > 版本：v0.5  
 > 基线日期：2026-10-19  

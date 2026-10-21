@@ -16,10 +16,14 @@
 | plan | pass；一个文档设计闭环 S1 |
 | plan review | pass-with-risks；`../reviews/plan-review-20261021-171809.md` |
 | fix / re-review | no-change pass；无 accepted findings |
+| accepted plan commit | pass；`331c6d2` |
+| S1 implementation | complete；`ivr-call-task-design-s1-implementation.md` |
+| S1 code review | pass；`../reviews/code-review-20261021-180837.md`，未发现实质性问题 |
+| S1 fix / re-review | no-change pass；无 accepted findings |
 
 ## Current gate / next entry point
 
-accepted plan commit。提交后立即进入 implementation，不等待用户重复确认。
+accepted slice commit。
 
 ## Residual risks
 

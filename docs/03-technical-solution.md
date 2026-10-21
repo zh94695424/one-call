@@ -4,6 +4,8 @@
 
 > 2026-10-20 架构覆盖：以 [09 当前业务基线](09-business-activation-and-lean-admin.md) 的自建 IVR、稳定 BusinessSubject、ConsentRecord、内部 ServiceActivation、一次 TrialGrant 和追加 SubjectClaim 为准。下文 CarrierProvisioning/运营商订购开通接口与全局实名前置状态机属旧稿，已被覆盖；IVR 负责通信采集与控制，后台负责开通/订购/权益，运营商仅提供基础通信承载。支付仍需可信服务端确认；未实名 IVR 可试用产证，但不等于公证资格。
 
+> 2026-10-21 呼叫任务覆盖：小程序待拨任务、默认 30 秒可配置失效、自研 IVR 独立呼入决策、原子领取、外呼桥接、通话记录/时长与录音上传以 [13](13-ivr-call-task-and-inbound-design.md) 为准；下文与其冲突的“按主叫找最新被叫”或客户端通话状态推断不作为实现依据。
+
 > 状态：技术评审稿  
 > 版本：v0.4  
 > 基线日期：2026-10-19  
