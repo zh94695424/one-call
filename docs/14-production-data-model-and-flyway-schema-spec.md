@@ -1,9 +1,9 @@
 # A0 Production Data Model and Initial Flyway Schema Specification
 
-- Task label: `a0-spec-s2-fix4-ds-20261022-01`; historical S2 labels `a0-spec-s2-fix3-ds-20261022-01`, `a0-spec-s2-fix2-ds-20261022-01`, `a0-spec-s2-fix1-ds-20261022-01` and `a0-spec-s2-implementation-ds-20261022-01`; historical S1 labels `a0-spec-s1-impl-ds-20261022-01`, `a0-spec-s1-fix1-ds-20261022-01`, `a0-spec-s1-fix2-ds-20261022-01` and `a0-spec-s1-eof-fix-ds-20261022-01`
+- Task label: `a0-spec-s3-fix1-ds-20261022-01`; historical labels remain `a0-spec-s1-impl-ds-20261022-01`, `a0-spec-s1-fix1-ds-20261022-01`, `a0-spec-s1-fix2-ds-20261022-01`, `a0-spec-s1-eof-fix-ds-20261022-01`, `a0-spec-s2-implementation-ds-20261022-01`, `a0-spec-s2-fix1-ds-20261022-01`, `a0-spec-s2-fix2-ds-20261022-01`, `a0-spec-s2-fix3-ds-20261022-01`, `a0-spec-s2-fix4-ds-20261022-01` and `a0-spec-s3-impl-ds-20261022-01`
 - Work unit: `A0-production-data-model-schema-spec`
-- Gate: `fix`, bounded S2 fix 4 (V004-V007) for the fix-3 re-review F3-01 order-side `source_ref` read gap and the OQ-F3-2 IVR consent event-identity clarification. Slice S1 (V001-V003) is accepted; S2 is authored and at fix-4 author-complete / independent re-review pending; S3 (V008-V009) dictionaries and behavior remain planned and unauthored.
-- Status: S1 accepted at commit `5404d9caa73b72c412ca2065bef19dfb46d154d3` with specification SHA256 `B7FE164B701F8813A75212C4D8EC4624A97867FB7289EA652F3FE2283E510099`; independent semantic review `docs/reviews/code-review-20261022-191047.md` and EOF-only focused review `docs/reviews/code-review-20261022-191848.md` passed. S2 expands the 23 V004-V007 tables, the 22 S2 invariant portions, the S2 application-service contracts, the one V006 `issue_first_trial` SQL contract and the S2 transaction/test matrix; fix 1, fix 2, fix 3 and fix 4 incorporate the accepted independent-review, re-review, fix-2 re-review and fix-3 re-review corrections without adding a table, column, SQL function or slice. S3 remains unauthored. No PostgreSQL, Flyway, privilege, lock, savepoint or concurrency execution is claimed.
+- Gate: `implementation`, S3 evidence/media/sharing closure (V008-V009). Slice S1 (V001-V003) is accepted. Slice S2 (V004-V007) is accepted at checkpoint `8934df90c15dcd8173486c6ad753ab27c91ac765` after independent review `docs/reviews/code-review-20261022-215322.md`. This document is S3 author-complete / independent review pending; S1/S2 semantic acceptance is unchanged and S3 acceptance is not claimed.
+- Status: S1 accepted at commit `5404d9caa73b72c412ca2065bef19dfb46d154d3` with specification SHA256 `B7FE164B701F8813A75212C4D8EC4624A97867FB7289EA652F3FE2283E510099`; independent semantic review `docs/reviews/code-review-20261022-191047.md` and EOF-only focused review `docs/reviews/code-review-20261022-191848.md` passed. S2 accepted at commit `8934df90c15dcd8173486c6ad753ab27c91ac765` with specification SHA256 `BDFE41EF0B0A278EC196C2E93926BDD1666A8D986135E14DE3099B9491CC72BF` (643834 bytes / 3982 lines); independent review `docs/reviews/code-review-20261022-215322.md` passed all material S2 contracts and deferred only low document-status finding F4-01 to this S3 status integration. S3 now expands the eight V008-V009 tables and 94 accepted columns, the five S3 invariant portions (INV-15/24/25/26/39), the evidence reciprocal-creation cycle and constraint triggers, the sharing admission/ticket/access-event contracts, the S3 migration order and test matrix, and the final cross-slice consistency matrix without adding a table, column, SQL function, function-wave row, slice or business policy. F4-01 is closed by aligning the current status assertions and T-S2-65 with S1/S2 accepted and S3 author-complete/review-pending. No PostgreSQL, Flyway, privilege, lock, savepoint, COS or Redis execution is claimed.
 - Date: 2026-10-22
 - Accepted plan: `docs/gateflow/a0-production-data-model-schema-spec-plan.md`, SHA256 `149472D291DC19F81497A0599C85122BDDA311DC92417C3E2086667130B231A5`
 - Accepted plan review: `docs/reviews/plan-review-20261022-174730.md`, SHA256 `C2432DA173BB4CB61D5554B1A2BF77C7DC5FA4AE79CE5CED1118741BBA34FDCA`
@@ -11,7 +11,7 @@
 - S1 reviews: `docs/reviews/code-review-20261022-181806.md` (initial fail), `docs/reviews/code-review-20261022-184720.md` (F-10/F-11/F-12), accepted `docs/reviews/code-review-20261022-191047.md` (SHA256 `5F3068271C48DA54DABB26D8942CA5C26E06658A98F4945DF91C17F347C7103A`) and EOF-only `docs/reviews/code-review-20261022-191848.md` (SHA256 `B30410B5ECBC181FD1581C3DCC375110203E551E17A6BC408C2C1D6D47F29E6F`)
 - S2 review and fix inputs: `docs/reviews/code-review-20261022-194702.md` (F-01..F-15, OQ-1..OQ-4), re-review `docs/reviews/code-review-20261022-202738.md` (R-01..R-08 and OQ-1..OQ-8), fix-2 re-review `docs/reviews/code-review-20261022-205538.md` (purchase-consent identity finding and Open Questions 1-5 plus C-01/C-02), fix-3 re-review `docs/reviews/code-review-20261022-212225.md` (F3-01 and OQ-F3-1/OQ-F3-2), controller sections `S2 independent review result and fix 1 adjudication`, `S2 fix 1 independent re-review and fix 2 adjudication`, `S2 fix 2 independent re-review and fix 3 adjudication` and `S2 fix 3 independent re-review and fix 4 adjudication` in `docs/gateflow/project-execution-control.md` (all adjudicated fixes/OQ outcomes are binding), and the fix records `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md` and `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-4.md`
 - Historical S1 fix artifacts: `docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s1-fix-2.md`, `docs/gateflow/a0-production-data-model-schema-spec-s1-eof-fix.md`, and `docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md`; all remain immutable
-- Controller: `docs/gateflow/project-execution-control.md`; accepted S1 checkpoint `5404d9c`
+- Controller: `docs/gateflow/project-execution-control.md`; accepted S1 checkpoint `5404d9c`; accepted S2 checkpoint `8934df9`
 - Prompt/task provider: `ds` / DeepSeek-V4.1-Flash
 - Deliverable class: documentation only. No executable Flyway migration, DDL file, Maven/Spring project, service code, API, UI, cloud resource, production data or credential is produced or claimed.
 
@@ -26,13 +26,21 @@ S1 is accepted and preserved. The following are authored as completed S1 content
 - the four V001/S1 cross-schema function contracts: `platform.idempotency_begin`, `platform.idempotency_complete`, `platform.outbox_append` and `audit.append_fact`;
 - S1 privilege, isolation, conditional-update, state and transaction contracts and their deterministic document checks.
 
-S2 is authored in this document and is at fix-4 author-complete / independent re-review pending. The authored S2 content is:
+S2 is accepted at checkpoint `8934df90c15dcd8173486c6ad753ab27c91ac765`. The authored S2 content is:
 
 - the 23 V004-V007 table dictionaries, including every accepted column, type, nullability, default, key, check, index, foreign key, revision/immutability rule, lifecycle/deletion rule and sensitive representation;
 - the 22 S2 invariant enforcement portions, S2 state machines, transaction sequences, published application-service contracts, typed decision snapshot, outcome classification and behavior test matrix;
 - the one V006 SQL function contract `entitlement_metering.issue_first_trial`, created only in V006 after its four dependency tables exist.
 
-`entitlement_metering.issue_first_trial` is authored in V006/S2, not a planned-only V001/S1 function. The function-wave block remains exactly five rows: four V001 functions plus the one V006 function. The S2 application services, including the owner-service collaborators added by fix 1, are application services on one connection and one transaction and add no function-wave row. S3 tables, dictionaries, transactions, state machines and tests are intentionally reserved for their later author and are not authored here; the frozen structural blocks are baseline closure, not S2/S3 implementation evidence.
+S3 is authored in this document and is at author-complete / independent review pending. The authored S3 content is:
+
+- the eight V008-V009 table dictionaries, including every accepted column, type, nullability, default, named key/check/index/foreign key, revision/immutability rule, lifecycle/deletion rule and sensitive representation;
+- the five S3 invariant portions INV-15, INV-24, INV-25, INV-26 and INV-39, the evidence/recording/share state machines, the S3 transaction sequences, owner service contracts, grant/guard/constraint-trigger security contracts and the S3 behavior test matrix;
+- the reciprocal evidence creation cycle, including the composite `(source_event_domain, source_event_id)` deferred FK, the reverse deferred `evidence_id` FK, both `DEFERRABLE INITIALLY DEFERRED` constraints added after both V008 tables exist, the partial unique creation-event key and the two commit-time constraint triggers;
+- the sharing capability-token, verification, admission-count, generation, expiry/rotation/revocation/lock/extension and derived playback-ticket contracts, including durable ticket/access events and PostgreSQL-commit-before-Redis ordering;
+- the final cross-slice ownership, lock-order, lifecycle, sensitive-field, FK-order, migration and consistency closure.
+
+`entitlement_metering.issue_first_trial` is authored in V006/S2, not a planned-only V001/S1 function. The function-wave block remains exactly five rows: four V001 functions plus the one V006 function. The S2 application services, including the owner-service collaborators added by fix 1, are application services on one connection and one transaction and add no function-wave row. S3 adds no SQL function and no function-wave row; its creation-cycle enforcement is a pair of owner-local deferred constraint triggers, not a callable cross-schema function. The frozen structural blocks are baseline closure, not acceptance evidence for any slice.
 
 Baseline counts remain: 44 tables; 40 invariants; 9 migration waves; 3 slices with membership 13/23/8; 28 mutable-head and 16 append-only/frozen tables; 81 FK decisions = 74 ordinary `FK` + 3 late-added `ALTER_FK` + 2 truly `DEFERRABLE_FK` + 2 `NO_FK`; 24 key sets; 5 function-wave rows = 4 V001 functions + 1 V006 function.
 
@@ -40,11 +48,13 @@ Baseline counts remain: 44 tables; 40 invariants; 9 migration waves; 3 slices wi
 
 ### 1.1 Purpose
 
-This document is the initial PostgreSQL 16 data-model and Flyway-schema specification for the first production baseline. S1 (V001-V003) is accepted. S2 (V004-V007) is fix-4 author-complete and awaiting independent re-review. S3 (V008-V009) remains planned. The document is cumulative: a later implementation work unit can generate V001-V007 migrations and module code without inventing S1 or S2 business rules.
+This document is the initial PostgreSQL 16 data-model and Flyway-schema specification for the first production baseline. S1 (V001-V003) is accepted. S2 (V004-V007) is accepted. S3 (V008-V009) is author-complete and awaiting independent review. The document is cumulative: a later implementation work unit can generate V001-V009 migrations and module code without inventing S1, S2 or S3 business rules.
 
 S1 covers platform idempotency, transactional Outbox, append-only audit, natural-person customer accounts, login identities, account-level real-name profiles, organizations, organization memberships, operations employee identities, business subjects, business-number bindings, subject claims and claim-risk state.
 
-S2 covers the immutable catalog/version/offer/benefit snapshot, customer order with `PURCHASE` idempotency, verified payment order/events, IVR pending tasks, inbound sessions, the canonical call parent, legs, IVR events, frozen IVR decisions, the first-trial policy/grant and permanent `FIRST-TRIAL` uniqueness, generic entitlement grants/balances, durable per-line/installment/type issuance state, usage reservation/settlement/reconciliation, explicit consent records, service activation and its transition ledger. S2 owns the one new V006 `entitlement_metering.issue_first_trial` SQL contract and the S2 application services; S3 evidence and sharing remain planned.
+S2 covers the immutable catalog/version/offer/benefit snapshot, customer order with `PURCHASE` idempotency, verified payment order/events, IVR pending tasks, inbound sessions, the canonical call parent, legs, IVR events, frozen IVR decisions, the first-trial policy/grant and permanent `FIRST-TRIAL` uniqueness, generic entitlement grants/balances, durable per-line/installment/type issuance state, usage reservation/settlement/reconciliation, explicit consent records, service activation and its transition ledger. S2 owns the one new V006 `entitlement_metering.issue_first_trial` SQL contract and the S2 application services.
+
+S3 covers private media-object identity/version/hash metadata, recording upload/completion/validation/quarantine, the immutable evidence record with reciprocal `EVIDENCE_CREATED` ownership, original and derived evidence artifacts, evidence events, share grants with capability-token/code/recipient verification, durable admissions with count-once semantics, and append-only share access events from which short-lived Redis playback tickets are derived. S3 owns no SQL function and no platform idempotency scope; its only cross-row enforcement beyond ordinary keys/FKs is the owner-local deferred evidence creation-cycle trigger pair.
 
 ### 1.2 Source relationship
 
@@ -82,9 +92,11 @@ S1 does not create or specify the S2/S3 table dictionaries, IVR task/session/cal
 
 S2 does not author the S3 evidence/media/sharing dictionaries, their transactions or the evidence composite deferred FK cycle; it preserves those eight tables as frozen planned membership only. S2 adds no table, SQL function beyond the one accepted V006 `issue_first_trial`, eighth IVR action, fourth slice, executable migration, production service/API/UI, cloud resource, credential, guessed retention/capacity/policy value or provider configuration. The four V001 contracts remain S1-owned and unchanged.
 
+S3 adds no table, column, SQL function, function-wave row, eighth IVR action, fourth slice, executable migration, production service/API/UI, cloud resource, credential or guessed retention/capacity/policy value. It does not redesign S1 ownership/lifecycle, S2 IVR/activation/commerce/entitlement behavior, the frozen 44-table/40-invariant/9-wave/3-slice baseline, the 28/16 lifecycle split, the 28 sensitive tables, the 81 FK decisions or the 24 key sets. It does not create an online support, refund, invoice, role-designer, AI, notary or workflow engine.
+
 ### 1.5 Exact S2 table membership
 
-The 23 S2 tables below are the exact V004-V007 membership. Together with the 13 S1 tables they form the frozen 44-table baseline. S3 contributes the remaining eight planned tables.
+The 23 S2 tables below are the exact V004-V007 membership. Together with the 13 S1 tables they form the frozen 44-table baseline. S3 contributes the remaining eight V008-V009 tables, authored in §4.39-§4.46.
 
 | # | Table | Wave |
 | --- | --- | --- |
@@ -112,7 +124,24 @@ The 23 S2 tables below are the exact V004-V007 membership. Together with the 13 
 | 22 | activation_consent.service_activation | V007 |
 | 23 | activation_consent.service_activation_transition | V007 |
 
-S2 status is **fix-4 author-complete / independent re-review pending**. S3 is **planned / not authored**. The frozen machine-readable catalog, matrix, sensitive inventory, FK catalog, key catalog, function-wave block, nine wave rows, three slice membership blocks, 40 invariant rows and 28 open-input rows are unchanged.
+S2 status is **accepted at checkpoint `8934df9`**. S3 is **author-complete / independent review pending**. The frozen machine-readable catalog, matrix, sensitive inventory, FK catalog, key catalog, function-wave block, nine wave rows, three slice membership blocks, 40 invariant rows and 28 open-input rows are unchanged.
+
+### 1.6 Exact S3 table membership
+
+The eight S3 tables below are the exact V008-V009 membership. Together with the 13 S1 and 23 S2 tables they form the frozen 44-table baseline. S3 has no forward dependency on a later slice because no later slice exists.
+
+| # | Table | Wave |
+| --- | --- | --- |
+| 1 | evidence.media_object | V008 |
+| 2 | evidence.recording | V008 |
+| 3 | evidence.evidence_record | V008 |
+| 4 | evidence.evidence_artifact | V008 |
+| 5 | evidence.evidence_event | V008 |
+| 6 | sharing.evidence_share_grant | V009 |
+| 7 | sharing.share_admission | V009 |
+| 8 | sharing.share_access_event | V009 |
+
+S3 consumes only S1/S2 interfaces: the subject/call/session/reservation identities and immutable captured facts from S1/S2, the existing platform Outbox/audit functions, and the completed evidence media metadata. It does not require an S1/S2 table to reference an S3 table, and no S1/S2 migration is altered.
 
 ## 2. Database Conventions
 
@@ -207,6 +236,24 @@ S2 status is **fix-4 author-complete / independent re-review pending**. S3 is **
 - Currency columns are three uppercase ISO-4217 characters; money columns are `bigint` cents and never floating point. Unit columns are integer/bigint values, never float.
 - Every S2 FK is `ON UPDATE RESTRICT ON DELETE RESTRICT`. Same-wave ALTER FKs are ordinary immediate constraints, not deferrable. S2 has no deferrable FK and no cascade.
 
+### 2.12 S3 schemas, identities, registries and immutability
+
+- S3 schemas are `evidence` and `sharing`. Each has one NOLOGIN, NOSUPERUSER, NOCREATEDB owner role and one runtime role: `evidence_owner`/`evidence_role` and `sharing_owner`/`sharing_role`. The migration identity creates them in V008 and V009. `PUBLIC` receives nothing.
+- S3 protocol identities are opaque internal values, never natural keys: `evidence.recording.recording_id` (1-128 characters, unique), `evidence.evidence_record.source_event_id` (1-128 characters in domain `EVIDENCE`), and `sharing.evidence_share_grant.share_id` (1-128 characters, unique). A public share URL carries a high-entropy capability token, never `share_id`, `evidence_id`, `object_key`, `object_version_id` or a permanent media URL. `sharing.share_admission.admission_key` is an opaque server-derived digest/key, never raw verification input.
+- The evidence event-domain registry for `evidence.evidence_event` is exactly `EVIDENCE`; the sharing access event-domain registry is exactly `SHARE_ACCESS`. Event IDs are nonblank 1-128 characters and unique within their domain. `evidence.evidence_record.source_event_domain` is exactly `EVIDENCE` and its `(source_event_domain, source_event_id)` is the accepted-column source identity of the one `EVIDENCE_CREATED` event.
+- The evidence artifact-role registry is exactly `ORIGINAL` and `DERIVED` in this baseline. An original object is never overwritten by a derived object; derived objects are separate `media_object` rows and separate artifact rows. AI, notary, transcript and summary outputs are outside this baseline and add no role or table.
+- The recording-status registry is `DECLARED`, `UPLOADED`, `VALIDATED`, `QUARANTINED`; the evidence-status registry is `PENDING`, `SOLIDIFIED`, `QUARANTINED`, `FAILED`; the share-grant status registry is `ACTIVE`, `EXPIRED`, `REVOKED`, `LOCKED`. These are the only status values; no catch-all evidence or sharing status exists.
+- The share verification-mode registry is `NONE`, `EXTRACTION_CODE`, `DESIGNATED_MOBILE`, `ORGANIZATION_MEMBER`. `NONE` means link possession only and is never recorded as a verified identity. `DESIGNATED_MOBILE` means the specified phone has been proven by an approved trusted SMS verification for the exact normalized designated number and the intended share/action, consistent with `docs/07-web-capability-hub-spec.md:141`; comparing a supplied number's HMAC or merely knowing the number is not possession proof. The grant stores only a keyed HMAC of the normalized designated number and its key version inside the immutable `content_snapshot.verification` member, never a plaintext number or OTP. OTP lifecycle, delivery and numeric parameters remain Security/Q12 inputs; absent an approved trusted SMS verification input the flow fails closed and creates no admission. `ORGANIZATION_MEMBER` requires `owner_organization_id` and verifies the authenticated recipient's current active membership. `EXTRACTION_CODE` uses a per-grant salt and salted slow KDF digest bound to the grant and `code_generation`.
+- The share access-event registry is `PAGE_OPENED`, `PREFETCH_IGNORED`, `VERIFICATION_FAILED`, `LOCKED`, `ADMISSION_GRANTED`, `TICKET_ISSUED`, `TICKET_FAILED`, `PLAYBACK_AUTHORIZED`, `SEEK_AUTHORIZED`, `RENEWED`, `EXTENDED`, `CODE_ROTATED`, `REVOKED`, `EXPIRED` and `FAILURE`. Page opens, prefetches and failed verification are recorded only as events and consume no admission. Required ticket/access event IDs are deterministic server-derived values, never random per retry: `admission-granted:<grant_uuid>:<admission_uuid>`, `ticket-issued:` plus the lowercase SHA-256 of canonical `{shareGrantId, admissionId}`, `ticket-failed:` plus the lowercase SHA-256 of canonical `{shareGrantId, admissionId, admissionKeyDigest}`, and `share-access:` plus the lowercase SHA-256 of canonical `{shareGrantId, shareAdmissionId, eventType, requestKeyDigest}` for playback/seek/renewal/failure events. The raw request key is never stored; only its digest is persisted inside the redacted event payload.
+- Transition action identities for `REVOKE`, `CODE_ROTATE`, `EXPIRE`, `EXTEND` and `LOCK` are deterministic: event ID `share-transition:` plus the lowercase SHA-256 of canonical `{shareGrantId, actionType, sourceIdentity}` (81 characters), where `sourceIdentity` is `{kind: 'REQUEST', actionRequestId}` with the stable authenticated client action request ID (validated nonblank 1-128) for revoke, code rotation or extension, `{kind: 'EXPIRY', expiresAt}` with the grant's recorded approved expiry for system/owner expiry, or `{kind: 'REVISION', sourceRevision}` with the pre-update grant revision on which a system/owner lock decision was made. `actionRequestDigest` is the lowercase SHA-256 of the exact stable action request ID; the raw ID is not stored. A post-update current revision or generated code/salt is never an identity input. Different actions or distinct requests hash distinctly. The redacted event payload stores `actionType`, `actionRequestDigest` or the exact expiry/source revision fact, `actionFingerprint` and the resulting status/generation/revision, and never a plaintext code, capability token or generated secret. `actionFingerprint` is the lowercase SHA-256 of the section 2.5 canonical JSON `{shareGrantId, actionType, reasonCode (null-safe), newExpiresAt (EXTEND only, null-safe), actionRequestDigest | expiresAt | sourceRevision}` excluding generated code/salt/hash, post-update status/generation/revision and only generated or observed transport, network, persistence or server-decision timestamps (for example `createdAt`, `updatedAt`, `occurredAt`, `decidedAt` and equivalent server times). The approved business input `newExpiresAt` (EXTEND only) and the recorded `expiresAt` fact (EXPIRE identity) are never excluded from `actionFingerprint`; a same EXTEND action identity with a changed `newExpiresAt` is a stable conflict and mutates nothing. A same-action retry reads the deterministic event by identity and returns the first recorded outcome before any current status/revision precondition; a same identity with a changed fingerprint is a stable conflict; a different action request is a distinct transition. This fixes only internal semantics; wire encoding remains Q15.
+- `sharing.share_admission.admission_key` is deterministically derived as `admission:` plus the lowercase SHA-256 of canonical `{shareGrantId, admissionRequestId}`, where `admissionRequestId` is the authenticated public request's stable opaque idempotency input (validated nonblank 1-128). The raw request ID is never stored; only the derived key is. A same request ID reproduces the same key; a different request is a different admission attempt. A ticket/session expiry is not a new idempotency key: after `sessionExpiresAt`, the session is expired and the same key returns the original admission fact without minting a new ticket; a new admission with a new request ID/recheck/count is required. The `ADMISSION_GRANTED` payload records `verificationMode` and, for `ORGANIZATION_MEMBER`, the original trusted recipient binding `recipientAccountId` and `recipientOrganizationId` (canonical lowercase UUID text), plus `revocationGeneration`, `codeGeneration`, `grantExpiresAt`, `admissionExpiresAt` and `sessionExpiresAt`. `admissionExpiresAt` is the grant `expires_at` frozen at admission and is never recomputed or extended. `sessionExpiresAt = min(admitted_at + approved Q22 ticket TTL, admissionExpiresAt)`; absent or unapproved Q22 TTL fails closed. No extra admission TTL, database column or policy is introduced, and a later grant extension never lengthens an existing admission or session.
+- `sharing.evidence_share_grant.share_id` is a deterministic creation identity derived only from the trusted authenticated creator account and the stable creation-request/action ID: `share:` plus the lowercase SHA-256 of the canonical JSON `{creatorAccountId, creationRequestId}` (70 characters), using the canonical lowercase 36-character account UUID and the exact nonblank 1-128 creation request ID (UTF-8 code points, no Unicode normalization or case folding). The raw creation request ID is not stored. The initial scope and request parameters are frozen in the existing typed redacted `content_snapshot.creation` object `{schemaVersion: 1, creatorAccountId, ownerOrganizationId (null-safe), evidenceId, verificationMode, downloadAllowed, expiresAt (RFC 3339 UTC), maxAdmissions (null-safe), scopeDigest, creationRequestDigest, creationFingerprint}`, where `scopeDigest` is the lowercase SHA-256 of the section 2.5 canonical JSON of `{content, verification}` (the frozen content and verification members), `creationRequestDigest` is the lowercase SHA-256 of the exact creation request ID, and `creationFingerprint` is the lowercase SHA-256 of the section 2.5 canonical JSON of those semantic fields excluding `creationFingerprint` itself, generated IDs, capability/code secrets and only generated or observed transport, network, persistence or server-decision timestamps (for example `createdAt`, `updatedAt` and equivalent server times). The approved business input `expiresAt` (RFC 3339 UTC) is part of those semantic fields and is never excluded by the timestamp rule; a same creation identity with a changed `expiresAt` returns `SHARE_CREATION_CONFLICT` and mutates nothing. Repeating the same creation action reproduces `share_id`; before any state-dependent mutation the service recomputes the creation fingerprint and compares it with the frozen value. Same identity and fingerprint return the existing grant metadata only, with no new grant, no new plaintext capability token and no new event. Same identity with changed scope/parameters returns stable `SHARE_CREATION_CONFLICT` and mutates nothing; a changed scope is never a second grant under the same request ID. A usable replacement requires a new `creationRequestId`, which derives a new `share_id`, a new grant and a new one-time random capability token; the unusable prior grant may be revoked through the existing owner revoke transition. There is no token reconstruction, reissuance action or recoverable plaintext capability secret. The capability token itself remains high-entropy random and is returned only once at first creation; only its digest is stored.
+- Every S3 `id` is an application-generated `uuid` with no table default. Hash columns are lowercase 64-hex text. Times are UTC `timestamptz`; admission, expiry and generation checks use `clock_timestamp()` after lock acquisition, never request time or transaction-start `now()`.
+- The three S3 mutable heads are `evidence.recording`, `evidence.evidence_record` and `sharing.evidence_share_grant`; each carries `revision integer NOT NULL DEFAULT 1 CHECK (revision >= 1)` and conditional updates. The five S3 append-only tables are `evidence.media_object`, `evidence.evidence_artifact`, `evidence.evidence_event`, `sharing.share_admission` and `sharing.share_access_event`; they have no revision, reject update/delete by privilege and trigger, and are never deleted through ordinary administration. This preserves the frozen 28 mutable-head / 16 append-only closure (S1 11/2, S2 14/9, S3 3/5).
+- `evidence.evidence_record` and `evidence.evidence_event` are the only same-wave reciprocal cycle. Their composite source FK and reverse evidence FK are both `DEFERRABLE INITIALLY DEFERRED`, added by exact `ALTER TABLE` statements after both V008 tables exist. The two `EVIDENCE_CREATED` ownership checks are enforced at commit by owner-local deferred constraint triggers, not by a new SQL function-wave entry. Until commit, either insertion order is valid; after commit, exactly one matching creation event owns each evidence record and no creation event may own a different evidence identity.
+- `sharing.evidence_share_grant.expires_at` and `max_admissions` have no guessed defaults. The approved sharing-policy input must explicitly select a validity window and either a positive admission limit or explicit unlimited; absent or unapproved input fails closed with no grant. No retention period, KDF parameter value, capability-token length beyond the required minimum 128 random bits, admission limit, expiry default, rate-limit threshold or revocation-window value is invented.
+- S3 stores no plaintext capability token, share code, designated phone, OTP, object URL, object key, bucket name or object version in logs, access events, Outbox or audit. Object identity is internal to the evidence owner and the media gateway; the public sharing layer receives only a short-lived signed media credential bound to the grant, admission, generation and expiry.
+
 ## 3. Module and Schema Ownership Matrix
 
 ### 3.1 S1 modules and roles
@@ -223,10 +270,14 @@ S2 status is **fix-4 author-complete / independent re-review pending**. S3 is **
 | ivr | ivr | ivr_owner | ivr_role | ivr.outbound_call_task, ivr.inbound_session, ivr.call_record, ivr.call_leg, ivr.call_event, ivr.ivr_decision |
 | entitlement-metering | entitlement_metering | entitlement_metering_owner | entitlement_metering_role | entitlement_metering.trial_policy_version, entitlement_metering.entitlement_grant, entitlement_metering.trial_grant, entitlement_metering.entitlement_balance, entitlement_metering.entitlement_issuance, entitlement_metering.usage_reservation, entitlement_metering.usage_fact |
 | activation-consent | activation_consent | activation_consent_owner | activation_consent_role | activation_consent.consent_record, activation_consent.service_activation, activation_consent.service_activation_transition |
+| evidence | evidence | evidence_owner | evidence_role | evidence.media_object, evidence.recording, evidence.evidence_record, evidence.evidence_artifact, evidence.evidence_event |
+| sharing | sharing | sharing_owner | sharing_role | sharing.evidence_share_grant, sharing.share_admission, sharing.share_access_event |
 
-All owner and runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. The migration identity is the only role that creates S1 or S2 objects. `subject_identity_verification_role` is a narrow service role that may `SELECT` the subject `id` plus the real-name/status/revision/update-time columns and may update only the subject-level real-name columns, revision and update time; it cannot alter owners, source, bindings or claims. It receives `USAGE` on `subject_number` and `audit` and `EXECUTE` on `audit.append_fact` so its same-transaction verification fact can be audited. `operations_service_role` is a NOLOGIN S1 service role used only to execute `audit.append_fact`; it receives `USAGE` on `audit` and no table write privilege.
+All owner and runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. The migration identity is the only role that creates S1, S2 or S3 objects. `subject_identity_verification_role` is a narrow service role that may `SELECT` the subject `id` plus the real-name/status/revision/update-time columns and may update only the subject-level real-name columns, revision and update time; it cannot alter owners, source, bindings or claims. It receives `USAGE` on `subject_number` and `audit` and `EXECUTE` on `audit.append_fact` so its same-transaction verification fact can be audited. `operations_service_role` is a NOLOGIN S1 service role used only to execute `audit.append_fact`; it receives `USAGE` on `audit` and no table write privilege.
 
 The four S2 runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. They receive `USAGE` on their own schema, `USAGE` on `platform` and `audit`, `USAGE` without `CREATE` on the exact S1 schemas whose declared cross-module columns they read, `EXECUTE` on the four S1 functions, and only the exact owned/cross-module table grants in §10.12. PostgreSQL requires containing-schema `USAGE` in addition to a table/column privilege; every cross-module `SELECT` in §10.12 is paired with that schema `USAGE` in the reader's creation wave. No S2 role receives schema `CREATE` or any foreign table write. The `ivr_role` is the application identity used by the IVR-facing application services; the WAF/mTLS service authentication of the IVR protocol is an API/security concern outside this schema. `ivr.select_call_action`, `ivr.record_activation_next_action`, `activation-consent.record_activation_confirmation`, `activation-consent.lock_service_activation` and `entitlement-metering.reserve_call_usage` are application services running under the owning runtime role on the same connection; they are not `SECURITY DEFINER` SQL functions and add no function-wave row. `activation-consent.lock_service_activation` is the rank-4 lock-only collaborator; it locks an existing activation row under the owner role, creates/updates/appends nothing, and returns the current facts.
+
+The two S3 runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. `evidence_role` receives `USAGE` on `evidence`, `subject_number`, `platform`, `audit`, `ivr` and `entitlement_metering` for its exact declared reads, `EXECUTE` only on `platform.outbox_append` and `audit.append_fact`, and only the owned/cross-module grants in §10.21. `sharing_role` receives `USAGE` on `sharing`, `evidence`, `subject_number`, `customer_iam`, `organization_access`, `platform` and `audit`, `EXECUTE` only on `platform.outbox_append` and `audit.append_fact`, and only the exact evidence/account/organization/membership/subject-ownership/risk column grants in §10.21. Neither role receives `EXECUTE` on `platform.idempotency_begin` or `platform.idempotency_complete`, any platform/audit table privilege, schema `CREATE`, `DELETE`, `TRUNCATE` or any foreign table write. The `subject_number` schema `USAGE` accompanies the exact declared subject/ownership/binding/risk column `SELECT`s and grants no table write. S3 owner services run on the caller's connection under the owning role. S3 adds no SQL function and no function-wave row; the evidence creation-cycle trigger functions are owner-local trigger functions, not published services.
 
 ### 3.2 Table ownership and write paths
 
@@ -241,10 +292,10 @@ The four S2 runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. They receive 
 | organization_access.organization | organization-access | V002 | S1 | customer-iam, subject-number, operations-iam, ivr, catalog-order, activation-consent (exact §10.12 `SELECT` only) | organization_access_role |
 | organization_access.organization_membership | organization-access | V002 | S1 | customer-iam, subject-number, ivr, catalog-order, activation-consent (exact §10.12 `SELECT` only) | organization_access_role |
 | operations_iam.employee_account | operations-iam | V002 | S1 | operations-audit | operations_iam_role |
-| subject_number.business_subject | subject-number | V003 | S1 | customer-iam, organization-access, ivr, catalog-order, entitlement-metering, activation-consent (exact §10.12 `SELECT` only) | subject_number_role for subject creation (both owners null) and verified-personal owner set; subject_identity_verification_role for real-name columns |
-| subject_number.caller_number_binding | subject-number | V003 | S1 | customer-iam, organization-access, ivr (exact §10.12 `SELECT` only) | subject_number_role |
+| subject_number.business_subject | subject-number | V003 | S1 | customer-iam, organization-access, ivr, catalog-order, entitlement-metering, activation-consent (exact §10.12/§10.21 `SELECT` only), sharing (exact §10.21 ownership/risk projection only) | subject_number_role for subject creation (both owners null) and verified-personal owner set; subject_identity_verification_role for real-name columns |
+| subject_number.caller_number_binding | subject-number | V003 | S1 | customer-iam, organization-access, ivr (exact §10.12 `SELECT` only), sharing (exact §10.21 risk projection only) | subject_number_role |
 | subject_number.subject_claim | subject-number | V003 | S1 | customer-iam, organization-access | subject_number_role insert only; no update/delete |
-| subject_number.subject_risk_state | subject-number | V003 | S1 | customer-iam, organization-access, ivr (exact §10.12 `SELECT` only) | subject_number_role |
+| subject_number.subject_risk_state | subject-number | V003 | S1 | customer-iam, organization-access, ivr (exact §10.12 `SELECT` only), sharing (exact §10.21 historical-evidence risk projection only) | subject_number_role |
 | catalog_order.catalog_product | catalog-order | V004 | S2 | none for S2; frozen snapshot/fact handoff only | catalog_order_role insert only; no update/delete |
 | catalog_order.catalog_version | catalog-order | V004 | S2 | none for S2; frozen snapshot/fact handoff only | catalog_order_role |
 | catalog_order.catalog_offer | catalog-order | V004 | S2 | none for S2; frozen snapshot/fact handoff only | catalog_order_role |
@@ -268,8 +319,18 @@ The four S2 runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. They receive 
 | activation_consent.consent_record | activation-consent | V007 | S2 | ivr, catalog-order (exact §10.12 `SELECT` only) | insert only through the owning service; no update/delete |
 | activation_consent.service_activation | activation-consent | V007 | S2 | ivr (exact §10.12 `SELECT`); the row lock is taken only by the activation-consent lock-only collaborator | `record_activation_confirmation`, `record_client_activation` and operations lifecycle service |
 | activation_consent.service_activation_transition | activation-consent | V007 | S2 | ivr fact handoff via the owner service result (no table `SELECT`) | insert only through the owning service; no update/delete |
+| evidence.media_object | evidence | V008 | S3 | none; internal object identity only | evidence_role insert only; no update/delete |
+| evidence.recording | evidence | V008 | S3 | none; IVR/media-worker result handoff only | evidence_role; status/validation/revision columns only after insert |
+| evidence.evidence_record | evidence | V008 | S3 | sharing reads the exact §10.21 `SELECT` columns; no other module writes it | evidence_role insert and PENDING → SOLIDIFIED/QUARANTINED/FAILED status update |
+| evidence.evidence_artifact | evidence | V008 | S3 | sharing reads the exact artifact-role projection for content scope | evidence_role insert only; no update/delete |
+| evidence.evidence_event | evidence | V008 | S3 | none; deferred creation-cycle verification inside the evidence owner | evidence_role insert only; no update/delete |
+| sharing.evidence_share_grant | sharing | V009 | S3 | none; creator/workspace authorization uses S1 exact reads | sharing_role; owner transitions and revisions only |
+| sharing.share_admission | sharing | V009 | S3 | none; admission is the authorization fact | sharing_role insert only; no update/delete |
+| sharing.share_access_event | sharing | V009 | S3 | none; durable access/ticket facts | sharing_role insert only; no update/delete |
 
 Collaborators are not co-owners. They may read stable columns and call a published service; they receive no write privilege. No module writes another module's table directly. In S2, `ivr` owns `ivr.ivr_decision` and writes it only through `ivr.select_call_action`; `activation-consent` and `entitlement-metering` never write it, and `ivr` never writes consent, activation, trial, grant, balance, reservation or usage tables directly. This matrix is conceptual ownership shape, not a grant list: entries marked `SELECT` name only the exact columns granted in §10.12, while entries marked `fact handoff` receive owner-validated facts through a published owner service and hold no table privilege, no row lock and no write path. Do not infer a grant from a collaborator name.
+
+In S3, the `evidence` owner is the only writer of `evidence.*`; the `sharing` owner is the only writer of `sharing.*`. Sharing reads evidence status/content through the exact §10.21 projection and never writes evidence. Evidence does not read or write sharing. IVR and media workers submit validated facts to the evidence owner service; they do not own or update evidence lifecycle rows. No S1/S2 role receives any S3 table privilege, and no S3 role writes another module's table.
 
 ### 3.3 Identity and workspace answers
 
@@ -285,7 +346,7 @@ Collaborators are not co-owners. They may read stable columns and call a publish
 
 ### 4.1 Frozen planned table catalog (all 44 tables)
 
-The following catalog is the accepted 44-table planned baseline. It is verbatim from the accepted plan. Status is recorded outside the block: rows 1-13 are expanded as S1 and rows 14-36 as S2 in this document; the remaining eight rows (37-44) are planned S3 and are not authored here.
+The following catalog is the accepted 44-table planned baseline. It is verbatim from the accepted plan. Status is recorded outside the block: rows 1-13 are expanded as S1, rows 14-36 as S2 and rows 37-44 as S3 in this document. The block itself is unchanged.
 
 <!-- catalog:start -->
 | Table | Owning module | Wave | Slice | Minimum columns and keys | Critical constraints and lifecycle |
@@ -1971,11 +2032,369 @@ Append-only control: `trg_activation_transition_immutable` uses `activation_cons
 
 Sensitive representation: no sensitive column; actor IDs are internal and consent references are internal.
 
+### 4.39 evidence.media_object
+
+Purpose: immutable private object identity, version and server-computed hash metadata for one uploaded original or derived media object. Owner: `evidence`. Wave V008; slice S3. Lifecycle: append-only/frozen. Deletion: no update/delete; object bytes never enter PostgreSQL.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_media_object` | Application-generated object metadata identity |
+| storage_provider | text | NO | none | CHECK `ck_media_object_provider` | Approved provider code; baseline `COS`; no bucket, region or credential default |
+| bucket | text | NO | none | CHECK `ck_media_object_bucket` | Private bucket name; never a public URL or response field |
+| object_key | text | NO | none | CHECK `ck_media_object_key`; part of `uq_media_object_version` | Controlled immutable key; never exposed publicly |
+| object_version_id | text | NO | none | CHECK `ck_media_object_version`; part of `uq_media_object_version` | Object-storage version identity; required for evidence use |
+| sha256 | text | NO | none | CHECK `ck_media_object_sha256` | Server-computed lowercase SHA-256 of the stored bytes |
+| size_bytes | bigint | NO | none | CHECK `ck_media_object_size` | Server-observed size, greater than zero |
+| mime_type | text | NO | none | CHECK `ck_media_object_mime` | Server-sniffed MIME type, nonblank, at most 255 characters |
+| crypto_key_ref | text | NO | none | CHECK `ck_media_object_key_ref` | Opaque server-side encryption key reference; never returned |
+| worm_status | text | NO | `'PENDING'` | CHECK `ck_media_object_worm_status` | `PENDING`, `CONFIRMED`, `UNSUPPORTED` or `FAILED`; evidence of capability observation only |
+| created_at | timestamptz | NO | `now()` | none | Metadata registration time |
+
+Named checks:
+
+- `ck_media_object_provider`: `storage_provider = 'COS'`.
+- `ck_media_object_bucket`: `length(bucket) BETWEEN 1 AND 255 AND btrim(bucket) <> ''`.
+- `ck_media_object_key`: `length(object_key) BETWEEN 1 AND 1024 AND btrim(object_key) <> ''`.
+- `ck_media_object_version`: `length(object_version_id) BETWEEN 1 AND 1024 AND btrim(object_version_id) <> ''`.
+- `ck_media_object_sha256`: `sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_media_object_size`: `size_bytes > 0`.
+- `ck_media_object_mime`: `length(mime_type) BETWEEN 1 AND 255 AND btrim(mime_type) <> ''`.
+- `ck_media_object_key_ref`: `length(crypto_key_ref) BETWEEN 1 AND 128 AND btrim(crypto_key_ref) <> ''`.
+- `ck_media_object_worm_status`: `worm_status IN ('PENDING','CONFIRMED','UNSUPPORTED','FAILED')`.
+
+Keys and indexes:
+
+- Primary key `pk_media_object (id)`.
+- Unique `uq_media_object_version (bucket, object_key, object_version_id)`.
+- Index `ix_media_object_sha256 (sha256)` for duplicate-byte detection only; it is not an authorization or public lookup key.
+
+Append-only control: `trg_media_object_immutable` uses `evidence.reject_row_mutation()`; `evidence_role` has `SELECT` and `INSERT` only. A media object is created only after a successful upload identity or derived-object write; an object version/hash is never overwritten or repointed. `worm_status` is an observed capability fact only; Q11 remains the owner of WORM/storage-class/retention decisions, and no status value promises retention.
+
+Sensitive representation: `bucket`, `object_key`, `object_version_id` and `crypto_key_ref` are internal storage references; they are never returned by a public API, written to logs, encoded in a share URL or included in a redacted event. `sha256` and `size_bytes` are internal validation metadata. No object bytes or permanent URL is stored.
+
+### 4.40 evidence.recording
+
+Purpose: mutable recording-upload and validation state for one IVR recording identity, separating client declarations from server-validated media facts. Owner: `evidence`. Wave V008; slice S3. Lifecycle: mutable head. Deletion: status retirement only; no ordinary hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_recording` | Application-generated recording state identity |
+| call_id | text | NO | none | FK `fk_recording_call` | Exact S2 canonical call linkage |
+| recording_id | text | NO | none | CHECK `ck_recording_protocol_id`; UNIQUE `uq_recording_protocol_id` | Opaque IVR recording identity; retries reuse it |
+| media_object_id | uuid | YES | none | FK `fk_recording_media_object` | Set only after the upload object is identified; immutable once set |
+| declared_format | text | NO | none | CHECK `ck_recording_declared_format` | IVR/worker declaration; never trusted over validation |
+| declared_size | bigint | NO | none | CHECK `ck_recording_declared_size` | Declared byte count, greater than zero |
+| declared_duration | integer | NO | none | CHECK `ck_recording_declared_duration` | Declared whole seconds, greater than zero; declaration only |
+| declared_sha256 | text | NO | none | CHECK `ck_recording_declared_sha256` | Declared lowercase SHA-256; never wins over the server hash |
+| validated_duration | integer | YES | none | CHECK `ck_recording_validated_duration` | Server-validated whole seconds; set once |
+| validated_sha256 | text | YES | none | CHECK `ck_recording_validated_sha256` | Server-recomputed lowercase SHA-256; set once |
+| status | text | NO | `'DECLARED'` | CHECK `ck_recording_status`; `ck_recording_state_shape` | `DECLARED`, `UPLOADED`, `VALIDATED` or `QUARANTINED` |
+| upload_expires_at | timestamptz | NO | none | CHECK `ck_recording_upload_expiry` | Expiry of the controlled upload session; no default or extension |
+| created_at | timestamptz | NO | `now()` | none | Upload-state creation time |
+| validated_at | timestamptz | YES | none | part of `ck_recording_state_shape` | Time the server validation or quarantine decision was recorded |
+| revision | integer | NO | `1` | CHECK `ck_recording_revision` | Conditional state/validation update |
+
+Named checks:
+
+- `ck_recording_protocol_id`: `length(recording_id) BETWEEN 1 AND 128 AND btrim(recording_id) <> ''`.
+- `ck_recording_declared_format`: `length(declared_format) BETWEEN 1 AND 64 AND btrim(declared_format) <> ''`.
+- `ck_recording_declared_size`: `declared_size > 0`.
+- `ck_recording_declared_duration`: `declared_duration > 0`.
+- `ck_recording_declared_sha256`: `declared_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_recording_validated_duration`: `validated_duration IS NULL OR validated_duration > 0`.
+- `ck_recording_validated_sha256`: `validated_sha256 IS NULL OR validated_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_recording_status`: `status IN ('DECLARED','UPLOADED','VALIDATED','QUARANTINED')`.
+- `ck_recording_state_shape`: `(status = 'DECLARED' AND media_object_id IS NULL AND validated_duration IS NULL AND validated_sha256 IS NULL AND validated_at IS NULL) OR (status = 'UPLOADED' AND media_object_id IS NOT NULL AND validated_duration IS NULL AND validated_sha256 IS NULL AND validated_at IS NULL) OR (status = 'VALIDATED' AND media_object_id IS NOT NULL AND validated_duration IS NOT NULL AND validated_sha256 IS NOT NULL AND validated_at IS NOT NULL) OR (status = 'QUARANTINED' AND validated_at IS NOT NULL)`.
+- `ck_recording_upload_expiry`: `upload_expires_at > created_at`.
+- `ck_recording_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_recording (id)`.
+- Unique `uq_recording_protocol_id (recording_id)`.
+- Index `ix_recording_call (call_id, created_at DESC)`.
+- Index `ix_recording_pending (status, upload_expires_at)` for the owner completion/expiry path.
+- FK `fk_recording_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_recording_media_object (media_object_id) REFERENCES evidence.media_object(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability and retry control: `DECLARED → UPLOADED → VALIDATED` or `QUARANTINED`; the explicit failure edge `DECLARED → QUARANTINED` is allowed only when the upload expired or storage/identity failure makes completion impossible, and it creates no successful media fact. `UPLOADED → QUARANTINED` applies to a different object version, size, MIME, duration or hash or a failed validation. Only `DECLARED`/`UPLOADED` may transition to `QUARANTINED`; `VALIDATED` and `QUARANTINED` are terminal for the recording row. The evidence owner locks the recording row, re-reads `upload_expires_at` with `clock_timestamp()`, and accepts a completion only before expiry. A same-`recording_id` retry with the same object version and server hash returns the first validated or quarantined outcome without a second media object or recording. A different object version, size, MIME, duration or hash for the same `recording_id` while the row is still `DECLARED`/`UPLOADED` transitions once to `QUARANTINED` and never overwrites the first server facts or original object. After `VALIDATED` or `QUARANTINED`, a conflicting callback is refused with the stable `RECORDING_IDENTITY_CONFLICT` (an identical replay returns the original terminal outcome and code) and appends exactly one redacted deterministic Outbox conflict fact; it changes no recording status, media object, validation fact or revision. The conflict fact's Outbox dedupe key is `recording-conflict:` plus the lowercase SHA-256 of the canonical conflict input `{recordingId, originalStatus, originalValidatedSha256, presentedObjectVersionDigest, presentedSha256, presentedSizeBytes, presentedMime, presentedDuration, reasonCode}`, where the object-version/key material is hashed and never stored. The same conflicting callback returns the existing Outbox ID and appends no second fact; a different conflicting payload has a different digest and appends one distinct conflict fact without touching the original. A partial crash before commit leaves only the previous `DECLARED`/`UPLOADED` state; an uncommitted object metadata insert, conflict fact or evidence fact is absent and the same retry converges. `media_object_id`, validation fields and `validated_at` are immutable once set. The accepted-hash comparison uses the server-recomputed `validated_sha256`; `declared_sha256` is evidence of the declaration, not a success proof.
+Post-terminal conflict fact: the Outbox row is in event domain `EVIDENCE`, aggregate type `RECORDING`, aggregate id `recording.id` and event type `RECORDING_CONFLICT`, appended through `platform.outbox_append`; this path writes exactly one Outbox conflict fact and no audit row, so a duplicate callback returns the existing Outbox ID and writes nothing. The Outbox unique key is the single dedupe witness. Its redacted payload contains only `recordingId`, `originalStatus`, `conflictDigest`, `presentedSha256`, `presentedSizeBytes`, `presentedMime`, `presentedDuration` and `reasonCode`; object key/version material is never present.
+
+Sensitive representation: `declared_sha256` and `validated_sha256` are hashes only; `recording_id` is an opaque internal/protocol identity. No media bytes, object key/version, bucket or permanent URL is stored in this table.
+
+### 4.41 evidence.evidence_record
+
+Purpose: mutable evidence lifecycle head with immutable captured subject, call/session/reservation links, identity-at-capture, consent version and frozen evidence snapshot; exactly one reciprocal `EVIDENCE_CREATED` event owns it. Owner: `evidence`. Wave V008; slice S3. Lifecycle: mutable head. Deletion: status retirement only; captured facts are never rewritten by a later claim or account change.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_evidence_record` | Application-generated evidence identity |
+| subject_id | uuid | NO | none | FK `fk_evidence_subject` | Immutable subject at capture; later claims do not rewrite it |
+| source_type | text | NO | none | CHECK `ck_evidence_source_type` | Baseline source is `CALL_RECORDING` |
+| source_ref_id | uuid | NO | none | CHECK `ck_evidence_source_ref` | Internal source object ID; for `CALL_RECORDING` equals the `recording.id`; service-validated polymorphic reference, not an FK decision |
+| source_event_domain | text | NO | none | CHECK `ck_evidence_source_domain`; part of `uq_evidence_source_event` | Always `EVIDENCE` |
+| source_event_id | text | NO | none | CHECK `ck_evidence_source_event_id`; part of `uq_evidence_source_event` | Stable `EVIDENCE_CREATED` event identity |
+| call_id | text | YES | none | FK `fk_evidence_call` | Exact call linkage; for the baseline `CALL_RECORDING` source it is required non-null and must equal the referenced recording's `call_id` |
+| session_id | uuid | YES | none | FK `fk_evidence_session` | Exact inbound-session linkage; only with a call |
+| reservation_id | uuid | YES | none | FK `fk_evidence_reservation` | Exact usage-reservation linkage when applicable |
+| identity_at_capture | jsonb | NO | none | CHECK `ck_evidence_capture_shape`; `ck_evidence_capture_subject` | Immutable redacted identity reference; may include internal `bindingId`; no raw number or live identity |
+| consent_version | text | NO | none | CHECK `ck_evidence_consent_version` | Captured recording-notice/consent version; no default or inferred consent |
+| status | text | NO | `'PENDING'` | CHECK `ck_evidence_status`; `ck_evidence_state_shape` | `PENDING`, `SOLIDIFIED`, `QUARANTINED` or `FAILED` |
+| revision | integer | NO | `1` | CHECK `ck_evidence_revision` | Conditional status update |
+| snapshot | jsonb | NO | none | CHECK `ck_evidence_snapshot_shape` | Canonical redacted evidence snapshot; immutable after insert |
+| snapshot_sha256 | text | NO | none | CHECK `ck_evidence_snapshot_sha256` | Lowercase SHA-256 of the canonical snapshot |
+| created_at | timestamptz | NO | `now()` | none | Evidence creation time |
+| solidified_at | timestamptz | YES | none | part of `ck_evidence_state_shape` | Set exactly when `SOLIDIFIED` |
+
+Named checks:
+
+- `ck_evidence_source_type`: `source_type = 'CALL_RECORDING'`.
+- `ck_evidence_source_ref`: `source_ref_id IS NOT NULL`.
+- `ck_evidence_source_domain`: `source_event_domain = 'EVIDENCE'`.
+- `ck_evidence_source_event_id`: `length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> ''`.
+- `ck_evidence_capture_shape`: `jsonb_typeof(identity_at_capture) = 'object' AND identity_at_capture ? 'subjectId' AND identity_at_capture ? 'capturedAt' AND identity_at_capture ? 'sourceChannel'`.
+- `ck_evidence_capture_subject`: `identity_at_capture->>'subjectId' = subject_id::text`.
+- `ck_evidence_consent_version`: `length(consent_version) BETWEEN 1 AND 64 AND btrim(consent_version) <> ''`.
+- `ck_evidence_status`: `status IN ('PENDING','SOLIDIFIED','QUARANTINED','FAILED')`.
+- `ck_evidence_state_shape`: `(status = 'PENDING' AND solidified_at IS NULL) OR (status = 'SOLIDIFIED' AND solidified_at IS NOT NULL) OR (status IN ('QUARANTINED','FAILED') AND solidified_at IS NULL)`.
+- `ck_evidence_revision`: `revision >= 1`.
+- `ck_evidence_snapshot_shape`: `jsonb_typeof(snapshot) = 'object' AND snapshot ? 'capture' AND snapshot ? 'content' AND jsonb_typeof(snapshot->'source') = 'object' AND snapshot->>'sourceEventDomain' = 'EVIDENCE' AND snapshot->>'sourceEventId' = source_event_id AND (snapshot->'source'->>'callId') IS NOT DISTINCT FROM call_id AND (snapshot->'source'->>'sessionId') IS NOT DISTINCT FROM session_id::text AND (snapshot->'source'->>'subjectId') IS NOT DISTINCT FROM subject_id::text AND (snapshot->'source'->>'reservationId') IS NOT DISTINCT FROM reservation_id::text AND (snapshot->'source'->>'recordingId') IS NOT DISTINCT FROM source_ref_id::text`.
+- `ck_evidence_snapshot_sha256`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_evidence_link_shape`: `session_id IS NULL OR call_id IS NOT NULL`.
+
+Keys and indexes:
+
+- Primary key `pk_evidence_record (id)`.
+- Unique `uq_evidence_source_event (source_event_domain, source_event_id)`.
+- Index `ix_evidence_subject (subject_id, created_at DESC)`.
+- Index `ix_evidence_call (call_id)`.
+- Index `ix_evidence_status (status, created_at)` for the owner lifecycle path.
+- FK `fk_evidence_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_evidence_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_evidence_session (session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_evidence_reservation (reservation_id) REFERENCES entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- Deferred FK `fk_evidence_source_event (source_event_domain, source_event_id) REFERENCES evidence.evidence_event(event_domain, event_id) DEFERRABLE INITIALLY DEFERRED`, added by `ALTER TABLE` after both V008 tables exist.
+
+Revision/immutability: `subject_id`, `source_type`, `source_ref_id`, `source_event_domain`, `source_event_id`, `call_id`, `session_id`, `reservation_id`, `identity_at_capture`, `consent_version`, `snapshot`, `snapshot_sha256` and `created_at` are immutable under `evidence.guard_evidence_record`. `status`, `solidified_at` and `revision` change only through the evidence owner service: `PENDING → SOLIDIFIED`, `PENDING → QUARANTINED` or `PENDING → FAILED`; all terminal states are absorbing. A solidification retry after `SOLIDIFIED` returns the first immutable snapshot/artifact facts and does not append a second creation event. A late or conflicting recording/validation result after solidification follows the recording terminal-conflict contract in §4.40/§9.27: it is refused with the stable recording conflict and one redacted conflict fact, and cannot rewrite the evidence record, status, facts or snapshot. A later personal claim, account change, organization membership change or subject real-name change never updates any captured column or the snapshot.
+
+Source-reference note: `source_ref_id` is the module-internal target of `source_type`. For the only baseline source, the evidence owner validates that it identifies a `VALIDATED` recording whose `call_id` equals the evidence record's `call_id`, whose trusted call/session/subject chain agrees with the supplied evidence and reservation links, and whose media facts match the frozen snapshot; any cross-call, cross-session, cross-subject or cross-reservation mismatch is `EVIDENCE_LINK_MISMATCH` and creates no evidence fact. It intentionally has no FK in the accepted 81-decision catalog because the source-type target is polymorphic, like the platform aggregate reference; it is never a public key.
+
+Sensitive representation: `identity_at_capture`, `consent_version` and `snapshot` are immutable internal facts. They contain no raw caller/callee number, provider subject, identity number, object key/URL, media bytes or share token; the capture object carries only the subject ID, an internal binding reference if applicable, a caller HMAC/masked projection, source channel and capture time. `snapshot_sha256` is a hash only.
+
+### 4.42 evidence.evidence_artifact
+
+Purpose: immutable original-versus-derived artifact manifest for one evidence record. Owner: `evidence`. Wave V008; slice S3. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_evidence_artifact` | Application-generated artifact-link identity |
+| evidence_id | uuid | NO | none | FK `fk_evidence_artifact_evidence`; part of `uq_evidence_artifact` | Parent evidence record |
+| media_object_id | uuid | NO | none | FK `fk_evidence_artifact_media`; part of `uq_evidence_artifact` | Distinct original or derived object |
+| artifact_role | text | NO | none | CHECK `ck_evidence_artifact_role`; part of `uq_evidence_artifact` | `ORIGINAL` or `DERIVED` |
+| created_at | timestamptz | NO | `now()` | none | Manifest insertion time |
+
+Named checks:
+
+- `ck_evidence_artifact_role`: `artifact_role IN ('ORIGINAL','DERIVED')`.
+
+Keys and indexes:
+
+- Primary key `pk_evidence_artifact (id)`.
+- Unique `uq_evidence_artifact (evidence_id, artifact_role, media_object_id)`.
+- Partial unique `uq_evidence_original_artifact (evidence_id) WHERE artifact_role = 'ORIGINAL'` ensures one original artifact per evidence record.
+- Index `ix_evidence_artifact_media (media_object_id)`.
+- FK `fk_evidence_artifact_evidence (evidence_id) REFERENCES evidence.evidence_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_evidence_artifact_media (media_object_id) REFERENCES evidence.media_object(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_evidence_artifact_immutable` uses `evidence.reject_row_mutation()`; `evidence_role` has `SELECT` and `INSERT` only. An original artifact is inserted atomically with evidence creation/solidification. A derived artifact is a separate media object and a separate row; it never replaces, repoints or overwrites the original. The partial unique is a named schema control not used as an FK target, so the frozen 24-key candidate catalog is unchanged.
+
+Sensitive representation: no direct sensitive value; both IDs are internal. Object keys and versions remain in `media_object` and are never joined into a public response.
+
+### 4.43 evidence.evidence_event
+
+Purpose: append-only evidence event ledger and the composite unique target for the reciprocal evidence-creation cycle. Owner: `evidence`. Wave V008; slice S3. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_evidence_event` | Application-generated event identity |
+| evidence_id | uuid | NO | none | FK `fk_evidence_event_record`; part of `uq_evidence_created_event` | Owning evidence record; reverse side of the deferred cycle |
+| event_domain | text | NO | none | CHECK `ck_evidence_event_domain`; part of `uq_evidence_event_domain_id`; composite FK target | Always `EVIDENCE` |
+| event_id | text | NO | none | CHECK `ck_evidence_event_id`; part of `uq_evidence_event_domain_id`; composite FK target | Stable event identity, 1-128 characters |
+| event_type | text | NO | none | CHECK `ck_evidence_event_type` | `EVIDENCE_CREATED`, `EVIDENCE_SOLIDIFIED`, `EVIDENCE_QUARANTINED` or `EVIDENCE_FAILED` |
+| occurred_at | timestamptz | NO | `now()` | none | Event occurrence time; never part of a replay comparison |
+| payload_redacted | jsonb | NO | none | CHECK `ck_evidence_event_payload` | Redacted metadata only; never media bytes or raw party identifiers |
+| payload_sha256 | text | NO | none | CHECK `ck_evidence_event_payload_sha256` | Lowercase SHA-256 of the canonical redacted payload |
+
+Named checks:
+
+- `ck_evidence_event_domain`: `event_domain = 'EVIDENCE'`.
+- `ck_evidence_event_id`: `length(event_id) BETWEEN 1 AND 128 AND btrim(event_id) <> ''`.
+- `ck_evidence_event_type`: `event_type IN ('EVIDENCE_CREATED','EVIDENCE_SOLIDIFIED','EVIDENCE_QUARANTINED','EVIDENCE_FAILED')`.
+- `ck_evidence_event_payload`: `jsonb_typeof(payload_redacted) = 'object'`.
+- `ck_evidence_event_payload_sha256`: `payload_sha256 ~ '^[0-9a-f]{64}$'`.
+
+Keys and indexes:
+
+- Primary key `pk_evidence_event (id)`.
+- Unique `uq_evidence_event_domain_id (event_domain, event_id)`; this is the composite FK target.
+- Partial unique `uq_evidence_created_event (evidence_id) WHERE event_type = 'EVIDENCE_CREATED'`; exactly one creation event per evidence record.
+- Index `ix_evidence_event_record (evidence_id, occurred_at)`.
+- FK `fk_evidence_event_record (evidence_id) REFERENCES evidence.evidence_record(id) DEFERRABLE INITIALLY DEFERRED`; added by `ALTER TABLE` after both V008 tables exist.
+
+Reciprocal creation contract: the record's `(source_event_domain, source_event_id)` must equal the one `EVIDENCE_CREATED` event's `(event_domain, event_id)` and that event's `evidence_id` must equal the record `id`. Both FKs are deferred and added after both tables exist, so the record and event insert atomically in either order in one local transaction. The two owner-local constraint triggers `trg_evidence_record_creation_cycle` (on `evidence_record`) and `trg_evidence_event_creation_cycle` (on `evidence_event`) are `DEFERRABLE INITIALLY DEFERRED` and run at commit. They reject a missing, duplicate, wrong-type, wrong-evidence-owner or mismatched creation event with the stable SQL error `EVIDENCE_CREATION_CYCLE_VIOLATION`; a failed transaction leaves no record, event, artifact or Outbox fact. Non-creation evidence events are append-only lifecycle facts and do not satisfy or replace the one creation event.
+
+Append-only control: `trg_evidence_event_immutable` uses `evidence.reject_row_mutation()`; `evidence_role` has `SELECT` and `INSERT` only. Event identity, type, payload and hash never change. A solidification/quarantine/failure event is appended once when the corresponding record status transition commits; a retry returns the first event and does not duplicate it.
+
+Sensitive representation: `payload_redacted` carries internal evidence IDs, event type, status/reason code, hash prefixes and masked projections only; no media bytes, raw caller/callee number, object key/URL, code or token. `payload_sha256` is a hash only.
+
+### 4.44 sharing.evidence_share_grant
+
+Purpose: mutable share-authorization head that freezes one evidence content scope, deterministic creation identity/fingerprint, verification mode, capability-token digest, validity, admission limit and revocation generation. Owner: `sharing`. Wave V009; slice S3. Lifecycle: mutable head. Deletion: status retirement only; revoke deletes future access, never the evidence.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_evidence_share_grant` | Application-generated grant identity |
+| share_id | text | NO | none | CHECK `ck_share_grant_share_id`; UNIQUE `uq_share_grant_share_id` | Opaque internal share identity, deterministically derived from the authenticated creator account and stable creation request ID; the scope is compared through the frozen creation fingerprint, never the public capability |
+| capability_token_hash | text | NO | none | CHECK `ck_share_grant_token_hash`; UNIQUE `uq_share_grant_token_hash` | Lowercase SHA-256 of a capability token with at least 128 random bits; plaintext token never stored |
+| evidence_id | uuid | NO | none | FK `fk_share_grant_evidence` | Exact solidified evidence scope |
+| created_by_account_id | uuid | NO | none | FK `fk_share_grant_creator_account` | Authenticated creator account |
+| owner_organization_id | uuid | YES | none | FK `fk_share_grant_owner_organization`; `ck_share_grant_org_member` | Workspace scope; required for `ORGANIZATION_MEMBER` |
+| verification_mode | text | NO | none | CHECK `ck_share_grant_verification_mode` | `NONE`, `EXTRACTION_CODE`, `DESIGNATED_MOBILE` or `ORGANIZATION_MEMBER` |
+| code_salt | text | YES | none | CHECK `ck_share_grant_code_salt`; part of `ck_share_grant_verification_shape` | Per-grant/per-generation salt; no plaintext code |
+| code_hash | text | YES | none | CHECK `ck_share_grant_code_hash`; part of `ck_share_grant_verification_shape` | Salted slow-KDF digest bound to grant and code generation; no KDF parameter value is fixed here |
+| code_generation | integer | NO | `0` | CHECK `ck_share_grant_code_generation`; part of `ck_share_grant_verification_shape` | Zero for non-code modes; increments on code rotation |
+| valid_from | timestamptz | NO | `now()` | `ck_share_grant_validity` | Frozen grant start |
+| expires_at | timestamptz | NO | none | `ck_share_grant_validity` | Explicit approved validity end; no guessed default |
+| max_admissions | integer | YES | none | `ck_share_grant_admissions` | Explicit positive limit or NULL for explicit unlimited; no default |
+| admissions_used | integer | NO | `0` | `ck_share_grant_admissions` | Incremented once per successful admission under the grant lock |
+| download_allowed | boolean | NO | `false` | none | Explicit creator/permission decision |
+| content_snapshot | jsonb | NO | none | CHECK `ck_share_grant_snapshot_shape`; `ck_share_grant_snapshot_binding`; `ck_share_grant_mobile_binding` | Frozen content scope, typed creation identity/fingerprint and immutable verification binding; no object key/URL |
+| content_sha256 | text | NO | none | CHECK `ck_share_grant_content_sha256` | Lowercase SHA-256 of the canonical content snapshot |
+| status | text | NO | `'ACTIVE'` | CHECK `ck_share_grant_status` | `ACTIVE`, `EXPIRED`, `REVOKED` or `LOCKED` |
+| revocation_generation | integer | NO | `0` | CHECK `ck_share_grant_revocation_generation` | Monotonic generation; increments on revoke, code rotation and expiry, never at the admission limit |
+| revision | integer | NO | `1` | CHECK `ck_share_grant_revision` | Conditional owner transitions |
+
+Named checks:
+
+- `ck_share_grant_share_id`: `length(share_id) BETWEEN 1 AND 128 AND btrim(share_id) <> ''`.
+- `ck_share_grant_token_hash`: `capability_token_hash ~ '^[0-9a-f]{64}$'`.
+- `ck_share_grant_verification_mode`: `verification_mode IN ('NONE','EXTRACTION_CODE','DESIGNATED_MOBILE','ORGANIZATION_MEMBER')`.
+- `ck_share_grant_code_salt`: `code_salt IS NULL OR (length(code_salt) BETWEEN 22 AND 256 AND code_salt ~ '^[A-Za-z0-9_-]+$')`.
+- `ck_share_grant_code_hash`: `code_hash IS NULL OR code_hash ~ '^[0-9a-f]{64}$'`.
+- `ck_share_grant_code_generation`: `code_generation >= 0`.
+- `ck_share_grant_verification_shape`: `(verification_mode = 'EXTRACTION_CODE' AND code_salt IS NOT NULL AND code_hash IS NOT NULL AND code_generation >= 1) OR (verification_mode <> 'EXTRACTION_CODE' AND code_salt IS NULL AND code_hash IS NULL AND code_generation = 0)`.
+- `ck_share_grant_org_member`: `verification_mode <> 'ORGANIZATION_MEMBER' OR owner_organization_id IS NOT NULL`.
+- `ck_share_grant_validity`: `expires_at > valid_from`.
+- `ck_share_grant_admissions`: `admissions_used >= 0 AND (max_admissions IS NULL OR (max_admissions >= 1 AND admissions_used <= max_admissions))`.
+- `ck_share_grant_snapshot_shape`: `jsonb_typeof(content_snapshot) = 'object' AND content_snapshot ? 'content' AND content_snapshot ? 'verification' AND content_snapshot ? 'creation' AND jsonb_typeof(content_snapshot->'content') = 'object' AND jsonb_typeof(content_snapshot->'verification') = 'object' AND jsonb_typeof(content_snapshot->'creation') = 'object' AND content_snapshot->'content'->>'evidenceId' = evidence_id::text AND content_snapshot->'creation'->>'creatorAccountId' = created_by_account_id::text AND content_snapshot->'creation'->>'evidenceId' = evidence_id::text AND (content_snapshot->'creation'->>'ownerOrganizationId') IS NOT DISTINCT FROM owner_organization_id::text AND (content_snapshot->'creation'->>'scopeDigest') ~ '^[0-9a-f]{64}$' AND (content_snapshot->'creation'->>'creationRequestDigest') ~ '^[0-9a-f]{64}$' AND (content_snapshot->'creation'->>'creationFingerprint') ~ '^[0-9a-f]{64}$'`.
+- `ck_share_grant_snapshot_binding`: `content_snapshot->'verification'->>'mode' = verification_mode`.
+- `ck_share_grant_mobile_binding`: `(verification_mode = 'DESIGNATED_MOBILE' AND (content_snapshot->'verification'->>'mobileHmac') ~ '^[0-9a-f]{64}$' AND length(content_snapshot->'verification'->>'keyVersion') BETWEEN 1 AND 64) OR (verification_mode <> 'DESIGNATED_MOBILE' AND NOT (content_snapshot->'verification' ? 'mobileHmac'))`.
+- `ck_share_grant_content_sha256`: `content_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_share_grant_status`: `status IN ('ACTIVE','EXPIRED','REVOKED','LOCKED')`.
+- `ck_share_grant_revocation_generation`: `revocation_generation >= 0`.
+- `ck_share_grant_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_evidence_share_grant (id)`.
+- Unique `uq_share_grant_share_id (share_id)`.
+- Unique `uq_share_grant_token_hash (capability_token_hash)`.
+- Index `ix_share_grant_evidence (evidence_id, status)`.
+- Index `ix_share_grant_expiry (status, expires_at)` for the owner expiry path.
+- FK `fk_share_grant_evidence (evidence_id) REFERENCES evidence.evidence_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_share_grant_creator_account (created_by_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_share_grant_owner_organization (owner_organization_id) REFERENCES organization_access.organization(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Creation, verification and state control: the service first derives `share_id` from the authenticated creator account and stable `creationRequestId` and reads any existing grant before any state-dependent mutation. An existing identity is handled only by the frozen creation-fingerprint comparison in §2.12: same fingerprint returns the existing grant metadata, no new grant/token/event; changed scope is `SHARE_CREATION_CONFLICT` with no mutation. Only when no grant exists is creation allowed, only for a `SOLIDIFIED` evidence record and only after the creator's current account/workspace access predicate passes under the S1 organization/membership/account advisory locks and exact §10.21 reads. The exact role/resource matrix that grants recording-access permission remains an approved authorization/policy input (owner Product/Security/Sharing; destination sharing policy and authorization design); absent or ambiguous policy fails closed with no grant. The server generates at least 128 random capability bits, returns the plaintext token once at first creation and stores only its SHA-256 digest; a lost creation response returns metadata only, and a usable replacement requires a new `creationRequestId`/new grant/token (the unusable prior grant may be revoked through the existing owner transition). There is no token reconstruction, reissuance action or recoverable secret. For `EXTRACTION_CODE`, it generates an approved code, a fresh salt and a salted slow-KDF digest bound to the grant and `code_generation`; neither the code nor its plaintext is stored or logged. For `DESIGNATED_MOBILE`, only the keyed HMAC of the normalized designated number and its key version are frozen inside `content_snapshot.verification`; no plaintext number or OTP is stored. Admission requires an approved trusted SMS proof for that exact normalized HMAC and intended share/action (consistent with `docs/07-web-capability-hub-spec.md:141`); HMAC comparison/knowledge alone is insufficient, and absent approved verification input fails closed. `NONE` is link possession only and is never treated as identity verification. `ORGANIZATION_MEMBER` requires `owner_organization_id` and verifies the authenticated recipient's current active membership under the logical pair lock. The `content` member freezes the evidence ID, artifact roles and media facts needed by the media gateway; it never contains an object key, object version, bucket or permanent URL.
+
+Revision/immutability and state transitions: `ACTIVE → EXPIRED`, `ACTIVE → REVOKED`, `ACTIVE → LOCKED`, `LOCKED → REVOKED` and `LOCKED → EXPIRED` are allowed through the existing owner revoke/expiry transitions; `LOCKED → ACTIVE` is allowed only through owner code rotation; `EXPIRED` and `REVOKED` are terminal. There is no invented non-code unlock transition or non-code `LOCKED → ACTIVE` policy. An extension is a conditional `expires_at` increase on an `ACTIVE`, not-yet-expired grant with revision +1; it does not change the frozen content, verification binding or generation and neither retroactively extends an admission recorded under the earlier expiry nor lengthens an existing admission/session. Revoke increments `revocation_generation` by one and appends one `REVOKED` access event. Code rotation replaces `code_salt`/`code_hash`, increments `code_generation` and `revocation_generation` by one, sets a `LOCKED` grant back to `ACTIVE`, and appends one `CODE_ROTATED` event. Expiry sets `EXPIRED` and increments `revocation_generation` by one exactly once when observed/persisted; until then, `clock_timestamp() >= expires_at` still denies. Reaching `max_admissions` never changes status, never increments `revocation_generation` and never invalidates the last admitted session. `LOCKED` blocks new admission/verification attempts only; it does not itself increment generation or invalidate an already-admitted session, and an existing unexpired admission may still be replayed/reconstructed. Every mutating transition is a conditional update with expected `revision`; a same-action retry first resolves its deterministic transition event identity/fingerprint from §2.12 and returns the first recorded outcome before any current status/revision precondition; a zero-row update performs one bounded reread and returns the current state or a stable conflict. The capability-token hash, evidence/creator/workspace scope, verification mode, `valid_from`, `content_snapshot` and `content_sha256` are immutable.
+
+Sensitive representation: `capability_token_hash`, `code_salt` and `code_hash` are one-way/random values; the plaintext capability token and code are never stored, logged, placed in `payload_redacted` or returned after creation. `content_snapshot`/`content_sha256` never expose object keys, bucket, version, permanent URL, raw designated number, OTP, raw creation request ID or unshared evidence; `creationRequestDigest` and `creationFingerprint` are hashes only. `DESIGNATED_MOBILE` stores only the HMAC and key version.
+
+Historical-evidence risk rule: before creating a grant and before every admission, reconstruction or media renewal, the sharing owner re-reads the exact §10.21 subject ownership/risk projection, including the already-redacted `evidence_record.identity_at_capture` column. The captured binding is `identity_at_capture.bindingId` when present; otherwise the service resolves the evidence subject's current active binding set. Any `OPEN` risk in the resolved set denies with `SHARE_RISK_BLOCKED` and creates no grant/admission/ticket; an absent/unresolvable binding or risk projection fails closed. A captured binding that differs from the current active binding is evaluated through the captured reference, and an absent/unresolvable captured or current projection fails closed. A risk-open committed before the re-read is observed, and a later risk-open governs subsequent access without rewriting historical grants, admissions or evidence. `OPEN` risk blocks historical-evidence sharing; it is not converted into a blanket outbound-dialing ban. This uses only read-only exact S1 columns and takes no foreign row lock.
+
+### 4.45 sharing.share_admission
+
+Purpose: append-only durable admission fact; one successful admission counts once and is the PostgreSQL authorization source for the derived playback ticket. Owner: `sharing`. Wave V009; slice S3. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_share_admission` | Application-generated admission identity |
+| share_grant_id | uuid | NO | none | FK `fk_share_admission_grant`; part of `uq_share_admission_key` and `uq_share_admission_no` | Parent grant |
+| admission_key | text | NO | none | CHECK `ck_share_admission_key`; part of `uq_share_admission_key` | Deterministic `admission:` + SHA-256 of `{shareGrantId, admissionRequestId}`; no raw verification/request input |
+| admission_no | integer | NO | none | CHECK `ck_share_admission_no`; part of `uq_share_admission_no`; guard trigger | Monotonic count within the grant; one-based |
+| verification_mode | text | NO | none | CHECK `ck_share_admission_mode`; guard trigger | Must equal the parent grant's mode |
+| verification_result | text | NO | none | CHECK `ck_share_admission_result`; `ck_share_admission_result_shape` | `VERIFIED` for code/mobile/member; `NOT_REQUIRED` for `NONE`; `NONE` is never recorded as verified identity |
+| admitted_at | timestamptz | NO | `now()` | none | Admission commit time |
+
+Named checks:
+
+- `ck_share_admission_key`: `length(admission_key) BETWEEN 1 AND 128 AND btrim(admission_key) <> ''`.
+- `ck_share_admission_no`: `admission_no >= 1`.
+- `ck_share_admission_mode`: `verification_mode IN ('NONE','EXTRACTION_CODE','DESIGNATED_MOBILE','ORGANIZATION_MEMBER')`.
+- `ck_share_admission_result`: `verification_result IN ('VERIFIED','NOT_REQUIRED')`.
+- `ck_share_admission_result_shape`: `(verification_mode = 'NONE' AND verification_result = 'NOT_REQUIRED') OR (verification_mode IN ('EXTRACTION_CODE','DESIGNATED_MOBILE','ORGANIZATION_MEMBER') AND verification_result = 'VERIFIED')`.
+
+Keys and indexes:
+
+- Primary key `pk_share_admission (id)`.
+- Unique `uq_share_admission_key (share_grant_id, admission_key)`.
+- Unique `uq_share_admission_no (share_grant_id, admission_no)`.
+- Index `ix_share_admission_grant_time (share_grant_id, admitted_at)`.
+- FK `fk_share_admission_grant (share_grant_id) REFERENCES sharing.evidence_share_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control and admission count: the sharing owner service (not the evidence owner) locks the grant row `FOR UPDATE`, re-reads status/time/generation/authorization and the current count with `clock_timestamp()`, and inserts at most one admission. After those current checks it looks up an existing admission by `(share_grant_id, admission_key)` before applying the limit: an existing admission with an unexpired session returns the original admission and reissues the derived ticket without a limit test, new `ADMISSION_GRANTED`, insertion or increment, even when `admissions_used = max_admissions`; an existing admission whose session has expired returns the original admission fact with `SHARE_SESSION_EXPIRED` and no new ticket or session. Only a new key is subject to `max_admissions`. `sharing.guard_share_admission` is a `BEFORE INSERT` owner-local trigger that rechecks the parent grant exists, the mode matches, the grant is `ACTIVE` and inside its validity window, the limit is not exceeded, and `NEW.admission_no = grant.admissions_used + 1`. The transaction inserts the admission and its `ADMISSION_GRANTED` access event, then conditionally updates the grant count/revision; a zero-row update or trigger failure rolls everything back. For `ORGANIZATION_MEMBER`, the `ADMISSION_GRANTED` event records the original trusted recipient account/organization pair from the authenticated admission; reconstruction and renewal require the same authenticated recipient and current active organization/membership/account predicates. A `LOCKED` grant permits replay/reconstruction of an existing unexpired admission but forbids a new admission. Opening the verification page, prefetching the link and failed verification create no admission. Admissions are immutable; a later revoke/rotation/expiry never rewrites the historical row, but current grant policy and the recorded admission generation govern whether a session may be reconstructed. `max_admissions` blocks only new admissions; the last admitted session remains within its session/grant validity.
+
+Sensitive representation: `admission_key` is an opaque digest/key; no raw phone, code, token, IP or verification input is stored. `verification_mode`/`verification_result` are codes; the admission row contains no contact data or media URL.
+
+### 4.46 sharing.share_access_event
+
+Purpose: append-only durable access, verification, admission, ticket, playback, transition and failure ledger for sharing; the source of the admission-time generation/expiry facts used to reconstruct a ticket. Owner: `sharing`. Wave V009; slice S3. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_share_access_event` | Application-generated event row identity |
+| share_grant_id | uuid | NO | none | FK `fk_share_access_event_grant` | Parent grant |
+| share_admission_id | uuid | YES | none | FK `fk_share_access_event_admission`; `ck_share_access_event_admission_shape` | Admission when the event is admission- or ticket-scoped; NULL for page/pre-admission events |
+| event_domain | text | NO | none | CHECK `ck_share_access_event_domain`; part of `uq_share_access_event_domain_id` | Always `SHARE_ACCESS` |
+| event_id | text | NO | none | CHECK `ck_share_access_event_id`; part of `uq_share_access_event_domain_id` | Deterministic event identity; 1-128 characters |
+| event_type | text | NO | none | CHECK `ck_share_access_event_type` | Registry of §2.12 |
+| result | text | NO | none | CHECK `ck_share_access_event_result` | `SUCCESS`, `DENIED`, `FAILED` or `IGNORED` |
+| occurred_at | timestamptz | NO | `now()` | none | Event occurrence time; never a replay identity |
+| risk_digest | text | YES | none | CHECK `ck_share_access_event_risk_digest` | Optional lowercase digest of risk inputs; never raw IP/phone |
+| payload_redacted | jsonb | NO | none | CHECK `ck_share_access_event_payload`; `ck_share_access_event_admission_facts` | Redacted event metadata; no code/token/phone/full URL |
+| payload_sha256 | text | NO | none | CHECK `ck_share_access_event_payload_sha256` | Lowercase SHA-256 of the canonical redacted payload |
+
+Named checks:
+
+- `ck_share_access_event_domain`: `event_domain = 'SHARE_ACCESS'`.
+- `ck_share_access_event_id`: `length(event_id) BETWEEN 1 AND 128 AND btrim(event_id) <> ''`.
+- `ck_share_access_event_type`: `event_type IN ('PAGE_OPENED','PREFETCH_IGNORED','VERIFICATION_FAILED','LOCKED','ADMISSION_GRANTED','TICKET_ISSUED','TICKET_FAILED','PLAYBACK_AUTHORIZED','SEEK_AUTHORIZED','RENEWED','EXTENDED','CODE_ROTATED','REVOKED','EXPIRED','FAILURE')`.
+- `ck_share_access_event_result`: `result IN ('SUCCESS','DENIED','FAILED','IGNORED')`.
+- `ck_share_access_event_risk_digest`: `risk_digest IS NULL OR risk_digest ~ '^[0-9a-f]{64}$'`.
+- `ck_share_access_event_payload`: `jsonb_typeof(payload_redacted) = 'object'`.
+- `ck_share_access_event_payload_sha256`: `payload_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_share_access_event_admission_shape`: `event_type NOT IN ('ADMISSION_GRANTED','TICKET_ISSUED','TICKET_FAILED','PLAYBACK_AUTHORIZED','SEEK_AUTHORIZED','RENEWED') OR share_admission_id IS NOT NULL`.
+- `ck_share_access_event_admission_facts`: `event_type <> 'ADMISSION_GRANTED' OR (payload_redacted ? 'verificationMode' AND payload_redacted->>'verificationMode' IN ('NONE','EXTRACTION_CODE','DESIGNATED_MOBILE','ORGANIZATION_MEMBER') AND payload_redacted ? 'revocationGeneration' AND payload_redacted ? 'codeGeneration' AND payload_redacted ? 'grantExpiresAt' AND payload_redacted ? 'admissionExpiresAt' AND payload_redacted ? 'sessionExpiresAt' AND (payload_redacted->>'verificationMode' <> 'ORGANIZATION_MEMBER' OR (payload_redacted ? 'recipientAccountId' AND payload_redacted ? 'recipientOrganizationId')))`.
+
+Keys and indexes:
+
+- Primary key `pk_share_access_event (id)`.
+- Unique `uq_share_access_event_domain_id (event_domain, event_id)`.
+- Index `ix_share_access_event_grant (share_grant_id, occurred_at DESC)`.
+- Index `ix_share_access_event_admission (share_admission_id, occurred_at)`.
+- FK `fk_share_access_event_grant (share_grant_id) REFERENCES sharing.evidence_share_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_share_access_event_admission (share_admission_id) REFERENCES sharing.share_admission(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_share_access_event_immutable` uses `sharing.reject_row_mutation()`; `sharing_role` has `SELECT` and `INSERT` only. Event identity and payload are immutable. The admission transaction writes exactly one `ADMISSION_GRANTED` event with the admission-time `verificationMode`, the original `recipientAccountId`/`recipientOrganizationId` for `ORGANIZATION_MEMBER`, `revocation_generation`, `code_generation`, `grantExpiresAt`, `admissionExpiresAt` and `sessionExpiresAt` in `payload_redacted`; this is the durable generation/expiry and recipient-binding witness used when Redis is lost. Ticket issue/failure, playback, seek, renewal, extension, code rotation, revoke, expiry and lock outcomes append once with deterministic event identities; transition identities/fingerprints follow §2.12. Duplicate retries return the first event and do not append a second. A ticket failure never changes the admission count. `PAGE_OPENED`, `PREFETCH_IGNORED` and `VERIFICATION_FAILED` events may have a NULL admission and never consume one.
+
+Sensitive representation: `risk_digest` and `payload_redacted` contain only hashes, opaque admission/grant references, generation/time facts, result/reason codes and masked projections; no raw IP address, phone number, share code, capability token, object key/version, bucket or full URL. `payload_sha256` is a hash only.
+
 ## 5. Foreign-Key Catalog
 
 ### 5.1 Frozen planned FK catalog (81 decisions)
 
-The following block is the accepted 81-row FK decision catalog. It is verbatim from the accepted plan. S1 expands its 11 rows in §5.3 and S2 expands its 54 rows in §5.4; the remaining 16 rows are planned S3 handoff and are not authored here. Mode names are exactly `FK`, `ALTER_FK`, `DEFERRABLE_FK` and `NO_FK`.
+The following block is the accepted 81-row FK decision catalog. It is verbatim from the accepted plan. S1 expands its 11 rows in §5.3, S2 expands its 54 rows in §5.4 and S3 expands the remaining 16 rows in §5.5. Mode names are exactly `FK`, `ALTER_FK`, `DEFERRABLE_FK` and `NO_FK`.
 
 <!-- fk-matrix:start -->
 customer_iam.auth_identity.account_id|customer_iam.customer_account.id|V002|V002|FK|same wave
@@ -2114,7 +2533,7 @@ S1 has no `NO_FK` decision. The platform tables' `aggregate_id` and the audit ta
 
 ### 5.4 S2 foreign-key detail (54 decisions)
 
-All S2 FKs are `ON UPDATE RESTRICT ON DELETE RESTRICT`. Parent waves are never later than the FK wave. Three S2 decisions are same-wave `ALTER_FK`: `outbound_call_task.claimed_call_id` (V005), `ivr_decision.reservation_id` (V006) and `customer_order.purchase_consent_id` (V007). Two `NO_FK` rows are the root IVR protocol identities. S2 has no `DEFERRABLE_FK`; the only deferred constraints belong to the planned S3 evidence cycle.
+All S2 FKs are `ON UPDATE RESTRICT ON DELETE RESTRICT`. Parent waves are never later than the FK wave. Three S2 decisions are same-wave `ALTER_FK`: `outbound_call_task.claimed_call_id` (V005), `ivr_decision.reservation_id` (V006) and `customer_order.purchase_consent_id` (V007). Two `NO_FK` rows are the root IVR protocol identities. S2 has no `DEFERRABLE_FK`; the only two deferred constraints are the S3 evidence creation cycle in §5.5.
 
 | Child column | Exact parent column | Parent wave | FK wave | Mode | Creation timing |
 | --- | --- | --- | --- | --- | --- |
@@ -2175,11 +2594,36 @@ All S2 FKs are `ON UPDATE RESTRICT ON DELETE RESTRICT`. Parent waves are never l
 
 S2 keeps the frozen 74 ordinary `FK`, 3 `ALTER_FK`, 2 `DEFERRABLE_FK` (S3 only) and 2 `NO_FK` decisions. No S2 FK points forward in wave order, and no S2 table adopts another module's identity as its primary key.
 
+### 5.5 S3 foreign-key detail (16 decisions)
+
+All S3 FKs are `ON UPDATE RESTRICT ON DELETE RESTRICT`; no cascade exists. Parent waves are never later than the FK wave. Fourteen are ordinary immediate `FK` constraints. The two remaining decisions are the reciprocal evidence creation cycle: `evidence_record → evidence_event` over the composite `(event_domain, event_id)` and `evidence_event → evidence_record` over `evidence_id`. Both are `DEFERRABLE INITIALLY DEFERRED` and are added by `ALTER TABLE` after both V008 tables and their unique keys exist. There is no S3 `ALTER_FK` or `NO_FK` decision. `evidence.evidence_record.source_ref_id` is a service-validated polymorphic internal source reference and is not an FK decision; it is not a public key and does not add a row to the accepted 81-decision catalog.
+
+| Child column | Exact parent column | Parent wave | FK wave | Mode | Creation timing |
+| --- | --- | --- | --- | --- | --- |
+| evidence.recording.call_id | ivr.call_record.call_id | V005 | V008 | FK | with V008 table creation |
+| evidence.recording.media_object_id | evidence.media_object.id | V008 | V008 | FK | parent first in V008; column nullable until upload identity exists |
+| evidence.evidence_record.subject_id | subject_number.business_subject.id | V003 | V008 | FK | with V008 table creation |
+| evidence.evidence_record.call_id | ivr.call_record.call_id | V005 | V008 | FK | with V008 table creation; nullable for non-call sources |
+| evidence.evidence_record.session_id | ivr.inbound_session.id | V005 | V008 | FK | with V008 table creation; nullable and only with a call |
+| evidence.evidence_record.reservation_id | entitlement_metering.usage_reservation.id | V006 | V008 | FK | with V008 table creation; nullable when no reservation applies |
+| evidence.evidence_record.source_event_domain,evidence.evidence_record.source_event_id | evidence.evidence_event.event_domain,evidence.evidence_event.event_id | V008 | V008 | DEFERRABLE_FK | ALTER after both V008 tables and `uq_evidence_event_domain_id`; `DEFERRABLE INITIALLY DEFERRED`; composite circular creation link |
+| evidence.evidence_artifact.evidence_id | evidence.evidence_record.id | V008 | V008 | FK | same-wave parent first |
+| evidence.evidence_artifact.media_object_id | evidence.media_object.id | V008 | V008 | FK | same-wave parent first |
+| evidence.evidence_event.evidence_id | evidence.evidence_record.id | V008 | V008 | DEFERRABLE_FK | ALTER after both V008 tables; `DEFERRABLE INITIALLY DEFERRED`; opposite side of the evidence creation cycle |
+| sharing.evidence_share_grant.evidence_id | evidence.evidence_record.id | V008 | V009 | FK | with V009 table creation |
+| sharing.evidence_share_grant.created_by_account_id | customer_iam.customer_account.id | V002 | V009 | FK | with V009 table creation |
+| sharing.evidence_share_grant.owner_organization_id | organization_access.organization.id | V002 | V009 | FK | with V009 table creation; nullable except `ORGANIZATION_MEMBER` |
+| sharing.share_admission.share_grant_id | sharing.evidence_share_grant.id | V009 | V009 | FK | same-wave parent first |
+| sharing.share_access_event.share_grant_id | sharing.evidence_share_grant.id | V009 | V009 | FK | same-wave parent first |
+| sharing.share_access_event.share_admission_id | sharing.share_admission.id | V009 | V009 | FK | same-wave parent first; nullable only for page/pre-admission/failure events |
+
+The two deferred FKs are the only cycle edges; neither is an `ALTER_FK` ordinary-immediate constraint. The deferred constraint triggers are installed after these constraints in V008. The frozen totals remain 81 FK decisions = 74 ordinary `FK` + 3 late-added `ALTER_FK` + 2 `DEFERRABLE_FK` + 2 `NO_FK`; the S3 ordinary rows are part of the 74 and the two deferred rows are the only `DEFERRABLE_FK` rows. No parent is created after its child FK wave, and no S3 table is used by a later slice because none exists.
+
 ## 6. Invariant Matrix
 
 ### 6.1 Frozen planned invariant catalog (40 invariants)
 
-The following 40 invariant rows are verbatim from the accepted plan. Each has one owner, named collaborators, a primary enforcement class and a verified slice. S1 expands its rows in §6.2 and S2 expands its portions in §6.3; S3 rows remain frozen handoff and are not authored here.
+The following 40 invariant rows are verbatim from the accepted plan. Each has one owner, named collaborators, a primary enforcement class and a verified slice. S1 expands its rows in §6.2, S2 expands its portions in §6.3 and S3 expands its portions in §6.4; the frozen rows themselves are unchanged.
 
 | INV-01 | `customer-iam` | `organization-access`, `operations-iam`, `subject-number` | Login identity, business-number binding, organization membership and employee identity never substitute for one another | DB+SERVICE | Separate tables and schemas with no cross-assignment FK; service tests reject a phone, membership, claim or employee record used as login identity | S1 | Account/login and business-subject distinction |
 | INV-02 | `customer-iam` | none | Effective provider identity is unique within provider scope and maps to one account | DB | Unique `(provider, provider_scope, provider_subject_hmac)`; one-account FK | S1 | Login identity correctness |
@@ -2243,7 +2687,7 @@ This table makes the S1 portions generation-ready. "Location" names the exact co
 | INV-33 (S1) | subject-number | DB+SERVICE | `business_subject.real_name_status`/`real_name_verified_at`; column-level grants: `subject_number_role` has no update on those columns, `subject_identity_verification_role` has `SELECT` on `id`, status, revision and `updated_at` plus update only on the real-name/revision/time columns; `subject_number.guard_subject_owner` rejects a real-name change by any other current role; claim writes only owner/source/revision/timestamps | A claim transaction inserts only `subject_claim` and updates owner columns; it cannot set subject real-name; the verification role can locate the subject by `id` and is the only writer of real-name columns; login, claim, binding, activation and trial flows leave subject real-name unchanged |
 | INV-40 (S1 portion) | platform-reliability | DB+TX+SERVICE | Four V001 function definitions; fixed `search_path`; owner and grant matrix in section 10; no transaction control; V001 does not create `issue_first_trial` | Each S1 function's owner is NOLOGIN/NOSUPERUSER; `PUBLIC` has no EXECUTE; `search_path` shadowing cannot redirect an unqualified reference; a forced failure rolls back domain and function writes together; protected plaintext is rejected; `issue_first_trial` is absent from V001 and its dependency tables |
 
-S1 has no later-slice prerequisite. The S1 invariants use only V001-V003 tables and functions. S2/S3 invariants are not claimed as verified by this document.
+S1 has no later-slice prerequisite. The S1 invariants use only V001-V003 tables and functions. S2 and S3 invariant portions are authored in §6.3 and §6.4; S1 does not claim their verification.
 
 ### 6.3 S2 invariant enforcement expansion
 
@@ -2276,11 +2720,25 @@ This table makes the S2 portions generation-ready. "Location" names the exact co
 
 S2 invariants use only V001-V007 tables and the five registered functions. No S2 invariant requires S3 evidence or sharing.
 
+### 6.4 S3 invariant enforcement expansion
+
+This table makes the five S3 invariant portions generation-ready. "Location" names the exact constraint, key, owner service, trigger or transaction rule. "Real behavior assertion" is a document-level requirement for the later executable suite; no PostgreSQL or Redis test was run in this authoring.
+
+| Invariant (S3 portion) | Owner | Primary class | Exact S3 location | Real behavior assertion and evidence requirement |
+| --- | --- | --- | --- | --- |
+| INV-15 (S3) | ivr | DB | `fk_recording_call`; `fk_evidence_call`, `fk_evidence_session`, `fk_evidence_reservation`; unique reservation/call keys from S2; separate recording/evidence/call status columns; §5.5 and §9.27-§9.28 | Every recording names exactly one `ivr.call_record.call_id`; an evidence record's optional call/session/reservation links must resolve to the same call/subject identities, and a supplied session requires a call. Call completion never sets evidence status; recording validation and evidence solidification are separate transactions/statuses. A terminal call with no recording/evidence is valid; an evidence record never claims a call/session/reservation that does not match its frozen capture facts. |
+| INV-24 (S3) | evidence | DB+SERVICE | `media_object` unique `(bucket, object_key, object_version_id)` and immutable hash/size/MIME/version; `recording` declared-vs-validated columns and state shape; `evidence.complete_recording` owner service; §9.27 | Server-observed object version, hash, size, MIME, duration and malware result determine `VALIDATED`; a client-declared hash/duration never wins. Bytes stay in private storage; PostgreSQL stores metadata only. A duplicate completion with the same object version/server hash returns the first result; a conflicting version/hash/size/MIME/duration quarantines without overwriting the original media object. An overwrite attempt on `media_object` or its identity/version/hash fails. |
+| INV-25 (S3) | evidence | DB+TX | `uq_evidence_source_event`; `uq_evidence_event_domain_id`; `uq_evidence_created_event`; both deferred FKs; `trg_evidence_record_creation_cycle` and `trg_evidence_event_creation_cycle`; `evidence.guard_evidence_record`; §9.28 | Exactly one `EVIDENCE_CREATED` event owns each evidence record; its `(event_domain,event_id)` equals the record's `(source_event_domain,source_event_id)` and its `evidence_id` equals the record ID. Record and event insert atomically in either order in one local transaction; a missing, duplicate, wrong-type, wrong-owner or mismatched creation event fails at commit with `EVIDENCE_CREATION_CYCLE_VIOLATION`. A failed transaction leaves no record, event, artifact or Outbox fact. Captured subject/session/identity/consent and all later evidence snapshots are immutable across claims and account changes. |
+| INV-26 (S3) | sharing | DB+TX | Immutable `content_snapshot`/`content_sha256`; unique admission key/no; `sharing.guard_share_admission`; grant row lock and conditional status/generation/revision update; §9.29-§9.30 | Share content/evidence scope and verification binding are frozen. A successful admission increments `admissions_used` once under the grant row lock; the admission key/no are unique and immutable. Revoke and code rotation increment `revocation_generation`; expiry persists `EXPIRED` with a generation increment and denies even before the write; all three block new or renewed sessions. Reaching `max_admissions` blocks only new admissions and never bumps the generation. A verification failure/open/prefetch consumes no admission. |
+| INV-39 (S3) | sharing | DB+TX+SERVICE | Durable `share_admission`; deterministic ticket event identities; `ADMISSION_GRANTED` generation/expiry/recipient witness; PostgreSQL-commit-before-Redis contract; §9.30-§9.31 | PostgreSQL admission commits before any Redis ticket. The ticket key is derived from `share_grant_id + admission_id`. Same-key retry returns the original admission and reissues the ticket without incrementing; an existing admission is resolved before the limit and an expired original never renews. Lost response, lost cache or Redis failure never increments twice; a Redis failure fails closed with a durable `TICKET_FAILED` event and no successful media authorization. Reconstruction compares the admission-time generation/expiry witness with the current grant status/time/generation and, for `ORGANIZATION_MEMBER`, re-authenticates the original recipient and current active organization/membership/account, so a stale admission cannot bypass revoke, code rotation, expiry, membership revocation or a wrong-tenant check. No network call is made while a PostgreSQL row lock is held. |
+
+Final cross-slice closure: INV-30 (deletion/retirement) now covers all 44 tables with no S3 hard delete or cascade; INV-31 (sensitive fields) now covers the S3 object/evidence/share representations and forbids plaintext tokens/codes/phones/URLs; INV-40 (function/security boundaries) remains exactly the five registered functions, and S3 adds no function-wave row, no `SECURITY DEFINER` published function and no cross-schema write path. The S3 trigger functions are owner-local `SECURITY INVOKER` controls described in §10.22. S1, S2 and S3 owners/enforcement classes remain single-owner; no invariant has shared ownership.
+
 ## 7. State Machines
 
 ### 7.1 S1 state machines
 
-These are the state machines authored in S1. The S2 state machines are authored in §7.3; S3 state machines remain reserved in §7.4.
+These are the state machines authored in S1. The S2 state machines are authored in §7.3; S3 state machines are authored in §7.4.
 
 | Aggregate | Allowed states | Allowed transitions and guards | Owner |
 | --- | --- | --- | --- |
@@ -2333,15 +2791,33 @@ S2 transition and terminal rules:
 - No state machine combines payment, entitlement, call and evidence into one catch-all status. `customer_order.payment_status` is payment-only; issuance state is separate; call and evidence states are separate.
 - The deprecated action `DIRECT_AUTHORIZATION` as an action is never used; it is only a purpose. There is no eighth action.
 
-### 7.4 Reserved S3 state machines
+### 7.4 S3 state machines
 
-The accepted plan's S3 state machines for recording, evidence, evidence creation ownership and sharing are not authored in S2. Their frozen handoff remains the accepted plan. The S3 author must consume the S1 platform/identity/subject and S2 call/reservation contracts and must not treat this section as a substitute for the S3 dictionaries. The evidence composite deferred FK cycle and the sharing admission/ticket contracts are planned only.
+These are the S3 state machines authored in this slice. Every mutable transition is a conditional update with expected `revision`; a zero-row update performs one bounded reread and returns the current state or a stable conflict. Append-only media, artifact, evidence-event, admission and access-event facts have no state transition. No S3 state machine combines media validation, evidence solidification and sharing authorization into one catch-all status.
+
+| Aggregate | Allowed states | Allowed transitions and guards | Owner |
+| --- | --- | --- | --- |
+| Recording | `DECLARED`, `UPLOADED`, `VALIDATED`, `QUARANTINED` | `DECLARED → UPLOADED` when the controlled upload completes and a media object identity exists; `UPLOADED → VALIDATED` only after server rehash, MIME/size/duration/malware validation and exact declared/server fact comparison; `UPLOADED → QUARANTINED` on any mismatch, storage identity conflict, unknown storage outcome or failed malware check; `DECLARED → QUARANTINED` only when the upload expired or became permanently impossible, producing no successful media fact. Only `DECLARED`/`UPLOADED` may transition to `QUARANTINED`; `VALIDATED` and `QUARANTINED` are terminal. The owner locks the row and re-reads `upload_expires_at` with `clock_timestamp()`; a completion at/after expiry is refused/quarantined. A same-identity retry returns the first terminal outcome. After `VALIDATED`/`QUARANTINED`, a conflicting callback is refused with a stable recording conflict and one deterministic redacted conflict fact, changing no status/media/validation fact/revision; pre-terminal conflicting facts quarantine once without overwriting the first server facts. | evidence |
+| Evidence record | `PENDING`, `SOLIDIFIED`, `QUARANTINED`, `FAILED` | `PENDING → SOLIDIFIED` only after the recording/media validation, exact subject/call/session/reservation linkage and frozen snapshot are valid and the one matching `EVIDENCE_CREATED` event is in the same transaction; `PENDING → QUARANTINED` when validation or identity linkage fails; `PENDING → FAILED` only for a terminal non-retryable evidence fact failure with no solid evidence. All three terminal states are absorbing. The evidence record and creation event insert atomically in either order; the deferred cycle triggers validate at commit. A later claim/account/membership/real-name change never changes any state or captured fact. | evidence |
+| Evidence creation cycle | One matching `EVIDENCE_CREATED` event per evidence ID; other evidence events are append-only history | The record and creation event may be inserted in either order in one local transaction. At commit, `record.source_event_domain = event.event_domain = 'EVIDENCE'`, `record.source_event_id = event.event_id`, `event.evidence_id = record.id`, and exactly one creation event exists for the record. Missing, duplicate, wrong-type, wrong-owner or mismatched facts raise `EVIDENCE_CREATION_CYCLE_VIOLATION` and roll back the whole transaction. A failed transaction leaves no partial creation fact. Non-creation events never satisfy the creation requirement and are never updated. | evidence |
+| Share grant | `ACTIVE`, `EXPIRED`, `REVOKED`, `LOCKED` | `ACTIVE → EXPIRED` at/after `expires_at`, persisting `EXPIRED` and incrementing `revocation_generation` once; `ACTIVE → REVOKED` on an authorized revoke, incrementing `revocation_generation`; `ACTIVE → LOCKED` on the approved verification-failure/lock policy without bumping generation or invalidating already-admitted sessions; `LOCKED → ACTIVE` only by code rotation, which replaces the code/salt, increments `code_generation` and `revocation_generation`, and appends `CODE_ROTATED`; `LOCKED → REVOKED`/`LOCKED → EXPIRED` through the existing owner revoke/expiry transitions, remaining terminal; no invented non-code unlock exists. `ACTIVE → ACTIVE` extension only before current expiry, increasing `expires_at` with revision +1, no generation change and no lengthening of an existing admission/session. `EXPIRED`/`REVOKED` are terminal. `max_admissions` reached blocks only new admissions and changes no status/generation. Every transition is a conditional revision update with an audit/access event; the same action retry resolves its deterministic §2.12 transition identity/fingerprint and returns the first recorded outcome before current status/revision checks; changed content conflicts; a stale loser rereads and returns the current state or a stable conflict. | sharing |
+| Share admission and derived session | Admission is an immutable one-time fact; the playback session is derived, not a PostgreSQL state | A `NONE`/code/mobile/member verification success under the current grant locks and checks status/time/generation/authorization; an existing `admission_key` is resolved before the limit so it returns the original unexpired admission/session without a cap test, increment or second `ADMISSION_GRANTED`, and an expired session returns the original admission with no ticket. Only a new admission is limit-checked; it inserts with `admission_no = admissions_used + 1`, appends one `ADMISSION_GRANTED` event recording admission-time generations/expiry and the original `ORGANIZATION_MEMBER` recipient account/organization binding, increments `admissions_used`/revision once, commits, and only then derives the Redis ticket from `share_grant_id + admission_id`. Page open, prefetch and failed verification create no admission. After the limit, new admissions are denied; the last admitted session still plays/seeks/renews within its recorded admission/session/grant validity and current generation, and `LOCKED` still permits that existing replay/reconstruction while blocking a new admission. Once that session expires, a new admission is required and counts/rechecks again. A stale admission after revoke/rotation/expiry/generation mismatch is denied; an `ORGANIZATION_MEMBER` reconstruction or renewal also requires the same authenticated recipient and current active organization/membership/account. | sharing |
+| Share access event | Append-only success/denied/failed/ignored outcomes | Each verification, admission, ticket issue/failure, playback/seek/renewal, extension, code rotation, revoke, expiry, lock or generic failure appends one immutable event with a deterministic domain/event identity. A same-semantic retry returns the first event and appends nothing. `ADMISSION_GRANTED` records the admission-time generation/expiry witness and the original `ORGANIZATION_MEMBER` recipient binding; ticket events are redacted and do not change admission count. Events never store a plaintext code, token, phone, object key/URL or media bytes. | sharing |
+
+S3 transition and terminal rules:
+
+- `VALIDATED` recording, `SOLIDIFIED`/`QUARANTINED`/`FAILED` evidence, `EXPIRED`/`REVOKED` shares, every admission and every access event are immutable for their created facts. A later status transition appends history/Outbox but never rewrites the prior fact. A post-terminal recording conflict appends one deterministic redacted conflict fact and never changes the recording or prior media fact.
+- A recording/evidence storage failure or unknown result never fabricates successful media metadata or evidence; it remains non-solid, is quarantined or retried under the same identities, and is never converted into a positive evidence fact by retry.
+- Revocation/rotation/expiry invalidates future access; it never deletes the evidence, admission history or access events. Already-issued short-lived media credentials are not recalled; their approved TTL defines the bounded stale-access window (Q22).
+- Reaching the admission limit is not revocation. It blocks only new admissions and never bumps `revocation_generation`; the last admitted session keeps its valid session/grant window, and a same-key replay of that session is resolved before the limit. A grant extension never lengthens an admission or session already recorded.
+- `NONE` verification is link possession, not identity. It is stored as `NOT_REQUIRED`, never `VERIFIED`, and never becomes an organization/member identity assertion.
+- No state machine invents a support, refund, invoice, role-designer, AI, notary, online-extension workflow or permanent-object-URL state.
 
 ## 8. Sensitive-Field Inventory
 
 ### 8.1 Frozen planned sensitive-field inventory (28 rows)
 
-The following block is verbatim from the accepted plan. It covers all 44 tables, including the planned S3 rows that are not authored here. The frozen inventory does not claim that S3 column dictionaries are complete; S1/S2 dictionaries are authored in §4.
+The following block is verbatim from the accepted plan. It covers all 44 tables, including the S3 rows authored in §4.39-§4.46. The frozen inventory is structural coverage; the detailed S3 representation is in §8.6.
 
 <!-- sensitive:start -->
 | Column(s) | Representation | Prohibited exposure |
@@ -2445,6 +2921,24 @@ S1 response projections expose only internal IDs where authorized, masked displa
 
 The full callee is never written to `response_snapshot`, logs, audit, Outbox or a customer response. The redacted snapshot and logs use `calleeMasked` and task/decision IDs only. A direct authorization's redacted projection uses a masked callee; `authorization.calleeNumber` exists only in the encrypted payload. The protected-key denylist in §10.7 applies to every S2 platform/audit/Outbox snapshot.
 
+### 8.6 S3 sensitive-field detail
+
+| Table.column(s) | Representation and key reference | Prohibited exposure | S3 control |
+| --- | --- | --- | --- |
+| evidence.media_object.bucket / object_key / object_version_id / crypto_key_ref | Internal private-storage reference | Never a public URL, response field, share URL, log field or Outbox payload | Internal evidence/media-gateway only; no public projection |
+| evidence.media_object.sha256 / size_bytes / mime_type | Server-computed validation metadata | Hash prefixes only if the approved log policy permits | One-way/validation only; immutable |
+| evidence.recording.declared_sha256 / validated_sha256 | Hash-only declaration and server result | Declared hash never overrides validation; no media bytes | Hash checks; server recomputation |
+| evidence.evidence_record.identity_at_capture / consent_version / snapshot / snapshot_sha256 | Immutable redacted identity reference, consent version and canonical evidence snapshot | No raw number, live identity, object key/URL, media bytes or share token | Redaction before hashing; immutable capture guard |
+| evidence.evidence_artifact | Internal parent/media IDs and artifact role | No object identity in a public response | Internal manifest only |
+| evidence.evidence_event.payload_redacted / payload_sha256 | Redacted metadata and hash | Never media bytes or raw party identifiers | Append-only; redaction check |
+| sharing.evidence_share_grant.capability_token_hash | One-way SHA-256 digest of at least 128 random capability bits | Plaintext token only in the creation response/URL; never stored, logged or evented | One-way digest; unique index |
+| sharing.evidence_share_grant.code_salt / code_hash / code_generation | Per-grant/per-generation random salt and salted slow-KDF digest | No plaintext code, no reversible encoding, no ordinary log; bound to grant and generation | KDF/salt; rotation increments generation; no defaults |
+| sharing.evidence_share_grant.content_snapshot / content_sha256 | Frozen content scope plus typed creation digest/fingerprint, designated-mobile HMAC/key version and verification mode | Never object key/URL, raw designated phone, OTP, raw creation request ID, unshared evidence or public evidence ID | Hashes/HMAC and key version only; canonical hash; immutable scope |
+| sharing.share_admission.admission_key | Opaque server-derived admission key/digest | Never raw phone, code, token, IP or verification input | Opaque key; unique per grant |
+| sharing.share_access_event.risk_digest / payload_redacted / payload_sha256 | Hash and redacted metadata, including the admission-time generation/expiry and original organization-recipient witness | No raw IP, phone, code, token, object key/URL, full URL or media bytes | Redaction before hashing; append-only; deterministic identity |
+
+The S3 tables never store a plaintext capability token, extraction code, designated phone, OTP, object URL, bucket/key/version in a public column, or media bytes. The capability token is returned only once at grant creation (or reissued for an already-authorized admission) and only the digest is durable. The media gateway receives object identity through the authenticated internal evidence/media interface, never through the public share page. Ticket/access events contain only internal IDs, generations, expiry and result/reason codes; cache values are short-lived and non-authoritative. The §10.7 denylist applies to every S3 Outbox/audit payload.
+
 ## 9. Transaction Sequences
 
 ### 9.0 S1 isolation, lock, privilege and conditional-update contract
@@ -2498,6 +2992,26 @@ S2 consumes the exact global acquisition order below. It is one total order; no 
 - A cross-owner row lock is taken by the owning module's same-transaction application-service collaborator under the owner role on the same connection. A cross-module role never takes `FOR UPDATE`/`FOR SHARE` on another module's table and never receives `UPDATE` on it. Cross-owner reads use the exact §10.12 `SELECT` columns under the corresponding advisory lock and re-read after acquiring it. The runtime roles are NOLOGIN; how an application connection is provisioned, authenticated, or switched to an owner/service identity (a LOGIN role, `SET ROLE`, connection-pool role mapping or equivalent) is Q17/Q23 deployment-security input and is **not** specified or claimed here. OQ-2 remains deferred to Platform/Database/Security with the executable role-provisioning/privilege tests; the same-connection same-transaction collaborator requirement is the contract.
 - S1's request-ID unique-loser path remains whole-transaction rollback plus a bounded restart; S1 has no savepoint. S2's one same-connection savepoint is established **after** accepted activation/trial and **before** the shared selector performs any tentative task claim, reservation or balance debit. A category-2 normal domain denial executes `ROLLBACK TO SAVEPOINT`, then freezes exactly one no-dial decision/completion and commits the retained activation/trial; the no-dial decision/completion are written after the rollback so they survive. A category-3 SQL/lock/I/O/Outbox exception never rolls back to the savepoint and is never swallowed: the whole transaction rolls back. For an initial-resolve or direct-authorization attempt there are no accepted activation/trial facts to preserve, but the savepoint is placed before the tentative claim/reservation in the same attempt and is used only for the same category-2 typed denial; a technical error still rolls back the whole transaction. The savepoint never protects an S1 claim path and never commits independently.
 - Replay and immutable identity checks precede expiry cleanup and every accepted effect. `expires_at > clock_timestamp()` is evaluated after the claim lock, not from `now()` or a request timestamp. No lock is held across a network call.
+
+### 9.0.2 S3 lock, transaction and external-boundary integration
+
+S3 preserves the S1/S2 global order in §9.0.1. It takes no canonical-caller, canonical-number, subject-lifecycle, IVR session/call/activation, idempotency, task, balance/reservation, employee/admin or foreign row lock. Its cross-module reads are exact `SELECT`s under the corresponding S1/S2 advisory lock where a lifecycle predicate applies, and it never takes a cross-owner `FOR SHARE`/`FOR UPDATE`.
+
+S3 owner-local acquisition order is explicit and total within a transaction:
+
+1. For a share grant whose creator acts in an organization workspace, the sharing service acquires the S1 ranks 7 (`organization_access.organization:<organization_id>`), 8 (`organization_access.membership:<organization_id>:<account_id>` using canonical lowercase UUID pair text, including the absent/create/re-grant case) and 9 (`customer_iam.account:<account_id>`) advisory locks in that order, then re-reads the exact §10.21 organization/membership/account columns after the lock. A personal share takes only rank 9. These advisory locks are the S1 transaction-control locks; no foreign row lock is taken.
+2. For `ORGANIZATION_MEMBER` admission, ticket reconstruction, ticket renewal or media playback/seek/renewal, the sharing service re-authenticates the recipient bound in the original `ADMISSION_GRANTED` witness and takes the same ranks 7, 8 and 9 before locking or re-reading the share grant, because recipient and tenant membership are current authorization predicates. A different authenticated account/tenant, a revoked/suspended membership or a disabled account fails closed. A `NONE`, `EXTRACTION_CODE` or `DESIGNATED_MOBILE` path takes no S1 lifecycle lock; `NONE` remains bearer-only and is never recorded as a verified identity.
+3. The sharing owner row order is `sharing.evidence_share_grant` (`FOR UPDATE` for admission/transition), then the `sharing.share_admission` insert, then the `sharing.share_access_event` insert, then the conditional grant count/revision update. No share event insert is followed by a grant lock in the same transaction.
+4. The evidence owner row order is `evidence.recording` (`FOR UPDATE` for completion/validation), then the `evidence.media_object` insert, then the `evidence.evidence_record` insert/`FOR UPDATE`, then the `evidence.evidence_artifact` and `evidence.evidence_event` inserts. The evidence creation cycle may insert the record and creation event in either order; the two deferred triggers run only at commit, after both row sets exist.
+5. Outbox and audit appends use the existing `platform.outbox_append`/`audit.append_fact` functions at the S1/S2 ranks 14/15 after all owner writes. No S3 service takes a foreign lifecycle key after an S3 owner lock; current S3 paths either take ranks 7-9 before the owner lock or take no earlier key at all. No S3 transaction takes rank 10-12 because it has no platform idempotency scope, task claim or balance debit.
+
+- PostgreSQL locks and the admitting/authorizing transaction are released or committed before Redis ticket derivation and before any media-gateway I/O. A reconstruction re-reads the durable admission/witness and closes its PostgreSQL transaction before issuing a replacement ticket. If revoke/expiry commits before the reconstruction read, it governs and the reconstruction is denied; if a valid reconstruction/ticket already completed before a later revoke, the already-issued short-lived media credential is bounded only by the approved Q22 credential TTL/revocation window, and no buffered bytes are claimed recalled.
+
+- `evidence.complete_recording` and `evidence.create_and_solidify` run one local transaction per persistence attempt. Object-storage HEAD/read, hash computation, MIME sniffing, duration probing and malware scanning are performed by the media adapter/worker **before** the PostgreSQL row lock; their validated result is then submitted to the evidence owner service. No PostgreSQL lock is held over a COS, Redis or media-worker network call.
+- A recording/evidence unique loser or a deferred-cycle violation aborts the whole S3 transaction. The service does not read the aborted transaction; it starts a bounded retry, reacquires the owner row lock, re-reads current status and replay identity, and returns the first committed outcome or a stable conflict. S3 uses no savepoint and does not alter S1's whole-transaction restart or S2's phase-B savepoint.
+- The sharing admission transaction commits the admission, its `ADMISSION_GRANTED` access event and the grant count/revision together. Only after that commit does the sharing service derive and write the Redis ticket. A ticket write/append failure is returned fail-closed; it never rolls back or double-increments the committed admission. A lost response/cache or Redis failure triggers a PostgreSQL re-read and reconstruction, not a second admission.
+- Every S3 conditional update uses `AND revision = :expected_revision` and sets `revision = revision + 1`. A zero-row update performs one bounded reread and returns the current state or a stable conflict. Volatile expiry checks use `clock_timestamp()` after the owner lock, never request time.
+- No S1/S2 table gains an S3 FK, trigger or write path. S1/S2 migrations V001-V007 and the five function-wave rows are unchanged. S3 consumes the existing `evidence`-parent call/session/reservation IDs read-only; it does not mutate IVR, entitlement, subject, account or organization facts.
 
 ### 9.1 T-S1-01 Idempotent request with first-result finalization
 
@@ -2820,6 +3334,60 @@ The following are document-level S1 requirements for the later executable suite;
 4. Catalog offsale: under the same lock, require the version `ACTIVE` (or already `OFFSALE` for an idempotent replay), set `OFFSALE`, revision +1, append audit/Outbox. It stops new orders only; it never changes a frozen order, consent, grant or issuance row. This S2 specification does not implement or claim an independent `catalog_offer` withdrawal endpoint/transaction; that decision belongs to Product/Operations/catalog-order and the catalog operations OpenAPI work (OQ-4), and version offsale remains the S2 control that blocks new orders.
 5. Trial-policy publication: under the trial-policy lock, require the candidate never-published (`published_at IS NULL`), validate its immutable content, **first** disable the previously enabled published version (`enabled = false`, revision +1), **then** publish the candidate with ONE owner `UPDATE` that, while the candidate's `OLD.published_at IS NULL`, sets `published_by_employee_id` to the actual authenticated publishing employee, `published_at`, `enabled = true` and `revision + 1` together, in the same transaction, so the immediate partial unique `uq_trial_policy_enabled` sees at most one qualifying row at every statement. The guard admits that single statement and rejects any later change to publisher identity or published content; no separate pre-publication publisher statement is required, the publisher value is the actual authenticated publisher at publication, not a draft-owner label, and no same-employee-only rule is invented (OQ-5). A stale expected-current-version loser returns `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW` with no change. The sole authoritative policy read used by issuance is the V006 `issue_first_trial` function's enabled/published/expected-version read inside the entitlement owner (§10.9): replay and already-granted return prior immutable results before any new policy selection; a missing/disabled/stale policy fails closed at that read; a disable committed before that read is observed and fails closed; a disable committed after it does not revoke the already-selected grant; the application wrapper lookup is preliminary only and there is no second enabled recheck (OQ-6). Trial-policy disable sets `enabled = false` with revision +1 under the same lock; an already-disabled policy is an idempotent current state. Published content, snapshot and history are never rewritten; existing grants keep their frozen policy snapshot.
 6. Concurrent publications have exactly one winner under the owner lock; the loser returns the stable current-state/conflict outcome, never a raw unique error and never a second active version or enabled policy. A technical failure rolls back all rows, audit and Outbox together. No generic workflow, version-approval engine or new table is introduced.
+
+### 9.27 T-S3-01 Recording upload completion and media validation
+
+1. Authenticate the IVR or media-worker service identity through its authenticated service context and validate `recording_id` as nonblank 1-128 characters. A blank/oversized identity is refused with a stable argument error before any row lock or write. The IVR remains the owner of telephony, call/leg, recording-source and authoritative usage facts; `evidence` owns media/evidence metadata and lifecycle. The media worker is a task executor only; it submits a validated result to the evidence owner service and never writes `evidence` tables directly.
+2. Perform the object-storage HEAD/read, server-side SHA-256 rehash, MIME sniff, size/duration verification and malware scan in the media adapter **before** the PostgreSQL transaction. Record the exact object version, bucket, key, hash, size, MIME, duration and malware outcome in the submitted result. No PostgreSQL lock is held over this network/CPU work.
+3. Open one local transaction and lock the `evidence.recording` row by `recording_id` `FOR UPDATE`. Re-read `status`, `upload_expires_at`, declared facts and `revision` with `clock_timestamp()`. A same-identity completion whose server facts equal an existing `VALIDATED`/`QUARANTINED` outcome returns the first terminal outcome without a new media object or event. While the row is `DECLARED`/`UPLOADED`, a different object version/hash/size/MIME/duration transitions once to `QUARANTINED` (stable `RECORDING_IDENTITY_CONFLICT`/`MEDIA_VALIDATION_FAILED`) and never overwrites the first server facts or an original media object. After the row is already `VALIDATED`/`QUARANTINED`, a differing callback is refused with stable `RECORDING_IDENTITY_CONFLICT` and appends exactly one deterministic redacted Outbox conflict fact via `platform.outbox_append`; it performs no recording update, media-object insert, fact overwrite or revision change. The conflict fact uses the §4.40 `recording-conflict:<conflictDigest>` dedupe key and a redacted payload with `recordingId`, `originalStatus`, `conflictDigest`, `presentedSha256`, `presentedSizeBytes`, `presentedMime`, `presentedDuration` and `reasonCode` only; object version/key material is hashed, never stored. The same conflicting callback returns the existing Outbox ID and appends no second fact; a changed conflicting payload has a different digest and appends one distinct fact.
+4. If `upload_expires_at <= clock_timestamp()` and the row is still `DECLARED`/`UPLOADED`, the completion is refused and the row transitions once to `QUARANTINED` with `UPLOAD_EXPIRED` and no successful media/evidence fact; a terminal row is not updated and a differing callback follows step 3. If the storage result is unavailable/unknown, no `media_object` is inserted, the row remains non-solid and the call returns a bounded retryable `STORAGE_UNKNOWN`; a later retry with the same `recording_id` converges. A failed malware scan transitions a non-terminal row to `QUARANTINED`/`MALWARE_DETECTED` and never creates a valid media object.
+5. For a valid completion, insert one immutable `evidence.media_object` with the server-observed provider/bucket/key/version/hash/size/MIME/key reference, then set the recording `media_object_id`, `validated_duration`, `validated_sha256`, `validated_at`, `status = 'VALIDATED'` and `revision + 1` in one conditional update. A declared/validated mismatch quarantines; the declared hash/duration never wins. A concurrent media-object unique loser with the same identity/hash reads the winner; a different identity/hash is a stable conflict/quarantine.
+6. Append the exact redacted Outbox event identity for the outcome (`EVIDENCE_RECORDING_VALIDATED` or `EVIDENCE_RECORDING_QUARANTINED`) and an audit fact where the outcome is security-relevant, then commit. A technical error rolls back the media object, recording transition, Outbox and audit together; the previous `DECLARED`/`UPLOADED` state remains and a retry can converge. No evidence record is created or solidified in this transaction.
+7. Late/duplicate/out-of-order completion callbacks with the same `recording_id` and identical object facts return the first terminal outcome without a second event. A conflicting late callback after `VALIDATED`/`QUARANTINED` is refused with stable `RECORDING_IDENTITY_CONFLICT` and one deduplicated redacted Outbox conflict fact as in step 3; it is never applied over the first server facts and never performs a forbidden terminal status change. A partial crash after validation but before commit leaves no media object/status update/conflict fact; the same retry recomputes and converges. Call completion and evidence solidification remain independent facts.
+
+Stable S3 media reason codes include `UPLOAD_EXPIRED`, `STORAGE_UNKNOWN`, `MALWARE_DETECTED`, `MEDIA_VALIDATION_FAILED` and `RECORDING_IDENTITY_CONFLICT`. They are service-level codes carried in redacted events/audit; no media bytes, bucket, key, version or permanent URL is logged.
+
+### 9.28 T-S3-02 Evidence creation and solidification with the reciprocal cycle
+
+1. Authenticate the evidence owner service and validate the stable creation `source_event_id` (nonblank 1-128). Evidence creation does not require customer registration, login, real-name verification or a subject claim; an unregistered/unverified IVR user's evidence is created from the validated capture with the immutable identity-at-capture fact. Read `evidence_record` by `(source_event_domain = 'EVIDENCE', source_event_id)`. Same frozen source identity, subject/call/session/reservation linkage and snapshot return the first evidence/artifact result; a changed source identity or conflicting facts return a stable conflict (`EVIDENCE_SOURCE_CONFLICT`) without a second record, creation event or artifact.
+2. Require the referenced recording to be `VALIDATED` and to have a media object whose server hash/size/MIME/duration/version match the submitted validation facts. Require `recording.call_id = evidence_record.call_id`; a cross-call recording is `EVIDENCE_LINK_MISMATCH` and creates no evidence fact. The evidence owner re-reads its own recording/media rows; it does not trust a declared hash or a worker-only success. A recording that is not `VALIDATED` or a media identity mismatch yields a typed evidence refusal (`EVIDENCE_MEDIA_NOT_VALIDATED`) and creates no evidence fact.
+3. Validate the exact S1/S2 identities with read-only exact `SELECT`s and require all supplied trusted links to agree: `subject_number.business_subject(id)`; `ivr.call_record(call_id, session_id, subject_id)` with `call_record.subject_id = evidence_record.subject_id`; when a session is supplied, `ivr.inbound_session(id, call_id, subject_id)` with `inbound_session.id = evidence_record.session_id`, `inbound_session.call_id = evidence_record.call_id` and `inbound_session.subject_id = evidence_record.subject_id`, and `call_record.session_id = evidence_record.session_id`; when a reservation is supplied, `entitlement_metering.usage_reservation(id, call_id, subject_id)` with `reservation.call_id = evidence_record.call_id` and `reservation.subject_id = evidence_record.subject_id`. The recording's call/session/subject chain identified in step 2 is the trusted anchor. Any null required trusted link, missing parent or cross-call/cross-session/cross-subject/cross-reservation mismatch returns stable `EVIDENCE_LINK_MISMATCH` with no evidence record, creation event or artifact and no raw FK error. Missing optional session/reservation links remain NULL; a session without a call is rejected by `ck_evidence_link_shape`.
+4. Construct the immutable `identity_at_capture` object (subject ID, internal binding reference if any, caller HMAC/masked projection, source channel, capture time) and the canonical `snapshot` (`capture`, `content` with recording/media hash/size/MIME/duration/artifact roles, an exact `source` object `{callId, sessionId, subjectId, reservationId, recordingId}` (canonical lowercase UUID text or JSON null for the optional session/reservation), `sourceEventDomain`, `sourceEventId` and `consentVersion`). The `source` members must equal the persisted link columns and `recordingId` must equal `source_ref_id`; `ck_evidence_snapshot_shape` enforces that equality, while the recording-to-call equality is the step-2 service predicate. The snapshot contains no raw number, object key/URL, media bytes or share token; `snapshot_sha256` hashes the canonical redacted form. The captured consent version is supplied by the validated capture fact; it is never inferred or defaulted.
+5. In one local transaction, insert the `evidence_record` in `PENDING` and insert exactly one `EVIDENCE_CREATED` event whose `(event_domain, event_id)` equals the record's `(source_event_domain, source_event_id)` and whose `evidence_id` equals the record ID. The two inserts may occur in either order. Insert the `ORIGINAL` `evidence_artifact` for the validated original media object. The record's `source_ref_id` identifies the validated recording; the owner service validates that polymorphic source target.
+6. If every validation passes, set `status = 'SOLIDIFIED'`, `solidified_at`, `revision + 1` and append the `EVIDENCE_SOLIDIFIED` evidence event. If a validation/linkage/storage fact fails, transition to `QUARANTINED` or `FAILED` with the stable redacted reason and append the matching event; the creation event still must match the record at commit. The creation event itself is never rewritten by a later solidification/quarantine/failure event.
+7. At commit, both deferred FKs and the two deferred constraint triggers validate: exactly one `EVIDENCE_CREATED` event exists for the record, its type is `EVIDENCE_CREATED`, its domain/event identity equals the record source, and its owner `evidence_id` equals the record ID. A missing/duplicate/wrong-type/wrong-owner/mismatched creation event raises `EVIDENCE_CREATION_CYCLE_VIOLATION` and rolls back the entire transaction, including record, event, artifact, Outbox and audit. A failed transaction leaves no creation fact.
+8. Append the domain Outbox event and audit fact in the same transaction. A solidification retry returns the first committed result and does not append a second creation event or original artifact. A later claim, account change, organization membership change, subject suspension or real-name change never updates `subject_id`, `call_id`, `session_id`, `reservation_id`, `identity_at_capture`, `consent_version`, `snapshot` or the original artifact. Call completion does not imply evidence completion, and evidence solidification does not complete or alter a call.
+
+Stable S3 evidence codes include `EVIDENCE_MEDIA_NOT_VALIDATED`, `EVIDENCE_LINK_MISMATCH`, `EVIDENCE_SOURCE_CONFLICT` and `EVIDENCE_CREATION_CYCLE_VIOLATION`. They are redacted service/DB outcomes, never raw data.
+
+### 9.29 T-S3-03 Share grant creation and owner transitions
+
+1. Authenticate the creator account. Derive `share_id` from the authenticated canonical account and stable `creationRequestId` and read any existing grant by that unique identity first. If one exists, recompute the frozen `content_snapshot.creation` fingerprint and compare it before any state-dependent check or mutation: same fingerprint returns the existing grant metadata only with no new grant/token/event; changed scope/parameters returns stable `SHARE_CREATION_CONFLICT` with no mutation. Only when no grant exists, require the target evidence record to be `SOLIDIFIED` and read the exact §10.21 evidence projection. Re-read the exact current subject ownership/risk projection, including the captured `identity_at_capture.bindingId` when present or otherwise the evidence subject's current active binding set; any `OPEN` risk returns `SHARE_RISK_BLOCKED` and no grant, and an absent/unresolvable binding/risk projection fails closed. Consume the approved evidence-access policy input for the creator/workspace and evidence scope; absent, unapproved or ambiguous policy fails closed with `SHARE_ACCESS_POLICY_UNAVAILABLE` and no grant. The exact role/resource policy remains assigned to Product/Security/Sharing and the sharing policy/authorization design; this specification does not invent it.
+2. Derive the workspace scope server-side. For an organization share/creator context, acquire the §9.0.1 ranks 7/8/9 advisory locks in order and re-read the exact organization/membership/account columns; a non-active organization, non-active membership or disabled account fails closed. A personal share takes rank 9. No foreign row lock is taken and no S1/S2 table is written.
+3. Generate at least 128 random capability bits server-side, return the plaintext capability token only once at first creation and persist only the lowercase SHA-256 digest. For `EXTRACTION_CODE`, generate the approved code, a fresh salt and a salted slow-KDF digest bound to the grant and `code_generation`; no KDF parameters or code length are invented (Q12). For `DESIGNATED_MOBILE`, normalize the designated number server-side and persist only its keyed HMAC and key version in `content_snapshot.verification`; admission also requires an approved trusted SMS possession proof for that exact normalized number HMAC and the intended share/action, and absent approved verification input fails closed (no OTP service/table is added). For `ORGANIZATION_MEMBER`, require `owner_organization_id`. For `NONE`, store no verification binding and never record identity verification.
+4. Freeze the typed `content_snapshot` (content scope, verification mode/binding and the `creation` object with its digest/fingerprint from §2.12) and `content_sha256`; freeze `share_id`, evidence, creator, workspace, `valid_from`, `expires_at`, `max_admissions`, `download_allowed` and revision 1. No object key, bucket, version, permanent URL, raw creation request ID or plaintext secret enters the snapshot. Insert one grant; unique `share_id`/token-hash losers reread and return the existing grant only for the same creator/scope/fingerprint or a stable conflict. Append audit/Outbox and commit. A lost creation response returns metadata only; a usable replacement requires a new `creationRequestId`/new grant/token, and the unusable prior grant may be revoked through the existing owner revoke. There is no token reissuance/reconstruction action and no guessed expiry/limit default.
+5. For revoke, code rotation, expire, lock or extend, first resolve the deterministic §2.12 transition event identity and fingerprint. If that `SHARE_ACCESS` event already exists with the same fingerprint, return its first recorded outcome before any current status/revision check and append nothing. If it exists with a changed fingerprint, return a stable conflict and mutate nothing. Otherwise lock the grant `FOR UPDATE`, re-read current status/revision/generation/time and apply only the allowed §7.4 transition; a different action request is a distinct transition. The same-transaction audit fact records the authenticated actor and action; the access event stores `actionType`, the stable request digest or expiry/source-revision fact and `actionFingerprint`, never a new mutable result or generated secret. Apply the conditional status/generation/revision update, append exactly one access event and one audit fact, and commit. A zero-row update performs one bounded reread and returns the current state or a stable conflict; no second status update or generation increment occurs.
+6. Revoke increments `revocation_generation`, appends `REVOKED` and makes new admission/renewal fail; it is allowed from `LOCKED` as well as `ACTIVE`. Code rotation replaces salt/hash, increments `code_generation` and `revocation_generation`, clears `LOCKED` to `ACTIVE` only as the explicit code-rotation unlock path, and appends `CODE_ROTATED`; old codes and old sessions fail. Expiry persists `EXPIRED` with one generation increment when observed; `clock_timestamp() >= expires_at` denies even before persistence, and `LOCKED → EXPIRED` is allowed through this owner expiry. Extension increases `expires_at` only on an `ACTIVE` not-yet-expired grant with revision +1, appends `EXTENDED`, and neither extends an admission recorded under the earlier expiry nor lengthens an existing admission/session. Locking appends `LOCKED`, blocks new verification/admission and does not increment generation or invalidate an already-admitted session. There is no invented non-code `LOCKED → ACTIVE` unlock. Reaching the admission limit changes no status and no generation.
+7. No plaintext code, capability token, designated phone or object URL is written to an access event, audit, Outbox or log. A technical error rolls back the status, event and audit together; the prior grant state remains.
+
+### 9.30 T-S3-04 Share admission, count-once and generation witness
+
+1. Authenticate the public share request and validate the capability token shape. Hash the presented token and resolve the grant by `capability_token_hash` without a row lock. A missing/retired token returns a uniform denial (`SHARE_TOKEN_INVALID`) without disclosing whether a grant/evidence exists. Require the approved Q22 session/ticket TTL before creating a new admission; absent, unapproved or ambiguous TTL policy fails closed with `SHARE_SESSION_POLICY_UNAVAILABLE` and creates no admission. An existing same-key admission replay uses its recorded `sessionExpiresAt`/`admissionExpiresAt` and does not recompute or extend them. `PAGE_OPENED`, `PREFETCH_IGNORED` and failed-verification facts append at most one deterministic access event and never create an admission.
+2. Mode verification is required only to create a new admission and is performed outside the PostgreSQL row lock: extraction-code salted slow KDF; designated-mobile comparison of the stored HMAC plus an approved trusted SMS possession proof for the exact normalized number HMAC and intended share/action (knowledge or HMAC comparison alone is insufficient); organization-member authenticated-account current membership; `NONE` no identity verification. A failed verification appends `VERIFICATION_FAILED` and, under the approved lock policy, may set `LOCKED`; it consumes no admission and does not increment the count. A request whose durable admission key already exists is resolved by steps 3-5 and does not perform a fresh verification as a new attempt; any pre-computed verification result is discarded on the replay path. `NONE` is never promoted to a verified identity.
+3. Open one local transaction. For `ORGANIZATION_MEMBER` (new admission or existing admission replay/reconstruction), acquire ranks 7/8/9 in §9.0.1 order and re-read the exact organization/membership/account predicates; a wrong tenant/account is `SHARE_WRONG_TENANT`, a revoked/suspended membership or disabled account fails closed, and an existing admission requires the authenticated recipient to equal its witness `recipientAccountId`/`recipientOrganizationId`. Re-read the exact §10.21 subject ownership/risk projection using the captured binding or the subject's active binding set; any `OPEN` risk denies with `SHARE_RISK_BLOCKED`, creates no admission and changes no count, and an absent/unresolvable projection fails closed. A risk-open committed before this re-read is observed; a later risk-open does not retroactively erase a committed admission but governs subsequent renewal/reconstruction. The sharing owner locks the grant row `FOR UPDATE` and re-reads status, mode, `code_generation`, `revocation_generation`, `valid_from`, `expires_at`, `max_admissions`, `admissions_used` and `revision` with `clock_timestamp()`. At or after `expires_at`, persist `EXPIRED` with one generation increment, append `EXPIRED`, commit the denial and return no admission. For `REVOKED`/`EXPIRED` or a generation/mode mismatch, deny with `SHARE_REVOKED`/`SHARE_GENERATION_STALE`; no count changes. `LOCKED` permits only the existing-admission replay path below; a new admission under `LOCKED` is denied with `SHARE_LOCKED`. If the mode/code generation/generation changed since verification, deny/re-verify under the locked state; a stale verification never authorizes.
+4. Existing admission before the limit. If an admission with the same `(share_grant_id, admission_key)` exists, read its `ADMISSION_GRANTED` witness and require the current `revocation_generation`/`code_generation` to equal the witness. While the session is still valid (`clock_timestamp() < sessionExpiresAt` and `clock_timestamp() < admissionExpiresAt`, with the current grant/time checks above passing), return that original admission, append no second `ADMISSION_GRANTED`, apply no `max_admissions` test, and reissue the derived ticket without incrementing. If the session has expired, return the original admission fact with `SHARE_SESSION_EXPIRED` and no new ticket; a new admission with a new request ID/key must recheck the current policy and count. The same key never mints a second session, and an expired original is never renewed.
+5. Only when no admission exists for the key and the current grant status is `ACTIVE`, apply the new-admission limit and insert. A `LOCKED` grant with no existing admission denies with `SHARE_LOCKED`. If `max_admissions` is not NULL and `admissions_used >= max_admissions`, deny with `SHARE_ADMISSION_LIMIT_REACHED`, change no status/generation and do not invalidate the last admitted session. Otherwise insert one immutable admission with `admitted_at = clock_timestamp()`, `admission_no = admissions_used + 1` and the current verification mode/result; the owner-local `BEFORE INSERT` guard rechecks grant existence, mode, active/validity/limit and `admission_no`. Append exactly one `ADMISSION_GRANTED` access event with the admission-time `verificationMode`, the original `ORGANIZATION_MEMBER` recipient account/organization binding when applicable, `revocation_generation`, `code_generation`, `grantExpiresAt`, `admissionExpiresAt` and `sessionExpiresAt` in the redacted payload, where `admissionExpiresAt = grant.expires_at` frozen at admission and `sessionExpiresAt = min(admitted_at + approved Q22 ticket TTL, admissionExpiresAt)`. Then conditionally update `admissions_used = admission_no`, `revision + 1` and commit. Any zero-row update/guard/unique/event failure rolls the whole transaction back; the same-key retry rereads and returns the first committed admission or a stable conflict.
+6. Only after the PostgreSQL commit, derive the Redis playback ticket from `share_grant_id + admission_id` (see T-S3-05). A ticket failure never rolls back the admission and never increments the count; it appends `TICKET_FAILED` and returns fail-closed. A lost response returns the original admission and reissues the ticket. A page open, prefetch or failed verification never consumes an admission.
+7. Race assertions are explicit. Admission vs revoke/rotation/expiry: if the lifecycle transition commits first, the admission lock observes the new status/generation and denies without count; if the admission commits first with all predicates valid, it counts once and its session is valid within the admission-time expiry/generation, while the later transition governs later admissions/renewals/reconstruction. Duplicate same-key admission: exactly one row/count and the same result for every retry, including when the first response/Redis ticket is lost at `max_admissions`; the retry is resolved before the limit, so the count stays one. Different-key concurrent admissions at the last slot: the immediate unique/guard and conditional count update allow exactly one winner; the other returns limit/conflict and changes no generation. Max reached: a new key increments no count and bumps no generation; an existing unexpired same-key session remains replayable, and `LOCKED` permits that replay while denying new keys. Expiry boundary: `now < expires_at` and `now < sessionExpiresAt`/`admissionExpiresAt` are required; exactly at/after expiry is a denial. Verification failure/lock and wrong tenant: no admission, no count and a redacted access event.
+
+### 9.31 T-S3-05 Ticket issue, reconstruction, media renewal and Redis failure
+
+1. PostgreSQL commits the admission and its `ADMISSION_GRANTED` generation/expiry/recipient witness before any Redis ticket, and all PostgreSQL locks are released before the Redis call. The Redis key is deterministically `share-ticket:<share_grant_id>:<share_admission_id>`; the ticket value contains the grant/admission identities, admission-time revocation and code generations, `admissionExpiresAt`, `sessionExpiresAt`, a signed short-lived media credential reference and the approved ticket expiry. The ticket TTL is the minimum of the approved Q22 ticket TTL, the recorded `sessionExpiresAt`, `admissionExpiresAt` and the current grant expiry; no TTL value is invented. A same-key retry within the valid session reissues this ticket; after `sessionExpiresAt` the same key returns the admission fact with `SHARE_SESSION_EXPIRED` and no new ticket, so the retry key cannot become unlimited reuse.
+2. Issue the ticket with a short signed/segmented media credential. Only after Redis accepts the value append exactly one `TICKET_ISSUED` event with the deterministic `ticket-issued:` identity and redacted generation/expiry/payload hash. If the durable `TICKET_ISSUED` append fails, delete/expire the Redis ticket and return a bounded retryable failure; if deletion also fails, the signed ticket's short TTL is the bounded exposure and the failure is audited. A Redis write failure appends exactly one deterministic `TICKET_FAILED` event and returns fail-closed; no successful media authorization is claimed. A `TICKET_FAILED` event does not change the admission count or create a second admission.
+3. Reconstruct on lost response, lost cache or Redis failure: read the admission and its `ADMISSION_GRANTED` witness; read the current grant and the exact §10.21 subject ownership/risk projection. For `ORGANIZATION_MEMBER`, first re-authenticate the recipient and take S1 ranks 7/8/9, then require the authenticated account to equal the witness `recipientAccountId`, the current active membership pair to equal `recipientOrganizationId`/`recipientAccountId`, the organization to be `ACTIVE`, the membership to be `ACTIVE` (not revoked/suspended), the account to be `ACTIVE`, and the grant `owner_organization_id` to equal the witness organization; a changed account/tenant, revoked/suspended member or disabled account is denied under `SHARE_WRONG_TENANT`/the approved membership refusal. Require the admission to exist, no `OPEN` risk for the evidence subject's captured/active binding, the current status to be `ACTIVE` or (for an already-admitted session) `LOCKED`, the current `revocation_generation`/`code_generation` to equal the admission-time witness, `clock_timestamp() < sessionExpiresAt`, `clock_timestamp() < admissionExpiresAt` and `clock_timestamp() < current expires_at`. If all hold, commit/close the PostgreSQL read and reissue the same derived ticket and return the first admission; if risk/session/expiry/generation/membership fails, deny with the stable code, append a redacted failure event where appropriate and do not increment or admit again; a new session requires a new admission/key/count. If revoke/rotation/expiry commits before this reconstruction read, it governs; if a valid ticket was already returned before a later revoke, the Q22 credential TTL is the bounded window and no recall is claimed. A stale successful admission therefore cannot bypass revoke, code rotation, expiry, current risk, membership revocation or the wrong-tenant check.
+4. Media playback/seek/renewal validates the short signed credential and rechecks the current grant status/time/generation and exact current subject risk against the recorded witness; for `ORGANIZATION_MEMBER` it also re-authenticates the same recipient and current active organization/membership/account under ranks 7/8/9. An `OPEN` risk denies historical-evidence playback/renewal with `SHARE_RISK_BLOCKED`; a changed/revoked member or tenant is denied fail-closed. Expired Redis sessions require a new admission, which rechecks current policy and counts; reaching the limit blocks the new admission while the last admitted session may continue within its recorded admission/session/grant validity. No PostgreSQL lock is held across the media gateway/Redis call; the PostgreSQL read/transaction closes before issuance.
+5. Revocation uses short signed/segmented credentials and a bounded revocation window (Q22). Already-buffered or already-issued bytes are not promised to be recalled; the credential TTL/window is the explicit limit. Revoke/rotation/expiry invalidates subsequent ticket issuance/renewal and reconstruction, not the historical admission/access facts. Redis unavailable fails closed for new playback authorization; PostgreSQL remains the truthful source and durable admissions/events are not rewritten.
+6. `TICKET_ISSUED` and `TICKET_FAILED` are durable, redacted and idempotent by their deterministic `SHARE_ACCESS` identities. A same-semantic retry returns the first event; a changed request is a distinct redacted event or a stable conflict. No event contains a plaintext capability token, code, phone, object URL/key/version, IP or media bytes.
 
 ## 10. Cross-Schema Function Contracts
 
@@ -3377,11 +3945,100 @@ These are application services on one connection and one local transaction; they
 | `catalog-order.publish_catalog_version` and `catalog-order.offsale_catalog_version` | catalog-order | Operations catalog publication/offsale endpoint | Acquire the owner publication serialization (§9.0.1), re-read with the caller's expected current version/revision, validate DRAFT/ACTIVE and immutable content, first set the previous `ACTIVE` version `OFFSALE` with revision +1 and then set the candidate `published_at` and `ACTIVE` with revision +1 (or perform `ACTIVE → OFFSALE`), in one transaction; append audit and the §10.17 Outbox identity. A concurrent/stale caller returns a stable `CATALOG_PUBLICATION_CONFLICT`/current state, never a raw unique error; historical orders/grants are never rewritten. This service does not claim an independent `catalog_offer` withdrawal entry (OQ-4). See §9.26. |
 | `entitlement-metering.publish_trial_policy` and `disable_trial_policy` | entitlement-metering | Operations trial-policy publication/disable endpoint | Acquire the trial-policy serialization, require the caller's expected current enabled/published version, first disable the previous enabled published version (revision +1), then publish the candidate with ONE owner UPDATE that, while `OLD.published_at IS NULL`, sets the actual authenticated publisher in `published_by_employee_id`, `published_at`, `enabled = true` and revision +1 together, or disable the current version, in one transaction; the guard admits that statement and then freezes publisher identity/content; immutable content/history preserved; audit/Outbox appended; a stale/concurrent loser returns a stable `TRIAL_POLICY_PUBLICATION_CONFLICT`/current state. Existing grants keep their frozen policy. The sole authoritative issuance policy read is the enabled/published/expected-version read performed by the V006 `issue_first_trial` function; replay/already-granted returns prior immutable results before any new policy selection; the wrapper lookup is preliminary only and there is no second enabled recheck (OQ-6). See §9.26. |
 
+### 10.21 S3 grant matrix
+
+S3 runtime roles receive `USAGE` without `CREATE` on their own schema, `USAGE` on `platform` and `audit`, the exact cross-module schema `USAGE` and column `SELECT` below, and `EXECUTE` only on `platform.outbox_append` and `audit.append_fact`. Neither role receives platform idempotency functions, table privileges on platform/audit, `CREATE`, `DELETE`, `TRUNCATE` or any foreign table write. `PUBLIC` receives nothing. A schema `USAGE` never implies a table privilege.
+
+| Object | Owner | S3 grants |
+| --- | --- | --- |
+| `evidence` schema | `evidence_owner` | `USAGE` without `CREATE` to `evidence_role` and `sharing_role` |
+| `sharing` schema | `sharing_owner` | `USAGE` without `CREATE` to `sharing_role` only |
+| `platform` schema and `platform.outbox_append` | `platform_reliability_owner` | `USAGE` without `CREATE` and `EXECUTE` to `evidence_role`, `sharing_role`; no table privilege |
+| `audit` schema and `audit.append_fact` | `audit_owner` | `USAGE` without `CREATE` and `EXECUTE` to `evidence_role`, `sharing_role`; no table privilege |
+| `subject_number` schema | `subject_number_owner` | `USAGE` without `CREATE` to `evidence_role` for its exact subject-existence read and to `sharing_role` for its exact ownership/binding/risk reads |
+| `ivr` schema | `ivr_owner` | `USAGE` without `CREATE` to `evidence_role` for its exact call/session reads; no write or row-lock privilege |
+| `entitlement_metering` schema | `entitlement_metering_owner` | `USAGE` without `CREATE` to `evidence_role` for its exact reservation read; no write or row-lock privilege |
+| `customer_iam` schema | `customer_iam_owner` | `USAGE` without `CREATE` to `sharing_role` for its exact account-lifecycle read |
+| `organization_access` schema | `organization_access_owner` | `USAGE` without `CREATE` to `sharing_role` for its exact organization/membership reads |
+
+Owned-table column grants (no `DELETE`/`TRUNCATE`):
+
+| Table | Role | `SELECT` | `INSERT` | `UPDATE` columns |
+| --- | --- | --- | --- | --- |
+| `evidence.media_object` | `evidence_role` | all | all | none (append-only) |
+| `evidence.recording` | `evidence_role` | all | all | `media_object_id`, `validated_duration`, `validated_sha256`, `status`, `validated_at`, `revision` |
+| `evidence.evidence_record` | `evidence_role` | all | all | `status`, `solidified_at`, `revision` |
+| `evidence.evidence_artifact` | `evidence_role` | all | all | none (append-only) |
+| `evidence.evidence_event` | `evidence_role` | all | all | none (append-only) |
+| `sharing.evidence_share_grant` | `sharing_role` | all | all | `status`, `admissions_used`, `revocation_generation`, `revision`, `expires_at` (extension only), `code_salt`, `code_hash`, `code_generation` |
+| `sharing.share_admission` | `sharing_role` | all | all | none (append-only) |
+| `sharing.share_access_event` | `sharing_role` | all | all | none (append-only) |
+
+Cross-module `SELECT` grants (no `INSERT`/`UPDATE`/`DELETE`, no foreign row-lock privilege):
+
+| Grantee | Table | Exact columns | Purpose |
+| --- | --- | --- | --- |
+| `evidence_role` | `subject_number.business_subject` | `id` | Subject existence for the evidence FK/link validation |
+| `evidence_role` | `ivr.call_record` | `call_id`, `session_id`, `subject_id` | Exact call/session/subject linkage |
+| `evidence_role` | `ivr.inbound_session` | `id`, `call_id`, `subject_id` | Exact session linkage |
+| `evidence_role` | `entitlement_metering.usage_reservation` | `id`, `call_id`, `subject_id` | Exact reservation linkage |
+| `sharing_role` | `evidence.evidence_record` | `id`, `subject_id`, `status`, `source_type`, `source_ref_id`, `call_id`, `session_id`, `reservation_id`, `identity_at_capture`, `created_at` | Solidified-evidence scope, content binding and captured-binding risk projection |
+| `sharing_role` | `evidence.evidence_artifact` | `evidence_id`, `media_object_id`, `artifact_role` | Frozen artifact-role scope; no object identity exposure |
+| `sharing_role` | `customer_iam.customer_account` | `id`, `status` | Creator account lifecycle |
+| `sharing_role` | `organization_access.organization` | `id`, `status` | Workspace organization lifecycle |
+| `sharing_role` | `organization_access.organization_membership` | `organization_id`, `account_id`, `role`, `status` | Creator/recipient membership and role under the logical pair lock |
+| `sharing_role` | `subject_number.business_subject` | `id`, `owner_account_id`, `owner_organization_id`, `revision` | Historical-evidence ownership/access policy; read-only |
+| `sharing_role` | `subject_number.caller_number_binding` | `id`, `subject_id`, `status`, `verified_at`, `revision` | Captured/active binding projection for the risk check |
+| `sharing_role` | `subject_number.subject_risk_state` | `caller_number_binding_id`, `risk_type`, `state`, `revision` | `OPEN` risk blocks historical-evidence access; never a blanket dialing ban |
+
+- A cross-module reader re-reads after acquiring the corresponding lifecycle advisory lock and never takes `FOR SHARE`/`FOR UPDATE` on another module's table. Sharing does not read evidence media-object bucket/key/version; the media gateway receives object identity only through the internal evidence/media interface.
+- The `sharing_role` `evidence_record` projection includes only the already-redacted `identity_at_capture` JSONB needed to resolve the captured binding for the historical-evidence risk rule; it grants no object identity, media bytes, object key/version or broad all-column evidence access.
+- `sharing_role` has `INSERT` but no `UPDATE` on admissions/access events; the admission count is changed only on the grant row, and only the sharing owner service locks that grant row. `evidence_role` has no sharing table or schema privilege and no `INSERT` on platform/audit tables; it uses the two functions only. No S1/S2 role receives any S3 table or schema privilege.
+- S3 adds no function-wave row. The four V001 functions retain their S1 contracts; `issue_first_trial` retains its V006 contract. S3 uses `platform.outbox_append` and `audit.append_fact` only.
+
+### 10.22 S3 guard and deferred constraint triggers
+
+The S3 triggers are owner-local structural controls. They are `SECURITY INVOKER`, owned by `evidence_owner` or `sharing_owner`, declare `SET search_path = evidence, pg_temp` or `SET search_path = sharing, pg_temp`, contain no transaction control, are not callable cross-schema service APIs and add no function-wave entry. The migration grants `EXECUTE` on each trigger function only to the owning runtime role; direct invocation is not a supported API.
+
+| Trigger | Timing / operation | Guard predicate |
+| --- | --- | --- |
+| `evidence.trg_media_object_immutable` | `BEFORE UPDATE OR DELETE` on `evidence.media_object`, row | Reject every update/delete by `evidence.reject_row_mutation()`. |
+| `evidence.trg_recording_guard` | `BEFORE UPDATE` on `evidence.recording`, row | Reject changes to `id`, `call_id`, `recording_id`, `declared_format`, `declared_size`, `declared_duration`, `declared_sha256`, `upload_expires_at` or `created_at`; reject a terminal `VALIDATED`/`QUARANTINED` → any other status; reject clearing/changing a set `media_object_id`; reject setting validation columns outside the allowed `VALIDATED`/`QUARANTINED` shape. A post-terminal conflicting callback is refused by the owner service before any update and appends only the deduplicated redacted conflict fact; it never attempts a terminal status change. |
+| `evidence.trg_evidence_record_guard` | `BEFORE UPDATE` on `evidence.evidence_record`, row | Reject changes to `id`, `subject_id`, `source_type`, `source_ref_id`, `source_event_domain`, `source_event_id`, `call_id`, `session_id`, `reservation_id`, `identity_at_capture`, `consent_version`, `snapshot`, `snapshot_sha256` or `created_at`; reject a terminal status → any other status; allow only the one PENDING → terminal transition with revision. |
+| `evidence.trg_evidence_artifact_immutable` | `BEFORE UPDATE OR DELETE` on `evidence.evidence_artifact`, row | Reject every update/delete. |
+| `evidence.trg_evidence_event_immutable` | `BEFORE UPDATE OR DELETE` on `evidence.evidence_event`, row | Reject every update/delete. |
+| `evidence.trg_evidence_record_creation_cycle` | `CONSTRAINT TRIGGER AFTER INSERT OR UPDATE OF source_event_domain, source_event_id, status ON evidence.evidence_record DEFERRABLE INITIALLY DEFERRED FOR EACH ROW` | At commit, require exactly one `EVIDENCE_CREATED` event for `NEW.id`, with `event_domain = NEW.source_event_domain = 'EVIDENCE'`, `event_id = NEW.source_event_id` and `evidence_id = NEW.id`; otherwise raise `EVIDENCE_CREATION_CYCLE_VIOLATION`. |
+| `evidence.trg_evidence_event_creation_cycle` | `CONSTRAINT TRIGGER AFTER INSERT OR UPDATE OF evidence_id, event_domain, event_id, event_type ON evidence.evidence_event DEFERRABLE INITIALLY DEFERRED FOR EACH ROW` | At commit, for an `EVIDENCE_CREATED` event, require its owner record to exist, `record.source_event_domain = NEW.event_domain = 'EVIDENCE'`, `record.source_event_id = NEW.event_id`, `NEW.evidence_id = record.id`, and exactly one creation event for that record; otherwise raise `EVIDENCE_CREATION_CYCLE_VIOLATION`. Non-creation events skip this check. |
+| `sharing.trg_share_grant_guard` | `BEFORE UPDATE` on `sharing.evidence_share_grant`, row | Reject changes to `id`, `share_id`, `capability_token_hash`, `evidence_id`, `created_by_account_id`, `owner_organization_id`, `verification_mode`, `valid_from`, `max_admissions`, `download_allowed`, `content_snapshot` or `content_sha256`; reject a decrease of `expires_at`, a generation decrease, a terminal (`EXPIRED`/`REVOKED`) status → any other status, or a `code_generation` change without a matching salt/hash replacement. `LOCKED` is non-terminal: permit `LOCKED → REVOKED`/`EXPIRED` through the owner revoke/expiry transitions and `LOCKED → ACTIVE` only with a matching code rotation; reject any other `LOCKED` transition. |
+| `sharing.trg_share_admission_guard` | `BEFORE INSERT` on `sharing.share_admission`, row | Re-read the parent grant without acquiring a new lock; require existence, `NEW.verification_mode = grant.verification_mode`, `grant.status = 'ACTIVE'`, `clock_timestamp() >= grant.valid_from`, `clock_timestamp() < grant.expires_at`, the limit not exceeded, and `NEW.admission_no = grant.admissions_used + 1`; otherwise raise the stable admission refusal. The service holds the grant `FOR UPDATE` in the same transaction. |
+| `sharing.trg_share_admission_immutable` | `BEFORE UPDATE OR DELETE` on `sharing.share_admission`, row | Reject every update/delete by `sharing.reject_row_mutation()`. |
+| `sharing.trg_share_access_event_immutable` | `BEFORE UPDATE OR DELETE` on `sharing.share_access_event`, row | Reject every update/delete by `sharing.reject_row_mutation()`. |
+
+The two creation-cycle triggers are the only deferred S3 controls. They are installed in V008 after both deferred FKs, so a record/event pair can be inserted in either order and is validated once at commit. The trigger function runs with the invoker's privileges (`evidence_role` has `SELECT` on both evidence tables and owns the insert), so it introduces no privilege escalation and no cross-schema write. A trigger error aborts the transaction; it cannot return a partial success. The admission guard is an immediate row trigger under the already-held grant lock; it is a backstop for new-admission mode/count/validity, not a substitute for the service's conditional update. An existing same-key admission replay returns before any insert, so it is never re-evaluated as a new admission or rejected by the limit. No guard relaxes append-only, revision, ownership, creation-cycle, generation or count rules.
+
+### 10.23 S3 published application-service contracts
+
+These are application services on one connection and one local transaction; they are not SQL functions, add no function-wave row, never commit or roll back independently and never hold a PostgreSQL lock across COS, Redis or media-worker I/O. Each authenticates its caller and validates current facts.
+
+| Service | Owner | Called by | Exact contract |
+| --- | --- | --- | --- |
+| `evidence.open_recording_upload` | evidence | IVR/media upload entry | Validates the authenticated IVR/worker service, `call_id`, `recording_id` and declared facts; inserts one `DECLARED` recording with an explicitly approved `upload_expires_at` and no media object; returns a scoped short-lived upload credential. A same-identity request with identical declarations returns the existing `DECLARED`/`UPLOADED` row without TTL refresh; changed declarations conflict. No evidence lifecycle or media object exists yet. |
+| `evidence.complete_recording` | evidence | IVR/media worker with a validated server result | Applies T-S3-01: lock the recording, re-read expiry/state, accept server object version/hash/size/MIME/duration/malware facts, insert the immutable media object, transition a non-terminal `DECLARED`/`UPLOADED` row to `VALIDATED`/`QUARANTINED`, append Outbox/audit and commit. A post-terminal conflicting callback returns stable `RECORDING_IDENTITY_CONFLICT` and appends only the deduplicated redacted conflict fact without changing the terminal row. Never solidifies evidence. |
+| `evidence.create_and_solidify` | evidence | Evidence owner service after validated recording/media facts | Applies T-S3-02: validate the source/recording/media, require `recording.call_id = evidence_record.call_id` and the exact trusted call/session/subject/reservation links (`EVIDENCE_LINK_MISMATCH` otherwise, with no fact), insert the evidence record and one matching `EVIDENCE_CREATED` event in either order, insert the original artifact, transition to `SOLIDIFIED`/`QUARANTINED`/`FAILED`, append the lifecycle event and Outbox/audit, commit under both deferred FKs/triggers. Returns the evidence/event/artifact IDs. |
+| `sharing.create_share_grant` | sharing | Authenticated creator/workspace | Applies §9.29 steps 1-4: derive `share_id` from creator + stable `creationRequestId` and compare any existing frozen `content_snapshot.creation` fingerprint before state-dependent checks (same fingerprint returns metadata only; changed scope is `SHARE_CREATION_CONFLICT`); otherwise verify solidified evidence and approved access policy, lock/read S1 ranks 7/8/9 where applicable, freeze content/verification/creation/validity/limit, generate the capability token (128+ random bits) and optional code/mobile binding, persist only digests/HMACs, insert one grant, append audit/Outbox, commit. Returns the one-time capability token and share facts on first creation only; never returns an object URL/key and never reconstructs/reissues a lost token. |
+| `sharing.apply_share_transition` | sharing | Authenticated creator/operations action | Applies §9.29 steps 5-7: resolve the deterministic §2.12 transition event identity/fingerprint first; a same-action retry returns the first recorded outcome before current state checks, changed content conflicts. Otherwise revoke, code rotation/unlock, expire, lock or extend under the grant row lock with current status/revision/generation; `LOCKED → REVOKED`/`EXPIRED` are allowed and `LOCKED → ACTIVE` only through code rotation. Appends one deterministic access event, audit/Outbox and one conditional update. Emits no plaintext code/token. |
+| `sharing.admit_share` | sharing | Public share request | Applies T-S3-04: token lookup, mode verification for a new admission (designated mobile includes trusted SMS proof), optional organization recipient re-authentication under ranks 7/8/9, grant row lock/re-read, current status/time/generation/authorization checks, then existing-admission replay by key before any limit test, then for a new key the count/limit check, one admission and `ADMISSION_GRANTED` witness (including recipient binding for `ORGANIZATION_MEMBER`), one conditional count/revision update, commit. Returns the original unexpired admission on a same-key retry at or below the limit without a new cap test/increment; no ticket is written inside this transaction. |
+| `sharing.issue_or_reconstruct_ticket` | sharing | Post-commit admission retry, lost response/cache recovery, media renewal | Applies T-S3-05: derive the Redis key from grant/admission and write a short signed/segmented ticket with bounded TTL, or reconstruct from the durable admission + `ADMISSION_GRANTED` witness after rechecking current grant/generation/time and session/admission expiry. For `ORGANIZATION_MEMBER`, re-authenticate the witness recipient and current active organization/membership/account under ranks 7/8/9 before reading/locking the grant; a changed account/tenant or revoked/suspended member fails closed. PostgreSQL locks/transaction close before Redis I/O. Fails closed on Redis unavailability; never increments admissions, never changes a generation and never returns an object URL/key. |
+| `sharing.authorize_media_request` | sharing | Authenticated media gateway/playback/seek/renewal | Validates the short signed credential and the recorded/current generation and time; rechecks grant status/time/generation and, for `ORGANIZATION_MEMBER`, the same recipient and current active organization/membership/account; appends one redacted access event; allows playback/seek/renewal only within the session/admission and current grant validity. Never recalls already-issued bytes; the approved credential TTL is the bounded revoke window (Q22); no PostgreSQL lock is held across the media-gateway call. |
+| `sharing.record_access_event` | sharing | Sharing owner services | Appends one deterministic, redacted `SHARE_ACCESS` event for page open/prefetch/verification failure/lock/admission/ticket/playback/seek/renewal/extension/rotation/revoke/expiry/failure; same-semantic retry returns the first event. It never consumes an admission, alters the count or writes plaintext input. |
+
+The S3 services consume only S1/S2 read contracts and the two existing platform/audit functions. No S3 service writes an S1/S2 table, no S1/S2 service calls an S3 service for its own transaction, and no S3 service is a `SECURITY DEFINER` SQL function.
+
 ## 11. Linear Flyway Migration Order
 
 ### 11.1 Frozen nine-wave migration baseline
 
-The following nine rows are the accepted migration order. They are verbatim from the accepted plan. S1 authored V001-V003; S2 authored V004-V007; V008-V009 remain planned S3 handoff.
+The following nine rows are the accepted migration order. They are verbatim from the accepted plan. S1 authored V001-V003; S2 authored V004-V007; S3 authors V008-V009 in §11.5. The rows themselves are unchanged.
 
 | V001 | `V001__platform_schemas_roles_idempotency_outbox_audit.sql` | `platform.idempotency_record`, `platform.outbox_event`, `audit.audit_fact` | Every later module needs idempotency begin/complete, Outbox, audit and the four platform/audit functions; no entitlement table or function is created here |
 | V002 | `V002__identity_organization_and_employee.sql` | `customer_iam.customer_account`, `customer_iam.auth_identity`, `customer_iam.identity_profile`, `organization_access.organization`, `organization_access.organization_membership`, `operations_iam.employee_account` | Stable account, organization and employee identities are parents for subject, task, order and evidence facts |
@@ -3395,7 +4052,7 @@ The following nine rows are the accepted migration order. They are verbatim from
 
 ### 11.2 Frozen slice membership baseline
 
-The exact slice membership blocks are verbatim from the accepted plan. S1 is 13 authored tables; S2 is 23 authored tables; S3 is 8 planned tables. The frozen membership is structural closure, not proof that S3 dictionaries are authored.
+The exact slice membership blocks are verbatim from the accepted plan. S1 is 13 authored tables; S2 is 23 authored tables; S3 is 8 authored tables in this slice. The frozen membership is structural closure; authored dictionaries and transactions are in §4.39-§4.46 and §9.27-§9.31.
 
 <!-- slice-S1-tables:start -->
 - `platform.idempotency_record`
@@ -3516,9 +4173,33 @@ V007: consent and activation.
 3. `ALTER TABLE catalog_order.customer_order ADD CONSTRAINT fk_customer_order_consent FOREIGN KEY (purchase_consent_id) REFERENCES activation_consent.consent_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT` after `consent_record` exists. This is an ordinary immediate `ALTER_FK`, not deferrable.
 4. Apply the V007 owned-table and cross-module grants from §10.12. Grant `activation_consent_role` `USAGE` without `CREATE` on `subject_number`, `customer_iam` and `organization_access` for its declared subject/account/workspace reads, with the exact `SELECT` columns on `business_subject(id, owner_account_id, owner_organization_id, revision)`, `customer_account(id, status)`, `organization(id, status)` and `organization_membership(organization_id, account_id, role, status)` (F-01/R-03); no foreign write, row lock or `CREATE` is granted. The activation-confirmation, lock-only activation collaborator, reservation, client-activation, purchase-consent, call-event, publication and IVR action-selection services are application services, not SQL functions; no function is created in V007.
 
-### 11.5 S3 migration reservation
+### 11.5 S3 V008-V009 intra-wave creation order
 
-V008-V009 and their intra-wave details, the evidence composite deferred FK cycle, the deferred constraint trigger and all sharing tables are not authored here. Their frozen wave rows and slice membership remain the accepted handoff. S2 does not require, create or test any S3 object. The final 44-table structural closure across S1-S3 remains a later S3 gate.
+V008: evidence media and evidence creation cycle.
+
+1. Create schema `evidence` with owner `evidence_owner`; create the NOLOGIN `evidence_role`; grant `USAGE` without `CREATE` on `evidence` to `evidence_role` and `sharing_role`.
+2. Create `evidence.media_object` with its PK, unique `(bucket, object_key, object_version_id)`, named checks and indexes. It has no parent FK.
+3. Create `evidence.recording` after `media_object`; add `fk_recording_call` to `ivr.call_record.call_id` (parent V005) and `fk_recording_media_object` to `evidence.media_object.id` (same-wave parent first), plus its checks/indexes.
+4. Create `evidence.evidence_record` with its ordinary FKs to `subject_number.business_subject`, `ivr.call_record`, `ivr.inbound_session` and `entitlement_metering.usage_reservation`; create its unique `(source_event_domain, source_event_id)`, indexes and checks. Do **not** add the composite source-event FK yet because `evidence_event` does not exist.
+5. Create `evidence.evidence_artifact` after `evidence_record` and `media_object`; add both ordinary FKs and the unique/partial-unique/index set.
+6. Create `evidence.evidence_event` with its `event_domain` check, unique `(event_domain, event_id)`, partial unique creation-event index and checks. Do **not** add the reverse `evidence_id` FK at table creation; the cycle FKs are added only after both tables exist.
+7. Add the two deferred cycle constraints by exact `ALTER TABLE` statements, in either order:
+   - `ALTER TABLE evidence.evidence_record ADD CONSTRAINT fk_evidence_source_event FOREIGN KEY (source_event_domain, source_event_id) REFERENCES evidence.evidence_event(event_domain, event_id) DEFERRABLE INITIALLY DEFERRED;`
+   - `ALTER TABLE evidence.evidence_event ADD CONSTRAINT fk_evidence_event_record FOREIGN KEY (evidence_id) REFERENCES evidence.evidence_record(id) DEFERRABLE INITIALLY DEFERRED;`
+   Both are ordinary deferred constraints, not `ALTER_FK` in the accepted FK-mode sense; the frozen mode count classifies them as the two `DEFERRABLE_FK` decisions. Both reference already-created PK/UNIQUE keys and introduce no forward wave.
+8. Create the evidence guard/append-only trigger functions and `BEFORE` triggers from §10.22. After both deferred FKs exist, create the two `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED` creation-cycle triggers. Grant `EXECUTE` on each trigger function only to `evidence_role`.
+9. Apply the V008 owned-table and cross-module grants from §10.21. Grant `evidence_role` `EXECUTE` on `platform.outbox_append` and `audit.append_fact` and `USAGE` without `CREATE` on `platform`/`audit`, `subject_number`, `ivr` and `entitlement_metering` for the exact declared reads. No V008 table references V009, no function is created, and no S1/S2 table is altered.
+
+V009: sharing authorization, admissions and access events.
+
+1. Create schema `sharing` with owner `sharing_owner`; create the NOLOGIN `sharing_role`; grant `USAGE` without `CREATE` on `sharing` to `sharing_role` and on `evidence` to `sharing_role`.
+2. Create `sharing.evidence_share_grant` with FKs to the V008 `evidence.evidence_record`, V002 `customer_iam.customer_account` and V002 `organization_access.organization`; create its unique `share_id`/capability-token-hash keys, checks and indexes.
+3. Create `sharing.share_admission` after the grant; add `fk_share_admission_grant`, unique `(share_grant_id, admission_key)` and `(share_grant_id, admission_no)`, checks and indexes.
+4. Create `sharing.share_access_event` after the grant and admission; add `fk_share_access_event_grant` and the nullable `fk_share_access_event_admission`, unique `(event_domain, event_id)`, checks and indexes.
+5. Create the sharing guard/append-only trigger functions and triggers from §10.22; grant `EXECUTE` only to `sharing_role`. The admission `BEFORE INSERT` guard and the grant/admission/access-event append-only triggers are installed in this wave.
+6. Apply the V009 owned-table and cross-module grants from §10.21: `sharing_role` receives exact reads on `evidence.evidence_record` (including the already-redacted `identity_at_capture`)/`evidence.evidence_artifact`, `customer_iam.customer_account`, `organization_access.organization`/`organization_membership`, `subject_number.business_subject`/`caller_number_binding`/`subject_risk_state`, `EXECUTE` only on `platform.outbox_append`/`audit.append_fact`, and `USAGE` without `CREATE` on the corresponding schemas. It receives no platform idempotency function, no platform/audit table privilege and no evidence write. No V009 table is referenced by S1/S2, no function is created and no evidence row is updated by sharing.
+
+No S3 wave contains a forward reference. V008 parent waves are V003/V005/V006 and same-wave V008; V009 parent waves are V002/V008 and same-wave V009. The V008 cycle is created in the order `media_object → recording → evidence_record → evidence_artifact → evidence_event → both deferred FKs → triggers`; the record/event insert order at runtime may be either way because deferral applies only to row insertion, not to DDL creation. There is no data backfill and no executable migration in this document.
 
 ## 12. Deletion, Retention and Retention-Hook Policy
 
@@ -3529,7 +4210,7 @@ V008-V009 and their intra-wave details, the evidence composite deferred FK cycle
 | Mutable head | platform.idempotency_record, platform.outbox_event, customer_iam.customer_account, customer_iam.auth_identity, customer_iam.identity_profile, organization_access.organization, organization_access.organization_membership, operations_iam.employee_account, subject_number.business_subject, subject_number.caller_number_binding, subject_number.subject_risk_state | Status/terminal-time retirement and revision-controlled updates; no ordinary hard delete |
 | Append-only or frozen | audit.audit_fact, subject_number.subject_claim | No update/delete privilege; append-only trigger; stable identity and hash where applicable |
 
-Every S1 table has exactly one class. The all-44 classification remains the frozen baseline matrix; S2 lifecycle details are authored in §12.5, while S3 details remain planned.
+Every S1 table has exactly one class. The all-44 classification remains the frozen baseline matrix; S2 lifecycle details are authored in §12.5 and S3 details in §12.7-§12.8.
 
 ### 12.2 S1 deletion policy
 
@@ -3566,23 +4247,40 @@ Every S1 table has exactly one class. The all-44 classification remains the froz
 | Mutable head | catalog_order.catalog_version, catalog_offer, customer_order, payment_order; ivr.outbound_call_task, inbound_session, call_record, call_leg, call_event; entitlement_metering.trial_policy_version, entitlement_balance, entitlement_issuance, usage_reservation; activation_consent.service_activation | Status/terminal-time retirement, conditional revision, no ordinary hard delete |
 | Append-only or frozen | catalog_order.catalog_product, catalog_benefit_line, payment_event; ivr.ivr_decision; entitlement_metering.entitlement_grant, trial_grant, usage_fact; activation_consent.consent_record, service_activation_transition | No update/delete privilege; append-only trigger; stable identity and hash where applicable |
 
-The 14 mutable and 9 append-only S2 tables plus the S1 11/2 and S3 planned 3/5 produce the frozen 28 mutable-head / 16 append-only closure. The S2 split is not a third lifecycle class; payment status, issuance status, reservation status and call status are independent state dimensions.
+The 14 mutable and 9 append-only S2 tables plus the S1 11/2 and S3 3/5 produce the frozen 28 mutable-head / 16 append-only closure. The S2 split is not a third lifecycle class; payment status, issuance status, reservation status and call status are independent state dimensions.
 
 ### 12.6 S2 deletion and retention policy
 
 - No S2 runtime role has `DELETE` or `TRUNCATE`. Every S2 FK is `ON DELETE RESTRICT`; no cascade exists.
 - `catalog_product`, `catalog_benefit_line` and `payment_event` are append-only. `catalog_version` retires by `OFFSALE`; only a never-published, unreferenced `DRAFT` is a future deletion candidate, and no deletion is implemented. Published, referenced or historical rows are never hard-deleted.
 - Orders, payment facts, trial/grant/balance/usage facts, decisions, consent and activation transitions are retained. Payment status and entitlement issuance remain independently observable; neither is deleted to hide a failure.
-- Task and call rows retire by terminal status/time; `UNKNOWN` remains occupied until reconciliation. Evidence/media retention and sharing deletion stay S3/legal inputs.
+- Task and call rows retire by terminal status/time; `UNKNOWN` remains occupied until reconciliation. Evidence/media and sharing lifecycle detail is in §12.7-§12.8; retention periods remain legal/security inputs.
 - No S2 table stores a retention period, erasure procedure, backup-deletion rule or legal-hold column. These remain Q3/Q13/Q21 (and later legal/security) inputs; this specification does not guess a duration.
 - `entitlement_issuance` and `usage_reservation` retries are operational states, not deletion triggers. A committed `NEW` idempotency row remains an alert and reconciliation input.
 - Quarantined call events, over-authorized duration facts, contradictory terminal facts and unknown-use reservations are retained for audit/reconciliation. They are never deleted to make a retry succeed, never silently clamped and never converted into positive usage or evidence without the approved reconciliation outcome.
 
+### 12.7 S3 lifecycle classes
+
+| Class | S3 tables | Rule |
+| --- | --- | --- |
+| Mutable head | evidence.recording, evidence.evidence_record, sharing.evidence_share_grant | Conditional revision/status transitions; no ordinary hard delete; terminal facts preserved |
+| Append-only or frozen | evidence.media_object, evidence.evidence_artifact, evidence.evidence_event, sharing.share_admission, sharing.share_access_event | No update/delete privilege; append-only trigger; stable identity/hash and event identity where applicable |
+
+The three mutable and five append-only S3 tables complete the frozen 28 mutable-head / 16 append-only closure (S1 11/2, S2 14/9, S3 3/5). This is not a third lifecycle class. Recording validation, evidence solidification and share authorization remain independent state dimensions.
+
+### 12.8 S3 deletion and retention policy
+
+- No S3 runtime role has `DELETE` or `TRUNCATE`. Every S3 FK is `ON DELETE RESTRICT`; no cascade exists. Media object, artifact, evidence event, admission and access-event rows are never updated or deleted through ordinary administration.
+- Recording and evidence rows retire only by terminal status (`VALIDATED`/`QUARANTINED`; `SOLIDIFIED`/`QUARANTINED`/`FAILED`). A share grant retires by `EXPIRED`/`REVOKED`; revoke removes future access capability but never deletes the evidence, admission or access history. Admission and access-event rows are permanent audit facts for the baseline.
+- Revoke/expiry/code rotation invalidates future session issuance/renewal but does not delete or rewrite the original evidence, media object, artifact, admission or prior access events. Already-issued short-lived media credentials are not recalled; their approved TTL defines the bounded stale-access window (Q22).
+- No S3 table stores a retention period, erasure procedure, backup-deletion rule, WORM duration, object-lock retention or legal-hold column. Media/evidence retention, object-lock/WORM capability, legal erasure and backup deletion remain Q3/Q11 and their named security/legal/storage owners. A `worm_status` value records an observed capability, not a retention promise.
+- Quarantined recordings, non-solid evidence, failed validation facts and denial/failure access events are retained for audit/reconciliation and are never deleted to make a retry succeed or converted into positive evidence/share facts.
+
 ## 13. Deterministic Validation Commands
 
-### 13.1 Document-level S1 and S2 checks
+### 13.1 Document-level S1, S2 and S3 checks
 
-Run from the repository root. These are documentation checks only; they do not execute PostgreSQL or migrations. `FILE` is the cumulative S1+S2 specification.
+Run from the repository root. These are documentation checks only; they do not execute PostgreSQL or migrations. `FILE` is the cumulative S1+S2+S3 specification.
 
 ```bash
 FILE=docs/14-production-data-model-and-flyway-schema-spec.md
@@ -3590,10 +4288,11 @@ test -s "$FILE"
 for section in "Scope, Status and Source Relationship" "Database Conventions" "Module and Schema Ownership Matrix" "Complete Table Dictionary" "Foreign-Key Catalog" "Invariant Matrix" "State Machines" "Sensitive-Field Inventory" "Transaction Sequences" "Cross-Schema Function Contracts" "Linear Flyway Migration Order" "Deletion, Retention and Retention-Hook Policy" "Deterministic Validation Commands" "Open Production Inputs" "Goal-Alignment and No-Over-Design Check" "Completion Report Template"; do
   grep -q -E "^## [0-9]+\. $section$" "$FILE" || { echo "MISSING SECTION: $section"; exit 1; }
 done
-test "$(grep -c -E '^### 4\.[0-9]+ [a-z_]+\.[a-z_]+$' "$FILE")" -eq 36 || { echo "DICTIONARY HEADING COUNT FAILED"; exit 1; }
+test "$(grep -c -E '^### 4\.[0-9]+ [a-z_]+\.[a-z_]+$' "$FILE")" -eq 44 || { echo "DICTIONARY HEADING COUNT FAILED"; exit 1; }
 test "$(grep -c -E '^### 10\.[3-6] (platform|audit)\.[a-z_]+$' "$FILE")" -eq 4 || { echo "S1 FUNCTION CONTRACT COUNT FAILED"; exit 1; }
 test "$(grep -c -E '^\| INV-[0-9][0-9] \(S1' "$FILE")" -eq 14 || { echo "S1 INVARIANT EXPANSION COUNT FAILED"; exit 1; }
 test "$(grep -c -E '^\| INV-[0-9][0-9] \(S2' "$FILE")" -eq 22 || { echo "S2 INVARIANT EXPANSION COUNT FAILED"; exit 1; }
+test "$(grep -c -E '^\| INV-[0-9][0-9] \(S3' "$FILE")" -eq 5 || { echo "S3 INVARIANT EXPANSION COUNT FAILED"; exit 1; }
 test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && NF' "$FILE" | wc -l)" -eq 5 || { echo "FUNCTION WAVE COUNT FAILED"; exit 1; }
 test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && /^platform\.|^audit\./ && /[|]V001[|]/' "$FILE" | wc -l)" -eq 4 || { echo "V001 FUNCTION COUNT FAILED"; exit 1; }
 test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && /entitlement_metering\.issue_first_trial[|]V006[|]/' "$FILE" | wc -l)" -eq 1 || { echo "V006 FUNCTION WAVE FAILED"; exit 1; }
@@ -3607,11 +4306,15 @@ test -z "$(grep -n 'section 10\.4' "$FILE")" || { echo "STALE DENYLIST NAVIGATIO
 test -z "$(grep -n 'section 10\.5' "$FILE")" || { echo "STALE FUNCTION-GRANT NAVIGATION"; exit 1; }
 test -z "$(grep -n 'organization_access\.membership:<membership_id>' "$FILE")" || { echo "STALE MEMBERSHIP-ID LOCK KEY"; exit 1; }
 test -z "$(grep -n 'docs/12 section 8\.3' "$FILE")" || { echo "STALE OWNERSHIP CITATION"; exit 1; }
-grep -q 'S2 status is \*\*fix-4 author-complete / independent re-review pending\*\*' "$FILE" || { echo "STALE S2 STATUS"; exit 1; }
+grep -q 'S2 status is \*\*accepted at checkpoint `8934df9`\*\*' "$FILE" || { echo "STALE S2 STATUS"; exit 1; }
+grep -q 'S3 is \*\*author-complete / independent review pending\*\*' "$FILE" || { echo "STALE S3 STATUS"; exit 1; }
 grep -q 'Navigation correction (F-15' "$FILE" || { echo "MISSING F-15 NAVIGATION NOTE"; exit 1; }
 grep -q 'ck_ivr_decision_reason' "$FILE" || { echo "MISSING F-15 NAMED CHECK"; exit 1; }
 for term in CLAIM_REPLAY_CONFLICT CLAIM_CONTEXT_CONFLICT CLAIM_ORGANIZATION_OWNERSHIP_UNAPPROVED CLAIM_SUBJECT_NOT_FOUND CLAIM_ACCOUNT_NOT_FOUND CLAIM_ORGANIZATION_NOT_FOUND CLAIM_CONCURRENCY_EXHAUSTED CLAIM_DATA_INTEGRITY BINDING_DISABLED_CONFLICT BINDING_SUBJECT_NOT_FOUND 'pg_catalog.gen_random_uuid' 'subject_number.subject:' 'customer_iam.account:' 'organization_access.membership:' 'docs/12 section 7.2' PURCHASE REJECT_SUSPENDED ACTIVATION_NEXT_ACTION DIRECT_AUTHORIZATION DIRECT_AUTHORIZED 'authorization.calleeNumber' authorizedRecordingSeconds authorizationExpiresAt REJECT_CALL_IN_PROGRESS NO_AVAILABLE_ENTITLEMENT CONSENT_REQUIRED CALL_STATE_UNRESOLVED RECONCILING savepoint select_call_action record_activation_next_action ALREADY_GRANTED TRIAL_ACTION_CONFLICT 'taskMatch = NONE' 'expires_at > clock_timestamp' 'one permanent first trial per subject' 'find_or_create_ivr_subject' 'record_client_activation' 'append_purchase_consent' 'process_call_event' 'settle_call_usage' 'publish_catalog_version' 'publish_trial_policy' 'ALLOCATION_POLICY_UNAVAILABLE' 'ALLOCATION_AMBIGUOUS' 'ALLOCATION_POLICY_INVALID' 'AUTHORIZATION_INPUT_UNAVAILABLE' 'BALANCE_SELECTION_STALE' 'DURATION_EXCEEDS_AUTHORIZED' 'CATALOG_PUBLICATION_CONFLICT' 'TRIAL_POLICY_PUBLICATION_CONFLICT' 'EVENT_ID_CONFLICT' 'CONTRADICTORY_FACT' 'ACTIVATION_CONSENT_DECLINED' 'PURCHASE_CONSENT_REQUIRED' 'IVR_NUMBER_BINDING_DISABLED' 'catalog_order.publication:' 'entitlement_metering.trial_policy:FIRST-TRIAL' 'SOLE_ELIGIBLE' 'schemaVersion' 'INBOUND_RESOLVE = ENTER_CALLEE' 'ACTIVATION_NEXT_ACTION = ENTER_CALLEE' 'ck_ivr_decision_reason'; do
   grep -q -F "$term" "$FILE" || { echo "MISSING S1/S2 CONTRACT TERM: $term"; exit 1; }
+done
+for term in EVIDENCE_CREATED EVIDENCE_CREATION_CYCLE_VIOLATION ADMISSION_GRANTED TICKET_ISSUED TICKET_FAILED SHARE_ADMISSION_LIMIT_REACHED SHARE_SESSION_EXPIRED SHARE_SESSION_POLICY_UNAVAILABLE SHARE_RISK_BLOCKED 'sessionExpiresAt' 'share-ticket:' 'share_grant_id + admission_id' 'DEFERRABLE INITIALLY DEFERRED' 'evidence.guard_evidence_record' 'sharing.guard_share_admission' 'source_event_domain, source_event_id' 'recording_id' 'capability_token_hash' 'code_generation' 'revocation_generation' 'admission_no' ORGANIZATION_MEMBER DESIGNATED_MOBILE EXTRACTION_CODE NOT_REQUIRED SHARE_ACCESS 'ticket-issued:' 'ticket-failed:'; do
+  grep -q -F "$term" "$FILE" || { echo "MISSING S3 CONTRACT TERM: $term"; exit 1; }
 done
 test -z "$(grep -n -E '[[:blank:]]+$' "$FILE")" || { echo "TRAILING WHITESPACE"; exit 1; }
 ```
@@ -3734,6 +4437,61 @@ test "$ok" -eq 1 && echo ALL_EXACT
 
 Expected: 23 `exact` lines with counts `4,17,7,6,21,11,12,23,17,22,11,14,15,11,13,10,8,14,16,12,19,6,18` (307 total) and `ALL_EXACT`. This proves that no accepted S2 column was dropped, renamed or replaced.
 
+### 13.2.2 S3 per-table dictionary coverage
+
+This `awk` program verifies that each of the eight S3 dictionary sections exists once and contains the exact accepted column count. It is a document check, not a PostgreSQL check.
+
+```bash
+FILE=docs/14-production-data-model-and-flyway-schema-spec.md
+awk '
+BEGIN {
+  need["evidence.media_object"]=11; need["evidence.recording"]=15; need["evidence.evidence_record"]=17;
+  need["evidence.evidence_artifact"]=5; need["evidence.evidence_event"]=8;
+  need["sharing.evidence_share_grant"]=20; need["sharing.share_admission"]=7; need["sharing.share_access_event"]=11;
+}
+/^## / { t=""; next }
+/^### / {
+  if ($0 ~ /^### 4\.[0-9]+ [a-z_]+\.[a-z_]+$/) { t=$3; seen[t]++ } else { t="" }
+  next
+}
+t!="" && /^\| [a-z0-9_]+ \| (uuid|text|timestamptz|integer|bigint|jsonb|boolean) \|/ { c[t]++ }
+END {
+  bad=0
+  for (k in need) {
+    if (seen[k]!=1) { print "S3 DICTIONARY COUNT " k " " seen[k]+0; bad=1 }
+    if (c[k]!=need[k]) { print "S3 COLUMN COUNT " k " " c[k]+0 " != " need[k]; bad=1 }
+  }
+  exit bad
+}
+' "$FILE"
+```
+
+Expected: exit 0 with no output. The eight S3 dictionaries total 94 column rows; together with the 121 S1 and 307 S2 rows the cumulative detailed total is 522.
+
+Exact accepted-column-name comparison (catalog field 6 versus dictionary first column) for all eight S3 tables:
+
+```bash
+FILE=docs/14-production-data-model-and-flyway-schema-spec.md
+ok=1
+for t in evidence.media_object evidence.recording evidence.evidence_record evidence.evidence_artifact evidence.evidence_event sharing.evidence_share_grant sharing.share_admission sharing.share_access_event; do
+  catcols=$(awk -F'|' -v t="$t" '{x=$2; gsub(/[ `]/,"",x); if (x==t) print $6}' "$FILE" | grep -o '`[a-z0-9_]*`' | tr -d '`' | sort -u)
+  dictcols=$(awk -v t="$t" '
+    $0 ~ "^### 4\\.[0-9]+ " t "$" {f=1; next}
+    /^### / {f=0}
+    f && /^\| [a-z0-9_]+ \| (uuid|text|timestamptz|integer|bigint|jsonb|boolean) \|/ {
+      n=split($0,a,"|"); gsub(/ /,"",a[2]); print a[2]
+    }' "$FILE" | sort -u)
+  if [ "$catcols" = "$dictcols" ]; then
+    printf '%s exact %s columns\n' "$t" "$(printf '%s\n' "$dictcols" | wc -l)"
+  else
+    echo "$t MISMATCH"; ok=0
+  fi
+done
+test "$ok" -eq 1 && echo ALL_EXACT
+```
+
+Expected: eight `exact` lines with counts `11,15,17,5,8,20,7,11` (94 total) and `ALL_EXACT`. This proves that no accepted S3 column was dropped, renamed or replaced. The separate read-only PowerShell checker also compares each dictionary's fields in order against the accepted plan catalog and expects `FrozenBlocks=9`, `Dictionaries=44`, `Columns=522`, `SliceColumns S1=121/S2=307/S3=94`, `Errors=[]`.
+
 ### 13.3 Frozen structural-script-v2 run
 
 Extract the exact accepted structural script and run it unchanged against this document with `FILE` and `FIX2` explicitly set. `FIX2` is the preserved fix-6 artifact; it is a file-presence gate for the frozen baseline, not an S1 content dependency.
@@ -3743,7 +4501,7 @@ awk '/^# structural-script-v2$/{f=1} f{print} /^# end structural-script-v2$/{exi
 FILE=docs/14-production-data-model-and-flyway-schema-spec.md FIX2=docs/gateflow/a0-production-data-model-schema-spec-plan-fix-6.md bash /tmp/a0-structural-v2.sh
 ```
 
-Expected: exit 0; `fk_modes=FK:74,ALTER_FK:3,DEFERRABLE_FK:2,NO_FK:2 total=81`; `catalog=44 matrix=44 waves=9 wave_distribution=3/6/4/7/6/7/3/5/3 slices=S1:13,S2:23,S3:8 invariants=40 lifecycle=28/16 sensitive=28 fk_rows=81 key_sets=24`. This proves the frozen 44-table scaffold only. It does not prove S2/S3 dictionaries or production behavior.
+Expected: exit 0; `fk_modes=FK:74,ALTER_FK:3,DEFERRABLE_FK:2,NO_FK:2 total=81`; `catalog=44 matrix=44 waves=9 wave_distribution=3/6/4/7/6/7/3/5/3 slices=S1:13,S2:23,S3:8 invariants=40 lifecycle=28/16 sensitive=28 fk_rows=81 key_sets=24`. This proves the frozen 44-table baseline, rendered wave/slice membership, FK targets/modes, function waves and key sets. It does not prove dictionary field order (checked separately in §13.2-§13.2.2), PostgreSQL execution, COS/Redis behavior or production behavior.
 
 ### 13.4 Scope, hash and cleanliness checks
 
@@ -3755,7 +4513,7 @@ sha256sum docs/gateflow/a0-production-data-model-schema-spec-plan-fix-6.md
 git status --porcelain=v1 | grep -E '\.sql$|db/migration/' && exit 1 || true
 # New artifacts are untracked or modified, so a global git diff --check is not
 # the authoritative gate. The targeted blank-at-EOL scan below is equivalent.
-test -z "$(grep -n -E '[[:blank:]]+$' docs/14-production-data-model-and-flyway-schema-spec.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md)"
+test -z "$(grep -n -E '[[:blank:]]+$' docs/14-production-data-model-and-flyway-schema-spec.md docs/gateflow/a0-production-data-model-schema-spec-s3-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-4.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md)"
 # Whole-new-file diff comparison: exit 1 with zero output diagnostics is a
 # content difference, not a whitespace failure.
 git diff --no-index --check /dev/null docs/14-production-data-model-and-flyway-schema-spec.md >/tmp/a0-s2-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-ws.out
@@ -3763,9 +4521,10 @@ git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-sch
 git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md >/tmp/a0-s2-fix2-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-fix2-ws.out
 git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md >/tmp/a0-s2-fix3-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-fix3-ws.out
 git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md >/tmp/a0-s2-art-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-art-ws.out
+git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s3-implementation.md >/tmp/a0-s3-art-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s3-art-ws.out
 ```
 
-Expected: plan and fix-6 hashes unchanged; no `.sql` or `db/migration` path in `git status`; zero trailing-whitespace lines in the current specification and the S1/S2 artifacts including the fix-2 and fix-3 artifacts; each whole-new-file whitespace check exits 1 with no diagnostic output (the comparison-status exit is expected for a new file). A global `git diff --check` is intentionally not used because the pre-existing, out-of-scope `logo/preview.html` change contains trailing whitespace. Pre-existing modified QA screenshots, `logo/preview.html` and the unrelated `docs/reviews/plan-review-20261021-205118.md` are outside this work unit and must remain untouched.
+Expected: plan and fix-6 hashes unchanged; no `.sql` or `db/migration` path in `git status`; zero trailing-whitespace lines in the current specification and the S1/S2/S3 implementation artifacts including fix-2, fix-3 and fix-4; each whole-new-file whitespace check exits 1 with no diagnostic output (the comparison-status exit is expected for a new file). The current S3 specification ends with exactly one LF and contains no CR or blank line at EOF. A global `git diff --check` is intentionally not used because the pre-existing, out-of-scope `logo/preview.html` change contains trailing whitespace. Pre-existing modified QA screenshots, `logo/preview.html` and the unrelated `docs/reviews/plan-review-20261021-205118.md` are outside this work unit and must remain untouched.
 
 ### 13.5 S1 control-coverage assertions
 
@@ -3788,16 +4547,16 @@ These checks prove that every S2 dictionary names its lifecycle, sensitive repre
 
 ```bash
 FILE=docs/14-production-data-model-and-flyway-schema-spec.md
-test "$(sed -n '/^### 4.16 /,/^## 5\./p' "$FILE" | grep -c '^Purpose:.*Lifecycle:')" -eq 23 || { echo "S2 LIFECYCLE COVERAGE FAILED"; exit 1; }
-test "$(sed -n '/^### 4.16 /,/^## 5\./p' "$FILE" | grep -c '^Sensitive representation:')" -eq 23 || { echo "S2 SENSITIVE COVERAGE FAILED"; exit 1; }
-test "$(sed -n '/^### 4.16 /,/^## 5\./p' "$FILE" | grep -c -E '^(Revision/immutability|Append-only control):')" -eq 23 || { echo "S2 REVISION/IMMUTABILITY COVERAGE FAILED"; exit 1; }
-test "$(sed -n '/^### 5.4 S2 foreign-key detail/,/^## 6\./p' "$FILE" | grep -c -E '\| (FK|ALTER_FK|NO_FK) \|')" -eq 54 || { echo "S2 FK DETAIL COUNT FAILED"; exit 1; }
+test "$(sed -n '/^### 4.16 /,/^### 4.39 /p' "$FILE" | grep -c '^Purpose:.*Lifecycle:')" -eq 23 || { echo "S2 LIFECYCLE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.16 /,/^### 4.39 /p' "$FILE" | grep -c '^Sensitive representation:')" -eq 23 || { echo "S2 SENSITIVE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.16 /,/^### 4.39 /p' "$FILE" | grep -c -E '^(Revision/immutability|Append-only control):')" -eq 23 || { echo "S2 REVISION/IMMUTABILITY COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 5.4 S2 foreign-key detail/,/^### 5.5 /p' "$FILE" | grep -c -E '\| (FK|ALTER_FK|NO_FK) \|')" -eq 54 || { echo "S2 FK DETAIL COUNT FAILED"; exit 1; }
 test "$(sed -n '/^### 8.5 S2 sensitive-field detail/,/^## 9\./p' "$FILE" | grep -c '^| ')" -ge 23 || { echo "S2 SENSITIVE DETAIL FAILED"; exit 1; }
 test "$(grep -c '^### 10\.9 entitlement_metering\.issue_first_trial' "$FILE")" -eq 1 || { echo "V006 FUNCTION CONTRACT FAILED"; exit 1; }
 test "$(grep -c '^### 9\.11 T-S2-01' "$FILE")" -eq 1 || { echo "S2 ACTIVATION SEQUENCE MISSING"; exit 1; }
 ```
 
-Expected: exit 0. The exact S2 FK count is 54; the S2 dictionary coverage is 23/23/23 with one lifecycle, one sensitive representation and one revision/append-only statement per table.
+Expected: exit 0. The exact S2 FK count is 54; the S2 dictionary coverage is 23/23/23 with one lifecycle, one sensitive representation and one revision/append-only statement per table. The range endpoints stop before the S3 insertion at §4.39 and bound the S2 FK detail to §5.4-before-§5.5, so only §4.16-§4.38 S2 coverage is counted; the expected counts are not weakened.
 
 ### 13.7 S2 behavior test matrix
 
@@ -3869,18 +4628,94 @@ These are document-level requirements for the later executable suite. They are n
 | T-S2-62 | IVR subject find-or-create (OQ-1). | A trusted normalized number with no binding atomically creates one unowned `IVR` subject and one active binding with both owner columns null and no account/login/owner; a second concurrent resolve under the canonical-number lock reuses the winner and creates no second active binding; a `DISABLED` binding is not revived; `RETIRED` history may be followed by a new active binding without erasing history; conflicting/multiple active bindings fail closed; a unique loser or category-3 failure leaves no partial subject/binding after the bounded retry/rollback. | DB+TX |
 | T-S2-63 | Idempotency placement, savepoint and category outcomes (F-06/R-02/R-05). | The `IVR_CONFIRM` idempotency row is acquired after caller/session/access locks and before any tentative claim/reservation; the IVR confirmation and the order path take the rank-4 activation lock through `activation-consent.lock_service_activation` before ranks 7/8/9 and before the idempotency row; `record_activation_confirmation`, `record_client_activation` and `append_purchase_consent` reuse that held lock and never first acquire rank 4 after rank 10; replay precedes task-expiry housekeeping and every effect; the attempt savepoint is established after accepted activation/trial and before the tentative claim/reservation; a category-2 denial executes `ROLLBACK TO SAVEPOINT`, keeps activation/trial/session `CONFIRMED` and commits one no-dial decision/completion with no claim/reservation; a category-3 SQL/lock/I/O/Outbox error rolls back everything and is not swallowed; no transaction takes a task/reservation then the idempotency row. | DB+TX |
 | T-S2-64 | Trial-policy publication/disable (F-09/R-01/OQ-5/OQ-6). | With a pre-existing enabled published policy, the winner first disables it with revision +1 and then publishes the candidate with ONE owner UPDATE that, while `OLD.published_at IS NULL`, sets the actual authenticated publisher, `published_at`, `enabled = true` and revision +1 together, so exactly one enabled published row exists at every statement and the immediate partial unique never rejects the normal second publication; the guard admits that statement and rejects later changes to publisher identity/content, and no separate pre-publication publisher statement is required; concurrent trial-policy publications have one winner under the campaign lock; the stale loser returns `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW`; disable is idempotent and appends one audit/Outbox fact; the publisher column is frozen after publication and no same-employee-only rule is applied; the V006 `issue_first_trial` function performs the sole authoritative enabled/published/expected-version read, replay/already-granted returns prior immutable results before any new policy selection, a disable committed before that read is observed while a disable after it does not revoke the selected grant, the wrapper lookup is preliminary only, and there is no second enabled recheck; published content/snapshot history and existing trial grants never change; no raw unique error. | DB+TX |
-| T-S2-65 | Status/frozen-navigation document assertions (F-14/F-15). | The document status states S1 accepted / S2 fix-3 authored-re-review-pending / S3 planned and `issue_first_trial` authored in V006; §4.28 points to §2.9 and `ck_ivr_decision_reason`; §4.1 remains byte-identical to the accepted plan and is not edited for the low-severity navigation correction. | Document |
+| T-S2-65 | Status/frozen-navigation document assertions (F-14/F-15/F4-01). | The document status states S1 accepted at checkpoint `5404d9c`, S2 accepted at checkpoint `8934df9` after independent review, and S3 author-complete with independent review pending; `issue_first_trial` is authored in V006. `§4.28` points to §2.9 and `ck_ivr_decision_reason`; §4.1 remains byte-identical to the accepted plan and is not edited for the low-severity navigation correction. F4-01 is closed by this current-status alignment; no historical artifact is rewritten. | Document |
 | T-S2-66 | IVR source event-ID bounds (fix-3 Open Question 1). | For IVR confirmation, direct authorization and call-event ingestion, a blank or 129-character event ID is refused with stable `IVR_ARGUMENT_INVALID` before `idempotency_begin`, any decision/domain write or any `call_event` insert; 1- and 128-character IDs are accepted and persist in the 1-128 S2 source-event columns; the general platform 1-512 key capacity and the 1-475 order client key are unchanged. | DB+TX |
 
-All S2 assertions are document requirements for a later Testcontainers/IVR/payment integration suite. No production test is claimed.
+All S2 assertions are document requirements for a later Testcontainers/IVR/payment integration suite. No production test is claimed. The S3 assertions in §13.9 are the corresponding evidence/sharing requirements for a later PostgreSQL/Testcontainers/media-gateway/Redis integration suite.
 
-### 13.8 Honest limitations
+### 13.8 S3 control-coverage assertions
 
-S1 and S2 ran only document checks and shell/awk validation. No PostgreSQL instance, Flyway migration, constraint, function, privilege, concurrency test, IVR line, payment provider or Testcontainers suite was executed. A green structural script and the S2 test matrix prove document structure, membership and planned assertions only; they do not prove PostgreSQL behavior, S3 dictionaries, executable migrations or production behavior.
+These checks prove that every S3 dictionary names its lifecycle, sensitive representation, revision/immutability or append-only control, and that the S3 FK detail has exactly 16 rows. They are document checks only.
+
+```bash
+FILE=docs/14-production-data-model-and-flyway-schema-spec.md
+test "$(sed -n '/^### 4.39 /,/^## 5\./p' "$FILE" | grep -c '^Purpose:.*Lifecycle:')" -eq 8 || { echo "S3 LIFECYCLE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.39 /,/^## 5\./p' "$FILE" | grep -c '^Sensitive representation:')" -eq 8 || { echo "S3 SENSITIVE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.39 /,/^## 5\./p' "$FILE" | grep -c -E '^(Revision/immutability|Append-only control)[^:]*:')" -eq 8 || { echo "S3 REVISION/IMMUTABILITY COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 5.5 S3 foreign-key detail/,/^## 6\./p' "$FILE" | grep -c -E '\| (FK|DEFERRABLE_FK) \|')" -eq 16 || { echo "S3 FK DETAIL COUNT FAILED"; exit 1; }
+test "$(sed -n '/^### 8.6 S3 sensitive-field detail/,/^## 9\./p' "$FILE" | grep -c '^| ')" -ge 11 || { echo "S3 SENSITIVE DETAIL FAILED"; exit 1; }
+test "$(grep -c -E 'trg_evidence_(record|event)_creation_cycle' "$FILE")" -ge 2 || { echo "S3 DEFERRED CYCLE TRIGGERS MISSING"; exit 1; }
+test "$(grep -c -E '^### 9\.2[7-9] T-S3|^### 9\.3[01] T-S3' "$FILE")" -eq 5 || { echo "S3 TRANSACTION SEQUENCES MISSING"; exit 1; }
+test "$(grep -c -E '^### 10\.2[1-3] ' "$FILE")" -eq 3 || { echo "S3 CONTRACT SECTIONS MISSING"; exit 1; }
+test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && NF' "$FILE" | wc -l)" -eq 5 || { echo "S3 CHANGED FUNCTION WAVE"; exit 1; }
+```
+
+Expected: exit 0. Every S3 dictionary states one lifecycle, one sensitive representation and one revision/append-only rule; the S3 FK detail has 16 decisions; the two deferred creation-cycle triggers, five S3 transaction sequences and three S3 contract sections exist; the function-wave block remains exactly five rows.
+
+### 13.9 S3 behavior test matrix
+
+These are document-level requirements for the later executable suite. They are not executed tests and do not claim PostgreSQL, COS, Redis, media-gateway or production behavior.
+
+| ID | Assertion | Expected outcome | Class |
+| --- | --- | --- | --- |
+| T-S3-01 | Compare the final document with the accepted plan catalog, frozen blocks, wave/slice membership, FK/key matrix and function-wave block. | 44 dictionaries / 522 exact columns in accepted order (S1 121, S2 307, S3 94); nine frozen blocks byte-equal; 44/40/9/3; FK 81 = 74/3/2/2; 24 key sets; five functions; no parent later than its FK wave. | Document |
+| T-S3-02 | Complete a controlled upload with a valid object version, server hash, size, MIME, duration and malware result. | One media object, one `VALIDATED` recording with server facts and `revision + 1`; declared facts never override; no evidence row/status is created by the recording completion. | DB+TX |
+| T-S3-03 | Repeat T-S3-02 with the same recording ID and identical object version/server hash. | Returns the first validated outcome; no second media object, recording, access fact or count; no TTL/expiry refresh. | DB+TX |
+| T-S3-04 | Retry a `DECLARED`/`UPLOADED` recording ID with a different object version, hash, size, MIME or duration; then apply an identical duplicate and a different conflicting callback after `VALIDATED`. | Before terminal: one `QUARANTINED` transition with a stable conflict; first server facts and original media object remain unchanged. After `VALIDATED`: the identical callback returns the first outcome; a conflicting callback returns `RECORDING_IDENTITY_CONFLICT`, changes no status/media/validation fact/revision, and writes exactly one deduplicated redacted Outbox conflict fact (the same conflicting payload reuses it; a changed conflicting payload adds one distinct fact); no solid evidence is altered. | DB+TX |
+| T-S3-05 | Complete at exactly `upload_expires_at` and after it. | Completion at/after expiry is refused and the recording is quarantined with `UPLOAD_EXPIRED`; no media/evidence success; a later same-identity retry cannot revive it. | DB+TX |
+| T-S3-06 | Inject storage unavailable/unknown, a late callback and a crash before commit at each write boundary. | No fabricated media object or validation; prior state remains; the retry converges; a conflicting late callback after terminal is refused with `RECORDING_IDENTITY_CONFLICT` and one deduplicated redacted conflict fact, never a forbidden terminal status change or overwrite of the first terminal fact. | DB+TX |
+| T-S3-07 | Store a recording with bytes, object key and version metadata. | PostgreSQL contains metadata only; no media bytes, bucket/key/version or permanent URL is public or logged; the server-recomputed hash wins. | DB+SERVICE |
+| T-S3-08 | Insert an evidence record and its one `EVIDENCE_CREATED` event in record-first order and, separately, event-first order in one transaction. | Both orders commit under the two deferred FKs; exactly one original artifact and one matching creation event exist; the frozen snapshot/identity/consent facts are readable. | DB+TX |
+| T-S3-09 | Insert an evidence record with no matching `EVIDENCE_CREATED` event and commit. | Commit fails with `EVIDENCE_CREATION_CYCLE_VIOLATION`; no record, event, artifact or Outbox fact survives. This is the negative deferred witness. | DB+TX |
+| T-S3-10 | Insert two `EVIDENCE_CREATED` events for one evidence ID. | The partial unique/creation-cycle check rejects the second; exactly one creation event exists; no second ownership fact. | DB |
+| T-S3-11 | Insert a creation event with the wrong `event_type`, a different owning `evidence_id`, or a source event identity that does not equal the record source. | Commit fails at the deferred trigger/constraint with `EVIDENCE_CREATION_CYCLE_VIOLATION`; no mismatched creation fact survives. | DB+TX |
+| T-S3-12 | Force a failure after the record, creation event, artifact or Outbox write. | The whole transaction rolls back; no creation fact, media/evidence row or Outbox/audit row survives; a bounded retry starts from current state. | TX |
+| T-S3-13 | Claim the subject, change the account, revoke membership or change subject real-name after evidence solidification. | `subject_id`, `call_id`, `session_id`, `reservation_id`, `identity_at_capture`, `consent_version`, snapshot and original artifact remain byte-identical; historical evidence access is governed by the current approved policy, not by rewriting capture facts. | DB+SERVICE |
+| T-S3-14 | Create evidence with a validated recording from call A and an evidence record for call B; then cross the session, subject or reservation links; also supply a missing parent. | `EVIDENCE_LINK_MISMATCH` (or a stable not-found for a missing parent) with no evidence row/creation event/artifact and no raw FK; `recording.call_id` must equal `evidence_record.call_id`; call/session/subject/reservation links must agree and the snapshot `source` must equal the persisted links; a session without a call is rejected by `ck_evidence_link_shape`. | DB+TX |
+| T-S3-15 | Create a share grant for a `SOLIDIFIED` evidence record with a valid creator/workspace access policy, no `OPEN` risk, and a valid snapshot; repeat the same `creationRequestId` with the same scope, with changed scope and with changed `expiresAt`; lose the creation response; repeat with `OPEN` risk; exercise a captured binding that differs from the current active binding and an absent/unresolvable binding. | The valid case creates one grant with immutable content/verification/creation scope, no object key/URL or unshared evidence, no plaintext code/token and a matching `content_sha256`. Same identity/fingerprint lost-response retry returns metadata only with no new grant/token/event; changed scope or changed `expiresAt` returns `SHARE_CREATION_CONFLICT` with no new grant/token/event and no other mutation; a usable replacement requires a new `creationRequestId`/grant/token. The captured binding is evaluated from `identity_at_capture.bindingId` when present; an `OPEN` captured/current risk returns `SHARE_RISK_BLOCKED` with no grant, an absent/unresolvable projection fails closed, and risk does not become a blanket dialing ban. | DB+TX |
+| T-S3-16 | Generate a capability token, extraction-code salt/hash, rotate the code, and retry revoke/rotate/extend/lock/expire with the same and with changed action content, including a changed EXTEND `newExpiresAt`. | At least 128 random token bits and only its SHA-256 digest are persisted; the plaintext token is returned once and a lost response returns metadata only with no reissuance/reconstruction; the code uses a fresh salt and salted slow KDF bound to grant/generation; rotation increments `code_generation` and `revocation_generation`; old code/sessions fail. Each transition's §2.12 event identity/fingerprint is deterministic; a same-action retry returns the first recorded outcome before current revision/state checks, changed content (including a changed EXTEND `newExpiresAt`) returns a stable conflict with no status/revision/generation change, no second event and no other mutation, and a different action is distinct; no plaintext code/token/phone appears in logs/events. | DB+SERVICE |
+| T-S3-17 | Admit with `NONE`, `DESIGNATED_MOBILE` (trusted SMS proof, HMAC knowledge only, and absent verification input), `ORGANIZATION_MEMBER`, a wrong-tenant organization member, and a captured binding that differs from the current active binding. | `NONE` records `NOT_REQUIRED`, never `VERIFIED`; designated mobile requires an approved trusted SMS possession proof for the exact normalized phone HMAC and intended share/action, denies knowledge/HMAC-only input, and fails closed when approved verification input is absent; organization member requires current active membership and the grant organization; a wrong tenant/revoked/suspended membership or disabled account is denied with no admission. The captured binding drives the risk check when present and an absent/unresolvable projection fails closed. | DB+TX |
+| T-S3-18 | Admit successfully, reach the last slot, lose the response/Redis ticket/cache, retry the same admission key, then retry the same key after session expiry and attempt a new key at the limit. | Exactly one admission/count increment, one `ADMISSION_GRANTED` event and one derived ticket identity; the same-key retry at the limit returns the original unexpired admission and reissues the ticket without a cap test or increment; after `sessionExpiresAt` the same key returns `SHARE_SESSION_EXPIRED` with no ticket; a new key at the limit returns `SHARE_ADMISSION_LIMIT_REACHED` with no generation change; admission mode/no/key are immutable. | DB+TX |
+| T-S3-19 | Open the verification page, prefetch the link and fail verification repeatedly until `LOCKED`, then replay an existing admission and attempt a new key. | Access events may append; no admission, no admission count change and no ticket authorization success; the verification-failure lock policy may set `LOCKED` without bumping generation or invalidating the last admitted session; an existing unexpired admission still replays/reconstructs, while a new admission is denied as locked. | DB+TX |
+| T-S3-20 | Reach `max_admissions`, then have the last admitted session play/seek/renew and an existing sender retry the same key and a new recipient attempt admission. | The last admitted session remains valid within its admission/grant validity; the same-key retry returns the original admission and ticket without a limit test; a new key is denied with `SHARE_ADMISSION_LIMIT_REACHED`; `revocation_generation` is unchanged. | DB+TX |
+| T-S3-21 | Let the derived session expire, then retry the original admission key; extend the grant; also expire the grant. | Before `sessionExpiresAt` the same key reissues the ticket; after it the same key returns the admission with `SHARE_SESSION_EXPIRED` and no new ticket, so a new admission/recheck/count is required and the old key cannot become unlimited reuse; extension never lengthens that admission/session or `admissionExpiresAt`; grant expiry denies and persists `EXPIRED` once with a generation increment; at/after the exact expiry boundary is denied. | DB+TX+SERVICE |
+| T-S3-22 | Race an admission with revoke, code rotation, expiry and subject-risk open in both serial orders; revoke/suspend an organization recipient or change tenant before reconstruction and before renewal; also attempt `LOCKED → REVOKED`/`EXPIRED`. | Transition/risk first: admission observes the new status/generation/risk and denies with no count. Admission first: it counts once and its session is valid only within the admission-time witness; the later transition/risk governs subsequent renewal/reconstruction; no post-commit reversal. `ORGANIZATION_MEMBER` reconstruction/renewal re-authenticates the witness recipient and fails closed on changed account/tenant, revoked/suspended membership or disabled account. If a revoke commits before reconstruction it governs; a ticket returned before a later revoke is bounded only by the Q22 credential TTL. `LOCKED` may move to `REVOKED`/`EXPIRED` through the owner transitions. | TX |
+| T-S3-23 | Race multiple different admission keys at the last available slot and duplicate same-key admissions. | Exactly one different-key winner/count/event; the loser returns limit/conflict with no count/generation change; exactly one row exists for a duplicate key and all retries return it. | DB+TX |
+| T-S3-24 | Commit an admission, then make Redis unavailable before ticket issue; retry the same admission and inspect the count. | PostgreSQL admission/event/count commit before Redis; no successful media authorization is claimed on Redis failure; a durable `TICKET_FAILED` event is appended; the retry reuses the admission and never increments twice. | DB+TX+SERVICE |
+| T-S3-25 | Lose the response, ticket or cache after a successful `ORGANIZATION_MEMBER` admission; reconstruct within and after the session window; revoke or suspend the member or change tenant before reconstruction/renewal; then revoke or rotate code and reconstruct again. | Within the session window and with the same active recipient the original admission/ticket identity is reconstructed without a second admission; after the session window the same key returns `SHARE_SESSION_EXPIRED` with no new ticket and requires a new admission/count; a changed account/tenant, revoked/suspended membership or disabled account is denied; after revoke/rotation a stale admission is denied with `SHARE_GENERATION_STALE`/`SHARE_REVOKED`; ticket/access identities are deterministic and no admission count changes. | DB+TX+SERVICE |
+| T-S3-26 | Exercise playback, seek, renewal, the short credential TTL and media-gateway/Redis failure. | Current status/time/generation are rechecked; Redis unavailable fails closed; already-issued/buffered bytes are not claimed recalled; the credential TTL is the bounded revoke window; one redacted playback/seek/renewal event per semantic request. | DB+TX+SERVICE |
+| T-S3-27 | Attempt every cross-module read/write/row-lock and inspect grants/functions, including subject_number USAGE, the sharing_role `identity_at_capture` read and the admission grant-row lock. | `evidence_role`/`sharing_role` can read only the exact §10.21 columns with the declared schema USAGE (including `subject_number` for the exact subject/ownership/binding/risk reads) and can execute exactly `platform.outbox_append` and `audit.append_fact`; execution of `platform.idempotency_begin`/`complete` is denied; every foreign write, foreign row lock, `DELETE`, `TRUNCATE`, schema `CREATE`, platform/audit table write and undeclared function/column read is denied; only the sharing owner service locks the grant row and `evidence_role` has no sharing privilege; no S3 function-wave row exists. | DB |
+| T-S3-28 | Apply only V001-V007 and then V008-V009. | V001-V007 are unaffected by S3; V008 creates the evidence cycle only after both tables/unique keys and adds both deferred FKs/triggers; V009 creates sharing after solidified-evidence parents; no wave has a forward reference and no later slice exists. | Structural |
+| T-S3-29 | Inspect every S3 redacted event/Outbox/audit payload, including the post-terminal recording conflict fact and transition events. | No plaintext capability token, code, designated phone, OTP, object URL/key/version, raw IP or media bytes; the conflict fact contains only the recording ID, statuses, digest, hashes and bounded presentation facts; deterministic event/domain identities; `payload_sha256`/`content_sha256` match canonical redacted forms. | DB+SERVICE |
+| T-S3-30 | Exercise the positive deferred cycle witness and both negative witnesses together in one sequence. | Matching record/event pair commits; missing and mismatched pairs fail at commit; the failed witnesses leave no record/event/artifact/Outbox; the successful pair remains exactly one ownership fact. | DB+TX |
+
+All S3 assertions are document requirements for a later executable suite. No production test is claimed.
+
+### 13.10 Final cumulative closure matrix
+
+| Dimension | Final assertion | Evidence and limitation |
+| --- | --- | --- |
+| Tables / columns | 44 tables and 522 accepted columns in accepted order; S1 13/121, S2 23/307, S3 8/94. | §4.3-§4.46 dictionaries; §13.2-§13.2.2 exact comparisons; read-only PowerShell checker expected `Dictionaries=44`, `Columns=522`, `Errors=[]`. |
+| Waves / slices | Nine waves with 3/6/4/7/6/7/3/5/3 tables; S1 13, S2 23, S3 8; no later-slice prerequisite. | Frozen catalog/matrix/wave/slice blocks; §11; structural script exit 0. |
+| Ownership | 12 owning schemas/roles (platform-reliability, operations-audit, customer-iam, organization-access, operations-iam, subject-number, catalog-order, ivr, entitlement-metering, activation-consent, evidence, sharing); every table/invariant one owner; no cross-schema table write. | §3; §10.8/§10.12/§10.21; structural owner checks. |
+| Invariants | 40 single-owner invariants; S1 14, S2 22, S3 5 expansion portions; DB/TX/SERVICE named for each. | §6; frozen 40 rows unchanged; §13.8 count checks. |
+| Lifecycle | 28 mutable-head / 16 append-only; S1 11/2, S2 14/9, S3 3/5; no cascade and no ordinary hard delete. | §8.2/§12; matrix lifecycle column; structural script `lifecycle=28/16`. |
+| Sensitive | 28 sensitive tables in the frozen matrix; S3 7 flagged tables plus full S3 detail; no plaintext token/code/phone/URL/secrets. | §8.1/§8.6; sensitive coverage check; §10.7 denylist. |
+| FKs / keys | 81 decisions = 74 `FK` + 3 `ALTER_FK` + 2 `DEFERRABLE_FK` + 2 `NO_FK`; 24 candidate key sets; every parent key declared and no parent after its FK wave. | §5; structural script `fk_rows=81 key_sets=24`; §5.5 deferred cycle detail. |
+| Functions / services | Five function-wave rows (four V001 + one V006); S3 adds no SQL function or function-wave row; S1/S2/S3 owner services are same-connection application services. | §10; structural function-wave check; no `SECURITY DEFINER` S3 function. |
+| Migration | V001-V009 forward-only, no backfill; V008 cycle DDL order and both deferred FKs/triggers explicit; V009 sharing after evidence. | §11; structural script wave membership; document-only limitation. |
+| Tests | S1/S2/S3 document assertion matrices cover normal, replay, conflict, failure, race, recovery, privilege and deferred-cycle witnesses. | §13.5-§13.9; no executable PostgreSQL/COS/Redis test was run. |
+| Deferred inputs | Every unresolved production input retains a named owner/destination; no retention, KDF parameter, admission limit, expiry, capacity, price, credential or policy is guessed. | §14; frozen 28 Q rows unchanged; S3-specific owners named in §14. |
+
+The matrix closes the specification structure across S1-S3. It is not a claim that the future migrations, privileges, constraints, concurrency paths, COS validation or Redis ticket flow were executed. The next gate is independent S3 review, not production acceptance or a further slice.
+
+### 13.11 Honest limitations
+
+S1, S2 and S3 ran only document checks and shell/awk/PowerShell validation. No PostgreSQL instance, Flyway migration, constraint, trigger, function, privilege, row-lock/savepoint/concurrency test, COS object/version/WORM validation, Redis ticket/cache test, media-gateway test, IVR line, payment provider or Testcontainers suite was executed. A green structural script, the exact S3 dictionary checker and the S1/S2/S3 test matrices prove document structure, membership and planned assertions only; they do not prove PostgreSQL behavior, executable migrations, privilege feasibility, race outcomes, COS/Redis behavior or production behavior. The S3 creation-cycle, admission-count and ticket-reconstruction contracts must be validated by the later executable migration/integration work unit before any production claim.
 
 ## 14. Open Production Inputs
 
-The following 28 open inputs are copied from the accepted plan. They are not guessed, defaulted or silently converted into schema values. S1-relevant inputs are Q1, Q2, Q3, Q9, Q13, Q14, Q16, Q17, Q19, Q23 and Q24; the remaining inputs retain their frozen owners/destinations for later slices.
+The following 28 open inputs are copied from the accepted plan. They are not guessed, defaulted or silently converted into schema values. S1-relevant inputs are Q1, Q2, Q3, Q9, Q13, Q14, Q16, Q17, Q19, Q23 and Q24; S2-relevant inputs are named below; S3-relevant inputs are Q2/Q3/Q7/Q10/Q11/Q12/Q15/Q22/Q23 plus the S3-specific authorization-policy input named below. All inputs retain their frozen owner/destination rows.
 
 | ID | Unresolved input | Why it is not guessed | Owner | Destination |
 | --- | --- | --- | --- | --- |
@@ -3927,11 +4762,13 @@ Fix 2 re-review OQ outcomes use the re-review's separate numbering and add no op
 
 Fix-2 re-review corrections and controller clarifications are recorded without adding an open-input row or a new schema object. The purchase identity is now the fixed 81-character `purchase-consent:` + lowercase SHA-256 derivation, with no truncation, random or caller-chosen alternative (§10.17/§9.17/§10.20). IVR confirmation, direct-authorization and call-event source event IDs are validated nonblank 1-128 before `idempotency_begin` or any domain effect (§9.11/§9.14/§9.24/§10.17; the general 1-512 platform key and 1-475 order key are unchanged). The V006 `issue_first_trial` function is the sole authoritative enabled/published/expected-version policy read, retains the selected content through grant/Outbox, returns replay/already-granted results before any new selection and performs no second enabled recheck (§10.9/§10.11). `SERVICE_ACTIVATION` source references are exact and deterministic (`ivr-session:` + 36-character session UUID = 48; `activation:` + SHA-256 = 75), independent of the transport event ID (§4.36/§9.11/§9.25/§10.17). Trial-policy publication is one owner `UPDATE` setting publisher, `published_at`, `enabled` and revision together while `OLD.published_at IS NULL`, admitted by the guard and then frozen (§4.29/§9.26/§10.16/§10.20). Call-event `payload_redacted` distinguishes the hashed `source` payload from server-generated `receipt` metadata, removing the hash/fingerprint circularity (§4.27/§9.24/§10.17). Call-event ingestion acquires the owned session then current-call locks before sequence detection/insert (C-01), and a changed fingerprint always returns a stable conflict, including after an original `SEQUENCE_CONFLICT` (C-02) (§4.27/§9.24/§10.17). No product rule, policy value, workflow or provider input is invented; Q15/Q26 wire encoding remains with its named later owner.
 
+S3-relevant open inputs are used, not guessed: Q2/Q11 for COS/KMS/object-lock and WORM capability (owner Security/Infrastructure; destination storage/security/capacity work); Q3 for legal retention/erasure/backup deletion (Legal/Security); Q7/Q10 for recording format/size, buffer and recording-notice/consent wording (Telephony/IVR and Product/Legal); Q12 for share-code KDF parameters, admission limits, expiry defaults and rate-limit thresholds (Security/Product; destination security design and sharing policy); Q15/Q22 for share/evidence wire values, Redis ticket TTL, clock-skew and revocation propagation window (Backend/Security and Security/Sharing); and Q23 for deployment role provisioning and `SECURITY DEFINER`/trigger-function ownership execution (Platform/Database/Security). The approved evidence-access/role/resource policy that permits creating a share grant for a given evidence scope is a Product/Security/Sharing input with destination sharing policy and authorization design; absent or ambiguous policy fails closed with `SHARE_ACCESS_POLICY_UNAVAILABLE`, and S3 does not invent a role matrix. The exact WORM/object-lock status vocabulary is recorded as an observed fact only; no retention or object-lock duration is stored. The 28-row block remains byte-identical; these inputs are named in the S3 service/trigger contracts and residual risks rather than added as rows.
+
 ## 15. Goal-Alignment and No-Over-Design Check
 
 ### 15.1 Goal alignment
 
-| Confirmed goal area | S1/S2 evidence |
+| Confirmed goal area | S1/S2/S3 evidence |
 | --- | --- |
 | Account/login identity | S1 customer_account, auth_identity, identity_profile; login only through active identity + active account |
 | Organization membership | S1 organization and organization_membership; workspace access derived from active membership; no independent login |
@@ -3940,17 +4777,17 @@ Fix-2 re-review corrections and controller clarifications are recorded without a
 | Consent/activation | S2 consent_record, service_activation and transition ledger; explicit current consent, revision transitions, operations-only resume and one activation per subject |
 | IVR/trial/entitlement/calls | S2 outbound task, inbound session, canonical call record, legs, events, frozen decisions, first-trial grant, entitlement balance, reservation and usage facts; one shared action service |
 | Commerce/payment/issuance | S2 immutable catalog/version/offer/benefit, PURCHASE-idempotent order, verified payment events and durable per-line issuance |
-| Evidence/media/sharing | S3 remains planned; the frozen eight-table membership and deferred evidence cycle are preserved |
+| Evidence/media/sharing | S3 media object, recording validation, immutable evidence record/snapshot, reciprocal `EVIDENCE_CREATED` ownership, original/derived artifacts, share grants, durable admissions and derived playback tickets; all eight tables authored |
 | Idempotency/Outbox/audit | S1 platform/audit tables and four V001 functions; S2 uses the IVR_CONFIRM/PURCHASE scopes, Outbox and audit without new write paths |
-| Sensitive fields | Enveloped ciphertext, HMAC, masked and redacted representations; typed IVR snapshot with encrypted callee payload; function denylist |
+| Sensitive fields | Enveloped ciphertext, HMAC, masked and redacted representations; typed IVR snapshot with encrypted callee payload; S3 digest-only capability tokens, salted code KDF, HMAC-only designated mobile, redacted access events; function denylist |
 | Deletion policy | No delete/cascade; status retirement; append-only controls; retention inputs assigned and not guessed |
-| Migration order | Nine frozen waves; V001-V007 authored with no forward reference; V008-V009 planned |
+| Migration order | Nine frozen waves; V001-V009 authored with no forward reference; V008 creation-cycle DDL and V009 sharing order explicit |
 
 ### 15.2 No-over-design check
 
 - S1 adds no table, function contract, domain or slice beyond the accepted baseline. The only S1 tables are the exact 13 V001-V003 tables.
 - S2 adds no table beyond the exact 23 V004-V007 tables and no SQL function beyond the accepted V006 `issue_first_trial`. It adds no eighth IVR action, no fourth slice, no generic workflow engine, no event-sourcing layer, no microservice split and no provider configuration.
-- S1 does not author S2/S3 dictionaries, transactions, state machines or tests; S2 does not author S3 dictionaries or behavior. The frozen 44-table catalog, matrix, FK/key/sensitive/function-wave and wave/slice blocks are copied for closure, not claimed as S3 implementation.
+- S1 does not author S2/S3 dictionaries, transactions, state machines or tests; S2 does not author S3 dictionaries or behavior; S3 authors only evidence/sharing and the final status/cross-slice integration. The frozen 44-table catalog, matrix, FK/key/sensitive/function-wave and wave/slice blocks are copied for closure and are unchanged.
 - The S2 application services (`ivr.select_call_action`, `ivr.record_activation_next_action`, `activation-consent.lock_service_activation`, `activation-consent.record_activation_confirmation`, `activation-consent.record_client_activation`, `activation-consent.append_purchase_consent`, `subject-number.find_or_create_ivr_subject`, `ivr.process_call_event`, `entitlement-metering.reserve_call_usage`, `entitlement-metering.settle_call_usage`, `catalog-order.publish_catalog_version`/`offsale_catalog_version`, `entitlement-metering.publish_trial_policy`/`disable_trial_policy`) are application services inside one local transaction on one connection, not SQL functions. `activation-consent.lock_service_activation` is lock-only: it takes the rank-4 activation row lock under the owner role and writes nothing. The only SQL function is V006 `issue_first_trial`; fixes 1-3 add no function-wave entry.
 - S2 uses one local PostgreSQL transaction and one intentional same-connection savepoint for a tentative phase-B claim/reservation. The savepoint is a transaction-scoped control, not an autonomous transaction, independent service or committed subtransaction.
 - S2 stores no order-level entitlement status; `entitlement_issuance` is the PR-004-required durable per-line/installment/type fact and `customer_order.payment_status` remains payment-only. No S2 table duplicates entitlement or evidence state.
@@ -3959,19 +4796,22 @@ Fix-2 re-review corrections and controller clarifications are recorded without a
 - Fix 1 adds no table, column, invariant, wave, slice, action, reason-registry value or SQL function. It adds exact privilege `USAGE`/owner grants, a bounded fingerprint/Outbox data registry, one approved-policy selector contract, typed snapshot/schedule validation, and application-service transactions for existing state machines. No tolerance, production price/quantity/date, trial-first/FIFO/stacking rule or authentication provisioning mechanism is invented; Q8/Q20/Q25 and the deployment Q17/Q23 remain with their owners.
 - Fix 2 adds no table, column, invariant, wave, slice, action, reason-registry value or SQL function. It corrects the publication statement order, names one activation-consent-owned lock-only application collaborator, adds exact read/schema-usage alignments for client activation and the computed order entitlement projection, makes the unknown-call and call-event first-outcome contracts executable, adds the `SERVICE_ACTIVATION` consent fingerprint scope, and states the accepted OQ-1..OQ-8 clarifications. No product rule, policy value, operations workflow or provider input is invented.
 - Fix 3 adds no table, column, invariant, wave, slice, action, reason-registry value or SQL function. It fixes the purchase-consent identity length with the 81-character SHA-256 derivation, bounds IVR source event IDs at 1-128 before effects, makes the V006 function the sole authoritative policy read with replay-before-selection, fixes deterministic activation source references, publishes a trial policy in one owner `UPDATE`, removes the call-event payload/fingerprint circularity, and corrects the call-event lock/sequence ordering and changed-fingerprint conflict rule. No product rule, policy value, workflow or provider input is invented; final wire encoding remains Q15/Q26 work.
+- S3 adds no table, column, invariant, wave, slice, action, SQL function, function-wave row, provider configuration or business policy. It authors the eight already-frozen V008-V009 tables, the five accepted S3 invariant portions, the already-accepted reciprocal deferred evidence cycle, the accepted share admission/ticket contract and the final closure. It does not redesign S1/S2, add a fourth slice or invent a sharing access-role matrix, KDF parameter, admission limit, expiry, retention period, COS/KMS product, Redis TTL or credential.
+- S3's service/trigger additions are owner-local application services and `SECURITY INVOKER` trigger functions, not SQL `SECURITY DEFINER` functions or cross-schema write paths. The creation-cycle triggers are installed in V008 after both deferred FKs; the sharing admission guard is a local backstop; no S3 object appears in the function-wave registry.
+- S3 preserves the S1 stable membership-pair namespace, exact S1/S2/S3 global lock order, S1 whole-transaction bounded restart, S2 phase-B savepoint, permanent `FIRST-TRIAL`, seven actions/null direct purpose, authenticated replay before mutable cleanup, 30-second task TTL/auto-dial and usage/UNKNOWN preservation. S3 takes only needed S1 suffix ranks 7-9 before its own owner locks, or no S1 lock for local evidence/ticket work.
 - A direct no-task IVR caller remains eligible for activation/trial/recording without registration, login, enterprise membership or real-name; no S2 predicate imposes a dialing ban or rewrites historical evidence.
-- Every S1 and S2 table has one owner and write path. Every S1/S2 invariant portion has one owner and an exact enforcement location.
-- Unresolved inputs are assigned to owners/destinations in §14; no policy is invented to make a check green. No S2 behavior requires S3.
+- Every S1, S2 and S3 table has one owner and write path. Every S1/S2/S3 invariant portion has one owner and an exact enforcement location.
+- Unresolved inputs are assigned to owners/destinations in §14; no policy is invented to make a check green. No S2 behavior requires S3, and S3 has no later-slice prerequisite because S3 is the final approved slice.
 
 ## 16. Completion Report Template
 
-The S1 author used this template in `docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md`. The S2 author used it in `docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md`; the bounded S2 fix 1, fix 2 and fix 3 record their evidence in `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md` and `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md`. It is not a claim of independent review acceptance.
+The S1 author used this template in `docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md`. The S2 author used it in `docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md`; the bounded S2 fix 1, fix 2, fix 3 and fix 4 record their evidence in `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md` and `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-4.md`. The S3 author uses it in `docs/gateflow/a0-production-data-model-schema-spec-s3-implementation.md`. It is not a claim of independent review acceptance.
 
 - Task label, provider and gate
 - Changed artifact paths
-- Binding inputs, accepted S1 checkpoint and hashes
-- S1 acceptance state and S2 tables/invariants/functions/behavior completed
-- S2 dictionary coverage (23 tables, 307 columns), the V006 `issue_first_trial` contract and the S2 application services
+- Binding inputs, accepted S1/S2 checkpoints and hashes
+- S1/S2 acceptance state and S3 tables/invariants/services/behavior authored
+- S3 dictionary coverage (8 tables, 94 columns), the reciprocal evidence cycle, sharing contracts, owner services and trigger security
 - Frozen baseline counts and membership preserved
 - Exact validation commands, exits and outputs, including the unchanged structural script with `FILE` and `FIX2`
 - Docs decision
@@ -3979,4 +4819,4 @@ The S1 author used this template in `docs/gateflow/a0-production-data-model-sche
 - Open production inputs preserved (including Q18/Q24/Q27/Q28)
 - Uncovered areas and explicit limitations
 - Completion or blocked statement
-- Explicit statement that no independent review, later slice, Git stage/commit/push/PR/merge or production test was performed
+- Explicit statement that no independent S3 review, later slice, Git stage/commit/push/PR/merge or production test was performed
