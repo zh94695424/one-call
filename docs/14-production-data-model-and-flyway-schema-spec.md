@@ -1,16 +1,17 @@
 # A0 Production Data Model and Initial Flyway Schema Specification
 
-- Task label: `a0-spec-s1-impl-ds-20261022-01`; bounded fix labels `a0-spec-s1-fix1-ds-20261022-01` and `a0-spec-s1-fix2-ds-20261022-01`
+- Task label: `a0-spec-s2-fix4-ds-20261022-01`; historical S2 labels `a0-spec-s2-fix3-ds-20261022-01`, `a0-spec-s2-fix2-ds-20261022-01`, `a0-spec-s2-fix1-ds-20261022-01` and `a0-spec-s2-implementation-ds-20261022-01`; historical S1 labels `a0-spec-s1-impl-ds-20261022-01`, `a0-spec-s1-fix1-ds-20261022-01`, `a0-spec-s1-fix2-ds-20261022-01` and `a0-spec-s1-eof-fix-ds-20261022-01`
 - Work unit: `A0-production-data-model-schema-spec`
-- Gate: `implementation`, Slice S1 (V001-V003) only; current state is bounded fix 2 after independent S1 re-review round 1 failed on F-10/F-11/F-12
-- Status: S1 fix 2 applied to the adjudicated findings; independent re-review pending. S2 (V004-V007) and S3 (V008-V009) are not authored in this document.
+- Gate: `fix`, bounded S2 fix 4 (V004-V007) for the fix-3 re-review F3-01 order-side `source_ref` read gap and the OQ-F3-2 IVR consent event-identity clarification. Slice S1 (V001-V003) is accepted; S2 is authored and at fix-4 author-complete / independent re-review pending; S3 (V008-V009) dictionaries and behavior remain planned and unauthored.
+- Status: S1 accepted at commit `5404d9caa73b72c412ca2065bef19dfb46d154d3` with specification SHA256 `B7FE164B701F8813A75212C4D8EC4624A97867FB7289EA652F3FE2283E510099`; independent semantic review `docs/reviews/code-review-20261022-191047.md` and EOF-only focused review `docs/reviews/code-review-20261022-191848.md` passed. S2 expands the 23 V004-V007 tables, the 22 S2 invariant portions, the S2 application-service contracts, the one V006 `issue_first_trial` SQL contract and the S2 transaction/test matrix; fix 1, fix 2, fix 3 and fix 4 incorporate the accepted independent-review, re-review, fix-2 re-review and fix-3 re-review corrections without adding a table, column, SQL function or slice. S3 remains unauthored. No PostgreSQL, Flyway, privilege, lock, savepoint or concurrency execution is claimed.
 - Date: 2026-10-22
 - Accepted plan: `docs/gateflow/a0-production-data-model-schema-spec-plan.md`, SHA256 `149472D291DC19F81497A0599C85122BDDA311DC92417C3E2086667130B231A5`
 - Accepted plan review: `docs/reviews/plan-review-20261022-174730.md`, SHA256 `C2432DA173BB4CB61D5554B1A2BF77C7DC5FA4AE79CE5CED1118741BBA34FDCA`
-- S1 review (fix 1): `docs/reviews/code-review-20261022-181806.md`, SHA256 `E813BFDA4BA09FC1E99416FFB878CD0739D2EEAA1C5C6EDC7C36F1653D7E4726`; F-01 through F-09 accepted for fix 1
-- S1 re-review round 1 (fix 2): `docs/reviews/code-review-20261022-184720.md`, SHA256 `0774D8B9B38C22124ADAC9FE67B3D0CC80160ECD53FDB59EF4DF5C3F6874FC6F`; F-10/F-11/F-12 and OQ-1 through OQ-9 adjudicated for this fix
-- Fix artifacts: `docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md` (historical, unchanged) and `docs/gateflow/a0-production-data-model-schema-spec-s1-fix-2.md` (this fix)
-- Controller: `docs/gateflow/project-execution-control.md`; accepted-plan checkpoint `4a98fbb`
+- Plan fix-6 input: `docs/gateflow/a0-production-data-model-schema-spec-plan-fix-6.md`, SHA256 `8976F64A215A2B7B5CB116A14D5123AFF91F754F512B6FD212E0D8C0C7045F59`
+- S1 reviews: `docs/reviews/code-review-20261022-181806.md` (initial fail), `docs/reviews/code-review-20261022-184720.md` (F-10/F-11/F-12), accepted `docs/reviews/code-review-20261022-191047.md` (SHA256 `5F3068271C48DA54DABB26D8942CA5C26E06658A98F4945DF91C17F347C7103A`) and EOF-only `docs/reviews/code-review-20261022-191848.md` (SHA256 `B30410B5ECBC181FD1581C3DCC375110203E551E17A6BC408C2C1D6D47F29E6F`)
+- S2 review and fix inputs: `docs/reviews/code-review-20261022-194702.md` (F-01..F-15, OQ-1..OQ-4), re-review `docs/reviews/code-review-20261022-202738.md` (R-01..R-08 and OQ-1..OQ-8), fix-2 re-review `docs/reviews/code-review-20261022-205538.md` (purchase-consent identity finding and Open Questions 1-5 plus C-01/C-02), fix-3 re-review `docs/reviews/code-review-20261022-212225.md` (F3-01 and OQ-F3-1/OQ-F3-2), controller sections `S2 independent review result and fix 1 adjudication`, `S2 fix 1 independent re-review and fix 2 adjudication`, `S2 fix 2 independent re-review and fix 3 adjudication` and `S2 fix 3 independent re-review and fix 4 adjudication` in `docs/gateflow/project-execution-control.md` (all adjudicated fixes/OQ outcomes are binding), and the fix records `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md` and `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-4.md`
+- Historical S1 fix artifacts: `docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s1-fix-2.md`, `docs/gateflow/a0-production-data-model-schema-spec-s1-eof-fix.md`, and `docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md`; all remain immutable
+- Controller: `docs/gateflow/project-execution-control.md`; accepted S1 checkpoint `5404d9c`
 - Prompt/task provider: `ds` / DeepSeek-V4.1-Flash
 - Deliverable class: documentation only. No executable Flyway migration, DDL file, Maven/Spring project, service code, API, UI, cloud resource, production data or credential is produced or claimed.
 
@@ -18,24 +19,32 @@
 
 The machine-readable table catalog, baseline matrix, sensitive inventory, foreign-key catalog, candidate-key catalog, function-wave block, the nine exact wave rows and the exact S1/S2/S3 slice membership blocks are copied verbatim from the accepted plan as **FROZEN PLANNED BASELINE**. They preserve global closure and are not evidence that S2 or S3 dictionaries, transactions or tests are complete.
 
-Only the following are authored as completed S1 specification in this document:
+S1 is accepted and preserved. The following are authored as completed S1 content in this document:
 
 - the 13 V001-V003 table dictionaries, including every accepted column, type, nullability, default, key, check, index, foreign key, revision/immutability rule, lifecycle/deletion rule and sensitive representation;
 - the S1 enforcement expansion for INV-01 through INV-07, INV-27 through INV-31, INV-33 and the S1 portion of INV-40;
 - the four V001/S1 cross-schema function contracts: `platform.idempotency_begin`, `platform.idempotency_complete`, `platform.outbox_append` and `audit.append_fact`;
 - S1 privilege, isolation, conditional-update, state and transaction contracts and their deterministic document checks.
 
-`entitlement_metering.issue_first_trial` remains visibly planned for V006/S2. It is not created, required or tested by S1. S2 and S3 tables, dictionaries, transactions, state machines and tests are intentionally reserved for their later authors and are not replaced by this document.
+S2 is authored in this document and is at fix-4 author-complete / independent re-review pending. The authored S2 content is:
 
-Baseline counts remain: 44 tables; 40 invariants; 9 migration waves; 3 slices with membership 13/23/8; 28 mutable-head and 16 append-only/frozen tables; 81 FK decisions = 74 ordinary `FK` + 3 late-added `ALTER_FK` + 2 truly `DEFERRABLE_FK` + 2 `NO_FK`; 24 key sets; 5 function-wave rows = 4 V001 functions + 1 planned V006 function.
+- the 23 V004-V007 table dictionaries, including every accepted column, type, nullability, default, key, check, index, foreign key, revision/immutability rule, lifecycle/deletion rule and sensitive representation;
+- the 22 S2 invariant enforcement portions, S2 state machines, transaction sequences, published application-service contracts, typed decision snapshot, outcome classification and behavior test matrix;
+- the one V006 SQL function contract `entitlement_metering.issue_first_trial`, created only in V006 after its four dependency tables exist.
+
+`entitlement_metering.issue_first_trial` is authored in V006/S2, not a planned-only V001/S1 function. The function-wave block remains exactly five rows: four V001 functions plus the one V006 function. The S2 application services, including the owner-service collaborators added by fix 1, are application services on one connection and one transaction and add no function-wave row. S3 tables, dictionaries, transactions, state machines and tests are intentionally reserved for their later author and are not authored here; the frozen structural blocks are baseline closure, not S2/S3 implementation evidence.
+
+Baseline counts remain: 44 tables; 40 invariants; 9 migration waves; 3 slices with membership 13/23/8; 28 mutable-head and 16 append-only/frozen tables; 81 FK decisions = 74 ordinary `FK` + 3 late-added `ALTER_FK` + 2 truly `DEFERRABLE_FK` + 2 `NO_FK`; 24 key sets; 5 function-wave rows = 4 V001 functions + 1 V006 function.
 
 ## 1. Scope, Status and Source Relationship
 
 ### 1.1 Purpose
 
-This document is the initial PostgreSQL 16 data-model and Flyway-schema specification for the first production baseline. It defines the S1 foundation so a later implementation work unit can generate V001-V003 migrations and module code without inventing S1 business rules.
+This document is the initial PostgreSQL 16 data-model and Flyway-schema specification for the first production baseline. S1 (V001-V003) is accepted. S2 (V004-V007) is fix-4 author-complete and awaiting independent re-review. S3 (V008-V009) remains planned. The document is cumulative: a later implementation work unit can generate V001-V007 migrations and module code without inventing S1 or S2 business rules.
 
 S1 covers platform idempotency, transactional Outbox, append-only audit, natural-person customer accounts, login identities, account-level real-name profiles, organizations, organization memberships, operations employee identities, business subjects, business-number bindings, subject claims and claim-risk state.
+
+S2 covers the immutable catalog/version/offer/benefit snapshot, customer order with `PURCHASE` idempotency, verified payment order/events, IVR pending tasks, inbound sessions, the canonical call parent, legs, IVR events, frozen IVR decisions, the first-trial policy/grant and permanent `FIRST-TRIAL` uniqueness, generic entitlement grants/balances, durable per-line/installment/type issuance state, usage reservation/settlement/reconciliation, explicit consent records, service activation and its transition ledger. S2 owns the one new V006 `entitlement_metering.issue_first_trial` SQL contract and the S2 application services; S3 evidence and sharing remain planned.
 
 ### 1.2 Source relationship
 
@@ -67,9 +76,43 @@ The accepted plan is the frozen structural handoff. This document does not modif
 | 12 | subject_number.subject_claim |
 | 13 | subject_number.subject_risk_state |
 
-### 1.4 S1 non-goals
+### 1.4 S1 non-goals (historical) and S2 non-goals
 
 S1 does not create or specify the S2/S3 table dictionaries, IVR task/session/call tables, consent/activation tables, catalog/order/payment tables, entitlement/issuance/reservation/usage tables, evidence tables, sharing tables or `entitlement_metering.issue_first_trial`. It does not create executable SQL, a Maven project, API/UI code, cloud assets, credentials, production data, retention periods or provider-specific policy. It does not change the 44/40/9/3 baseline or authorize a fourth slice.
+
+S2 does not author the S3 evidence/media/sharing dictionaries, their transactions or the evidence composite deferred FK cycle; it preserves those eight tables as frozen planned membership only. S2 adds no table, SQL function beyond the one accepted V006 `issue_first_trial`, eighth IVR action, fourth slice, executable migration, production service/API/UI, cloud resource, credential, guessed retention/capacity/policy value or provider configuration. The four V001 contracts remain S1-owned and unchanged.
+
+### 1.5 Exact S2 table membership
+
+The 23 S2 tables below are the exact V004-V007 membership. Together with the 13 S1 tables they form the frozen 44-table baseline. S3 contributes the remaining eight planned tables.
+
+| # | Table | Wave |
+| --- | --- | --- |
+| 1 | catalog_order.catalog_product | V004 |
+| 2 | catalog_order.catalog_version | V004 |
+| 3 | catalog_order.catalog_offer | V004 |
+| 4 | catalog_order.catalog_benefit_line | V004 |
+| 5 | catalog_order.customer_order | V004 |
+| 6 | catalog_order.payment_order | V004 |
+| 7 | catalog_order.payment_event | V004 |
+| 8 | ivr.outbound_call_task | V005 |
+| 9 | ivr.inbound_session | V005 |
+| 10 | ivr.call_record | V005 |
+| 11 | ivr.call_leg | V005 |
+| 12 | ivr.call_event | V005 |
+| 13 | ivr.ivr_decision | V005 |
+| 14 | entitlement_metering.trial_policy_version | V006 |
+| 15 | entitlement_metering.entitlement_grant | V006 |
+| 16 | entitlement_metering.trial_grant | V006 |
+| 17 | entitlement_metering.entitlement_balance | V006 |
+| 18 | entitlement_metering.entitlement_issuance | V006 |
+| 19 | entitlement_metering.usage_reservation | V006 |
+| 20 | entitlement_metering.usage_fact | V006 |
+| 21 | activation_consent.consent_record | V007 |
+| 22 | activation_consent.service_activation | V007 |
+| 23 | activation_consent.service_activation_transition | V007 |
+
+S2 status is **fix-4 author-complete / independent re-review pending**. S3 is **planned / not authored**. The frozen machine-readable catalog, matrix, sensitive inventory, FK catalog, key catalog, function-wave block, nine wave rows, three slice membership blocks, 40 invariant rows and 28 open-input rows are unchanged.
 
 ## 2. Database Conventions
 
@@ -136,6 +179,34 @@ S1 does not create or specify the S2/S3 table dictionaries, IVR task/session/cal
 - A function contains no `COMMIT`, `ROLLBACK`, autonomous transaction or transaction control. It executes on the caller's connection and in the caller's transaction. Any raised exception aborts the caller's transaction, so the domain write, function write and completion roll back together.
 - The function owner is not a superuser and cannot log in. `SECURITY DEFINER` never inherits a caller-controlled `search_path`.
 
+### 2.9 S2 schemas, protocol identities and registries
+
+- S2 schemas are `catalog_order`, `ivr`, `entitlement_metering` and `activation_consent`. Each has one NOLOGIN, non-superuser owner role and one runtime role: `catalog_order_owner`/`catalog_order_role`, `ivr_owner`/`ivr_role`, `entitlement_metering_owner`/`entitlement_metering_role` and `activation_consent_owner`/`activation_consent_role`. The migration identity creates them in V004.
+- S2 protocol identities are owned internally and are not natural keys: `ivr.outbound_call_task.task_id`, `ivr.inbound_session.call_id` and `ivr.call_record.call_id` (opaque IVR identifiers, `text`), `catalog_order.customer_order.order_no`, `catalog_order.payment_order.merchant_order_no`, `catalog_order.payment_event.provider_event_id`, and the IVR `event_id`/`source_event_id` values. No phone number, callee number, provider transaction ID, order snapshot hash or HMAC is a protocol identity or public key.
+- `call_record.call_id` is the canonical call-scoped foreign-key parent. `inbound_session.call_id` is the root IVR protocol identity with no parent. All call-linked rows name `call_record.call_id`; `ivr.outbound_call_task.claimed_call_id` is the one late-added same-wave FK from task to call.
+- The entitlement-type registry for the first baseline is `RECORDING_SECONDS`, `AI_SECONDS`, `EVIDENCE_COUNT` and `STORAGE_BYTES`. IVR reservations and usage facts in this baseline use recording seconds (`1 unit = 1 second`); `authorizedRecordingSeconds` is the explicit identity conversion of `usage_reservation.authorized_units`. No production quantity, price or validity value is fixed by this registry.
+- The IVR action registry is exactly the seven accepted actions `GUIDE_ACTIVATION`, `DIAL_TASK_CALLEE`, `ENTER_CALLEE`, `GUIDE_PURCHASE`, `REJECT`, `REJECT_SUSPENDED` and `REJECT_CALL_IN_PROGRESS`. `INBOUND_RESOLVE`, `ACTIVATION_NEXT_ACTION` and `DIRECT_AUTHORIZATION` are decision purposes, not actions. `DIRECT_AUTHORIZATION` is never an eighth action.
+- The stable IVR reason registry is `ACTIVATION_REQUIRED`, `CONSENT_REQUIRED`, `CALLER_UNTRUSTED`, `SESSION_IDENTITY_MISMATCH`, `CALL_IN_PROGRESS`, `CONFIRMATION_NOT_ALLOWED`, `ACTIVATION_SUSPENDED`, `CALLER_BINDING_REVOKED`, `WORKSPACE_ACCESS_REVOKED`, `TASK_ACCESS_REVOKED`, `ORGANIZATION_INACTIVE`, `ACCOUNT_DISABLED`, `CALL_STATE_UNRESOLVED`, `TASK_CONFLICT`, `TASK_CLAIMED`, `NO_AVAILABLE_ENTITLEMENT`, `NO_VALID_TASK`, `TASK_EXPIRED`, `TASK_UNAVAILABLE`, `DIRECT_AUTHORIZED` and `DATA_INTEGRITY`. Reason codes are stable codes, never free text.
+- The baseline event-domain registry is unchanged from S1: `ACTIVATION`, `IVR_CONFIRM`, `ACTIVATION_STATUS`, `OPERATIONS`, `IVR_EVENT`, `IVR_DIRECT_AUTH`, `EVIDENCE`, `PAYMENT`, `SHARE_ACCESS`, `PURCHASE` and `SUBJECT_CLAIM`. S2 uses `IVR_EVENT` for `call_event`, `IVR_CONFIRM` for confirmation decisions and consent, `IVR_DIRECT_AUTH` for direct-authorization source events, `ACTIVATION_STATUS` for activation transition fact identity, `PAYMENT` for payment-driven issuance, `PURCHASE` for order/consent idempotency and `ACTIVATION`/`OPERATIONS` for activation transitions. The same string may exist in different domains; it is never reused within one domain.
+- `platform.idempotency_begin`/`complete` are used by S2 with scope `IVR_CONFIRM` (key `eventId`, canonical confirmation fingerprint) and `PURCHASE` (key `account_id || ':' || idempotency_key`, canonical order fingerprint). The scope registry remains exactly `IVR_CONFIRM` and `PURCHASE`; task creation uses its own `(created_by_account_id, idempotency_key)` key and direct authorization uses the call/purpose decision, not a third platform scope. Each IVR endpoint validates its transport/source event ID as nonblank 1-128 characters before `idempotency_begin` or any domain effect (stable `IVR_ARGUMENT_INVALID` otherwise); the platform key column keeps its general 1-512 capacity and the order client key remains 1-475. The exact semantic fields and Outbox identities are the bounded registry in §10.17.
+- The S2 allocation-policy input is an approved server-side code/version reference, not a new database registry or client-controlled ordering. No trial-first, FIFO, stacking, offset or arbitrary expiry/UUID balance ordering is approved by Q5/Q25; the selector accepts only an approved reference that resolves to exactly one eligible balance and otherwise fails closed (§10.18).
+- S2 event-domain usage is `IVR_EVENT` for `call_event` and usage/task facts, `IVR_CONFIRM` for confirmation decisions, `IVR_DIRECT_AUTH` for direct-authorization decisions, `ACTIVATION` for trial facts, `ACTIVATION_STATUS` for activation transition facts, `PURCHASE` for orders and purchase consent, `PAYMENT` for payment events and payment-driven issuance, and `OPERATIONS` for catalog/trial-policy publication facts. The 21-value IVR reason registry is unchanged; policy/allocation denial detail is a service-level typed code retained only in the encrypted internal payload/audit and maps to an existing stored reason.
+
+### 2.10 S2 revision, immutability and snapshot conventions
+
+- Every S2 mutable-head table uses `revision integer NOT NULL DEFAULT 1 CHECK (revision >= 1)` and conditional `revision` updates. Append-only S2 tables have no revision and reject update/delete by privilege plus trigger.
+- Frozen snapshots use the section 2.5 canonical JSON and SHA-256. The commercial, order, trial-policy, grant, consent and usage snapshots are immutable after insertion; a later catalog, policy or consent change never rewrites them.
+- A decision's `response_snapshot` is the typed redacted snapshot of section 10.14; `response_payload_ciphertext` is the encrypted internal payload under the section 2.6 envelope. `response_sha256` hashes the canonical redacted snapshot, and the encrypted payload's redacted projection must equal that snapshot. Replay decrypts and returns the same immutable payload; it never recomputes current state.
+- Mutable S2 state is always expressed by status plus revision or terminal time, never by delete. `catalog_product`, `catalog_benefit_line`, `payment_event`, `ivr_decision`, `trial_grant`, `entitlement_grant`, `usage_fact`, `consent_record` and `service_activation_transition` are append-only/frozen. The other 14 S2 tables are mutable heads. This preserves the frozen 28/16 lifecycle split across all 44 tables.
+- No S2 table stores an order-level entitlement status. `customer_order.payment_status` is payment-only; issuance state is owned by `entitlement_metering.entitlement_issuance`, one durable row per `(order_id, installment_no, entitlement_type)`.
+
+### 2.11 S2 nullability and key conventions
+
+- Every S2 `id` is an application-generated `uuid` with no default. The V006 `issue_first_trial` function generates its inserted `id` values with `pg_catalog.gen_random_uuid()` inside the function body; it accepts no `p_id` argument and no table gains an `id` default.
+- Hash columns are lowercase 64-hex SHA-256/HMAC text with named CHECK constraints. Ciphertext columns use the `v1.<key_ref>.<base64url>` envelope with named CHECK constraints. Masked columns are display-only.
+- Currency columns are three uppercase ISO-4217 characters; money columns are `bigint` cents and never floating point. Unit columns are integer/bigint values, never float.
+- Every S2 FK is `ON UPDATE RESTRICT ON DELETE RESTRICT`. Same-wave ALTER FKs are ordinary immediate constraints, not deferrable. S2 has no deferrable FK and no cascade.
+
 ## 3. Module and Schema Ownership Matrix
 
 ### 3.1 S1 modules and roles
@@ -148,8 +219,14 @@ S1 does not create or specify the S2/S3 table dictionaries, IVR task/session/cal
 | organization-access | organization_access | organization_access_owner | organization_access_role | organization_access.organization, organization_access.organization_membership |
 | operations-iam | operations_iam | operations_iam_owner | operations_iam_role | operations_iam.employee_account |
 | subject-number | subject_number | subject_number_owner | subject_number_role, subject_identity_verification_role | subject_number.business_subject, subject_number.caller_number_binding, subject_number.subject_claim, subject_number.subject_risk_state |
+| catalog-order | catalog_order | catalog_order_owner | catalog_order_role | catalog_order.catalog_product, catalog_order.catalog_version, catalog_order.catalog_offer, catalog_order.catalog_benefit_line, catalog_order.customer_order, catalog_order.payment_order, catalog_order.payment_event |
+| ivr | ivr | ivr_owner | ivr_role | ivr.outbound_call_task, ivr.inbound_session, ivr.call_record, ivr.call_leg, ivr.call_event, ivr.ivr_decision |
+| entitlement-metering | entitlement_metering | entitlement_metering_owner | entitlement_metering_role | entitlement_metering.trial_policy_version, entitlement_metering.entitlement_grant, entitlement_metering.trial_grant, entitlement_metering.entitlement_balance, entitlement_metering.entitlement_issuance, entitlement_metering.usage_reservation, entitlement_metering.usage_fact |
+| activation-consent | activation_consent | activation_consent_owner | activation_consent_role | activation_consent.consent_record, activation_consent.service_activation, activation_consent.service_activation_transition |
 
-All owner and runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. The migration identity is the only role that creates S1 objects. `subject_identity_verification_role` is a narrow service role that may `SELECT` the subject `id` plus the real-name/status/revision/update-time columns and may update only the subject-level real-name columns, revision and update time; it cannot alter owners, source, bindings or claims. It receives `USAGE` on `subject_number` and `audit` and `EXECUTE` on `audit.append_fact` so its same-transaction verification fact can be audited. `operations_service_role` is a NOLOGIN S1 service role used only to execute `audit.append_fact`; it receives `USAGE` on `audit` and no table write privilege.
+All owner and runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. The migration identity is the only role that creates S1 or S2 objects. `subject_identity_verification_role` is a narrow service role that may `SELECT` the subject `id` plus the real-name/status/revision/update-time columns and may update only the subject-level real-name columns, revision and update time; it cannot alter owners, source, bindings or claims. It receives `USAGE` on `subject_number` and `audit` and `EXECUTE` on `audit.append_fact` so its same-transaction verification fact can be audited. `operations_service_role` is a NOLOGIN S1 service role used only to execute `audit.append_fact`; it receives `USAGE` on `audit` and no table write privilege.
+
+The four S2 runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. They receive `USAGE` on their own schema, `USAGE` on `platform` and `audit`, `USAGE` without `CREATE` on the exact S1 schemas whose declared cross-module columns they read, `EXECUTE` on the four S1 functions, and only the exact owned/cross-module table grants in §10.12. PostgreSQL requires containing-schema `USAGE` in addition to a table/column privilege; every cross-module `SELECT` in §10.12 is paired with that schema `USAGE` in the reader's creation wave. No S2 role receives schema `CREATE` or any foreign table write. The `ivr_role` is the application identity used by the IVR-facing application services; the WAF/mTLS service authentication of the IVR protocol is an API/security concern outside this schema. `ivr.select_call_action`, `ivr.record_activation_next_action`, `activation-consent.record_activation_confirmation`, `activation-consent.lock_service_activation` and `entitlement-metering.reserve_call_usage` are application services running under the owning runtime role on the same connection; they are not `SECURITY DEFINER` SQL functions and add no function-wave row. `activation-consent.lock_service_activation` is the rank-4 lock-only collaborator; it locks an existing activation row under the owner role, creates/updates/appends nothing, and returns the current facts.
 
 ### 3.2 Table ownership and write paths
 
@@ -158,18 +235,41 @@ All owner and runtime roles are NOLOGIN, NOSUPERUSER and NOCREATEDB. The migrati
 | platform.idempotency_record | platform-reliability | V001 | S1 | all domain owners | platform.idempotency_begin/complete only |
 | platform.outbox_event | platform-reliability | V001 | S1 | all domain owners | platform.outbox_append for append; platform_dispatcher_role for dispatcher columns |
 | audit.audit_fact | operations-audit | V001 | S1 | all domain owners | audit.append_fact only |
-| customer_iam.customer_account | customer-iam | V002 | S1 | organization-access, subject-number | customer_iam_role |
+| customer_iam.customer_account | customer-iam | V002 | S1 | organization-access, subject-number, ivr, catalog-order, activation-consent (exact §10.12 `SELECT` only) | customer_iam_role |
 | customer_iam.auth_identity | customer-iam | V002 | S1 | none | customer_iam_role |
 | customer_iam.identity_profile | customer-iam | V002 | S1 | none | customer_iam_role |
-| organization_access.organization | organization-access | V002 | S1 | customer-iam, subject-number, operations-iam | organization_access_role |
-| organization_access.organization_membership | organization-access | V002 | S1 | customer-iam, subject-number | organization_access_role |
+| organization_access.organization | organization-access | V002 | S1 | customer-iam, subject-number, operations-iam, ivr, catalog-order, activation-consent (exact §10.12 `SELECT` only) | organization_access_role |
+| organization_access.organization_membership | organization-access | V002 | S1 | customer-iam, subject-number, ivr, catalog-order, activation-consent (exact §10.12 `SELECT` only) | organization_access_role |
 | operations_iam.employee_account | operations-iam | V002 | S1 | operations-audit | operations_iam_role |
-| subject_number.business_subject | subject-number | V003 | S1 | customer-iam, organization-access | subject_number_role for subject creation (both owners null) and verified-personal owner set; subject_identity_verification_role for real-name columns |
-| subject_number.caller_number_binding | subject-number | V003 | S1 | customer-iam, organization-access | subject_number_role |
+| subject_number.business_subject | subject-number | V003 | S1 | customer-iam, organization-access, ivr, catalog-order, entitlement-metering, activation-consent (exact §10.12 `SELECT` only) | subject_number_role for subject creation (both owners null) and verified-personal owner set; subject_identity_verification_role for real-name columns |
+| subject_number.caller_number_binding | subject-number | V003 | S1 | customer-iam, organization-access, ivr (exact §10.12 `SELECT` only) | subject_number_role |
 | subject_number.subject_claim | subject-number | V003 | S1 | customer-iam, organization-access | subject_number_role insert only; no update/delete |
-| subject_number.subject_risk_state | subject-number | V003 | S1 | customer-iam, organization-access | subject_number_role |
+| subject_number.subject_risk_state | subject-number | V003 | S1 | customer-iam, organization-access, ivr (exact §10.12 `SELECT` only) | subject_number_role |
+| catalog_order.catalog_product | catalog-order | V004 | S2 | none for S2; frozen snapshot/fact handoff only | catalog_order_role insert only; no update/delete |
+| catalog_order.catalog_version | catalog-order | V004 | S2 | none for S2; frozen snapshot/fact handoff only | catalog_order_role |
+| catalog_order.catalog_offer | catalog-order | V004 | S2 | none for S2; frozen snapshot/fact handoff only | catalog_order_role |
+| catalog_order.catalog_benefit_line | catalog-order | V004 | S2 | none for S2; frozen snapshot handoff only | catalog_order_role insert only; no update/delete |
+| catalog_order.customer_order | catalog-order | V004 | S2 | entitlement-metering (exact §10.12 `SELECT`); ivr and activation-consent fact handoff only | catalog_order_role insert; update payment status/terminal fields only |
+| catalog_order.payment_order | catalog-order | V004 | S2 | none | catalog_order_role |
+| catalog_order.payment_event | catalog-order | V004 | S2 | entitlement-metering | catalog_order_role insert only; no update/delete |
+| ivr.outbound_call_task | ivr | V005 | S2 | none; owner-service fact handoff only | ivr_role |
+| ivr.inbound_session | ivr | V005 | S2 | activation-consent fact handoff only (IVR passes session facts; no table `SELECT`) | ivr_role |
+| ivr.call_record | ivr | V005 | S2 | evidence (S3); entitlement-metering fact handoff only (never reads IVR tables) | ivr_role |
+| ivr.call_leg | ivr | V005 | S2 | none | ivr_role |
+| ivr.call_event | ivr | V005 | S2 | none; entitlement-metering receives validated settlement facts only | ivr_role |
+| ivr.ivr_decision | ivr | V005 | S2 | none | ivr_role insert only; no update/delete; only through `ivr.select_call_action` |
+| entitlement_metering.trial_policy_version | entitlement-metering | V006 | S2 | none; activation-consent receives the resolved policy/version via the entitlement owner service | entitlement_metering_role |
+| entitlement_metering.entitlement_grant | entitlement-metering | V006 | S2 | ivr, catalog-order (exact §10.12 `SELECT` only) | insert only; no update/delete |
+| entitlement_metering.trial_grant | entitlement-metering | V006 | S2 | none; fact handoff via `issueFirstTrial` result | insert only through `issue_first_trial`; no update/delete |
+| entitlement_metering.entitlement_balance | entitlement-metering | V006 | S2 | ivr (exact §10.12 `SELECT` only) | entitlement_metering_role; `issue_first_trial` insert |
+| entitlement_metering.entitlement_issuance | entitlement-metering | V006 | S2 | catalog-order (exact §10.12 `SELECT` only) | entitlement_metering_role |
+| entitlement_metering.usage_reservation | entitlement-metering | V006 | S2 | ivr fact handoff via reserve/settle services only (no table `SELECT`) | `reserve_call_usage` insert; `entitlement_metering_role` lifecycle update |
+| entitlement_metering.usage_fact | entitlement-metering | V006 | S2 | ivr fact handoff via settlement result; evidence (S3) | insert only; no update/delete |
+| activation_consent.consent_record | activation-consent | V007 | S2 | ivr, catalog-order (exact §10.12 `SELECT` only) | insert only through the owning service; no update/delete |
+| activation_consent.service_activation | activation-consent | V007 | S2 | ivr (exact §10.12 `SELECT`); the row lock is taken only by the activation-consent lock-only collaborator | `record_activation_confirmation`, `record_client_activation` and operations lifecycle service |
+| activation_consent.service_activation_transition | activation-consent | V007 | S2 | ivr fact handoff via the owner service result (no table `SELECT`) | insert only through the owning service; no update/delete |
 
-Collaborators are not co-owners. They may read stable columns and call a published service; they receive no write privilege. No module writes another module's table directly.
+Collaborators are not co-owners. They may read stable columns and call a published service; they receive no write privilege. No module writes another module's table directly. In S2, `ivr` owns `ivr.ivr_decision` and writes it only through `ivr.select_call_action`; `activation-consent` and `entitlement-metering` never write it, and `ivr` never writes consent, activation, trial, grant, balance, reservation or usage tables directly. This matrix is conceptual ownership shape, not a grant list: entries marked `SELECT` name only the exact columns granted in §10.12, while entries marked `fact handoff` receive owner-validated facts through a published owner service and hold no table privilege, no row lock and no write path. Do not infer a grant from a collaborator name.
 
 ### 3.3 Identity and workspace answers
 
@@ -185,7 +285,7 @@ Collaborators are not co-owners. They may read stable columns and call a publish
 
 ### 4.1 Frozen planned table catalog (all 44 tables)
 
-The following catalog is the accepted 44-table planned baseline. It is verbatim from the accepted plan. S1 status is recorded outside the block: rows 1-13 are expanded in this document; the remaining 31 rows are planned for S2/S3 and are not S1 implementation.
+The following catalog is the accepted 44-table planned baseline. It is verbatim from the accepted plan. Status is recorded outside the block: rows 1-13 are expanded as S1 and rows 14-36 as S2 in this document; the remaining eight rows (37-44) are planned S3 and are not authored here.
 
 <!-- catalog:start -->
 | Table | Owning module | Wave | Slice | Minimum columns and keys | Critical constraints and lifecycle |
@@ -289,7 +389,7 @@ sharing.share_access_event|sharing|V009|S3|APPEND_ONLY|Y
 
 ### 4.2 S1 dictionary conventions
 
-Every S1 dictionary below is complete for the accepted column set. "Default" means the database default used when the application omits the column; "none" means the application must supply the value. Caller-owned rows use an application-generated UUID with no database default. The three function-inserted row types listed in section 2.2 generate `id` with `pg_catalog.gen_random_uuid()` inside the function body; no table default and no function `p_id` argument exists. Every foreign key is `ON UPDATE RESTRICT ON DELETE RESTRICT`. Hash columns enforce lowercase 64-character SHA-256 or HMAC-SHA-256 hexadecimal text unless a narrower rule is stated. Every `request_fingerprint` is canonical semantic SHA-256 as defined in section 2.5.
+Every S1 and S2 dictionary below is complete for the accepted column set. "Default" means the database default used when the application omits the column; "none" means the application must supply the value. Caller-owned rows use an application-generated UUID with no database default. The function-inserted row types listed in §2.2 and §2.11 generate `id` with `pg_catalog.gen_random_uuid()` inside the function body; no table default and no function `p_id` argument exists. Every foreign key is `ON UPDATE RESTRICT ON DELETE RESTRICT`. Hash columns enforce lowercase 64-character SHA-256 or HMAC-SHA-256 hexadecimal text unless a narrower rule is stated. Every `request_fingerprint` is canonical semantic SHA-256 as defined in §2.5. S1 dictionaries are §4.3-§4.15; S2 dictionaries are §4.16-§4.38.
 
 Table-level named constraints and indexes are listed after each column table. Index names are stable generation targets. Partial indexes use the exact state predicate shown.
 
@@ -807,11 +907,1075 @@ Revision/immutability: `id`, `caller_number_binding_id` and `risk_type` are immu
 
 Sensitive representation: no raw number, identity or evidence content. The binding FK and risk type are internal facts.
 
+### 4.16 catalog_order.catalog_product
+
+Purpose: immutable stable product identity. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: append-only/frozen; no draft status and no product draft-delete exception. Deletion: no update/delete privilege; the product is never hard-deleted.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_catalog_product` | Application-generated stable identity |
+| product_code | text | NO | none | UNIQUE `uq_catalog_product_code`; CHECK `ck_catalog_product_code` | Stable server-owned code, length 2-64, uppercase code shape |
+| product_family | text | NO | none | CHECK `ck_catalog_product_family` | Stable family code, length 1-64; display copy is not stored here |
+| created_at | timestamptz | NO | `now()` | none | Creation time |
+
+Named checks:
+
+- `ck_catalog_product_code`: `product_code ~ '^[A-Z][A-Z0-9_-]{1,63}$'`.
+- `ck_catalog_product_family`: `product_family ~ '^[A-Z][A-Z0-9_]{0,63}$'`.
+
+Keys and indexes:
+
+- Primary key `pk_catalog_product (id)`.
+- Unique `uq_catalog_product_code (product_code)`.
+- Index `ix_catalog_product_family (product_family, created_at)`.
+- No foreign key.
+
+Append-only control: `catalog_order.reject_row_mutation()` trigger `trg_catalog_product_immutable` rejects update/delete. `catalog_order_role` has `SELECT` and `INSERT` only. Product identity never changes; a new product requires a new row.
+
+Sensitive representation: no sensitive column; `product_code` is an internal catalog code, not a public key.
+
+### 4.17 catalog_order.catalog_version
+
+Purpose: immutable published commercial version with mutable sale lifecycle. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: mutable head (`sale_status`, `revision`); commercial content and snapshot are immutable after publication. Deletion: no hard delete; only a never-published, unreferenced draft is a future deletion candidate, not implemented in this baseline.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_catalog_version` | Application-generated identity |
+| product_id | uuid | NO | none | FK `fk_catalog_version_product`; part of `uq_catalog_version_no` and `uq_catalog_version_active` | Stable product identity |
+| version_no | integer | NO | none | CHECK `ck_catalog_version_no`; part of `uq_catalog_version_no` | Positive monotonic version within the product |
+| sale_status | text | NO | `'DRAFT'` | CHECK `ck_catalog_version_sale_status` | `DRAFT`, `ACTIVE` or `OFFSALE` |
+| offer_type | text | NO | none | CHECK `ck_catalog_version_offer_type` | `SUBSCRIPTION`, `ONE_TIME`, `ADD_ON` or `QUOTE` |
+| audience | text | NO | none | CHECK `ck_catalog_version_audience`; part of `ck_catalog_version_audience_shape` | `PERSONAL` or `ENTERPRISE` |
+| price_cents | bigint | YES | none | CHECK `ck_catalog_version_price` | Server-computed integer cents; NULL only for `QUOTE` |
+| currency | text | NO | none | CHECK `ck_catalog_version_currency` | Uppercase ISO-4217 code |
+| billing_cycle | text | NO | none | CHECK `ck_catalog_version_billing_matrix` | `MONTHLY`, `QUARTERLY`, `ANNUAL`, `ONCE` or `QUOTE` |
+| installments | integer | NO | none | CHECK `ck_catalog_version_billing_matrix` | Positive installment count; `1` for non-subscription |
+| grant_interval_months | integer | NO | none | CHECK `ck_catalog_version_billing_matrix` | Positive for subscriptions; `0` otherwise |
+| snapshot | jsonb | NO | none | CHECK `ck_catalog_version_snapshot_type` | Canonical commercial snapshot |
+| snapshot_sha256 | text | NO | none | CHECK `ck_catalog_version_snapshot_sha` | SHA-256 of the canonical redacted snapshot |
+| created_by_employee_id | uuid | NO | none | FK `fk_catalog_version_employee` | Operations employee that created the draft |
+| created_at | timestamptz | NO | `now()` | none | Draft creation time |
+| published_at | timestamptz | YES | none | CHECK `ck_catalog_version_published_shape` | Non-null exactly when the version is no longer `DRAFT`; set once |
+| revision | integer | NO | `1` | CHECK `ck_catalog_version_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_catalog_version_no`: `version_no >= 1`.
+- `ck_catalog_version_sale_status`: `sale_status IN ('DRAFT','ACTIVE','OFFSALE')`.
+- `ck_catalog_version_offer_type`: `offer_type IN ('SUBSCRIPTION','ONE_TIME','ADD_ON','QUOTE')`.
+- `ck_catalog_version_audience`: `audience IN ('PERSONAL','ENTERPRISE')`.
+- `ck_catalog_version_audience_shape`: `(audience = 'ENTERPRISE') = (offer_type = 'QUOTE')`.
+- `ck_catalog_version_price`: `(price_cents IS NULL) = (offer_type = 'QUOTE') AND (price_cents IS NULL OR price_cents >= 0)`.
+- `ck_catalog_version_currency`: `currency ~ '^[A-Z]{3}$'`.
+- `ck_catalog_version_billing_matrix`: `(offer_type = 'SUBSCRIPTION' AND billing_cycle IN ('MONTHLY','QUARTERLY','ANNUAL') AND installments >= 1 AND grant_interval_months >= 1) OR (offer_type IN ('ONE_TIME','ADD_ON') AND billing_cycle = 'ONCE' AND installments = 1 AND grant_interval_months = 0) OR (offer_type = 'QUOTE' AND billing_cycle = 'QUOTE' AND installments = 1 AND grant_interval_months = 0 AND price_cents IS NULL)`.
+- `ck_catalog_version_snapshot_type`: `jsonb_typeof(snapshot) = 'object'`.
+- `ck_catalog_version_snapshot_sha`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_catalog_version_published_shape`: `(sale_status = 'DRAFT') = (published_at IS NULL)`.
+- `ck_catalog_version_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_catalog_version (id)`.
+- Unique `uq_catalog_version_no (product_id, version_no)`.
+- Partial unique `uq_catalog_version_active (product_id) WHERE sale_status = 'ACTIVE'` — at most one active version per product.
+- Index `ix_catalog_version_product_status (product_id, sale_status, version_no DESC)`.
+- FK `fk_catalog_version_product (product_id) REFERENCES catalog_order.catalog_product(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_catalog_version_employee (created_by_employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `product_id`, `version_no`, offer/audience/price/currency/billing/installment/grant columns, `snapshot`, `snapshot_sha256`, `created_by_employee_id`, `created_at` and `published_at` are immutable once `published_at` is set. `catalog_order.guard_catalog_version_published` rejects any such change after publication. Draft content and `sale_status` use conditional revision updates. Publication is the §9.26 serialized owner transaction: under `catalog_order.publication:<product_id>` it first retires the previous `ACTIVE` version to `OFFSALE` with revision +1, then sets the candidate `published_at` and `ACTIVE` with revision +1, and appends audit/Outbox in one transaction. Retiring the old current version first is mandatory because `uq_catalog_version_active` is an immediate partial unique index; the transaction must never attempt to activate the candidate while the previous version still qualifies, and no constraint deferral or temporary second `ACTIVE` row is allowed. A caller whose expected current active version/revision is stale returns a stable `CATALOG_PUBLICATION_CONFLICT`/`PUBLICATION_STALE_VIEW` and changes nothing; a concurrent loser never receives a raw unique violation and never creates a second `ACTIVE` version. `ACTIVE → OFFSALE` uses the same serialization and never rewrites an order, consent, grant or issuance row. Only a `DRAFT` with `published_at IS NULL` that is referenced by no offer or order is a future deletion candidate; no deletion exists in this baseline.
+
+Sensitive representation: `snapshot` carries commercial terms only and is redacted before hashing; no protected value. `snapshot_sha256` is a hash, not a public key.
+
+### 4.18 catalog_order.catalog_offer
+
+Purpose: channel-specific sale offer for one catalog version. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: mutable head; withdrawal stops new orders only. Deletion: no hard delete; status retirement only.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_catalog_offer` | Application-generated identity |
+| catalog_version_id | uuid | NO | none | FK `fk_catalog_offer_version`; part of `uq_catalog_offer_version_channel` | Parent commercial version |
+| channel | text | NO | none | CHECK `ck_catalog_offer_channel`; part of `uq_catalog_offer_version_channel` | `MINIAPP` or `WEB` |
+| offer_status | text | NO | `'ACTIVE'` | CHECK `ck_catalog_offer_status` | `ACTIVE` or `WITHDRAWN` |
+| version_token | text | NO | none | CHECK `ck_catalog_offer_token` | Content/channel-specific token derived server-side; required by order creation |
+| created_at | timestamptz | NO | `now()` | none | Creation time |
+| revision | integer | NO | `1` | CHECK `ck_catalog_offer_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_catalog_offer_channel`: `channel IN ('MINIAPP','WEB')`.
+- `ck_catalog_offer_status`: `offer_status IN ('ACTIVE','WITHDRAWN')`.
+- `ck_catalog_offer_token`: `length(version_token) BETWEEN 1 AND 128 AND btrim(version_token) <> ''`.
+- `ck_catalog_offer_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_catalog_offer (id)`.
+- Unique `uq_catalog_offer_version_channel (catalog_version_id, channel)`.
+- Index `ix_catalog_offer_channel_status (channel, offer_status)`.
+- FK `fk_catalog_offer_version (catalog_version_id) REFERENCES catalog_order.catalog_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `catalog_version_id` and `channel` are immutable; `catalog_order.guard_catalog_offer` rejects their change. `offer_status`, `version_token` and `revision` use conditional updates. A withdrawn offer blocks new orders but never invalidates an existing order snapshot. `version_token` changes when content changes; it is never accepted from the client without comparison to the stored active offer. This S2 specification does not implement or claim an independent `catalog_offer` withdrawal endpoint or transaction; whether one exists is deferred to Product/Operations/catalog-order in the catalog operations OpenAPI work (OQ-4). Existing catalog-version `OFFSALE` already blocks new orders, and the accepted `ACTIVE`/`WITHDRAWN` state set is unchanged.
+
+Sensitive representation: no sensitive column; the token is a server-derived business token, not a credential or capability token.
+
+### 4.19 catalog_order.catalog_benefit_line
+
+Purpose: immutable benefit line for one catalog version. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: append-only/frozen with the version. Deletion: no update/delete; never hard-deleted.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_catalog_benefit_line` | Application-generated identity |
+| catalog_version_id | uuid | NO | none | FK `fk_catalog_benefit_version`; part of `uq_catalog_benefit_version_type` | Parent commercial version |
+| entitlement_type | text | NO | none | CHECK `ck_catalog_benefit_type`; part of `uq_catalog_benefit_version_type` | Baseline registry in §2.9 |
+| quantity | bigint | NO | none | CHECK `ck_catalog_benefit_quantity` | Positive granted quantity in the type's unit |
+| validity_days | integer | NO | none | CHECK `ck_catalog_benefit_validity` | Positive validity days |
+| grant_interval_months | integer | NO | none | CHECK `ck_catalog_benefit_interval` | Non-negative grant interval; `0` when not installmented |
+
+Named checks:
+
+- `ck_catalog_benefit_type`: `entitlement_type IN ('RECORDING_SECONDS','AI_SECONDS','EVIDENCE_COUNT','STORAGE_BYTES')`.
+- `ck_catalog_benefit_quantity`: `quantity >= 1`.
+- `ck_catalog_benefit_validity`: `validity_days >= 1`.
+- `ck_catalog_benefit_interval`: `grant_interval_months >= 0`.
+
+Keys and indexes:
+
+- Primary key `pk_catalog_benefit_line (id)`.
+- Unique `uq_catalog_benefit_version_type (catalog_version_id, entitlement_type)`.
+- Index `ix_catalog_benefit_version (catalog_version_id)`.
+- FK `fk_catalog_benefit_version (catalog_version_id) REFERENCES catalog_order.catalog_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_catalog_benefit_line_immutable` uses `catalog_order.reject_row_mutation()`; `catalog_order_role` has `SELECT` and `INSERT` only. Lines are immutable with their version and are never rewritten by a later catalog publication.
+
+Sensitive representation: no sensitive column.
+
+### 4.20 catalog_order.customer_order
+
+Purpose: immutable purchase snapshot with a mutable payment lifecycle. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: mutable head for payment status/terminal time only; commercial snapshot, consent reference, fingerprint and amount are immutable. Deletion: no hard delete; payment-lifetime retirement only.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_customer_order` | Application-generated order identity |
+| order_no | text | NO | none | UNIQUE `uq_customer_order_no`; CHECK `ck_customer_order_no` | Opaque server-generated order number, length 1-64 |
+| account_id | uuid | NO | none | FK `fk_customer_order_account`; part of `uq_customer_order_idempotency` | Purchasing natural-person account |
+| owner_organization_id | uuid | YES | none | FK `fk_customer_order_organization` | Organization workspace when organization-scoped |
+| subject_id | uuid | NO | none | FK `fk_customer_order_subject` | Business subject whose activation/trial is purchased |
+| channel | text | NO | none | CHECK `ck_customer_order_channel` | `MINIAPP` or `WEB` only; IVR cannot create an order |
+| catalog_version_id | uuid | NO | none | FK `fk_customer_order_version` | Exact frozen commercial version |
+| catalog_offer_id | uuid | NO | none | FK `fk_customer_order_offer` | Exact channel offer |
+| purchase_consent_id | uuid | NO | none | FK `fk_customer_order_consent` added by `ALTER` in V007 | Explicit purchase consent; the column exists in V004 without the FK |
+| amount_cents | bigint | NO | none | CHECK `ck_customer_order_amount` | Server-derived integer cents, never client-supplied |
+| currency | text | NO | none | CHECK `ck_customer_order_currency` | Uppercase ISO-4217 code |
+| payment_status | text | NO | `'UNPAID'` | CHECK `ck_customer_order_payment_status` | `UNPAID`, `UNKNOWN`, `PAID` or `CLOSED`; payment only, never entitlement |
+| snapshot | jsonb | NO | none | CHECK `ck_customer_order_snapshot_type` | Exact frozen order snapshot |
+| snapshot_sha256 | text | NO | none | CHECK `ck_customer_order_snapshot_sha` | SHA-256 of the canonical redacted snapshot |
+| version_token | text | NO | none | CHECK `ck_customer_order_version_token` | The exact token accepted at creation |
+| idempotency_key | text | NO | none | CHECK `ck_customer_order_idempotency`; part of `uq_customer_order_idempotency` | Client key, length 1-475; the derived platform key is `account_id || ':' || idempotency_key`, so a canonical 36-character account UUID plus the colon fits the platform 512-character limit (36 + 1 + 475 = 512) |
+| request_fingerprint | text | NO | none | CHECK `ck_customer_order_fingerprint` | Canonical semantic purchase fingerprint |
+| revision | integer | NO | `1` | CHECK `ck_customer_order_revision` | Conditional-update revision |
+| created_at | timestamptz | NO | `now()` | none | Order creation time |
+| paid_at | timestamptz | YES | none | CHECK `ck_customer_order_payment_shape` | Non-null exactly when `payment_status = 'PAID'` |
+| closed_at | timestamptz | YES | none | CHECK `ck_customer_order_payment_shape` | Non-null exactly when `payment_status = 'CLOSED'` |
+
+Named checks:
+
+- `ck_customer_order_no`: `length(order_no) BETWEEN 1 AND 64 AND btrim(order_no) <> ''`.
+- `ck_customer_order_channel`: `channel IN ('MINIAPP','WEB')`.
+- `ck_customer_order_amount`: `amount_cents >= 0`.
+- `ck_customer_order_currency`: `currency ~ '^[A-Z]{3}$'`.
+- `ck_customer_order_payment_status`: `payment_status IN ('UNPAID','UNKNOWN','PAID','CLOSED')`.
+- `ck_customer_order_payment_shape`: `((payment_status = 'PAID') = (paid_at IS NOT NULL)) AND ((payment_status = 'CLOSED') = (closed_at IS NOT NULL))`.
+- `ck_customer_order_time_order`: `(paid_at IS NULL OR paid_at >= created_at) AND (closed_at IS NULL OR closed_at >= created_at)`.
+- `ck_customer_order_snapshot_type`: `jsonb_typeof(snapshot) = 'object'`.
+- `ck_customer_order_snapshot_sha`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_customer_order_version_token`: `length(version_token) BETWEEN 1 AND 128 AND btrim(version_token) <> ''`.
+- `ck_customer_order_idempotency`: `length(idempotency_key) BETWEEN 1 AND 475 AND btrim(idempotency_key) <> ''`.
+- `ck_customer_order_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
+- `ck_customer_order_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_customer_order (id)`.
+- Unique `uq_customer_order_no (order_no)`.
+- Unique `uq_customer_order_idempotency (account_id, idempotency_key)`.
+- Index `ix_customer_order_subject_status (subject_id, payment_status, created_at DESC)`.
+- Index `ix_customer_order_organization (owner_organization_id, created_at DESC)`.
+- Index `ix_customer_order_version (catalog_version_id)`.
+- FK `fk_customer_order_account (account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_customer_order_organization (owner_organization_id) REFERENCES organization_access.organization(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_customer_order_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_customer_order_version (catalog_version_id) REFERENCES catalog_order.catalog_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_customer_order_offer (catalog_offer_id) REFERENCES catalog_order.catalog_offer(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_customer_order_consent (purchase_consent_id) REFERENCES activation_consent.consent_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT` — added by `ALTER TABLE` in V007; ordinary immediate, not deferrable.
+- No entitlement-status column. Order-level entitlement is a read-only computed projection over the `entitlement_metering.entitlement_issuance` rows for the order (inputs: `order_id`, `installment_no`, `entitlement_type`, `status`, `grant_id`, `issued_at`, `last_error_code`) joined to `entitlement_metering.entitlement_grant` (`id`, `subject_id`, `entitlement_type`, `granted_units`, `valid_from`, `expires_at`) by `grant_id = grant.id`; `catalog_order_role` receives only those exact `SELECT` columns plus schema `USAGE` (§10.12), with no write and no row lock. The projection is never stored on the order.
+
+Revision/immutability: `order_no`, `account_id`, `owner_organization_id`, `subject_id`, `channel`, `catalog_version_id`, `catalog_offer_id`, `purchase_consent_id`, `amount_cents`, `currency`, `snapshot`, `snapshot_sha256`, `version_token`, `idempotency_key`, `request_fingerprint` and `created_at` are immutable; `catalog_order.guard_customer_order_snapshot` rejects any change. Only `payment_status`, `paid_at`, `closed_at`, `revision` may change, under the order row lock and verified payment evidence. The order is created only from `MINIAPP`/`WEB` after server-side account/workspace/subject access, ordinary-client real-name, current active activation, explicit current purchase consent (§9.17, §10.20), an exact ACTIVE offer/version token and server amount computation. The client key is validated at 1-475 characters before any mutation; a length of 476-512 is rejected with `IDEMPOTENCY_ARGUMENT_INVALID` (or the stable order-argument code) and creates no order, consent or idempotency row. `platform.idempotency_begin('PURCHASE', account_id || ':' || idempotency_key, request_fingerprint)` and `complete(..., 'ORDER', orderId, redactedOrderSnapshot, snapshotSha256)` run in the same transaction; identical retry returns the first immutable order, changed input conflicts. A same-key retry checks platform replay before appending a second purchase consent.
+
+Sensitive representation: `snapshot` is historical commercial data and is redacted or encrypted for any protected value before hashing; `request_fingerprint` and `snapshot_sha256` are hashes, not public keys. No full number, callee or identity value is stored.
+
+### 4.21 catalog_order.payment_order
+
+Purpose: payment attempt for one customer order with independently observable status. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: mutable head driven only by verified provider evidence. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_payment_order` | Application-generated identity |
+| order_id | uuid | NO | none | UNIQUE `uq_payment_order_order`; FK `fk_payment_order_order` | Exactly one payment order per customer order in the baseline |
+| provider | text | NO | none | CHECK `ck_payment_order_provider` | Baseline `WECHAT`; a new provider requires an approved migration |
+| merchant_order_no | text | NO | none | UNIQUE `uq_payment_order_merchant`; CHECK `ck_payment_order_merchant_no` | Provider-scoped merchant order number |
+| provider_transaction_id | text | YES | none | Partial UNIQUE `uq_payment_order_transaction`; CHECK `ck_payment_order_transaction` | Provider transaction identity when known |
+| status | text | NO | `'UNPAID'` | CHECK `ck_payment_order_status`; `ck_payment_order_paid_shape` | `UNPAID`, `UNKNOWN`, `PAID` or `CLOSED` |
+| amount_cents | bigint | NO | none | CHECK `ck_payment_order_amount` | Must equal the frozen order amount |
+| currency | text | NO | none | CHECK `ck_payment_order_currency` | Uppercase ISO-4217 code |
+| created_at | timestamptz | NO | `now()` | none | Creation time |
+| updated_at | timestamptz | NO | `now()` | CHECK `ck_payment_order_time_order` | Last verified status update |
+| revision | integer | NO | `1` | CHECK `ck_payment_order_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_payment_order_provider`: `provider IN ('WECHAT')`.
+- `ck_payment_order_merchant_no`: `length(merchant_order_no) BETWEEN 1 AND 64 AND btrim(merchant_order_no) <> ''`.
+- `ck_payment_order_transaction`: `provider_transaction_id IS NULL OR (length(provider_transaction_id) BETWEEN 1 AND 128 AND btrim(provider_transaction_id) <> '')`.
+- `ck_payment_order_status`: `status IN ('UNPAID','UNKNOWN','PAID','CLOSED')`.
+- `ck_payment_order_paid_shape`: `status <> 'PAID' OR provider_transaction_id IS NOT NULL`.
+- `ck_payment_order_amount`: `amount_cents >= 0`.
+- `ck_payment_order_currency`: `currency ~ '^[A-Z]{3}$'`.
+- `ck_payment_order_time_order`: `updated_at >= created_at`.
+- `ck_payment_order_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_payment_order (id)`.
+- Unique `uq_payment_order_order (order_id)`.
+- Unique `uq_payment_order_merchant (merchant_order_no)`.
+- Partial unique `uq_payment_order_transaction (provider_transaction_id) WHERE provider_transaction_id IS NOT NULL`.
+- Index `ix_payment_order_status_time (status, updated_at)`.
+- FK `fk_payment_order_order (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `order_id`, `provider`, `merchant_order_no`, `amount_cents`, `currency` and `created_at` are immutable; `catalog_order.guard_payment_order_identity` rejects their change. `status`, `provider_transaction_id`, `updated_at` and `revision` change only from verified provider evidence under the order/payment row lock. `UNKNOWN` blocks duplicate checkout until the original order is queried; `PAID` and `CLOSED` are terminal for the ordinary flow. Payment status never implies entitlement issuance.
+
+Sensitive representation: `merchant_order_no` and `provider_transaction_id` are provider-scoped internal identifiers; they are never returned as public keys, and access is audited.
+
+### 4.22 catalog_order.payment_event
+
+Purpose: append-only verified/unverified provider payment event. Owner: `catalog-order`. Wave V004; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_payment_event` | Application-generated identity |
+| payment_order_id | uuid | NO | none | FK `fk_payment_event_order` | Parent payment order |
+| provider | text | NO | none | CHECK `ck_payment_event_provider`; part of `uq_payment_event_provider_event` | Baseline `WECHAT` |
+| provider_event_id | text | NO | none | CHECK `ck_payment_event_event_id`; part of `uq_payment_event_provider_event` | Unique within the provider event domain |
+| event_type | text | NO | none | CHECK `ck_payment_event_type` | Stable provider event code, length 1-64 |
+| signature_verified | boolean | NO | `false` | none | Only verified events may advance payment |
+| payload_ciphertext | text | NO | none | CHECK `ck_payment_event_payload_ciphertext` | Encrypted raw provider payload |
+| payload_sha256 | text | NO | none | CHECK `ck_payment_event_payload_sha` | SHA-256 of the stored encrypted/redacted payload |
+| transaction_id | text | YES | none | CHECK `ck_payment_event_transaction` | Provider transaction identity when supplied |
+| amount_cents | bigint | NO | none | CHECK `ck_payment_event_amount` | Provider-reported amount in cents |
+| occurred_at | timestamptz | NO | none | none | Provider event time; audit only |
+| received_at | timestamptz | NO | `now()` | none | Server receipt time |
+
+Named checks:
+
+- `ck_payment_event_provider`: `provider IN ('WECHAT')`.
+- `ck_payment_event_event_id`: `length(provider_event_id) BETWEEN 1 AND 128 AND btrim(provider_event_id) <> ''`.
+- `ck_payment_event_type`: `length(event_type) BETWEEN 1 AND 64 AND btrim(event_type) <> ''`.
+- `ck_payment_event_payload_ciphertext`: `payload_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_payment_event_payload_sha`: `payload_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_payment_event_transaction`: `transaction_id IS NULL OR (length(transaction_id) BETWEEN 1 AND 128 AND btrim(transaction_id) <> '')`.
+- `ck_payment_event_amount`: `amount_cents >= 0`.
+
+Keys and indexes:
+
+- Primary key `pk_payment_event (id)`.
+- Unique `uq_payment_event_provider_event (provider, provider_event_id)`.
+- Index `ix_payment_event_order_time (payment_order_id, received_at DESC)`.
+- Partial index `ix_payment_event_verified (payment_order_id, received_at) WHERE signature_verified`.
+- FK `fk_payment_event_order (payment_order_id) REFERENCES catalog_order.payment_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_payment_event_immutable` uses `catalog_order.reject_row_mutation()`; `catalog_order_role` has `SELECT` and `INSERT` only. Multiple verified events may advance one order; an unverified event is retained but never advances payment. Duplicate `(provider, provider_event_id)` returns the stored first processing result at the service layer, not a second row.
+
+Sensitive representation: `payload_ciphertext` is encrypted; `payload_sha256` is a hash. Provider event/transaction IDs are internal and never client-visible public keys.
+
+### 4.23 ivr.outbound_call_task
+
+Purpose: short-lived single-slot outbound dial task created by the mini-program. Owner: `ivr`. Wave V005; slice S2. Lifecycle: mutable head until terminal; terminal rows are immutable. Deletion: no hard delete; expiry/replacement/cancellation retain history.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_outbound_call_task` | Application-generated identity |
+| task_id | text | NO | none | UNIQUE `uq_outbound_call_task_task_id`; CHECK `ck_outbound_task_task_id` | Opaque server-generated protocol ID, length 1-64 |
+| caller_binding_id | uuid | NO | none | FK `fk_outbound_task_binding` | Expected business-number binding |
+| subject_id | uuid | NO | none | FK `fk_outbound_task_subject` | Stable subject |
+| owner_account_id | uuid | YES | none | FK `fk_outbound_task_owner_account`; part of `ck_outbound_task_single_owner` | Personal owner |
+| owner_organization_id | uuid | YES | none | FK `fk_outbound_task_owner_org`; part of `ck_outbound_task_single_owner` | Organization owner |
+| created_by_account_id | uuid | NO | none | FK `fk_outbound_task_creator`; part of `uq_outbound_task_idempotency` | Actual creating account |
+| caller_number_hmac | text | NO | none | CHECK `ck_outbound_task_caller_hmac`; partial unique `uq_outbound_task_live_caller` | Canonical caller HMAC |
+| callee_ciphertext | text | NO | none | CHECK `ck_outbound_task_callee_ciphertext` | Encrypted callee; never logged or returned by ordinary APIs |
+| callee_masked | text | NO | none | CHECK `ck_outbound_task_callee_masked` | Display-only masked callee |
+| business_type | text | NO | none | CHECK `ck_outbound_task_business_type` | Approved call-business code, length 1-64; baseline `EVIDENCE_CALL` |
+| status | text | NO | `'PENDING'` | CHECK `ck_outbound_task_status`; `ck_outbound_task_terminal_shape` | `PENDING`, `CLAIMED`, `REPLACED`, `CANCELLED`, `EXPIRED`, `REJECTED`, `COMPLETED` or `FAILED` |
+| reason_code | text | YES | none | CHECK `ck_outbound_task_reason` | Stable reason code when applicable |
+| ttl_seconds | integer | NO | `30` | CHECK `ck_outbound_task_ttl` | Server-configurable default 30; frozen at creation |
+| expires_at | timestamptz | NO | none | CHECK `ck_outbound_task_expiry` | Database absolute expiry computed at creation |
+| idempotency_key | text | NO | none | CHECK `ck_outbound_task_idempotency_key`; part of `uq_outbound_task_idempotency` | Client idempotency key |
+| request_fingerprint | text | NO | none | CHECK `ck_outbound_task_fingerprint` | Canonical task-request fingerprint |
+| claimed_call_id | text | YES | none | FK `fk_outbound_task_claimed_call` added by `ALTER` in V005; UNIQUE `uq_outbound_task_claimed_call` | Set once on claim |
+| claimed_at | timestamptz | YES | none | CHECK `ck_outbound_task_claimed_shape` | Non-null exactly when `claimed_call_id` is set |
+| terminal_at | timestamptz | YES | none | CHECK `ck_outbound_task_terminal_shape` | Non-null exactly for a terminal status |
+| created_at | timestamptz | NO | `now()` | none | Creation time |
+| updated_at | timestamptz | NO | `now()` | CHECK `ck_outbound_task_time_order` | Last state update |
+| revision | integer | NO | `1` | CHECK `ck_outbound_task_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_outbound_task_task_id`: `length(task_id) BETWEEN 1 AND 64 AND btrim(task_id) <> ''`.
+- `ck_outbound_task_single_owner`: `num_nonnulls(owner_account_id, owner_organization_id) = 1`.
+- `ck_outbound_task_caller_hmac`: `caller_number_hmac ~ '^[0-9a-f]{64}$'`.
+- `ck_outbound_task_callee_ciphertext`: `callee_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_outbound_task_callee_masked`: `length(callee_masked) BETWEEN 1 AND 64 AND btrim(callee_masked) <> ''`.
+- `ck_outbound_task_business_type`: `length(business_type) BETWEEN 1 AND 64 AND btrim(business_type) <> ''`.
+- `ck_outbound_task_status`: `status IN ('PENDING','CLAIMED','REPLACED','CANCELLED','EXPIRED','REJECTED','COMPLETED','FAILED')`.
+- `ck_outbound_task_reason`: `reason_code IS NULL OR (length(reason_code) BETWEEN 1 AND 64 AND btrim(reason_code) <> '')`.
+- `ck_outbound_task_ttl`: `ttl_seconds >= 1`.
+- `ck_outbound_task_expiry`: `expires_at > created_at`.
+- `ck_outbound_task_idempotency_key`: `length(idempotency_key) BETWEEN 1 AND 512 AND btrim(idempotency_key) <> ''`.
+- `ck_outbound_task_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
+- `ck_outbound_task_claimed_shape`: `(claimed_call_id IS NULL) = (claimed_at IS NULL)`.
+- `ck_outbound_task_terminal_shape`: `(status IN ('PENDING','CLAIMED')) = (terminal_at IS NULL)`.
+- `ck_outbound_task_time_order`: `updated_at >= created_at AND (terminal_at IS NULL OR terminal_at >= created_at)`.
+- `ck_outbound_task_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_outbound_call_task (id)`.
+- Unique `uq_outbound_call_task_task_id (task_id)`.
+- Unique `uq_outbound_task_idempotency (created_by_account_id, idempotency_key)`.
+- Partial unique `uq_outbound_task_live_caller (caller_number_hmac) WHERE status IN ('PENDING','CLAIMED')` — one non-terminal task per canonical caller across all accounts/workspaces.
+- Unique `uq_outbound_task_claimed_call (claimed_call_id) WHERE claimed_call_id IS NOT NULL`.
+- Index `ix_outbound_task_subject_status (subject_id, status, created_at DESC)`.
+- Index `ix_outbound_task_org_status (owner_organization_id, status, created_at DESC)`.
+- Index `ix_outbound_task_creator_status (created_by_account_id, status)`.
+- FK `fk_outbound_task_binding (caller_binding_id) REFERENCES subject_number.caller_number_binding(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_outbound_task_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_outbound_task_owner_account (owner_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_outbound_task_owner_org (owner_organization_id) REFERENCES organization_access.organization(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_outbound_task_creator (created_by_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_outbound_task_claimed_call (claimed_call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT` — added by `ALTER TABLE` in V005 after `call_record` exists; ordinary immediate, not deferrable.
+
+Revision/immutability: `task_id`, `caller_binding_id`, `subject_id`, owner columns, `created_by_account_id`, `caller_number_hmac`, `callee_ciphertext`, `callee_masked`, `business_type`, `ttl_seconds`, `expires_at`, `idempotency_key`, `request_fingerprint` and `created_at` are immutable; `ivr.guard_outbound_call_task` rejects any change. `status`, `reason_code`, `claimed_call_id`, `claimed_at`, `terminal_at`, `updated_at` and `revision` use conditional updates. The default `ttl_seconds` is 30 and server-configurable, but a duplicate, retry or replacement never refreshes an existing row's `expires_at`; a replacement creates a new row and marks the old one `REPLACED`. `CLAIMED` can never be replaced or cancelled and never returns to `PENDING`.
+
+Sensitive representation: `caller_number_hmac` is lookup-only; `callee_ciphertext` is encrypted; `callee_masked` is display-only. The full callee exists only in the authenticated IVR internal decision payload.
+
+### 4.24 ivr.inbound_session
+
+Purpose: immutable-origin IVR session for one `callId`, carrying trusted caller and confirmation state. Owner: `ivr`. Wave V005; slice S2. Lifecycle: mutable head for session status/confirmation; origin identity is immutable. Deletion: no hard delete; audit history retained.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_inbound_session` | Application-generated identity |
+| call_id | text | NO | none | UNIQUE `uq_inbound_session_call`; CHECK `ck_inbound_session_call_id` | Root IVR protocol identity; no parent FK |
+| subject_id | uuid | YES | none | FK `fk_inbound_session_subject` | Resolved subject when a canonical caller matches |
+| trusted_caller | boolean | NO | none | CHECK `ck_inbound_session_caller_shape` | Whether the line supplied a trusted canonical caller |
+| caller_ciphertext | text | YES | none | CHECK `ck_inbound_session_caller_ciphertext` | Encrypted caller when trusted |
+| caller_number_hmac | text | YES | none | CHECK `ck_inbound_session_caller_hmac` | Canonical caller HMAC when trusted |
+| caller_masked | text | YES | none | CHECK `ck_inbound_session_caller_masked` | Display-only masked caller |
+| access_number_masked | text | NO | none | CHECK `ck_inbound_session_access_masked` | Masked access number; no full access number |
+| node_id | text | NO | none | CHECK `ck_inbound_session_node` | IVR node identity, length 1-64 |
+| protocol_version | text | NO | none | CHECK `ck_inbound_session_protocol` | IVR protocol version, length 1-32 |
+| prompt_version | text | NO | none | CHECK `ck_inbound_session_prompt` | Frozen prompt version, length 1-64 |
+| status | text | NO | `'RECEIVED'` | CHECK `ck_inbound_session_status`; `ck_inbound_session_confirmed_shape` | `RECEIVED`, `CONFIRMED`, `ABANDONED` or `REJECTED` |
+| confirmed_subject_id | uuid | YES | none | FK `fk_inbound_session_confirmed_subject` | Subject confirmed by key `1`; set only on confirmation |
+| guidance_status | text | YES | none | CHECK `ck_inbound_session_guidance` | `ACTIVATION_REQUIRED` or `CONSENT_REQUIRED` when guidance was returned |
+| created_at | timestamptz | NO | `now()` | none | Session creation time |
+| confirmed_at | timestamptz | YES | none | CHECK `ck_inbound_session_confirmed_shape` | Non-null exactly when `CONFIRMED` |
+| revision | integer | NO | `1` | CHECK `ck_inbound_session_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_inbound_session_call_id`: `length(call_id) BETWEEN 1 AND 128 AND btrim(call_id) <> ''`.
+- `ck_inbound_session_caller_shape`: `trusted_caller = FALSE OR (caller_ciphertext IS NOT NULL AND caller_number_hmac IS NOT NULL AND caller_masked IS NOT NULL)`.
+- `ck_inbound_session_caller_ciphertext`: `caller_ciphertext IS NULL OR caller_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_inbound_session_caller_hmac`: `caller_number_hmac IS NULL OR caller_number_hmac ~ '^[0-9a-f]{64}$'`.
+- `ck_inbound_session_caller_masked`: `caller_masked IS NULL OR (length(caller_masked) BETWEEN 1 AND 64 AND btrim(caller_masked) <> '')`.
+- `ck_inbound_session_access_masked`: `length(access_number_masked) BETWEEN 1 AND 64 AND btrim(access_number_masked) <> ''`.
+- `ck_inbound_session_node`: `length(node_id) BETWEEN 1 AND 64 AND btrim(node_id) <> ''`.
+- `ck_inbound_session_protocol`: `length(protocol_version) BETWEEN 1 AND 32 AND btrim(protocol_version) <> ''`.
+- `ck_inbound_session_prompt`: `length(prompt_version) BETWEEN 1 AND 64 AND btrim(prompt_version) <> ''`.
+- `ck_inbound_session_status`: `status IN ('RECEIVED','CONFIRMED','ABANDONED','REJECTED')`.
+- `ck_inbound_session_guidance`: `guidance_status IS NULL OR guidance_status IN ('ACTIVATION_REQUIRED','CONSENT_REQUIRED')`.
+- `ck_inbound_session_confirmed_shape`: `((status = 'CONFIRMED') = (confirmed_at IS NOT NULL)) AND (status <> 'CONFIRMED' OR (trusted_caller = TRUE AND confirmed_subject_id IS NOT NULL))`.
+- `ck_inbound_session_time_order`: `confirmed_at IS NULL OR confirmed_at >= created_at`.
+- `ck_inbound_session_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_inbound_session (id)`.
+- Unique `uq_inbound_session_call (call_id)`.
+- Index `ix_inbound_session_hmac_status (caller_number_hmac, status, created_at DESC)`.
+- Index `ix_inbound_session_subject_time (subject_id, created_at DESC)`.
+- FK `fk_inbound_session_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_inbound_session_confirmed_subject (confirmed_subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- No FK on `call_id`; it is the root IVR protocol identity.
+
+Revision/immutability: `call_id`, `trusted_caller`, caller columns, `access_number_masked`, `node_id`, `protocol_version`, `prompt_version` and `created_at` are immutable; `ivr.guard_inbound_session` rejects their change. Only `status`, `confirmed_subject_id`, `guidance_status`, `confirmed_at` and `revision` change conditionally. A `CONFIRMED` session is terminal for confirmation-state purposes and is never re-rejected by replay. A fresh confirmation requires the original `(call_id, INBOUND_RESOLVE)` decision to be `GUIDE_ACTIVATION`; an already-`CONFIRMED` session with no `ACTIVATION_NEXT_ACTION` decision is a data-integrity failure. A fresh `SUSPENDED` or competing-call rejection may mark only a never-confirmed session `REJECTED`.
+
+Sensitive representation: caller ciphertext/HMAC/masked and masked access number; no full caller or access number is a public key or ordinary log field.
+
+### 4.25 ivr.call_record
+
+Purpose: canonical call-scoped parent for task, session, legs, decisions, reservations and evidence. Owner: `ivr`. Wave V005; slice S2. Lifecycle: mutable head; `UNKNOWN` remains occupied until reconciliation; terminal states are immutable. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_call_record` | Application-generated identity |
+| call_id | text | NO | none | UNIQUE `uq_call_record_call`; CHECK `ck_call_record_call_id` | Canonical call protocol identity and FK parent |
+| session_id | uuid | NO | none | UNIQUE `uq_call_record_session`; FK `fk_call_record_session` | One call record per inbound session |
+| task_id | uuid | YES | none | UNIQUE `uq_call_record_task`; FK `fk_call_record_task` | Set only for a task-backed call |
+| subject_id | uuid | YES | none | FK `fk_call_record_subject` | Resolved subject when available |
+| caller_ciphertext | text | NO | none | CHECK `ck_call_record_caller_ciphertext` | Encrypted caller |
+| caller_number_hmac | text | NO | none | CHECK `ck_call_record_caller_hmac`; partial unique `uq_call_record_active_caller` | Canonical caller HMAC |
+| caller_masked | text | NO | none | CHECK `ck_call_record_caller_masked` | Display-only masked caller |
+| callee_ciphertext | text | YES | none | CHECK `ck_call_record_callee_ciphertext` | Encrypted callee when one was authorized |
+| callee_masked | text | YES | none | CHECK `ck_call_record_callee_masked` | Display-only masked callee |
+| access_number_masked | text | NO | none | CHECK `ck_call_record_access_masked` | Masked access number |
+| status | text | NO | `'ACTIVE'` | CHECK `ck_call_record_status`; `ck_call_record_terminal_shape` | `ACTIVE`, `ENDED`, `FAILED`, `UNKNOWN` or `REJECTED` |
+| node_id | text | NO | none | CHECK `ck_call_record_node` | IVR node identity |
+| protocol_version | text | NO | none | CHECK `ck_call_record_protocol` | IVR protocol version |
+| started_at | timestamptz | YES | none | CHECK `ck_call_record_time_order` | Null only for a call rejected before start |
+| bridged_at | timestamptz | YES | none | CHECK `ck_call_record_time_order` | A/B bridge time |
+| recording_started_at | timestamptz | YES | none | CHECK `ck_call_record_time_order` | Recording start |
+| recording_ended_at | timestamptz | YES | none | CHECK `ck_call_record_time_order` | Recording end |
+| ended_at | timestamptz | YES | none | CHECK `ck_call_record_terminal_shape`; `ck_call_record_time_order` | Non-null exactly for terminal `ENDED`/`FAILED`/`REJECTED` |
+| authoritative_seconds | integer | YES | none | CHECK `ck_call_record_authoritative_seconds` | Authoritative IVR recording seconds; never negative |
+| end_reason | text | YES | none | CHECK `ck_call_record_end_reason` | Stable reason; `CALL_IN_PROGRESS` for a competing-call rejection |
+| revision | integer | NO | `1` | CHECK `ck_call_record_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_call_record_call_id`: `length(call_id) BETWEEN 1 AND 128 AND btrim(call_id) <> ''`.
+- `ck_call_record_caller_ciphertext`: `caller_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_call_record_caller_hmac`: `caller_number_hmac ~ '^[0-9a-f]{64}$'`.
+- `ck_call_record_caller_masked`: `length(caller_masked) BETWEEN 1 AND 64 AND btrim(caller_masked) <> ''`.
+- `ck_call_record_callee_ciphertext`: `callee_ciphertext IS NULL OR callee_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_call_record_callee_masked`: `callee_masked IS NULL OR (length(callee_masked) BETWEEN 1 AND 64 AND btrim(callee_masked) <> '')`.
+- `ck_call_record_access_masked`: `length(access_number_masked) BETWEEN 1 AND 64 AND btrim(access_number_masked) <> ''`.
+- `ck_call_record_status`: `status IN ('ACTIVE','ENDED','FAILED','UNKNOWN','REJECTED')`.
+- `ck_call_record_node`: `length(node_id) BETWEEN 1 AND 64 AND btrim(node_id) <> ''`.
+- `ck_call_record_protocol`: `length(protocol_version) BETWEEN 1 AND 32 AND btrim(protocol_version) <> ''`.
+- `ck_call_record_terminal_shape`: `(status IN ('ACTIVE','UNKNOWN')) = (ended_at IS NULL)`.
+- `ck_call_record_time_order`: `(started_at IS NULL OR ended_at IS NULL OR ended_at >= started_at) AND (started_at IS NULL OR bridged_at IS NULL OR bridged_at >= started_at) AND (started_at IS NULL OR recording_started_at IS NULL OR recording_started_at >= started_at) AND (recording_started_at IS NULL OR recording_ended_at IS NULL OR recording_ended_at >= recording_started_at)`.
+- `ck_call_record_authoritative_seconds`: `authoritative_seconds IS NULL OR (authoritative_seconds >= 0 AND status IN ('ENDED','FAILED'))`.
+- `ck_call_record_end_reason`: `end_reason IS NULL OR (length(end_reason) BETWEEN 1 AND 64 AND btrim(end_reason) <> '')`.
+- `ck_call_record_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_call_record (id)`.
+- Unique `uq_call_record_call (call_id)`.
+- Unique `uq_call_record_session (session_id)`.
+- Unique `uq_call_record_task (task_id) WHERE task_id IS NOT NULL`.
+- Partial unique `uq_call_record_active_caller (caller_number_hmac) WHERE status IN ('ACTIVE','UNKNOWN')` — one active or unknown call per canonical caller across accounts/workspaces; the current `callId` is excluded by the predicate in the transaction, not by this index.
+- Index `ix_call_record_subject_time (subject_id, ended_at, created_at)`.
+- Index `ix_call_record_task (task_id)`.
+- FK `fk_call_record_session (session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_call_record_task (task_id) REFERENCES ivr.outbound_call_task(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_call_record_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- No FK on `call_id`; it is the canonical call-scoped parent created in resolve or direct authorization.
+
+Revision/immutability: `call_id`, `session_id`, `task_id`, party ciphertext/masked fields, `access_number_masked`, `node_id`, `protocol_version` and `started_at` are immutable; `ivr.guard_call_record_parties` rejects their change. `status`, bridge/recording/end times, `authoritative_seconds`, `end_reason` and `revision` use conditional updates. A live call is created or bound `ACTIVE` before a non-terminal decision/reservation. A competing call is created terminal `REJECTED` with `end_reason = 'CALL_IN_PROGRESS'` when absent or finalized `REJECTED` only when it is the current never-started/rejectable `ACTIVE` row; an unrelated competing call and a current `UNKNOWN` row are never mutated. `UNKNOWN` is never finalized `REJECTED` or released; it converges to `ENDED`/`FAILED` only through reconciliation. The partial unique index is a backstop; a conflict is mapped after a deterministic reread, never returned as a raw constraint error.
+
+Sensitive representation: caller/callee ciphertext and masked values; caller HMAC for lookup. No full party number is a public identifier or ordinary log field.
+
+### 4.26 ivr.call_leg
+
+Purpose: A-leg/B-leg fact for one call. Owner: `ivr`. Wave V005; slice S2. Lifecycle: mutable head with revision; terminal leg state retained. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_call_leg` | Application-generated identity |
+| call_id | text | NO | none | FK `fk_call_leg_call`; part of `uq_call_leg_id` | Root call |
+| leg_id | text | NO | none | CHECK `ck_call_leg_leg_id`; part of `uq_call_leg_id` | IVR leg identity unique within the call |
+| leg_type | text | NO | none | CHECK `ck_call_leg_type` | `CALLER` or `CALLEE` |
+| direction | text | NO | none | CHECK `ck_call_leg_direction` | `INBOUND` for the caller leg, `OUTBOUND` for the callee leg |
+| state | text | NO | none | CHECK `ck_call_leg_state` | `RINGING`, `ANSWERED`, `ENDED` or `FAILED` |
+| started_at | timestamptz | NO | none | none | Leg start time |
+| answered_at | timestamptz | YES | none | CHECK `ck_call_leg_time_order` | Answer time when answered |
+| ended_at | timestamptz | YES | none | CHECK `ck_call_leg_time_order` | Terminal leg time |
+| end_reason | text | YES | none | CHECK `ck_call_leg_end_reason` | Stable leg end reason |
+| revision | integer | NO | `1` | CHECK `ck_call_leg_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_call_leg_leg_id`: `length(leg_id) BETWEEN 1 AND 64 AND btrim(leg_id) <> ''`.
+- `ck_call_leg_type`: `leg_type IN ('CALLER','CALLEE')`.
+- `ck_call_leg_direction`: `(leg_type = 'CALLER' AND direction = 'INBOUND') OR (leg_type = 'CALLEE' AND direction = 'OUTBOUND')`.
+- `ck_call_leg_state`: `state IN ('RINGING','ANSWERED','ENDED','FAILED')`.
+- `ck_call_leg_time_order`: `(answered_at IS NULL OR answered_at >= started_at) AND (ended_at IS NULL OR ended_at >= started_at) AND (answered_at IS NULL OR ended_at IS NULL OR ended_at >= answered_at)`.
+- `ck_call_leg_end_reason`: `end_reason IS NULL OR (length(end_reason) BETWEEN 1 AND 64 AND btrim(end_reason) <> '')`.
+- `ck_call_leg_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_call_leg (id)`.
+- Unique `uq_call_leg_id (call_id, leg_id)`.
+- Index `ix_call_leg_call_type (call_id, leg_type)`.
+- FK `fk_call_leg_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `call_id`, `leg_id`, `leg_type`, `direction` and `started_at` are immutable; `ivr.guard_call_leg` rejects their change. State and timing use conditional revision. Caller and callee legs belong to one root call; recording and bridge facts remain on the call record. Leg state does not imply evidence solidification.
+
+Sensitive representation: no party value on this table; it links to the call record.
+
+### 4.27 ivr.call_event
+
+Purpose: append-only IVR event fact within the IVR event domain. Owner: `ivr`. Wave V005; slice S2. Lifecycle: mutable head only for processing status/revision; raw payload and event identity are immutable. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_call_event` | Application-generated identity |
+| call_id | text | NO | none | FK `fk_call_event_call` | Root call |
+| event_domain | text | NO | `'IVR_EVENT'` | CHECK `ck_call_event_domain`; part of `uq_call_event_domain_id` | Constant IVR event domain |
+| event_id | text | NO | none | CHECK `ck_call_event_event_id`; part of `uq_call_event_domain_id` | Unique within the IVR event domain |
+| sequence_no | integer | YES | none | CHECK `ck_call_event_sequence`; partial unique `uq_call_event_sequence` | Optional monotonic sequence |
+| event_type | text | NO | none | CHECK `ck_call_event_type` | Stable IVR event type |
+| occurred_at | timestamptz | NO | none | none | IVR event time |
+| received_at | timestamptz | NO | `now()` | none | Server receipt time |
+| payload_ciphertext | text | NO | none | CHECK `ck_call_event_payload_ciphertext` | Encrypted raw payload |
+| payload_redacted | jsonb | NO | none | CHECK `ck_call_event_payload_redacted` | Redacted view |
+| payload_sha256 | text | NO | none | CHECK `ck_call_event_payload_sha` | SHA-256 of the canonical redacted source payload at `payload_redacted.source.payload` |
+| processing_status | text | NO | `'RECEIVED'` | CHECK `ck_call_event_processing_status` | `RECEIVED`, `APPLIED`, `IGNORED` or `QUARANTINED` |
+| reason_code | text | YES | none | CHECK `ck_call_event_reason` | Stable processing reason |
+| revision | integer | NO | `1` | CHECK `ck_call_event_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_call_event_domain`: `event_domain = 'IVR_EVENT'`.
+- `ck_call_event_event_id`: `length(event_id) BETWEEN 1 AND 128 AND btrim(event_id) <> ''`.
+- `ck_call_event_sequence`: `sequence_no IS NULL OR sequence_no >= 1`.
+- `ck_call_event_type`: `length(event_type) BETWEEN 1 AND 64 AND btrim(event_type) <> ''`.
+- `ck_call_event_payload_ciphertext`: `payload_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_call_event_payload_redacted`: `jsonb_typeof(payload_redacted) = 'object' AND payload_redacted ? 'source' AND payload_redacted ? 'receipt' AND jsonb_typeof(payload_redacted->'source') = 'object' AND jsonb_typeof(payload_redacted->'receipt') = 'object' AND (payload_redacted - 'source' - 'receipt') = '{}'::jsonb AND (payload_redacted->'source' - 'eventType' - 'legId' - 'sequenceNo' - 'payload') = '{}'::jsonb AND (payload_redacted->'receipt' - 'payloadSha256' - 'eventFingerprint') = '{}'::jsonb AND (payload_redacted->'source') ? 'payload' AND (payload_redacted->'receipt') ? 'payloadSha256' AND (payload_redacted->'receipt') ? 'eventFingerprint' AND payload_redacted->'receipt'->>'payloadSha256' = payload_sha256`.
+- `ck_call_event_payload_sha`: `payload_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_call_event_processing_status`: `processing_status IN ('RECEIVED','APPLIED','IGNORED','QUARANTINED')`.
+- `ck_call_event_reason`: `reason_code IS NULL OR (length(reason_code) BETWEEN 1 AND 64 AND btrim(reason_code) <> '')`.
+- `ck_call_event_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_call_event (id)`.
+- Unique `uq_call_event_domain_id (event_domain, event_id)` — the same IVR event ID cannot repeat on another call.
+- Partial unique `uq_call_event_sequence (call_id, sequence_no) WHERE sequence_no IS NOT NULL`.
+- Index `ix_call_event_call_time (call_id, occurred_at)`.
+- Index `ix_call_event_processing (processing_status, received_at)`.
+- FK `fk_call_event_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `call_id`, `event_domain`, `event_id`, `sequence_no`, `event_type`, `occurred_at`, `received_at`, payload columns and `created` identity are immutable; only `processing_status`, `reason_code` and `revision` may change, and only once from `RECEIVED` to one terminal `APPLIED`/`QUARANTINED`/`IGNORED` outcome. The first stored payload and that first terminal outcome are absorbing: no later delivery changes them. The immutable `payload_redacted` has exactly two server-written top-level members: `source` = `{eventType, legId, sequenceNo, payload}`, the validated original redacted source event (`legId` and `sequenceNo` null-safe; `payload` is an object containing only the redacted non-protected event body), and `receipt` = `{payloadSha256, eventFingerprint}`, server-generated receipt metadata. `payload_sha256` is the lowercase SHA-256 of the section 2.5 canonical JSON of `payload_redacted.source.payload` only and is computed before any receipt metadata is added. The canonical event fingerprint is the §10.17 call-event fingerprint over `callId`, `eventId`, `source.eventType`, `source.legId`, that digest and `source.sequenceNo`; it is stored as `receipt.eventFingerprint`. `receipt` is excluded from the payload hash and is never accepted from a client: the server always recomputes both values, so a client cannot select receipt metadata or bypass source-hash checking. Reconstruction never depends on the indexed mutable `sequence_no` (which may be `NULL` for a sequence conflict) or on any mutable status. Only a duplicate event whose recomputed fingerprint equals the stored fingerprint replays the first processing outcome and mutates nothing. A changed fingerprint/type/sequence always returns a stable `EVENT_ID_CONFLICT` with no mutation, including when the first stored outcome was `SEQUENCE_CONFLICT`; it never overwrites the first payload/status or changes call/leg/settlement facts, and any optional conflict audit uses that same event identity and adds no schema object. For an unknown parent `call_id`, the service returns stable `CALL_UNKNOWN` before any insert: no `call_event`, call, leg or settlement write and no raw FK. A known call whose leg ID does not belong to it may persist one durable `QUARANTINED` `LEG_UNKNOWN` receipt. `RECEIVED`/`APPLIED` durable event receipt is distinct from accepted authoritative usage; only §9.24 may hand an authoritative terminal fact to settlement. Processing status/reason changes are conditional on revision and never rewrite the raw payload or event identity.
+
+Sensitive representation: raw payload is encrypted; `payload_redacted` is redacted and hashed. No raw event payload is logged or returned.
+
+### 4.28 ivr.ivr_decision
+
+Purpose: frozen, purpose-discriminated IVR decision and typed response. Owner: `ivr`. Wave V005; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_ivr_decision` | Application-generated decision identity |
+| session_id | uuid | NO | none | FK `fk_ivr_decision_session` | Inbound session |
+| call_id | text | NO | none | FK `fk_ivr_decision_call`; part of `uq_ivr_decision_call_purpose` | Canonical call |
+| purpose | text | NO | none | CHECK `ck_ivr_decision_purpose`; part of `uq_ivr_decision_call_purpose` | `INBOUND_RESOLVE`, `ACTIVATION_NEXT_ACTION` or `DIRECT_AUTHORIZATION` |
+| source_event_domain | text | YES | none | CHECK `ck_ivr_decision_source` | Null for `INBOUND_RESOLVE`; `IVR_CONFIRM` for `ACTIVATION_NEXT_ACTION`; `IVR_DIRECT_AUTH` for `DIRECT_AUTHORIZATION` |
+| source_event_id | text | YES | none | CHECK `ck_ivr_decision_source`; part of `uq_ivr_decision_source` | Source event identity; nonblank 1-128 when present |
+| request_fingerprint | text | NO | none | CHECK `ck_ivr_decision_fingerprint` | Canonical per-purpose semantic fingerprint |
+| action | text | YES | none | CHECK `ck_ivr_decision_action`; `ck_ivr_decision_shape` | One of seven actions, or null only for successful `DIRECT_AUTHORIZATION` |
+| reason_code | text | NO | none | CHECK `ck_ivr_decision_reason`; `ck_ivr_decision_direct_reason` | Stable reason; `DIRECT_AUTHORIZED` exactly when `action` is null |
+| response_snapshot | jsonb | NO | none | CHECK `ck_ivr_decision_snapshot` | Typed redacted action snapshot |
+| response_payload_ciphertext | text | NO | none | CHECK `ck_ivr_decision_payload` | Encrypted internal payload |
+| response_sha256 | text | NO | none | CHECK `ck_ivr_decision_sha` | SHA-256 of the canonical redacted snapshot |
+| key_version | integer | NO | none | CHECK `ck_ivr_decision_key_version` | Positive encryption key-generation reference |
+| reservation_id | uuid | YES | none | FK `fk_ivr_decision_reservation` added by `ALTER` in V006 | Committed reservation; null when no reservation |
+| decided_at | timestamptz | NO | `now()` | none | Decision commit time; never in a fingerprint |
+
+Named checks:
+
+- `ck_ivr_decision_purpose`: `purpose IN ('INBOUND_RESOLVE','ACTIVATION_NEXT_ACTION','DIRECT_AUTHORIZATION')`.
+- `ck_ivr_decision_source`: `(purpose = 'INBOUND_RESOLVE' AND source_event_domain IS NULL AND source_event_id IS NULL) OR (purpose = 'ACTIVATION_NEXT_ACTION' AND source_event_domain = 'IVR_CONFIRM' AND length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> '') OR (purpose = 'DIRECT_AUTHORIZATION' AND source_event_domain = 'IVR_DIRECT_AUTH' AND length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> '')`.
+- `ck_ivr_decision_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
+- `ck_ivr_decision_action`: `action IS NULL OR action IN ('GUIDE_ACTIVATION','DIAL_TASK_CALLEE','ENTER_CALLEE','GUIDE_PURCHASE','REJECT','REJECT_SUSPENDED','REJECT_CALL_IN_PROGRESS')`.
+- `ck_ivr_decision_reason`: `reason_code IN ('ACTIVATION_REQUIRED','CONSENT_REQUIRED','CALLER_UNTRUSTED','SESSION_IDENTITY_MISMATCH','CALL_IN_PROGRESS','CONFIRMATION_NOT_ALLOWED','ACTIVATION_SUSPENDED','CALLER_BINDING_REVOKED','WORKSPACE_ACCESS_REVOKED','TASK_ACCESS_REVOKED','ORGANIZATION_INACTIVE','ACCOUNT_DISABLED','CALL_STATE_UNRESOLVED','TASK_CONFLICT','TASK_CLAIMED','NO_AVAILABLE_ENTITLEMENT','NO_VALID_TASK','TASK_EXPIRED','TASK_UNAVAILABLE','DIRECT_AUTHORIZED','DATA_INTEGRITY')`.
+- `ck_ivr_decision_direct_reason`: `(action IS NULL) = (reason_code = 'DIRECT_AUTHORIZED')`.
+- `ck_ivr_decision_shape`: `(purpose IN ('INBOUND_RESOLVE','ACTIVATION_NEXT_ACTION') AND action IS NOT NULL AND ((action = 'DIAL_TASK_CALLEE' AND reservation_id IS NOT NULL) OR (action <> 'DIAL_TASK_CALLEE' AND reservation_id IS NULL))) OR (purpose = 'DIRECT_AUTHORIZATION' AND ((action IS NULL AND reservation_id IS NOT NULL) OR (action IN ('GUIDE_PURCHASE','REJECT','REJECT_SUSPENDED','REJECT_CALL_IN_PROGRESS') AND reservation_id IS NULL)))`.
+- `ck_ivr_decision_snapshot`: `jsonb_typeof(response_snapshot) = 'object'`.
+- `ck_ivr_decision_payload`: `response_payload_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
+- `ck_ivr_decision_sha`: `response_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_ivr_decision_key_version`: `key_version >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_ivr_decision (id)`.
+- Unique `uq_ivr_decision_call_purpose (call_id, purpose)` — the post-activation decision never overwrites the original resolve decision.
+- Partial unique `uq_ivr_decision_source (call_id, source_event_domain, source_event_id) WHERE source_event_id IS NOT NULL`.
+- Index `ix_ivr_decision_call_time (call_id, decided_at)`.
+- FK `fk_ivr_decision_session (session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_ivr_decision_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_ivr_decision_reservation (reservation_id) REFERENCES entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE RESTRICT` — added by `ALTER TABLE` in V006; ordinary immediate, not deferrable.
+
+Append-only control: `trg_ivr_decision_immutable` uses `ivr.reject_row_mutation()`; `ivr_role` has `SELECT` and `INSERT` only, and the only insert path is `ivr.select_call_action` (with `ivr.record_activation_next_action` as a thin wrapper). The same `(call_id, purpose)` with the same canonical fingerprint returns the first frozen decision; a changed fingerprint is a stable conflict before any side effect. The stored typed snapshot and encrypted payload are never recomputed or overwritten.
+
+Sensitive representation: `response_snapshot` is the redacted typed snapshot; `response_payload_ciphertext` is the encrypted internal payload. The full task callee exists only under `task.calleeNumber` for `DIAL_TASK_CALLEE`, and the full confirmed callee only under `authorization.calleeNumber` for a successful `DIRECT_AUTHORIZATION` (`action` null). Both are prohibited from the redacted snapshot, logs, audit, Outbox and customer responses.
+
+Navigation correction (F-15, normative detail outside the frozen catalog): the frozen §4.1 catalog row for this table preserves the historical phrase "stable registry in section 11" byte-for-byte because §4.1 is immutable. The normative reason-code registry is §2.9, and the exact allowed values are enforced by the named CHECK `ck_ivr_decision_reason` in this section. Section 11 is the linear Flyway migration order and does not contain a reason registry. An implementer must use §2.9 and `ck_ivr_decision_reason`; no schema, column, check or behavior change is implied by this navigation note.
+
+### 4.29 entitlement_metering.trial_policy_version
+
+Purpose: versioned first-trial policy with permanently fixed campaign identity. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: mutable head for `enabled`/revision; published content is immutable. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_trial_policy_version` | Application-generated identity |
+| campaign_key | text | NO | none | CHECK `ck_trial_policy_campaign`; part of `uq_trial_policy_campaign_version` and `uq_trial_policy_enabled` | Always `FIRST-TRIAL` |
+| version_no | integer | NO | none | CHECK `ck_trial_policy_version_no`; part of `uq_trial_policy_campaign_version` | Positive version |
+| granted_seconds | integer | NO | none | CHECK `ck_trial_policy_granted_seconds` | Positive trial recording seconds |
+| valid_days | integer | NO | none | CHECK `ck_trial_policy_valid_days` | Positive validity days |
+| enabled | boolean | NO | `true` | part of `uq_trial_policy_enabled` | Only an enabled published version is current |
+| snapshot | jsonb | NO | none | CHECK `ck_trial_policy_snapshot_type` | Canonical policy snapshot |
+| snapshot_sha256 | text | NO | none | CHECK `ck_trial_policy_snapshot_sha` | SHA-256 of the canonical snapshot |
+| published_by_employee_id | uuid | NO | none | FK `fk_trial_policy_employee` | Publishing employee |
+| published_at | timestamptz | YES | none | none | Null for a draft; set once at publication and then immutable |
+| revision | integer | NO | `1` | CHECK `ck_trial_policy_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_trial_policy_campaign`: `campaign_key = 'FIRST-TRIAL'`.
+- `ck_trial_policy_version_no`: `version_no >= 1`.
+- `ck_trial_policy_granted_seconds`: `granted_seconds >= 1`.
+- `ck_trial_policy_valid_days`: `valid_days >= 1`.
+- `ck_trial_policy_snapshot_type`: `jsonb_typeof(snapshot) = 'object'`.
+- `ck_trial_policy_snapshot_sha`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_trial_policy_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_trial_policy_version (id)`.
+- Unique `uq_trial_policy_campaign_version (campaign_key, version_no)`.
+- Partial unique `uq_trial_policy_enabled (campaign_key) WHERE enabled AND published_at IS NOT NULL` — at most one enabled published first-trial policy.
+- Index `ix_trial_policy_enabled (enabled, published_at)`.
+- FK `fk_trial_policy_employee (published_by_employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `campaign_key` is permanently `FIRST-TRIAL`; `version_no`, `granted_seconds`, `valid_days`, `snapshot`, `snapshot_sha256`, `published_by_employee_id` and `published_at` are immutable once published. `entitlement_metering.guard_trial_policy_version` rejects a change after `published_at` is set. Publication is one owner `UPDATE` that, while `OLD.published_at IS NULL` and after the previous enabled published version has been disabled, sets `published_by_employee_id` to the actual authenticated publishing employee, `published_at`, `enabled = true` and `revision + 1` together; the guard must allow that one statement and reject any later change to publisher identity or published content. It is a publisher fact, not a draft-owner label, and no same-employee-only rule is invented (OQ-5). Publication/disable is the §9.26 serialized owner transaction under `entitlement_metering.trial_policy:FIRST-TRIAL`: a new version first disables the previous enabled published version (`enabled = false`, revision +1) and then performs that single candidate publication `UPDATE`, so the immediate partial unique `uq_trial_policy_enabled` sees at most one qualifying row at every statement; disable sets `enabled = false`. A stale expected-current-version loser returns a stable `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW` with no change, never a raw unique error and never two enabled published versions. The sole authoritative policy-selection linearization point is the enabled/published/expected-version read performed by the V006 `issue_first_trial` function itself (§10.9); the function retains that immutable version and content in local values through the grant/Outbox. The application wrapper lookup is preliminary only and has no selection authority. A missing, disabled or stale policy fails closed at that single read; a disable committed before that read is observed, and a disable committed after that read does not revoke the already-selected grant. Replay and already-granted return the immutable prior trial result before any new policy selection, and there is no second enabled recheck. The publication advisory key is never combined with the IVR call-path order, and no stale caller-supplied policy is accepted (OQ-6). A new rule requires a new version; an existing grant keeps its frozen snapshot and never changes with a later policy. Trial `valid_days` uses the explicit §10.19 calculation (`granted_at + valid_days * interval '1 day'`, UTC) with no guessed calendar rule. The runtime configuration key for the 30-second task TTL is not stored in this table (Q18).
+
+Sensitive representation: no protected value; the snapshot contains policy facts only.
+
+### 4.30 entitlement_metering.entitlement_grant
+
+Purpose: immutable entitlement grant for a trial or a paid order line/installment. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_entitlement_grant` | Application-generated grant identity |
+| subject_id | uuid | NO | none | FK `fk_entitlement_grant_subject` | Stable subject |
+| source_type | text | NO | none | CHECK `ck_entitlement_grant_source`; `ck_entitlement_grant_source_shape` | `TRIAL` or `PURCHASE` |
+| source_ref_id | uuid | NO | none | none | Internal source fact: the trial-policy version for `TRIAL`, the order for `PURCHASE`; polymorphic and intentionally not an FK |
+| entitlement_type | text | NO | none | CHECK `ck_entitlement_grant_type`; part of `uq_entitlement_grant_paid` | Baseline registry in §2.9 |
+| granted_units | bigint | NO | none | CHECK `ck_entitlement_grant_units` | Positive units; recording grants use seconds |
+| valid_from | timestamptz | NO | none | none | Start of validity |
+| expires_at | timestamptz | NO | none | CHECK `ck_entitlement_grant_expiry` | End of validity |
+| order_id | uuid | YES | none | FK `fk_entitlement_grant_order`; part of `uq_entitlement_grant_paid` | Paid order; null for `TRIAL` |
+| installment_no | integer | YES | none | CHECK `ck_entitlement_grant_installment`; part of `uq_entitlement_grant_paid` | Paid installment; null for `TRIAL` |
+| snapshot | jsonb | NO | none | CHECK `ck_entitlement_grant_snapshot_type` | Frozen grant snapshot (order/version/policy facts) |
+| snapshot_sha256 | text | NO | none | CHECK `ck_entitlement_grant_snapshot_sha` | SHA-256 of the canonical snapshot |
+| granted_at | timestamptz | NO | `now()` | none | Grant time |
+
+Named checks:
+
+- `ck_entitlement_grant_source`: `source_type IN ('TRIAL','PURCHASE')`.
+- `ck_entitlement_grant_source_shape`: `(source_type = 'TRIAL' AND order_id IS NULL AND installment_no IS NULL) OR (source_type = 'PURCHASE' AND order_id IS NOT NULL AND installment_no IS NOT NULL AND installment_no >= 1 AND source_ref_id = order_id)`.
+- `ck_entitlement_grant_type`: `entitlement_type IN ('RECORDING_SECONDS','AI_SECONDS','EVIDENCE_COUNT','STORAGE_BYTES')`.
+- `ck_entitlement_grant_units`: `granted_units >= 1`.
+- `ck_entitlement_grant_expiry`: `expires_at > valid_from`.
+- `ck_entitlement_grant_installment`: `installment_no IS NULL OR installment_no >= 1`.
+- `ck_entitlement_grant_snapshot_type`: `jsonb_typeof(snapshot) = 'object'`.
+- `ck_entitlement_grant_snapshot_sha`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+
+Keys and indexes:
+
+- Primary key `pk_entitlement_grant (id)`.
+- Partial unique `uq_entitlement_grant_paid (order_id, installment_no, entitlement_type) WHERE source_type = 'PURCHASE'` — one paid grant per order line, installment and type.
+- Index `ix_entitlement_grant_subject_type (subject_id, entitlement_type, expires_at)`.
+- Index `ix_entitlement_grant_order (order_id, installment_no)`.
+- FK `fk_entitlement_grant_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_entitlement_grant_order (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_entitlement_grant_immutable` uses `entitlement_metering.reject_row_mutation()`; `entitlement_metering_role` has `SELECT` and `INSERT` only. Trial source uniqueness is enforced by `trial_grant.subject_id`; the paid partial unique enforces the order/installment/type key. A grant is never updated after insertion.
+
+Sensitive representation: the snapshot contains frozen commercial/grant facts only; no protected value. `source_ref_id` and `order_id` are internal.
+
+### 4.31 entitlement_metering.trial_grant
+
+Purpose: permanent first-trial fact with persisted granting action identity and fingerprint. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_trial_grant` | Trial fact identity |
+| subject_id | uuid | NO | none | UNIQUE `uq_trial_grant_subject`; FK `fk_trial_grant_subject` | One permanent first trial per subject |
+| campaign_key | text | NO | none | CHECK `ck_trial_grant_campaign` | Always `FIRST-TRIAL` |
+| trial_policy_version_id | uuid | NO | none | FK `fk_trial_grant_policy` | Frozen policy version |
+| entitlement_grant_id | uuid | NO | none | UNIQUE `uq_trial_grant_grant`; FK `fk_trial_grant_grant` | The trial's immutable grant |
+| source_action_domain | text | NO | none | CHECK `ck_trial_grant_action_domain`; part of `uq_trial_grant_source` | `IVR_CONFIRM` or `ACTIVATION` |
+| source_action_event_id | text | NO | none | CHECK `ck_trial_grant_event_id`; part of `uq_trial_grant_source` | Granting action event identity |
+| request_fingerprint | text | NO | none | CHECK `ck_trial_grant_fingerprint` | Canonical granting-action fingerprint |
+| granted_at | timestamptz | NO | `now()` | none | First grant time |
+| expires_at | timestamptz | NO | none | CHECK `ck_trial_grant_expiry` | Grant expiry |
+
+Named checks:
+
+- `ck_trial_grant_campaign`: `campaign_key = 'FIRST-TRIAL'`.
+- `ck_trial_grant_action_domain`: `source_action_domain IN ('IVR_CONFIRM','ACTIVATION')`.
+- `ck_trial_grant_event_id`: `length(source_action_event_id) BETWEEN 1 AND 128 AND btrim(source_action_event_id) <> ''`.
+- `ck_trial_grant_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
+- `ck_trial_grant_expiry`: `expires_at > granted_at`.
+
+Keys and indexes:
+
+- Primary key `pk_trial_grant (id)`.
+- Unique `uq_trial_grant_subject (subject_id)` — permanent; a new campaign key, policy version, channel, claim or import cannot create a second first trial.
+- Unique `uq_trial_grant_grant (entitlement_grant_id)`.
+- Unique `uq_trial_grant_source (source_action_domain, source_action_event_id)`.
+- Index `ix_trial_grant_campaign_time (campaign_key, granted_at)`.
+- FK `fk_trial_grant_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_trial_grant_policy (trial_policy_version_id) REFERENCES entitlement_metering.trial_policy_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_trial_grant_grant (entitlement_grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_trial_grant_immutable` uses `entitlement_metering.reject_row_mutation()`; only `issue_first_trial` inserts this row and its balance in the same activation transaction. The same `(source_action_domain, source_action_event_id)` with the same `request_fingerprint` replays the original ids; the same action with a changed fingerprint raises `TRIAL_ACTION_CONFLICT`; a different action for an already-granted subject returns `ALREADY_GRANTED` with the original ids. No second trial, grant or balance is ever created.
+
+Sensitive representation: no protected value; the source action identity and fingerprint are internal replay facts.
+
+### 4.32 entitlement_metering.entitlement_balance
+
+Purpose: current reserved/consumed balance for one grant. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: mutable head updated only by reservation/settlement; the grant relation and granted units are immutable. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_entitlement_balance` | Balance identity |
+| grant_id | uuid | NO | none | UNIQUE `uq_entitlement_balance_grant`; FK `fk_entitlement_balance_grant` | One balance per grant |
+| granted_units | bigint | NO | none | CHECK `ck_entitlement_balance_granted` | Copied from the immutable grant; positive |
+| reserved_units | bigint | NO | `0` | CHECK `ck_entitlement_balance_units` | Units held by non-terminal reservations |
+| consumed_units | bigint | NO | `0` | CHECK `ck_entitlement_balance_units` | Settled units |
+| status | text | NO | `'AVAILABLE'` | CHECK `ck_entitlement_balance_status`; `ck_entitlement_balance_status_shape` | `AVAILABLE`, `EXHAUSTED` or `EXPIRED` |
+| revision | integer | NO | `1` | CHECK `ck_entitlement_balance_revision` | Conditional-update revision |
+| updated_at | timestamptz | NO | `now()` | none | Last reservation/settlement update |
+
+Named checks:
+
+- `ck_entitlement_balance_granted`: `granted_units >= 1`.
+- `ck_entitlement_balance_units`: `reserved_units >= 0 AND consumed_units >= 0 AND reserved_units + consumed_units <= granted_units`.
+- `ck_entitlement_balance_status`: `status IN ('AVAILABLE','EXHAUSTED','EXPIRED')`.
+- `ck_entitlement_balance_status_shape`: `(status = 'EXHAUSTED') = (consumed_units = granted_units)`.
+- `ck_entitlement_balance_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_entitlement_balance (id)`.
+- Unique `uq_entitlement_balance_grant (grant_id)`.
+- Index `ix_entitlement_balance_status (status)`.
+- FK `fk_entitlement_balance_grant (grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `grant_id` and `granted_units` are immutable; `entitlement_metering.guard_entitlement_balance` rejects their change. `reserved_units`, `consumed_units`, `status`, `revision` and `updated_at` change only in the same transaction as the reservation/settlement/issuance operation, under the balance row lock. A reservation increments `reserved_units`; settlement atomically decrements `reserved_units`, increments `consumed_units` and sets the derived `status` in the same conditional `UPDATE`, so when the settled units reach the granted units the row becomes `EXHAUSTED` immediately and `ck_entitlement_balance_status_shape` holds at every statement (OQ-8). A reservation that merely fills units leaves `status = 'AVAILABLE'` because `EXHAUSTED` requires `consumed_units = granted_units`; release decrements `reserved_units` without setting `EXHAUSTED`. The CHECK allows no overcommit. `EXHAUSTED` is a derived status, not a second balance row.
+
+Sensitive representation: no protected value.
+
+### 4.33 entitlement_metering.entitlement_issuance
+
+Purpose: durable per-order/installment/entitlement-type issuance state. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: mutable head with revision and attempt count. Deletion: no hard delete; terminal `ISSUED` retained.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_entitlement_issuance` | Issuance identity |
+| order_id | uuid | NO | none | FK `fk_issuance_order`; part of `uq_issuance_line` | Paid order |
+| installment_no | integer | NO | none | CHECK `ck_issuance_installment`; part of `uq_issuance_line` | Positive installment |
+| entitlement_type | text | NO | none | CHECK `ck_issuance_type`; part of `uq_issuance_line` | Baseline registry in §2.9 |
+| status | text | NO | `'PENDING'` | CHECK `ck_issuance_status`; `ck_issuance_state_shape` | `PENDING`, `ISSUED` or `FAILED` |
+| attempt_count | integer | NO | `0` | CHECK `ck_issuance_attempt_count` | Non-negative retry count |
+| revision | integer | NO | `1` | CHECK `ck_issuance_revision` | Conditional-update revision |
+| last_error_code | text | YES | none | CHECK `ck_issuance_last_error` | Stable error; required for `FAILED` |
+| grant_id | uuid | YES | none | UNIQUE `uq_issuance_grant`; FK `fk_issuance_grant` | Grant written on success |
+| source_event_domain | text | NO | none | CHECK `ck_issuance_event_domain` | Payment event domain; baseline `PAYMENT` |
+| source_event_id | text | NO | none | CHECK `ck_issuance_event_id` | Verified payment event identity |
+| first_attempt_at | timestamptz | YES | none | none | First attempt time |
+| issued_at | timestamptz | YES | none | CHECK `ck_issuance_state_shape` | Non-null exactly when `ISSUED` |
+| updated_at | timestamptz | NO | `now()` | none | Last attempt/state update |
+
+Named checks:
+
+- `ck_issuance_installment`: `installment_no >= 1`.
+- `ck_issuance_type`: `entitlement_type IN ('RECORDING_SECONDS','AI_SECONDS','EVIDENCE_COUNT','STORAGE_BYTES')`.
+- `ck_issuance_status`: `status IN ('PENDING','ISSUED','FAILED')`.
+- `ck_issuance_state_shape`: `(status = 'ISSUED') = (grant_id IS NOT NULL AND issued_at IS NOT NULL) AND (status = 'FAILED') = (last_error_code IS NOT NULL)`.
+- `ck_issuance_attempt_count`: `attempt_count >= 0`.
+- `ck_issuance_revision`: `revision >= 1`.
+- `ck_issuance_last_error`: `last_error_code IS NULL OR (length(last_error_code) BETWEEN 1 AND 64 AND btrim(last_error_code) <> '')`.
+- `ck_issuance_event_domain`: `source_event_domain = 'PAYMENT'`.
+- `ck_issuance_event_id`: `length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> ''`.
+- `ck_issuance_time_order`: `issued_at IS NULL OR first_attempt_at IS NULL OR issued_at >= first_attempt_at`.
+
+Keys and indexes:
+
+- Primary key `pk_entitlement_issuance (id)`.
+- Unique `uq_issuance_line (order_id, installment_no, entitlement_type)` — exactly one durable issuance row per line, installment and type.
+- Partial unique `uq_issuance_grant (grant_id) WHERE grant_id IS NOT NULL`.
+- Index `ix_issuance_order_status (order_id, status)`.
+- Index `ix_issuance_event (source_event_domain, source_event_id)`.
+- FK `fk_issuance_order (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_issuance_grant (grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `order_id`, `installment_no`, `entitlement_type`, `source_event_domain` and `source_event_id` are immutable; `entitlement_metering.guard_entitlement_issuance` rejects their change. `status`, `attempt_count`, `last_error_code`, `grant_id`, `first_attempt_at`, `issued_at`, `updated_at` and `revision` use conditional updates. `PENDING → ISSUED`, `PENDING → FAILED` and `FAILED → PENDING` retry are allowed; `ISSUED` is terminal. A retry never duplicates the grant because the grant's paid partial unique and `grant_id` uniqueness enforce once-only issuance. The frozen order snapshot — not current catalog state — determines the line.
+
+Sensitive representation: no protected value; the source event and grant IDs are internal.
+
+### 4.34 entitlement_metering.usage_reservation
+
+Purpose: one reservation per call with frozen authorized seconds and explicit settlement/reconciliation. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: mutable head; one terminal transition. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_usage_reservation` | Reservation identity |
+| call_id | text | NO | none | UNIQUE `uq_usage_reservation_call`; FK `fk_usage_reservation_call` | One reservation per call |
+| balance_id | uuid | NO | none | FK `fk_usage_reservation_balance` | Balance debited |
+| subject_id | uuid | NO | none | FK `fk_usage_reservation_subject` | Stable subject |
+| authorized_units | bigint | NO | none | CHECK `ck_usage_reservation_authorized` | Frozen recording seconds in this baseline |
+| status | text | NO | `'HELD'` | CHECK `ck_usage_reservation_status`; `ck_usage_reservation_state_shape` | `HELD`, `RECONCILING`, `SETTLED` or `RELEASED` |
+| authorization_expires_at | timestamptz | NO | none | none | Last instant to start the B-leg; never renewed by replay |
+| settled_units | bigint | NO | `0` | CHECK `ck_usage_reservation_settled`; `ck_usage_reservation_state_shape` | Settled units; zero until settlement |
+| reconciliation_due_at | timestamptz | YES | none | CHECK `ck_usage_reservation_state_shape` | Required in `RECONCILING` |
+| reconciliation_attempt_count | integer | NO | `0` | CHECK `ck_usage_reservation_reconciliation_attempts` | Non-negative |
+| last_reconciled_at | timestamptz | YES | none | none | Last authoritative reconciliation time |
+| authority_source | text | YES | none | CHECK `ck_usage_reservation_authority`; `ck_usage_reservation_state_shape` | `IVR` or `OPERATIONS`; required for a terminal state |
+| last_error_code | text | YES | none | CHECK `ck_usage_reservation_last_error` | Stable failure/reconciliation code |
+| created_at | timestamptz | NO | `now()` | none | Creation time |
+| terminal_at | timestamptz | YES | none | CHECK `ck_usage_reservation_state_shape` | Non-null exactly for `SETTLED`/`RELEASED` |
+| revision | integer | NO | `1` | CHECK `ck_usage_reservation_revision` | Conditional-update revision |
+
+Named checks:
+
+- `ck_usage_reservation_authorized`: `authorized_units >= 1`.
+- `ck_usage_reservation_status`: `status IN ('HELD','RECONCILING','SETTLED','RELEASED')`.
+- `ck_usage_reservation_settled`: `settled_units >= 0 AND settled_units <= authorized_units`.
+- `ck_usage_reservation_state_shape`: `(status = 'HELD' AND terminal_at IS NULL AND settled_units = 0 AND reconciliation_due_at IS NULL) OR (status = 'RECONCILING' AND terminal_at IS NULL AND settled_units = 0 AND reconciliation_due_at IS NOT NULL) OR (status = 'SETTLED' AND terminal_at IS NOT NULL AND settled_units > 0 AND authority_source IS NOT NULL) OR (status = 'RELEASED' AND terminal_at IS NOT NULL AND settled_units = 0 AND authority_source IS NOT NULL)`.
+- `ck_usage_reservation_reconciliation_attempts`: `reconciliation_attempt_count >= 0`.
+- `ck_usage_reservation_authority`: `authority_source IS NULL OR authority_source IN ('IVR','OPERATIONS')`.
+- `ck_usage_reservation_last_error`: `last_error_code IS NULL OR (length(last_error_code) BETWEEN 1 AND 64 AND btrim(last_error_code) <> '')`.
+- `ck_usage_reservation_time_order`: `terminal_at IS NULL OR terminal_at >= created_at`.
+- `ck_usage_reservation_revision`: `revision >= 1`.
+
+Keys and indexes:
+
+- Primary key `pk_usage_reservation (id)`.
+- Unique `uq_usage_reservation_call (call_id)` — one reservation per call.
+- Index `ix_usage_reservation_balance_status (balance_id, status)`.
+- Index `ix_usage_reservation_reconcile (status, reconciliation_due_at)`.
+- FK `fk_usage_reservation_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_usage_reservation_balance (balance_id) REFERENCES entitlement_metering.entitlement_balance(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_usage_reservation_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `call_id`, `balance_id`, `subject_id`, `authorized_units`, `authorization_expires_at` and `created_at` are immutable; `entitlement_metering.guard_usage_reservation` rejects their change. Status/timing/error fields use conditional revision. The reservation is created in the same transaction as the task claim and frozen decision, so no `CLAIMED` task commits without a reservation. Settlement is at most once; a late or duplicate event returns the first settlement and never recharges. Unused units are released once. `UNKNOWN` use keeps the reservation in `RECONCILING` and blocks a new reservation; it is never released. Expiry of `authorization_expires_at` does not release a started call and never renews the authorization.
+
+Sensitive representation: no party or media value; the call link is internal.
+
+Settlement boundary (F-10, normative detail outside the frozen catalog): the frozen §4.1 catalog row for this table contains the historical phrase "actual use cannot exceed authorized units plus approved tolerance". No tolerance value is approved (Q8 remains open), so the normative baseline is exactly the named CHECK `ck_usage_reservation_settled` (`settled_units <= authorized_units`) with no tolerance parameter, field or clamp. A reported authoritative duration within `1..authorized_units` may settle normally. A reported duration greater than `authorized_units` is not silently clamped to the authorized value, not settled, not released and not accepted as evidence; the reservation moves or stays in `RECONCILING` with a stable quarantine code and is reconciled by the approved later process (§9.15, Q8/Q21). Known zero use is distinct from unknown use: known zero use releases the held units once with `settled_units = 0` and creates no positive `usage_fact`; unknown use keeps `RECONCILING` occupied and is never released. The phrase "plus approved tolerance" grants no current tolerance and cannot be implemented as an implicit overrun allowance.
+
+### 4.35 entitlement_metering.usage_fact
+
+Purpose: append-only authoritative usage fact per reservation/type and source event. Owner: `entitlement-metering`. Wave V006; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_usage_fact` | Usage fact identity |
+| reservation_id | uuid | NO | none | FK `fk_usage_fact_reservation`; part of `uq_usage_fact_reservation_type` | Reservation |
+| balance_id | uuid | NO | none | FK `fk_usage_fact_balance` | Balance |
+| call_id | text | NO | none | FK `fk_usage_fact_call` | Call |
+| usage_type | text | NO | none | CHECK `ck_usage_fact_type`; part of `uq_usage_fact_reservation_type` | Baseline `RECORDING_SECONDS` |
+| units | bigint | NO | none | CHECK `ck_usage_fact_units` | Positive settled units |
+| source_event_domain | text | NO | none | CHECK `ck_usage_fact_event_domain`; part of `uq_usage_fact_source` | Baseline `IVR_EVENT` |
+| source_event_id | text | NO | none | CHECK `ck_usage_fact_event_id`; part of `uq_usage_fact_source` | Authoritative IVR terminal/usage event |
+| occurred_at | timestamptz | NO | none | none | Authoritative event time |
+| created_at | timestamptz | NO | `now()` | none | Insertion time |
+| snapshot | jsonb | NO | none | CHECK `ck_usage_fact_snapshot_type` | Canonical usage snapshot |
+| snapshot_sha256 | text | NO | none | CHECK `ck_usage_fact_snapshot_sha` | SHA-256 of the canonical snapshot |
+
+Named checks:
+
+- `ck_usage_fact_type`: `usage_type IN ('RECORDING_SECONDS')`.
+- `ck_usage_fact_units`: `units >= 1`.
+- `ck_usage_fact_event_domain`: `source_event_domain = 'IVR_EVENT'`.
+- `ck_usage_fact_event_id`: `length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> ''`.
+- `ck_usage_fact_snapshot_type`: `jsonb_typeof(snapshot) = 'object'`.
+- `ck_usage_fact_snapshot_sha`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+
+Keys and indexes:
+
+- Primary key `pk_usage_fact (id)`.
+- Unique `uq_usage_fact_reservation_type (reservation_id, usage_type)` — one settlement fact per reservation and type.
+- Unique `uq_usage_fact_source (source_event_domain, source_event_id)` — a terminal IVR event settles at most one usage fact.
+- Index `ix_usage_fact_call (call_id)`.
+- FK `fk_usage_fact_reservation (reservation_id) REFERENCES entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_usage_fact_balance (balance_id) REFERENCES entitlement_metering.entitlement_balance(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_usage_fact_call (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_usage_fact_immutable` uses `entitlement_metering.reject_row_mutation()`; `entitlement_metering_role` has `SELECT` and `INSERT` only. The unique reservation/type and source/event keys make a duplicate terminal event converge to the first settlement without a second fact. Negative, reversed, missing or conflicting terminal facts are quarantined and never produce a valid usage fact.
+
+Sensitive representation: usage metadata and a redacted snapshot only; no raw media or protected value.
+
+### 4.36 activation_consent.consent_record
+
+Purpose: append-only explicit consent snapshot for activation, recording or purchase. Owner: `activation-consent`. Wave V007; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_consent_record` | Consent identity |
+| subject_id | uuid | NO | none | FK `fk_consent_subject` | Consenting subject |
+| purpose | text | NO | none | CHECK `ck_consent_purpose` | `SERVICE_ACTIVATION`, `EVIDENCE_RECORDING` or `PURCHASE` |
+| channel | text | NO | none | CHECK `ck_consent_channel` | `IVR`, `MINIAPP`, `WEB` or `OPERATIONS` |
+| event_domain | text | NO | none | CHECK `ck_consent_event_domain`; part of `uq_consent_event` | `IVR_CONFIRM`, `ACTIVATION`, `PURCHASE` or `OPERATIONS` |
+| policy_code | text | NO | none | CHECK `ck_consent_policy_code` | Stable policy code |
+| policy_version | text | NO | none | CHECK `ck_consent_policy_version` | Current policy version validated before append |
+| prompt_version | text | NO | none | CHECK `ck_consent_prompt_version` | Prompt version presented to the subject |
+| action | text | NO | none | CHECK `ck_consent_action` | Explicit `ACCEPT` or `DECLINE` only |
+| source_type | text | NO | none | CHECK `ck_consent_source_type` | `IVR_SESSION`, `ACCOUNT` or `EMPLOYEE` |
+| source_ref | text | NO | none | CHECK `ck_consent_source_ref` | Opaque stable source reference; not a public key |
+| ivr_session_id | uuid | YES | none | FK `fk_consent_session`; part of `ck_consent_source_shape` | IVR session source |
+| account_id | uuid | YES | none | FK `fk_consent_account`; part of `ck_consent_source_shape` | Account source |
+| employee_id | uuid | YES | none | FK `fk_consent_employee`; part of `ck_consent_source_shape` | Operations employee source |
+| snapshot | jsonb | NO | none | CHECK `ck_consent_snapshot_type` | Canonical redacted consent snapshot |
+| snapshot_sha256 | text | NO | none | CHECK `ck_consent_snapshot_sha` | SHA-256 of the canonical snapshot |
+| event_id | text | NO | none | CHECK `ck_consent_event_id`; part of `uq_consent_event` | Unique within `event_domain` |
+| request_fingerprint | text | NO | none | CHECK `ck_consent_fingerprint` | Canonical consent fingerprint for replay comparison |
+| accepted_at | timestamptz | NO | `now()` | none | Consent decision time |
+
+Named checks:
+
+- `ck_consent_purpose`: `purpose IN ('SERVICE_ACTIVATION','EVIDENCE_RECORDING','PURCHASE')`.
+- `ck_consent_channel`: `channel IN ('IVR','MINIAPP','WEB','OPERATIONS')`.
+- `ck_consent_event_domain`: `event_domain IN ('IVR_CONFIRM','ACTIVATION','PURCHASE','OPERATIONS')`.
+- `ck_consent_policy_code`: `length(policy_code) BETWEEN 1 AND 64 AND btrim(policy_code) <> ''`.
+- `ck_consent_policy_version`: `length(policy_version) BETWEEN 1 AND 64 AND btrim(policy_version) <> ''`.
+- `ck_consent_prompt_version`: `length(prompt_version) BETWEEN 1 AND 64 AND btrim(prompt_version) <> ''`.
+- `ck_consent_action`: `action IN ('ACCEPT','DECLINE')`.
+- `ck_consent_source_type`: `source_type IN ('IVR_SESSION','ACCOUNT','EMPLOYEE')`.
+- `ck_consent_source_ref`: `length(source_ref) BETWEEN 1 AND 128 AND btrim(source_ref) <> ''`.
+- `ck_consent_source_shape`: `(source_type = 'IVR_SESSION' AND ivr_session_id IS NOT NULL AND account_id IS NULL AND employee_id IS NULL) OR (source_type = 'ACCOUNT' AND account_id IS NOT NULL AND ivr_session_id IS NULL AND employee_id IS NULL) OR (source_type = 'EMPLOYEE' AND employee_id IS NOT NULL AND ivr_session_id IS NULL AND account_id IS NULL)`.
+- `ck_consent_channel_shape`: `(channel = 'IVR' AND source_type = 'IVR_SESSION') OR (channel IN ('MINIAPP','WEB') AND source_type = 'ACCOUNT') OR (channel = 'OPERATIONS' AND source_type = 'EMPLOYEE')`.
+- `ck_consent_snapshot_type`: `jsonb_typeof(snapshot) = 'object'`.
+- `ck_consent_snapshot_sha`: `snapshot_sha256 ~ '^[0-9a-f]{64}$'`.
+- `ck_consent_event_id`: `length(event_id) BETWEEN 1 AND 128 AND btrim(event_id) <> ''`.
+- `ck_consent_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
+
+Keys and indexes:
+
+- Primary key `pk_consent_record (id)`.
+- Unique `uq_consent_event (event_domain, event_id)`.
+- Index `ix_consent_subject_purpose (subject_id, purpose, accepted_at DESC)`.
+- Index `ix_consent_session (ivr_session_id)`.
+- FK `fk_consent_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_consent_session (ivr_session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_consent_account (account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_consent_employee (employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_consent_record_immutable` uses `activation_consent.reject_row_mutation()`; `activation_consent_role` has `SELECT` and `INSERT` only. The accepted branch of `activation-consent.record_activation_confirmation` (IVR), `activation-consent.record_client_activation` (`MINIAPP`/`WEB` `SERVICE_ACTIVATION`) or `activation-consent.append_purchase_consent` (`PURCHASE`) inserts the row on the same connection/transaction; the order service never inserts it directly. A missing key `1`, an absent explicit accept, a stale prompt/policy version/key/content, a source/account/subject/channel/purpose mismatch or an invalid source produces no accepted row. The snapshot and fingerprint are immutable; a later consent version does not rewrite an earlier record. For `PURCHASE`, the service appends one explicit `ACCEPT` with the §10.17 consent fingerprint and the deterministic 81-character `purchaseConsentEventId` as both `event_id` and `source_ref`, and the order service validates purpose/subject/channel/source/account/current policy and action in the same transaction; an explicit decline is a typed refusal with no accepted row and no order. For `SERVICE_ACTIVATION` (`IVR`, `MINIAPP` or `WEB`), `request_fingerprint` is exactly the §10.17 `SERVICE_ACTIVATION` consent scope: it binds subject, null-safe account, channel, source type, stable source reference, purpose, policy code/version, prompt version and action `ACCEPT`, and excludes the transport `eventId`, timestamps, generated consent ID, snapshot hash and current revision/status. The stable source reference is exact: `ivr-session:` + the canonical lowercase session UUID (48 characters) for IVR, independent of the transport event ID; `activation:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, activationEventId}` (75 characters) for `MINIAPP`/`WEB`, from the authenticated canonical account and the stable activation action ID; and the deterministic 81-character `purchaseConsentEventId` for `PURCHASE`. For IVR, the first accepted `SERVICE_ACTIVATION` append stores `event_domain = 'IVR_CONFIRM'` and `event_id` equal to the already validated nonblank 1-128 confirmation `eventId`; `source_ref` remains the 48-character `ivr-session:` reference, independent of that transport event ID. A same-semantic retry with a new transport event ID returns the first result before any append and never rewrites the first consent `event_id` or adds a consent. The activation transition fingerprint binds this immutable consent fingerprint (never the generated consent ID or the current transition revision), so a changed policy/prompt/source semantic is a stable conflict rather than a replay; a regenerated IVR confirmation event ID with identical semantics replays the first IVR decision and consent before any second append.
+
+Sensitive representation: `snapshot` is redacted and hashed; it contains policy/prompt references and no raw protected value. `source_ref` is an opaque internal reference, never a share code or capability token.
+
+### 4.37 activation_consent.service_activation
+
+Purpose: current internal service activation per subject. Owner: `activation-consent`. Wave V007; slice S2. Lifecycle: mutable head with revision and transition ledger. Deletion: no hard delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_service_activation` | Activation identity |
+| subject_id | uuid | NO | none | UNIQUE `uq_service_activation_subject`; FK `fk_service_activation_subject` | One activation row per subject |
+| status | text | NO | `'INACTIVE'` | CHECK `ck_service_activation_status` | `INACTIVE`, `ACTIVE` or `SUSPENDED` |
+| revision | integer | NO | `1` | CHECK `ck_service_activation_revision` | Must equal the latest expected transition revision |
+| created_at | timestamptz | NO | `now()` | none | Creation time |
+| updated_at | timestamptz | NO | `now()` | CHECK `ck_service_activation_time_order` | Last transition time |
+
+Named checks:
+
+- `ck_service_activation_status`: `status IN ('INACTIVE','ACTIVE','SUSPENDED')`.
+- `ck_service_activation_revision`: `revision >= 1`.
+- `ck_service_activation_time_order`: `updated_at >= created_at`.
+
+Keys and indexes:
+
+- Primary key `pk_service_activation (id)`.
+- Unique `uq_service_activation_subject (subject_id)`.
+- Index `ix_service_activation_status (status)`.
+- FK `fk_service_activation_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Revision/immutability: `id`, `subject_id` and `created_at` are immutable; `activation_consent.guard_service_activation` rejects their change. `status`, `revision` and `updated_at` change only through the owning service under the subject lifecycle advisory lock and the activation row lock, appending exactly one matching transition. `INACTIVE → ACTIVE` is the first activation and can be reached by the IVR confirmation path (`source_action_domain = IVR_CONFIRM`) or the authenticated `MINIAPP`/`WEB` client path (`source_action_domain = ACTIVATION`, §9.25/§10.20); both require current explicit consent, a validated event identity/fingerprint and a non-suspended subject. `ACTIVE → SUSPENDED` is an operations action. `SUSPENDED → ACTIVE` is operations-only resume and never calls `issue_first_trial`. An IVR confirmation of a `SUSPENDED` subject is rejected with `REJECT_SUSPENDED` and leaves the row unchanged; a confirmation/activation of an already-`ACTIVE` row appends no duplicate transition. Operations resume also appends exactly one transition and never reissues a trial/grant/balance.
+
+Sensitive representation: no sensitive column.
+
+### 4.38 activation_consent.service_activation_transition
+
+Purpose: append-only activation transition ledger with unique action and status-event identity. Owner: `activation-consent`. Wave V007; slice S2. Lifecycle: append-only/frozen. Deletion: no update/delete.
+
+| Column | Type | Null | Default | Key / constraint | Notes |
+| --- | --- | --- | --- | --- | --- |
+| id | uuid | NO | none | PK `pk_service_activation_transition` | Transition identity |
+| activation_id | uuid | NO | none | FK `fk_activation_transition_activation`; part of `uq_activation_transition_revision` | Parent activation |
+| subject_id | uuid | NO | none | FK `fk_activation_transition_subject` | Subject |
+| from_status | text | NO | none | CHECK `ck_activation_transition_status`; `ck_activation_transition_matrix` | Previous status |
+| to_status | text | NO | none | CHECK `ck_activation_transition_status`; `ck_activation_transition_matrix` | New status |
+| from_revision | integer | NO | none | CHECK `ck_activation_transition_from_revision` | `0` only for the initial creation transition |
+| to_revision | integer | NO | none | CHECK `ck_activation_transition_to_revision`; part of `uq_activation_transition_revision` | `from_revision + 1` |
+| source_channel | text | NO | none | CHECK `ck_activation_transition_channel`; `ck_activation_transition_channel_shape` | `IVR`, `MINIAPP`, `WEB` or `OPERATIONS` |
+| source_action_domain | text | NO | none | CHECK `ck_activation_transition_action_domain`; part of `uq_activation_transition_action` | `ACTIVATION`, `IVR_CONFIRM` or `OPERATIONS` |
+| source_action_event_id | text | NO | none | CHECK `ck_activation_transition_action_event`; part of `uq_activation_transition_action` | Non-null for every domain, including `OPERATIONS` |
+| status_event_domain | text | NO | none | CHECK `ck_activation_transition_status_domain`; part of `uq_activation_transition_status_event` | Always `ACTIVATION_STATUS` |
+| status_event_id | text | NO | none | CHECK `ck_activation_transition_status_event_id`; part of `uq_activation_transition_status_event` | Unique `ACTIVATION_STATUS` fact identity |
+| request_fingerprint | text | NO | none | CHECK `ck_activation_transition_fingerprint` | Canonical transition fingerprint; non-null for every domain |
+| actor_account_id | uuid | YES | none | FK `fk_activation_transition_actor_account`; part of `ck_activation_transition_actor_shape` | Human account when applicable |
+| actor_employee_id | uuid | YES | none | FK `fk_activation_transition_actor_employee`; part of `ck_activation_transition_actor_shape` | Required for `OPERATIONS` |
+| reason_code | text | NO | none | CHECK `ck_activation_transition_reason` | Stable reason code |
+| consent_record_id | uuid | YES | none | FK `fk_activation_transition_consent` | Required for a consent-driven transition |
+| occurred_at | timestamptz | NO | `now()` | none | Transition time |
+
+Named checks:
+
+- `ck_activation_transition_status`: `from_status IN ('INACTIVE','ACTIVE','SUSPENDED') AND to_status IN ('INACTIVE','ACTIVE','SUSPENDED')`.
+- `ck_activation_transition_matrix`: `(from_status = 'INACTIVE' AND to_status = 'ACTIVE') OR (from_status = 'ACTIVE' AND to_status = 'SUSPENDED') OR (from_status = 'SUSPENDED' AND to_status = 'ACTIVE' AND source_action_domain = 'OPERATIONS')`.
+- `ck_activation_transition_from_revision`: `from_revision >= 0`.
+- `ck_activation_transition_to_revision`: `to_revision = from_revision + 1 AND to_revision >= 1`.
+- `ck_activation_transition_channel`: `source_channel IN ('IVR','MINIAPP','WEB','OPERATIONS')`.
+- `ck_activation_transition_channel_shape`: `(source_channel = 'OPERATIONS' AND source_action_domain = 'OPERATIONS') OR (source_channel = 'IVR' AND source_action_domain = 'IVR_CONFIRM') OR (source_channel IN ('MINIAPP','WEB') AND source_action_domain = 'ACTIVATION')`.
+- `ck_activation_transition_action_domain`: `source_action_domain IN ('ACTIVATION','IVR_CONFIRM','OPERATIONS')`.
+- `ck_activation_transition_action_event`: `length(source_action_event_id) BETWEEN 1 AND 128 AND btrim(source_action_event_id) <> ''`.
+- `ck_activation_transition_status_domain`: `status_event_domain = 'ACTIVATION_STATUS'`.
+- `ck_activation_transition_status_event_id`: `length(status_event_id) BETWEEN 1 AND 128 AND btrim(status_event_id) <> ''`.
+- `ck_activation_transition_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
+- `ck_activation_transition_actor_shape`: `(source_action_domain = 'OPERATIONS' AND actor_employee_id IS NOT NULL AND consent_record_id IS NULL) OR (source_action_domain <> 'OPERATIONS' AND consent_record_id IS NOT NULL)`.
+- `ck_activation_transition_reason`: `length(reason_code) BETWEEN 1 AND 64 AND btrim(reason_code) <> ''`.
+
+Keys and indexes:
+
+- Primary key `pk_service_activation_transition (id)`.
+- Unique `uq_activation_transition_revision (activation_id, to_revision)`.
+- Unique `uq_activation_transition_action (source_action_domain, source_action_event_id)`.
+- Unique `uq_activation_transition_status_event (status_event_domain, status_event_id)`.
+- Index `ix_activation_transition_occurred (subject_id, occurred_at DESC)`.
+- FK `fk_activation_transition_activation (activation_id) REFERENCES activation_consent.service_activation(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_activation_transition_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_activation_transition_actor_account (actor_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_activation_transition_actor_employee (actor_employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+- FK `fk_activation_transition_consent (consent_record_id) REFERENCES activation_consent.consent_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
+
+Append-only control: `trg_activation_transition_immutable` uses `activation_consent.reject_row_mutation()`; `activation_consent_role` has `SELECT` and `INSERT` only. Every transition carries a unique action event identity, a unique `ACTIVATION_STATUS` fact identity and a request fingerprint, including `OPERATIONS`. The transition revision increments exactly one from the current activation revision; a concurrent loser rereads and returns the current committed state or a stable conflict. Operations resume appends only `SUSPENDED → ACTIVE` and never reissues a trial. `ck_activation_transition_matrix` is only a broad DB shape bound; it cannot distinguish the allowed source/state pairs. The sole owner service enforces the narrower matrix: `INACTIVE → ACTIVE` only for `IVR_CONFIRM` or `ACTIVATION`; `ACTIVE → SUSPENDED` only for `OPERATIONS`; `SUSPENDED → ACTIVE` only for `OPERATIONS` resume. A non-`OPERATIONS` `ACTIVE → SUSPENDED`, an `OPERATIONS` `INACTIVE → ACTIVE`, and any client/IVR suspend or resume are rejected by the service before insert even where the broad check would accept the row shape (OQ-7).
+
+Sensitive representation: no sensitive column; actor IDs are internal and consent references are internal.
+
 ## 5. Foreign-Key Catalog
 
 ### 5.1 Frozen planned FK catalog (81 decisions)
 
-The following block is the accepted 81-row FK decision catalog. It is verbatim from the accepted plan. S1 expands only its 11 rows; the remaining 70 rows are planned S2/S3 handoff and are not S1 implementation. Mode names are exactly `FK`, `ALTER_FK`, `DEFERRABLE_FK` and `NO_FK`.
+The following block is the accepted 81-row FK decision catalog. It is verbatim from the accepted plan. S1 expands its 11 rows in §5.3 and S2 expands its 54 rows in §5.4; the remaining 16 rows are planned S3 handoff and are not authored here. Mode names are exactly `FK`, `ALTER_FK`, `DEFERRABLE_FK` and `NO_FK`.
 
 <!-- fk-matrix:start -->
 customer_iam.auth_identity.account_id|customer_iam.customer_account.id|V002|V002|FK|same wave
@@ -948,11 +2112,74 @@ All S1 foreign keys are ordinary immediate `FK` constraints created in the child
 
 S1 has no `NO_FK` decision. The platform tables' `aggregate_id` and the audit table's `object_id` are polymorphic internal references documented outside the FK catalog and are not accepted FK decisions. No S1 foreign key permits a business number, membership, subject or employee row to substitute for a login identity.
 
+### 5.4 S2 foreign-key detail (54 decisions)
+
+All S2 FKs are `ON UPDATE RESTRICT ON DELETE RESTRICT`. Parent waves are never later than the FK wave. Three S2 decisions are same-wave `ALTER_FK`: `outbound_call_task.claimed_call_id` (V005), `ivr_decision.reservation_id` (V006) and `customer_order.purchase_consent_id` (V007). Two `NO_FK` rows are the root IVR protocol identities. S2 has no `DEFERRABLE_FK`; the only deferred constraints belong to the planned S3 evidence cycle.
+
+| Child column | Exact parent column | Parent wave | FK wave | Mode | Creation timing |
+| --- | --- | --- | --- | --- | --- |
+| catalog_order.catalog_version.product_id | catalog_order.catalog_product.id | V004 | V004 | FK | parent first in V004 |
+| catalog_order.catalog_version.created_by_employee_id | operations_iam.employee_account.id | V002 | V004 | FK | with V004 table creation |
+| catalog_order.catalog_offer.catalog_version_id | catalog_order.catalog_version.id | V004 | V004 | FK | parent first in V004 |
+| catalog_order.catalog_benefit_line.catalog_version_id | catalog_order.catalog_version.id | V004 | V004 | FK | parent first in V004 |
+| catalog_order.customer_order.account_id | customer_iam.customer_account.id | V002 | V004 | FK | with V004 table creation |
+| catalog_order.customer_order.owner_organization_id | organization_access.organization.id | V002 | V004 | FK | with V004 table creation |
+| catalog_order.customer_order.subject_id | subject_number.business_subject.id | V003 | V004 | FK | with V004 table creation |
+| catalog_order.customer_order.catalog_version_id | catalog_order.catalog_version.id | V004 | V004 | FK | same-wave parent first |
+| catalog_order.customer_order.catalog_offer_id | catalog_order.catalog_offer.id | V004 | V004 | FK | same-wave parent first |
+| catalog_order.customer_order.purchase_consent_id | activation_consent.consent_record.id | V007 | V007 | ALTER_FK | column in V004; ordinary immediate FK added by ALTER in V007 |
+| catalog_order.payment_order.order_id | catalog_order.customer_order.id | V004 | V004 | FK | same-wave parent first |
+| catalog_order.payment_event.payment_order_id | catalog_order.payment_order.id | V004 | V004 | FK | same-wave parent first |
+| ivr.outbound_call_task.caller_binding_id | subject_number.caller_number_binding.id | V003 | V005 | FK | with V005 table creation |
+| ivr.outbound_call_task.subject_id | subject_number.business_subject.id | V003 | V005 | FK | with V005 table creation |
+| ivr.outbound_call_task.owner_account_id | customer_iam.customer_account.id | V002 | V005 | FK | with V005 table creation |
+| ivr.outbound_call_task.owner_organization_id | organization_access.organization.id | V002 | V005 | FK | with V005 table creation |
+| ivr.outbound_call_task.created_by_account_id | customer_iam.customer_account.id | V002 | V005 | FK | with V005 table creation |
+| ivr.outbound_call_task.claimed_call_id | ivr.call_record.call_id | V005 | V005 | ALTER_FK | same-wave ALTER after call_record; ordinary immediate, not deferrable |
+| ivr.inbound_session.subject_id | subject_number.business_subject.id | V003 | V005 | FK | with V005 table creation |
+| ivr.inbound_session.confirmed_subject_id | subject_number.business_subject.id | V003 | V005 | FK | with V005 table creation |
+| ivr.inbound_session.call_id | - | - | - | NO_FK | root IVR protocol identity with no durable parent |
+| ivr.call_record.call_id | - | - | - | NO_FK | canonical call-scoped parent created in resolve or direct authorization |
+| ivr.call_record.session_id | ivr.inbound_session.id | V005 | V005 | FK | same-wave parent first |
+| ivr.call_record.task_id | ivr.outbound_call_task.id | V005 | V005 | FK | same-wave; nullable for the direct path |
+| ivr.call_leg.call_id | ivr.call_record.call_id | V005 | V005 | FK | same-wave parent first |
+| ivr.call_event.call_id | ivr.call_record.call_id | V005 | V005 | FK | same-wave parent first |
+| ivr.ivr_decision.session_id | ivr.inbound_session.id | V005 | V005 | FK | same-wave parent first |
+| ivr.ivr_decision.call_id | ivr.call_record.call_id | V005 | V005 | FK | same-wave parent first |
+| ivr.ivr_decision.reservation_id | entitlement_metering.usage_reservation.id | V006 | V006 | ALTER_FK | column in V005; ordinary immediate FK added by ALTER in V006 |
+| entitlement_metering.trial_policy_version.published_by_employee_id | operations_iam.employee_account.id | V002 | V006 | FK | with V006 table creation |
+| entitlement_metering.entitlement_grant.subject_id | subject_number.business_subject.id | V003 | V006 | FK | with V006 table creation |
+| entitlement_metering.entitlement_grant.order_id | catalog_order.customer_order.id | V004 | V006 | FK | with V006 table creation |
+| entitlement_metering.trial_grant.subject_id | subject_number.business_subject.id | V003 | V006 | FK | with V006 table creation |
+| entitlement_metering.trial_grant.trial_policy_version_id | entitlement_metering.trial_policy_version.id | V006 | V006 | FK | same-wave parent first |
+| entitlement_metering.trial_grant.entitlement_grant_id | entitlement_metering.entitlement_grant.id | V006 | V006 | FK | same-wave parent first |
+| entitlement_metering.entitlement_balance.grant_id | entitlement_metering.entitlement_grant.id | V006 | V006 | FK | same-wave parent first |
+| entitlement_metering.entitlement_issuance.order_id | catalog_order.customer_order.id | V004 | V006 | FK | with V006 table creation |
+| entitlement_metering.entitlement_issuance.grant_id | entitlement_metering.entitlement_grant.id | V006 | V006 | FK | same-wave nullable unique |
+| entitlement_metering.usage_reservation.call_id | ivr.call_record.call_id | V005 | V006 | FK | with V006 table creation |
+| entitlement_metering.usage_reservation.balance_id | entitlement_metering.entitlement_balance.id | V006 | V006 | FK | same-wave parent first |
+| entitlement_metering.usage_reservation.subject_id | subject_number.business_subject.id | V003 | V006 | FK | with V006 table creation |
+| entitlement_metering.usage_fact.reservation_id | entitlement_metering.usage_reservation.id | V006 | V006 | FK | same-wave parent first |
+| entitlement_metering.usage_fact.balance_id | entitlement_metering.entitlement_balance.id | V006 | V006 | FK | same-wave parent first |
+| entitlement_metering.usage_fact.call_id | ivr.call_record.call_id | V005 | V006 | FK | with V006 table creation |
+| activation_consent.consent_record.subject_id | subject_number.business_subject.id | V003 | V007 | FK | with V007 table creation |
+| activation_consent.consent_record.ivr_session_id | ivr.inbound_session.id | V005 | V007 | FK | nullable for MINIAPP/WEB |
+| activation_consent.consent_record.account_id | customer_iam.customer_account.id | V002 | V007 | FK | nullable for IVR/OPERATIONS |
+| activation_consent.consent_record.employee_id | operations_iam.employee_account.id | V002 | V007 | FK | nullable for IVR/MINIAPP/WEB |
+| activation_consent.service_activation.subject_id | subject_number.business_subject.id | V003 | V007 | FK | unique; with V007 table creation |
+| activation_consent.service_activation_transition.activation_id | activation_consent.service_activation.id | V007 | V007 | FK | same-wave parent first |
+| activation_consent.service_activation_transition.subject_id | subject_number.business_subject.id | V003 | V007 | FK | with V007 table creation |
+| activation_consent.service_activation_transition.actor_account_id | customer_iam.customer_account.id | V002 | V007 | FK | nullable |
+| activation_consent.service_activation_transition.actor_employee_id | operations_iam.employee_account.id | V002 | V007 | FK | required for OPERATIONS |
+| activation_consent.service_activation_transition.consent_record_id | activation_consent.consent_record.id | V007 | V007 | FK | same-wave nullable for OPERATIONS |
+
+S2 keeps the frozen 74 ordinary `FK`, 3 `ALTER_FK`, 2 `DEFERRABLE_FK` (S3 only) and 2 `NO_FK` decisions. No S2 FK points forward in wave order, and no S2 table adopts another module's identity as its primary key.
+
 ## 6. Invariant Matrix
 
 ### 6.1 Frozen planned invariant catalog (40 invariants)
 
-The following 40 invariant rows are verbatim from the accepted plan. Each has one owner, named collaborators, a primary enforcement class and a verified slice. S1 expands its own rows in section 6.2; S2/S3 rows remain frozen handoff and are not authored here.
+The following 40 invariant rows are verbatim from the accepted plan. Each has one owner, named collaborators, a primary enforcement class and a verified slice. S1 expands its rows in §6.2 and S2 expands its portions in §6.3; S3 rows remain frozen handoff and are not authored here.
 
 | INV-01 | `customer-iam` | `organization-access`, `operations-iam`, `subject-number` | Login identity, business-number binding, organization membership and employee identity never substitute for one another | DB+SERVICE | Separate tables and schemas with no cross-assignment FK; service tests reject a phone, membership, claim or employee record used as login identity | S1 | Account/login and business-subject distinction |
 | INV-02 | `customer-iam` | none | Effective provider identity is unique within provider scope and maps to one account | DB | Unique `(provider, provider_scope, provider_subject_hmac)`; one-account FK | S1 | Login identity correctness |
@@ -1018,11 +2245,42 @@ This table makes the S1 portions generation-ready. "Location" names the exact co
 
 S1 has no later-slice prerequisite. The S1 invariants use only V001-V003 tables and functions. S2/S3 invariants are not claimed as verified by this document.
 
+### 6.3 S2 invariant enforcement expansion
+
+This table makes the S2 portions generation-ready. "Location" names the exact constraint, condition, owner service or transaction rule. "Real behavior assertion" is a document-level requirement for the later executable suite; no PostgreSQL or IVR test was run in this authoring.
+
+| Invariant (S2 portion) | Owner | Primary class | Exact S2 location | Real behavior assertion and evidence requirement |
+| --- | --- | --- | --- | --- |
+| INV-08 (S2) | activation-consent | DB+TX+SERVICE | `consent_record` explicit `ACCEPT`/`DECLINE` and unique `(event_domain, event_id)`; `service_activation` and transition revision; `issue_first_trial`; `ivr.select_call_action`; §9.11 and §9.20 | No key `1`, no explicit accept, missing/stale prompt or policy/content, or a `SUSPENDED` fresh subject produces no accepted consent, transition, trial/grant/balance, reservation or success Outbox. Replay/identity handling precedes every gate. An `ACTIVE` activation with missing/expired consent returns `GUIDE_ACTIVATION`/`CONSENT_REQUIRED`; stale confirmation content returns `REJECT`/`CONSENT_REQUIRED` before accepted side effects. A category-2 domain no-dial result commits activation/trial and the session stays `CONFIRMED`; category 3 rolls back every write. |
+| INV-09 (S2) | activation-consent | DB+TX | `uq_service_activation_subject`; `uq_activation_transition_revision`, `uq_activation_transition_action`, `uq_activation_transition_status_event`; `ck_activation_transition_to_revision`; §9.11 | One activation row per subject; every transition has one unique action event, one unique `ACTIVATION_STATUS` event and a fingerprint; `to_revision = from_revision + 1`; concurrent transitions serialize on the subject lifecycle and activation row lock and only one revision wins; a loser rereads and returns the current state or a stable conflict. |
+| INV-10 (S2) | activation-consent | TX | `service_activation` status and subject lifecycle lock; §9.11, §9.19 | `SUSPENDED` cannot self-resume through IVR or ordinary confirmation. A fresh suspended confirmation returns `REJECT_SUSPENDED`, leaves activation suspended and writes no accepted consent/trial/reservation/Outbox. Existing decision/idempotency replay returns the original result and never changes a `CONFIRMED` session to `REJECTED`. Operations resume appends only `SUSPENDED → ACTIVE` with its own event identity and never calls `issue_first_trial`. |
+| INV-11 (S2) | ivr | DB+TX | `uq_outbound_task_live_caller`; `uq_call_record_active_caller`; canonical-caller lock; §9.12-§9.14 | One non-terminal task and one `ACTIVE`/`UNKNOWN` call per canonical caller across all accounts/workspaces. Both fresh paths exclude the current `callId`. A competing call receives `REJECT_CALL_IN_PROGRESS` with a terminal `REJECTED` parent only when the current call is absent or a never-started/rejectable `ACTIVE` row, no claim/reservation, and the competing row is untouched. An existing current `UNKNOWN` row is referenced unchanged. The index conflict is mapped after a deterministic reread, never exposed raw. |
+| INV-12 (S2) | ivr | DB+TX | `outbound_call_task.ttl_seconds`/`expires_at`, `ck_outbound_task_expiry`; conditional claim with `expires_at > clock_timestamp()`; §9.12 and §9.13 | Only a `PENDING` task unexpired under database time after lock acquisition is claimable. The default 30-second TTL is frozen at creation and server-configurable; a duplicate, retry, replacement or resolve replay never extends `expires_at`. Exactly 30 seconds or later is expired; a stale `PENDING` converges to `EXPIRED` under the caller lock before a new task. |
+| INV-13 (S2) | ivr | TX | One IVR-owned local transaction; conditional claim; current `call_record`; `reserve_call_usage`; typed decision; §9.11, §9.13, §9.14 | A successful task-backed decision atomically claims the task, creates or binds the current `ACTIVE` call, freezes one decision, creates one reservation and commits only after the active-call guard, current caller/subject/binding/owner-workspace lifecycle, activation/consent, `PENDING`/revision/unexpired task and positive entitlement pass. No `CLAIMED` task commits without its reservation. A direct no-task path applies only binding/subject/activation/consent/entitlement and no login/membership/real-name predicate. A technical failure rolls back all of these facts together; an expected claim/reservation denial rolls back to the same-connection attempt savepoint and freezes one no-dial decision. |
+| INV-14 (S2) | ivr | DB+TX | `uq_ivr_decision_call_purpose`; `uq_ivr_decision_source`; `uq_call_event_domain_id`; one `ivr.select_call_action`; §9.11-§9.14 and §9.21 | Both entries use one ordered predicate implementation. Same `callId`/purpose with the same canonical fingerprint returns the first decision and frozen action; a changed fingerprint or immutable caller/access/node conflict is stable conflict. `ACTIVATION_NEXT_ACTION` never overwrites `INBOUND_RESOLVE`; a repeated resolve returns the original `GUIDE_ACTIVATION`. Each IVR event ID is unique in `IVR_EVENT`. A concurrent unique loser rereads and returns the existing decision or a stable conflict. |
+| INV-16 (S2) | entitlement-metering | DB+TX | `trial_grant` campaign check, `uq_trial_grant_subject`, `uq_trial_grant_source`; `issue_first_trial`; subject lock; §9.11, §10.9 | Exactly one permanent `FIRST-TRIAL` per subject regardless of policy version, channel, claim, re-entry or a new campaign key. The granting action domain/event/fingerprint are persisted. Same action plus same fingerprint returns original ids as `REPLAY`; same action plus changed fingerprint returns `TRIAL_ACTION_CONFLICT`; a different action returns `ALREADY_GRANTED` original ids. No second grant or balance exists in any case. |
+| INV-17 (S2) | entitlement-metering | DB | `uq_entitlement_grant_paid`; `ck_entitlement_grant_source_shape`; append-only grant | Grants are immutable. A paid grant is unique by order/installment/type; a trial grant is unique through `trial_grant.subject_id` and `trial_grant.entitlement_grant_id`. A source mismatch or duplicate insert fails; no grant row is updated or repurposed. |
+| INV-18 (S2) | entitlement-metering | DB+TX | `ck_entitlement_balance_units`; balance row lock; `revision`; §9.15, §9.18 | `reserved_units + consumed_units <= granted_units` always. Reservation increments reserved; settlement decrements reserved and increments consumed; release decrements reserved. Each update is conditional on the balance revision and affects exactly one row; concurrent reservation/settlement cannot overcommit. |
+| INV-19 (S2) | entitlement-metering | DB+TX+SERVICE | `uq_usage_reservation_call`; `uq_usage_fact_reservation_type`; state/unit checks; same-connection savepoint; §9.11, §9.13-§9.16 | One reservation per call, one terminal transition and one settlement fact. A task claim never commits without its reservation. Authorized units never exceed committed availability. Unused units release once; late/duplicate events do not recharge. A domain denial after a tentative claim rolls back to the attempt savepoint and freezes one no-dial decision; a technical failure rolls back the whole transaction. |
+| INV-20 (S2) | catalog-order | DB+TX+SERVICE | `uq_catalog_product_code`; `uq_catalog_version_active`; published immutability guard; catalog matrix checks; §7.3 and §9.17 | One immutable product identity; at most one `ACTIVE` version per product. A published version's commercial content and benefit lines are immutable; a new publication atomically offsales the previous active version. The type/billing/grant matrix and enterprise-quote boundary are checked server-side and by CHECK. |
+| INV-21 (S2) | catalog-order | DB+TX+SERVICE | `uq_customer_order_idempotency`; `request_fingerprint`; platform `PURCHASE`; §9.17 | Orders come only from `MINIAPP`/`WEB` and require account/workspace/subject access, ordinary-client real-name, current active activation, explicit purchase consent and an exact `ACTIVE` offer/version token. The amount is server-derived. The immutable snapshot, consent reference and fingerprint are frozen. `begin`/`complete` in the same transaction: identical retry returns the first order, changed input conflicts, and no second order or entitlement-side status is created. |
+| INV-22 (S2) | catalog-order | DB+TX | `uq_payment_event_provider_event`; `signature_verified`; order/payment row lock; §9.18 | Payment events are unique by provider/event. An unverified event never advances payment. `UNKNOWN` blocks duplicate checkout until the original order is queried. `PAID` and entitlement issuance are independently observable; a duplicate verified event returns the first processing result and never produces a second payment fact. |
+| INV-23 (S2) | entitlement-metering | DB+TX+SERVICE | `uq_issuance_line`; `uq_issuance_grant`; frozen order snapshot; same-transaction grant/balance/Outbox; §9.18 | Issuance is idempotent by order/installment/type and consumes the frozen order snapshot, never current catalog state. Grant, balance and Outbox commit in one transaction; a partial failure records `FAILED` and retry never duplicates the grant. No module writes another module's issuance or order status directly. |
+| INV-32 (S2) | ivr | DB+TX | `uq_outbound_task_idempotency`; identical-tuple check; canonical-caller lock; §9.12 | Task create/replace/cancel is idempotent and workspace/creator-scoped. Same key/input returns the existing task without TTL refresh; same key/changed fingerprint conflicts. An identical caller/callee/business/workspace `PENDING` duplicate returns the existing task without refresh. Replace/cancel is allowed only for the current workspace's and account's `PENDING` task. A `CLAIMED` task cannot be replaced or cancelled. |
+| INV-34 (S2) | ivr | DB+TX | `uq_ivr_decision_call_purpose`; `uq_ivr_decision_source`; canonical-caller lock; no-task positive check; direct purpose/action CHECK; §9.14 | Direct DTMF authorization accepts exactly two current purpose chains: (a) `INBOUND_RESOLVE = ENTER_CALLEE` with no later superseding/conflicting decision, or (b) `INBOUND_RESOLVE = GUIDE_ACTIVATION` + `CONFIRMED` session + committed `ACTIVATION_NEXT_ACTION = ENTER_CALLEE`. It rejects an obsolete earlier `ENTER_CALLEE`, a later no-dial decision, an unconfirmed/contradictory chain, a non-empty `taskId`, any task-backed fallback and any `PENDING`/`CLAIMED` task after a positive no-task check; it excludes the current `callId` from the active-call guard. It reuses current caller/activation/consent/single-balance predicates with no registration/login/real-name prerequisite. Success freezes purpose `DIRECT_AUTHORIZATION`, `action` null, `taskMatch=NONE`, null task fields, committed reservation/seconds/cutoff from the selected balance and the callee only under `authorization.calleeNumber` in the encrypted payload. A refusal uses a permitted non-dial action with no reservation. Retry returns the first result and never redials; changed confirmation content conflicts. |
+| INV-35 (S2) | platform-reliability | DB+SERVICE | Composite uniques on `call_event`, `ivr_decision`, `usage_fact`, `consent_record`; platform `IVR_CONFIRM` fingerprint; §10.14 | Event/action identity is unique within its actual domain. The same string may exist in different domains. The same `IVR_CONFIRM` event reused on another call conflicts because `callId` is in the fingerprint; changed confirmation content for the same event also conflicts. `usage_fact` source identity is domain-scoped; a payment event may drive multiple issuance rows but never a duplicate grant. |
+| INV-36 (S2) | entitlement-metering | DB+TX+SERVICE | `uq_issuance_line`; issuance state shape; conditional revision; privilege matrix; §9.18 | One durable issuance row per order/installment/type with owned `PENDING`/`FAILED`/`ISSUED`, attempt count, revision, error code and grant link. Partial line failure is observable; no other module writes issuance or order status. Retry moves `FAILED → PENDING`, increments attempts and never duplicates the grant. |
+| INV-37 (S2) | activation-consent | DB+TX | Platform `IVR_CONFIRM` scope; `request_fingerprint`; `uq_ivr_decision_call_purpose`; `source_action_event_id` NOT NULL; §9.11 and §9.21 | The wrapper authenticates immutable call/session/caller identity, handles an existing `(callId, ACTIVATION_NEXT_ACTION)` decision and event-level `REPLAY`/`CONFLICT` before `SUSPENDED` or any accepted side effect. A new event ID with the same fingerprint returns the existing decision and completes the new event row with that decision ID; changed input rolls back the `NEW` row and conflicts. A `CONFIRMED` session is never moved to `REJECTED`. A fresh confirmation requires the original `GUIDE_ACTIVATION` resolve. The first result is the next-action decision ID for every accepted branch, including already `ACTIVE` and call-rejected outcomes, and the rejected decision ID for a suspended fresh rejection. Category 1 writes no accepted side effect; category 2 commits activation/trial with the no-dial decision; category 3 commits nothing. |
+| INV-38 (S2) | entitlement-metering | DB+TX+SERVICE | `RECONCILING` state; reconciliation fields; caller lock; conditional terminal update; `uq_usage_fact_source`; §9.16 | A reservation with a missing, late or duplicate end event is reconciled against authoritative IVR usage. Known use is settled first and the remainder released once. Unknown use remains `RECONCILING`, keeps the active-call guard occupied and blocks a new reservation; it is never released. A late authoritative event converges once; a duplicate returns the first settlement. |
+| INV-40 (S2 portion) | platform-reliability | DB+TX+SERVICE | V006 `entitlement_metering.issue_first_trial`; fixed `search_path`; named grants; no transaction control; §10.9 and §10.11 | `issue_first_trial` is created only in V006 after `trial_policy_version`, `entitlement_grant`, `trial_grant` and `entitlement_balance`; it is `SECURITY DEFINER`, owned by `entitlement_metering_owner`, fixed `search_path`, `PUBLIC` denied, EXECUTE only to `activation_consent_role`/`entitlement_metering_role`; it performs no transaction control; a forced failure rolls back trial/grant/balance/Outbox with the caller; `GRANTED`/`REPLAY`/`ALREADY_GRANTED` and conflict semantics hold. The four V001 functions remain unchanged and S1-owned; the shared IVR action service is not a SQL function. |
+
+S2 invariants use only V001-V007 tables and the five registered functions. No S2 invariant requires S3 evidence or sharing.
+
 ## 7. State Machines
 
 ### 7.1 S1 state machines
 
-These are the only state machines authored in S1. S2/S3 state machines are reserved in section 7.3.
+These are the state machines authored in S1. The S2 state machines are authored in §7.3; S3 state machines remain reserved in §7.4.
 
 | Aggregate | Allowed states | Allowed transitions and guards | Owner |
 | --- | --- | --- | --- |
@@ -1047,15 +2305,43 @@ These are the only state machines authored in S1. S2/S3 state machines are reser
 - Append-only tables (`audit.audit_fact`, `subject_number.subject_claim`) have no state transition. Their status/outcome is fixed at insertion and their rows are immutable.
 - The state machine never treats a business number, membership, subject or employee row as a login state. Login eligibility is only an active identity plus an active account.
 
-### 7.3 Reserved S2/S3 state machines
+### 7.3 S2 state machines
 
-The accepted plan's S2/S3 state machines for activation, activation confirmation, IVR task creation/replacement/cancellation/claim, inbound session, direct DTMF authorization, call record, trial/entitlement/issuance/reservation/usage, catalog/order/payment, evidence and sharing are not authored in S1. Their frozen handoff remains the accepted plan. S2/S3 authors must consume the S1 platform/identity/subject contracts and must not treat this section as a substitute for their own detailed dictionaries.
+These are the S2 state machines authored in this slice. Every mutable transition is a conditional update with expected `revision`; a zero-row update performs one bounded reread and returns the current state or a stable conflict. Append-only decision, grant, consent and transition facts have no state transition.
+
+| Aggregate | Allowed states | Allowed transitions and guards | Owner |
+| --- | --- | --- | --- |
+| Catalog version | `DRAFT`, `ACTIVE`, `OFFSALE` | `DRAFT → ACTIVE` on publication: under the owner publication lock, first retires the previous `ACTIVE` version to `OFFSALE` with revision +1, then sets the candidate `published_at` and `ACTIVE` with revision +1; content immutable; `ACTIVE → OFFSALE`; `OFFSALE` terminal for sale. Only one `ACTIVE` version per product at every statement (immediate partial unique); published content never changes. | catalog-order |
+| Customer order | `UNPAID`, `UNKNOWN`, `PAID`, `CLOSED` (payment dimension only) | `UNPAID → UNKNOWN/PAID/CLOSED`; `UNKNOWN → UNPAID/PAID/CLOSED`; `PAID` and `CLOSED` terminal for the ordinary flow. `UNKNOWN` blocks a second checkout until the original order is queried. Only verified provider events advance payment; the commercial snapshot never changes. | catalog-order |
+| Payment order | `UNPAID`, `UNKNOWN`, `PAID`, `CLOSED` | Same verified-evidence transitions as the order; `PAID` requires a provider transaction ID; `UNKNOWN` is not failure and is resolved by querying the original merchant order. Status changes under the payment/order row lock with revision. | catalog-order |
+| Entitlement issuance | `PENDING`, `ISSUED`, `FAILED` | `PENDING → ISSUED` (grant, balance and Outbox in one transaction); `PENDING → FAILED` (records `last_error_code`); `FAILED → PENDING` retry under the issuance row lock; `ISSUED` terminal. One row per order/installment/type. | entitlement-metering |
+| Outbound task | `PENDING`, `CLAIMED`, `REPLACED`, `CANCELLED`, `EXPIRED`, `REJECTED`, `COMPLETED`, `FAILED` | `PENDING → CLAIMED` only by the shared IVR service after all predicates and with the claim/reservation transaction; `PENDING → REPLACED/CANCELLED/EXPIRED/REJECTED`; `CLAIMED → COMPLETED/FAILED`; every terminal state is immutable. A duplicate returns the existing task without TTL refresh. `CLAIMED` cannot be replaced or cancelled and never returns to `PENDING`. | ivr |
+| Inbound session | `RECEIVED`, `CONFIRMED`, `ABANDONED`, `REJECTED` | `RECEIVED → CONFIRMED` only with trusted caller, explicit key `1`, current consent/prompt, same confirmed subject, a non-suspended subject re-read under the lifecycle lock and exactly one committed `ACTIVATION_NEXT_ACTION`; `RECEIVED → ABANDONED/REJECTED`; `CONFIRMED` is terminal for confirmation-state purposes and is never re-rejected by replay. A fresh suspended/competing-call rejection may reject only a never-confirmed session. | ivr |
+| IVR decision | Frozen purpose-specific result (no status transition) | First response per `(call_id, purpose)` is immutable. `INBOUND_RESOLVE`, `ACTIVATION_NEXT_ACTION` and `DIRECT_AUTHORIZATION` are distinct; the post-activation decision never rewrites the resolve decision. Same fingerprint replays; changed fingerprint conflicts before side effects. Only `ivr.select_call_action` inserts. | ivr |
+| Direct authorization | `NONE → AUTHORIZED` or a frozen refusal | Requires a valid current purpose chain with no task and no task ID: either the frozen `INBOUND_RESOLVE = ENTER_CALLEE` with no superseding/conflicting decision, or `INBOUND_RESOLVE = GUIDE_ACTIVATION` plus a `CONFIRMED` session and a committed `ACTIVATION_NEXT_ACTION = ENTER_CALLEE`. Rejects an obsolete earlier `ENTER_CALLEE`, a later no-dial decision, any task-backed fallback, and a non-empty taskId. One reservation per call from the selected balance; success has `action` null with committed reservation fields and the encrypted `authorization.calleeNumber`; refusal uses a permitted non-dial action and no reservation. The shared current caller/activation/consent/no-task/entitlement predicates exclude no registration/login/real-name prerequisite. Replay returns the first result and never redials; cutoff never renews. | ivr |
+| Call record | `ACTIVE`, `ENDED`, `FAILED`, `UNKNOWN`, `REJECTED` | `ACTIVE → ENDED/FAILED/UNKNOWN`; `UNKNOWN → ENDED/FAILED` only through authoritative reconciliation; a competing call is created terminal `REJECTED` with `end_reason = CALL_IN_PROGRESS`; only a never-started/rejectable current `ACTIVE` row may become `REJECTED`; `REJECTED` terminal and never holds the active guard. A current `UNKNOWN` row is never finalized `REJECTED` or released. | ivr |
+| Usage reservation | `HELD`, `RECONCILING`, `SETTLED`, `RELEASED` | `HELD → SETTLED/RELEASED/RECONCILING`; `RECONCILING → SETTLED/RELEASED`; one terminal transition. Known use settles first and the remainder releases once; unknown use stays `RECONCILING` and is never released; `authorization_expires_at` never renews on replay. | entitlement-metering |
+| Trial | `GRANTED` (derived `EXHAUSTED`/`EXPIRED` from balance and time) | No row transition; `trial_grant` is immutable. One permanent row per subject; replay and already-granted return the original ids and never mutate the grant. | entitlement-metering |
+| Service activation | `INACTIVE`, `ACTIVE`, `SUSPENDED` | `INACTIVE → ACTIVE` only through accepted IVR confirmation (`IVR_CONFIRM`) or MINIAPP/WEB client activation (`ACTIVATION`); `ACTIVE → SUSPENDED` only through an `OPERATIONS` suspend; `SUSPENDED → ACTIVE` only through an `OPERATIONS` resume. The broad `ck_activation_transition_matrix` check is shape-only; the sole owner service rejects every other source/state pair (OQ-7). An IVR confirmation of `SUSPENDED` rejects with `REJECT_SUSPENDED`; resume never calls `issue_first_trial`. Revision increases by one with each transition. | activation-consent |
+| Consent record | `ACCEPT`, `DECLINE` fixed at insert | No transition; append-only. A missing/invalid/stale explicit consent creates no accepted record; no inferred consent exists. | activation-consent |
+
+S2 transition and terminal rules:
+
+- `ISSUED` issuance, `PAID`/`CLOSED` ordinary payment, all terminal task states, `REJECTED`/`ENDED`/`FAILED` calls, `SETTLED`/`RELEASED` reservations, `OFFSALE` versions and terminal transitions are immutable.
+- `UNKNOWN` is an occupied call state, not a failure, success or redial permission. It converges only through reconciliation and never releases unknown use.
+- A normal domain no-dial result is not a terminal failure of the activation/trial facts. Category 1, category 2 and category 3 in §10.15 are distinct; no blanket rollback changes valid activation/trial.
+- No state machine combines payment, entitlement, call and evidence into one catch-all status. `customer_order.payment_status` is payment-only; issuance state is separate; call and evidence states are separate.
+- The deprecated action `DIRECT_AUTHORIZATION` as an action is never used; it is only a purpose. There is no eighth action.
+
+### 7.4 Reserved S3 state machines
+
+The accepted plan's S3 state machines for recording, evidence, evidence creation ownership and sharing are not authored in S2. Their frozen handoff remains the accepted plan. The S3 author must consume the S1 platform/identity/subject and S2 call/reservation contracts and must not treat this section as a substitute for the S3 dictionaries. The evidence composite deferred FK cycle and the sharing admission/ticket contracts are planned only.
 
 ## 8. Sensitive-Field Inventory
 
 ### 8.1 Frozen planned sensitive-field inventory (28 rows)
 
-The following block is verbatim from the accepted plan. It covers all 44 tables, including S2/S3 rows that are not yet authored. The frozen inventory does not claim that S2/S3 column dictionaries are complete.
+The following block is verbatim from the accepted plan. It covers all 44 tables, including the planned S3 rows that are not authored here. The frozen inventory does not claim that S3 column dictionaries are complete; S1/S2 dictionaries are authored in §4.
 
 <!-- sensitive:start -->
 | Column(s) | Representation | Prohibited exposure |
@@ -1129,6 +2415,36 @@ S1 response projections expose only internal IDs where authorized, masked displa
 - Equality and uniqueness use HMAC; decryption is permitted only inside the authenticated owning service. A database role cannot decrypt a value by reading the table.
 - Redaction and masking happen before hashing and before storage. A hash of a plaintext protected value does not make the plaintext acceptable in a snapshot.
 
+### 8.5 S2 sensitive-field detail
+
+| Table.column(s) | Representation and key reference | Prohibited exposure | S2 control |
+| --- | --- | --- | --- |
+| catalog_order.catalog_product | No sensitive value | Product code is an internal catalog key | No sensitive column |
+| catalog_order.catalog_version.snapshot / snapshot_sha256 | Canonical commercial snapshot and hash; no protected value | No raw party, provider or credential data | Redaction before hashing; publication immutability guard |
+| catalog_order.catalog_offer | No sensitive value | Token is a business version token, not a credential | No sensitive column |
+| catalog_order.catalog_benefit_line | No sensitive value | Quantities are commercial facts | No sensitive column |
+| catalog_order.customer_order.snapshot / snapshot_sha256 | Canonical order snapshot and hash | No protected value; historical amounts only | Immutable snapshot guard; server-derived amount |
+| catalog_order.payment_order.merchant_order_no / provider_transaction_id | Provider-scoped internal identifiers | Never client-visible public keys | Restricted role; no public projection |
+| catalog_order.payment_event.payload_ciphertext / payload_sha256 | Encrypted provider payload plus hash; provider_event_id / transaction_id internal | No plaintext provider payload or event ID in logs | Envelope CHECK; append-only; restricted read |
+| ivr.outbound_call_task.caller_number_hmac / callee_ciphertext / callee_masked | HMAC lookup, encrypted callee, masked callee | Full callee only in the authenticated IVR internal decision payload; never in task APIs/logs | Envelope/HMAC checks; guard trigger |
+| ivr.inbound_session.caller_ciphertext / caller_number_hmac / caller_masked / access_number_masked | Ciphertext, HMAC, masked | No full caller or access number in public keys/logs | Envelope/HMAC checks; immutable origin guard |
+| ivr.call_record.caller_ciphertext / caller_number_hmac / caller_masked / callee_ciphertext / callee_masked / access_number_masked | Ciphertext, HMAC, masked | Party values are never public identifiers | Immutable party guard; envelope/HMAC checks |
+| ivr.call_leg | No party value | Links to the call record only | No sensitive column |
+| ivr.call_event.payload_ciphertext / payload_redacted / payload_sha256 | Encrypted raw payload, redacted view and hash | Raw event payload never logged or returned | Envelope/redaction checks; append event identity |
+| ivr.ivr_decision.response_snapshot / response_payload_ciphertext / response_sha256 | Typed redacted snapshot plus encrypted internal payload; task callee only under `task.calleeNumber` for `DIAL_TASK_CALLEE`; confirmed callee only under `authorization.calleeNumber` for successful `DIRECT_AUTHORIZATION`; key_version | Redacted snapshot/log/audit/customer responses carry only masked values; replay decrypts the same payload; direct success never populates task fields | Purpose/action/nullability CHECK; append-only; replay decryption equality; field-level tests |
+| entitlement_metering.trial_policy_version.snapshot / snapshot_sha256 | Canonical policy snapshot and hash | Policy facts only | Redaction before hashing |
+| entitlement_metering.entitlement_grant.snapshot / snapshot_sha256 | Canonical grant snapshot and hash | Historical grant facts only | Immutable grant |
+| entitlement_metering.trial_grant | No protected value | Source action identity/fingerprint are internal | Append-only |
+| entitlement_metering.entitlement_balance | No protected value | Numeric balance only | Row lock and CHECK |
+| entitlement_metering.entitlement_issuance | No protected value | Internal state and error code | Conditional revision |
+| entitlement_metering.usage_reservation | No party/media value | Internal call/balance link | Immutable authorization fields |
+| entitlement_metering.usage_fact.snapshot / snapshot_sha256 | Canonical usage snapshot and hash | Usage metadata only | Append-only; no raw media |
+| activation_consent.consent_record.snapshot / snapshot_sha256 / request_fingerprint | Canonical redacted consent snapshot, hash and semantic fingerprint | No plaintext protected value; source_ref is opaque | Append-only; explicit action; event unique |
+| activation_consent.service_activation | No sensitive column | Current status and revision only | Row lock; transition ledger |
+| activation_consent.service_activation_transition | No sensitive column | Actor IDs and consent reference are internal | Append-only; unique action/status events |
+
+The full callee is never written to `response_snapshot`, logs, audit, Outbox or a customer response. The redacted snapshot and logs use `calleeMasked` and task/decision IDs only. A direct authorization's redacted projection uses a masked callee; `authorization.calleeNumber` exists only in the encrypted payload. The protected-key denylist in §10.7 applies to every S2 platform/audit/Outbox snapshot.
+
 ## 9. Transaction Sequences
 
 ### 9.0 S1 isolation, lock, privilege and conditional-update contract
@@ -1154,6 +2470,34 @@ S1 response projections expose only internal IDs where authorized, masked displa
 - A function call is on the same connection and in the caller's transaction. Any exception propagates; there is no inner commit, autonomous transaction or independent subtransaction in S1.
 - S1 does not call S2, does not hold session/call/activation locks, and holds no lock across a later-slice service call. Bind/disable take the account advisory lock then the account row; organization and membership writers take their own advisory lock then row; replacement takes the sorted canonical-number locks then binding rows. No writer takes an earlier-order key after a later-order key.
 - S2 handoff: the exact namespaces above, including the logical membership pair key, and the subject-before-binding suborder are binding on S2. Where the accepted plan says "read/`FOR SHARE`" for a cross-owner lifecycle or binding row, S2 uses the owner lifecycle/canonical-number advisory lock plus a `SELECT` re-read, or an owner-service same-transaction collaborator if it truly needs the row lock; it does not assume a cross-owner row-lock privilege. S2 must acquire any needed canonical-number key after the canonical-caller key and before the subject/session/call/activation keys, preserving the accepted surrounding order. S2 must not hold an S1 advisory/row lock and then acquire an earlier-order key; it must carry the two serial-order revocation/confirmation assertions and the current organization/membership/account lifecycle predicates forward.
+
+### 9.0.1 S2 lock and transaction integration contract
+
+S2 consumes the exact global acquisition order below. It is one total order; no transaction takes an earlier key after a later key:
+
+1. canonical-caller advisory `ivr.caller:<canonical_caller_hmac>` (task create/replace/cancel/claim, initial resolve, post-activation confirmation, direct authorization, usage settlement and reconciliation);
+2. needed canonical-number advisory key(s), sorted ascending by HMAC when more than one is needed;
+3. subject lifecycle advisory `subject_number.subject:<subject_id>`;
+4. `ivr.inbound_session` and current `ivr.call_record` row locks in that order (IVR-owned), then the existing `activation_consent.service_activation` row lock at the same rank, taken through the activation-consent-owned `lock_service_activation` collaborator for foreign callers or directly by the activation-consent client-activation service as the owning module; a missing activation row is serialized by the already-held subject lifecycle advisory (3) and the collaborator locks nothing. A foreign role never takes the activation row lock directly and never acquires rank 4 after rank 10;
+5. subject-owner read; S1 owns the `business_subject` row lock, while S2 uses a non-locking read under the subject lifecycle advisory;
+6. caller-binding and risk rows; S2 reads under the canonical-number and subject-lifecycle locks, or calls a `subject_number`-owned same-transaction collaborator if a row lock is genuinely required;
+7. organization lifecycle advisory, then the owner's organization row lock in the owning module;
+8. membership lifecycle advisory keyed by `organization_access.membership:<organization_id>:<account_id>` with canonical lowercase UUID text, then the owner's membership row lock in the owning module;
+9. account lifecycle advisory, then the owner's account row lock in the owning module;
+10. `platform.idempotency_record` row for S2 confirmation/purchase/idempotent action entries. This is the explicit S2 placement: the row is acquired after locks 1-9 and **before** any tentative task claim or reservation. It is compatible with S1's accepted begin-before-effects/no-savepoint contract because S1's `begin` also precedes its side effects; no S1 or S2 transaction acquires a task row or reservation before this row, and the caller/session/access locks serialize the flow. Any entry that uses `IVR_CONFIRM` or `PURCHASE` follows this placement; a transaction must never take a task/reservation key and only then acquire the idempotency row. The rank-4 activation row lock is taken before this row; `record_activation_confirmation`, `record_client_activation` and `append_purchase_consent` reuse the held activation lock and never first acquire rank 4 after this row;
+11. candidate task row and its conditional claim; reservation/balance suborder follows;
+12. reservation/balance suborder: balance rows in ascending UUID, then the `usage_reservation` insert/lock, then `usage_fact` on settlement; no earlier key is taken after entering this suborder;
+13. employee row plus the administrator advisory lock (operations actions only; operations actions do not take task/reservation keys);
+14. Outbox insert;
+15. audit insert.
+
+- `activation-consent.lock_service_activation` is a minimal activation-consent-owned, same-connection `Propagation.MANDATORY` lock-only collaborator invoked at rank 4 by foreign callers (IVR confirmation and order creation) before ranks 7/8/9/10; the activation-consent client-activation service takes the same rank-4 row lock directly under its owner role. Under `activation_consent_role` the collaborator locks an existing `service_activation` row for the subject and returns its current facts; it creates, updates and appends nothing. A missing row is serialized by the already-held subject lifecycle advisory (3), so the collaborator locks nothing and the later owner service may insert the first row under that advisory. Later owner services reuse the held lock; re-entrant already-held locks are not fresh inversions. IVR locks only its own session/current-call rows; foreign organization/membership/account lifecycle rows use their advisory locks plus exact `SELECT` re-reads, or a named owner collaborator. Every entry that locks an activation row (IVR confirmation, client activation, order creation and operations lifecycle) composes in this total order; read-only initial resolve and direct authorization use exact `SELECT` re-reads under the subject advisory and take no activation row lock.
+- Standalone owner publication transactions additionally take the owner-scoped advisory key `catalog_order.publication:<product_id>` or `entitlement_metering.trial_policy:FIRST-TRIAL` before their owner row updates. These keys are not combined with the IVR call-path order and are never taken while holding a task/reservation key; they are transaction-control serialization, not a new table or product rule.
+- `ivr.select_call_action` derives the entry mode and purpose from the authenticated endpoint/session, never from a caller-supplied field. It is one application service used by `INITIAL_RESOLVE` and `POST_ACTIVATION`; direct authorization reuses its ordered predicates. `ivr.record_activation_next_action` is a thin IVR entry wrapper that delegates and persists no decision of its own.
+- All task/claim/current-call/reservation/frozen-authorization effects are one local transaction through the published owner services. `activation-consent` and `entitlement-metering` never write `ivr.ivr_decision`; `ivr` never writes consent, activation, trial, grant, balance, reservation or usage tables directly.
+- A cross-owner row lock is taken by the owning module's same-transaction application-service collaborator under the owner role on the same connection. A cross-module role never takes `FOR UPDATE`/`FOR SHARE` on another module's table and never receives `UPDATE` on it. Cross-owner reads use the exact §10.12 `SELECT` columns under the corresponding advisory lock and re-read after acquiring it. The runtime roles are NOLOGIN; how an application connection is provisioned, authenticated, or switched to an owner/service identity (a LOGIN role, `SET ROLE`, connection-pool role mapping or equivalent) is Q17/Q23 deployment-security input and is **not** specified or claimed here. OQ-2 remains deferred to Platform/Database/Security with the executable role-provisioning/privilege tests; the same-connection same-transaction collaborator requirement is the contract.
+- S1's request-ID unique-loser path remains whole-transaction rollback plus a bounded restart; S1 has no savepoint. S2's one same-connection savepoint is established **after** accepted activation/trial and **before** the shared selector performs any tentative task claim, reservation or balance debit. A category-2 normal domain denial executes `ROLLBACK TO SAVEPOINT`, then freezes exactly one no-dial decision/completion and commits the retained activation/trial; the no-dial decision/completion are written after the rollback so they survive. A category-3 SQL/lock/I/O/Outbox exception never rolls back to the savepoint and is never swallowed: the whole transaction rolls back. For an initial-resolve or direct-authorization attempt there are no accepted activation/trial facts to preserve, but the savepoint is placed before the tentative claim/reservation in the same attempt and is used only for the same category-2 typed denial; a technical error still rolls back the whole transaction. The savepoint never protects an S1 claim path and never commits independently.
+- Replay and immutable identity checks precede expiry cleanup and every accepted effect. `expires_at > clock_timestamp()` is evaluated after the claim lock, not from `now()` or a request timestamp. No lock is held across a network call.
 
 ### 9.1 T-S1-01 Idempotent request with first-result finalization
 
@@ -1206,7 +2550,7 @@ S1 response projections expose only internal IDs where authorized, masked displa
 ### 9.6 T-S1-06 Subject claim with risk preemption
 
 1. Inputs are the target `subject_id`, the verified `caller_number_binding_id` (or a canonical number that resolves to one binding), the authenticated `account_id`, an optional `organization_id`, the `verification_method`, the verification proof reference, and the opaque `request_id`. The service derives the canonical number HMAC from the binding; the client cannot supply an HMAC as proof. It decrypts and validates the `verification_ref_ciphertext` payload in section 4.14.1 before any claim row. A missing, incomplete, malformed, wrong-version or undecryptable reference returns `CLAIM_VERIFICATION_REF_INVALID` and writes no accepted row and no owner change.
-2. Lock order: read the binding's immutable identity, acquire the canonical-number advisory lock for its `number_hmac`, acquire the subject lifecycle advisory lock `subject_number.subject:<subject_id>`, and lock the `business_subject` row `FOR UPDATE`; a zero-row subject lock returns `CLAIM_SUBJECT_NOT_FOUND` with no claim row. Then lock the `caller_number_binding` row `FOR SHARE` and the `subject_risk_state` rows in ascending UUID. Then acquire the organization lifecycle advisory lock for a supplied `organization_id`, the membership lifecycle advisory lock for the logical pair `organization_access.membership:<organization_id>:<account_id>` (the pair comes from the request, not from a discovered membership ID), and the account lifecycle advisory lock, in the global order of section 9.0. Under each lock, `SELECT` the exact section 10.8 columns and re-read every predicate; no pre-lock value is reused. A zero-row organization read returns `CLAIM_ORGANIZATION_NOT_FOUND` and a zero-row account read returns `CLAIM_ACCOUNT_NOT_FOUND`, each with no claim row.
+2. Lock order: read the binding's immutable identity; a zero-row initial binding read returns `CLAIM_BINDING_NOT_FOUND` immediately with no claim row, no owner change and no further lock or write. Otherwise acquire the canonical-number advisory lock for its `number_hmac`, acquire the subject lifecycle advisory lock `subject_number.subject:<subject_id>`, and lock the `business_subject` row `FOR UPDATE`; a zero-row subject lock returns `CLAIM_SUBJECT_NOT_FOUND` with no claim row. Then lock the `caller_number_binding` row `FOR SHARE` and the `subject_risk_state` rows in ascending UUID. When `organization_id` is supplied, acquire the organization lifecycle advisory lock and the membership lifecycle advisory lock for the logical pair `organization_access.membership:<organization_id>:<account_id>` (the pair comes from the request, not from a discovered membership ID); a personal claim has no pair and takes neither lock. Then acquire the account lifecycle advisory lock, in the global order of §9.0. Under each lock, `SELECT` the exact §10.8 columns and re-read every predicate; no pre-lock value is reused. A zero-row organization read returns `CLAIM_ORGANIZATION_NOT_FOUND` and a zero-row account read returns `CLAIM_ACCOUNT_NOT_FOUND`, each with no claim row.
 3. **Current predicates (also applied to replay and duplicate).** Reject with the stable code when: the binding is missing (`CLAIM_BINDING_NOT_FOUND`); `binding.subject_id <> target subject_id` (`CLAIM_SUBJECT_BINDING_MISMATCH`); the binding is not `ACTIVE` or `verified_at` is null (`CLAIM_BINDING_NOT_ACTIVE`); a supplied canonical number does not HMAC to `binding.number_hmac` (`CLAIM_NUMBER_MISMATCH`); the authenticated account is not `ACTIVE` (`CLAIM_ACCOUNT_INACTIVE`); an organization context has a non-active organization (`CLAIM_ORGANIZATION_INACTIVE`) or no active membership for `(organization_id, account_id)` (`CLAIM_MEMBERSHIP_INACTIVE`); when replaying or duplicating an existing accepted organization-scoped claim, the current approved-access conjunction in step 7 must also hold (`CLAIM_ACCESS_NOT_APPROVED`); a fresh organization-scoped request that passes the organization/membership predicates proceeds to the step 7 policy boundary. A stored `ACCEPTED` claim is never returned when any current predicate fails. Existence is validated before any outcome row: an unknown target subject, authenticated account or supplied organization returns `CLAIM_SUBJECT_NOT_FOUND`, `CLAIM_ACCOUNT_NOT_FOUND` or `CLAIM_ORGANIZATION_NOT_FOUND` with no claim row, and a raw foreign-key error is never the protocol outcome. For a fresh `request_id`, a predicate failure appends exactly one `REJECTED` row only when the target subject, authenticated account and supplied organization all exist and the binding and verification reference are resolvable; an existing inactive parent may yield a `REJECTED` row only in that case. A missing binding (`CLAIM_BINDING_NOT_FOUND`) or invalid reference (`CLAIM_VERIFICATION_REF_INVALID`) writes no claim row. For an existing `request_id` the service returns the stable error and appends only an audit fact, because the claim row is append-only; the replay identity comparison in step 5 governs any mismatch and never discloses the stored outcome.
 4. **Risk first.** Read all `subject_risk_state` rows for the locked binding. If any row is `OPEN`, return `CLAIM_RISK_BLOCKED` before replay or same-account-duplicate success. For a fresh `request_id` append exactly one `REJECTED` row with `risk_checked_at`; for an existing `request_id` return the blocked outcome without mutating the row and append only an audit fact. `OPEN` risk is not converted into a dialing ban.
 5. **Replay identity.** Read `subject_claim` by `request_id`. If present, compare the stored `subject_id`, `account_id`, null-safe `organization_id` and `verification_method` to the current request, and decrypt the stored verification reference to compare `schemaVersion`, `bindingId`, `numberHmac` and `proofRef` to the current binding/proof. Any mismatch returns `CLAIM_REPLAY_CONFLICT` with no new row and never discloses the stored outcome. An unresolvable stored reference returns `CLAIM_REPLAY_UNRESOLVABLE` with no success. If the stored status is `ACCEPTED`, require the stored owner to equal the claim's account (organization null) or organization (organization non-null), exactly one owner column set; a null/different owner returns `CLAIM_DATA_INTEGRITY`. If the stored row is organization-scoped and the step 7 approved-access conjunction fails, return `CLAIM_ACCESS_NOT_APPROVED` with no new row and no stored success. With identity, owner, current predicates, the step 7 organization approved-access conjunction when the stored row is organization-scoped, and risk all passing, return the stored `ACCEPTED` outcome without a new row. A stored `REJECTED`/`CONFLICT` is returned as the stored non-success outcome after the identity check, without mutation.
@@ -1248,8 +2592,8 @@ Stable claim outcome codes:
 
 1. Normalize the canonical number and derive its HMAC server-side; the client cannot supply the HMAC as proof. For a single-number action acquire the canonical-number advisory lock for its HMAC. For replacement derive the old and new HMACs, acquire both canonical-number locks in ascending HMAC order before any binding row, and return `BINDING_SAME_NUMBER` with no mutation when old and new are the same number.
 2. Under the lock(s), read the non-terminal binding rows for the new `number_hmac` and the same-subject row for `(subject_id, number_hmac)`. If an `ACTIVE` binding belongs to another subject, return `BINDING_ACTIVE_CONFLICT`; never transfer or merge the subject. If it belongs to the same subject and is the requested `ACTIVE` binding, an identical create is an idempotent success and a replacement with that same number is `BINDING_SAME_NUMBER`. If it is a different `ACTIVE` binding for the same subject, a replacement reuses that destination and retires only the old binding; a create returns the existing `ACTIVE` binding as the idempotent result. A same-subject `DISABLED` row is never revived by a create: return stable `BINDING_DISABLED_CONFLICT` with no mutation and require the explicit re-enable action in step 6. A `RETIRED` row is terminal and returns `BINDING_RETIRED_CONFLICT`. A create never reports a `DISABLED` or `RETIRED` row as an active success.
-3. Create: acquire the subject lifecycle advisory lock and the subject row `FOR SHARE` (the binding and subject are owned by `subject_number`), verify the subject exists and its owner/access has already been authorized, then insert the new `ACTIVE` binding. The partial unique active-number index and unique `(subject_id, number_hmac)` are backstops. A unique loser aborts the whole transaction; the service starts a bounded retry from the beginning, reacquiring the canonical-number and subject locks and re-reading, and maps the current winner deterministically: same-subject identical `ACTIVE` is an idempotent success; same-subject `DISABLED` is `BINDING_DISABLED_CONFLICT`; same-subject `RETIRED` is `BINDING_RETIRED_CONFLICT`; another subject's `ACTIVE` row is `BINDING_ACTIVE_CONFLICT`; any other state is a stable current-state conflict. It never exposes a raw unique error or returns a non-active row as success.
-4. Replace: after acquiring both number locks in sorted order, acquire the subject lifecycle advisory lock and the subject row `FOR SHARE`, then lock the old and destination binding rows in ascending UUID (`FOR UPDATE`), and re-read them. The old binding must be `ACTIVE` and belong to the requested subject; otherwise return the current state or a stable conflict with no change. Validate the destination number as in step 2. Conditionally retire the old binding (`ACTIVE → RETIRED`, revision + 1) and insert a new binding for the new number, re-enable the same-subject `DISABLED` destination row, or reuse the same-subject `ACTIVE` destination row, in one transaction. If the new number belongs to another subject, if the destination row is `RETIRED`, or if any conditional update/unique insert loses, the entire transaction rolls back and the old binding remains `ACTIVE`; a bounded retry from the beginning reacquires both canonical-number locks in sorted order and re-reads, then maps the loser to a stable current-state/conflict response. A same-number replacement is `BINDING_SAME_NUMBER` before any row change.
+3. Create: acquire the subject lifecycle advisory lock and the subject row `FOR SHARE` (the binding and subject are owned by `subject_number`). A zero-row subject read returns stable `BINDING_SUBJECT_NOT_FOUND` with no binding write and no owner or access change. Otherwise verify the subject owner/access has already been authorized, then insert the new `ACTIVE` binding. The partial unique active-number index and unique `(subject_id, number_hmac)` are backstops. A unique loser aborts the whole transaction; the service starts a bounded retry from the beginning, reacquiring the canonical-number and subject locks and re-reading, and maps the current winner deterministically: same-subject identical `ACTIVE` is an idempotent success; same-subject `DISABLED` is `BINDING_DISABLED_CONFLICT`; same-subject `RETIRED` is `BINDING_RETIRED_CONFLICT`; another subject's `ACTIVE` row is `BINDING_ACTIVE_CONFLICT`; any other state is a stable current-state conflict. It never exposes a raw unique error or returns a non-active row as success.
+4. Replace: after acquiring both number locks in sorted order, acquire the subject lifecycle advisory lock and the subject row `FOR SHARE`; a zero-row subject read returns stable `BINDING_SUBJECT_NOT_FOUND` with no binding, owner or access change. Then lock the old and destination binding rows in ascending UUID (`FOR UPDATE`), and re-read them. The old binding must be `ACTIVE` and belong to the requested subject; otherwise return the current state or a stable conflict with no change. Validate the destination number as in step 2. Conditionally retire the old binding (`ACTIVE → RETIRED`, revision + 1) and insert a new binding for the new number, re-enable the same-subject `DISABLED` destination row, or reuse the same-subject `ACTIVE` destination row, in one transaction. If the new number belongs to another subject, if the destination row is `RETIRED`, or if any conditional update/unique insert loses, the entire transaction rolls back and the old binding remains `ACTIVE`; a bounded retry from the beginning reacquires both canonical-number locks in sorted order and re-reads, then maps the loser to a stable current-state/conflict response. A same-number replacement is `BINDING_SAME_NUMBER` before any row change.
 5. Disable: acquire the canonical-number lock and lock the owned binding row `FOR UPDATE`; conditionally update `ACTIVE → DISABLED`. The number is no longer the active unique binding but historical rows remain.
 6. Re-enable: acquire the canonical-number lock and lock the owned binding row `FOR UPDATE`; read the active binding for the number. If another active binding exists, return `BINDING_ACTIVE_CONFLICT`; otherwise conditionally update `DISABLED → ACTIVE`. A `RETIRED` row returns `BINDING_RETIRED_CONFLICT`. Re-enable is a separate explicit action; a create never performs it. Both create/re-enable serial orders are defined: if re-enable commits first, a later create sees the same-subject `ACTIVE` row and returns an idempotent success; if create runs first while the row is `DISABLED`, it returns `BINDING_DISABLED_CONFLICT` with no mutation, and the explicit re-enable afterwards still succeeds unless another active binding exists.
 7. Retire: acquire the canonical-number lock and lock the owned binding row `FOR UPDATE`; conditionally update `ACTIVE`/`DISABLED → RETIRED`. `RETIRED` is terminal; rows are never deleted. A number may later be bound to a different subject through a new row because the active unique key is released and the historical subject/number key is subject-scoped. Unbinding never rewrites evidence, trial, usage, subject real-name or login identity.
@@ -1279,13 +2623,127 @@ Stable claim outcome codes:
 - These writers take the owning module's lifecycle advisory lock and then its own row lock in the global order. Cross-module claim/confirmation readers take the same advisory lock and re-read the exact `SELECT` columns; they do not take a cross-owner row lock. A refused access change and a committed claim therefore have two serial orders, never a mid-lock interleaving. S1 fixes the S1 writer contract and exact namespaces that make the S2 serialization possible.
 - No lifecycle writer deletes a row, rewrites evidence or creates a login identity.
 
-### 9.11 Reserved S2/S3 transaction sequences
+### 9.11 T-S2-01 Activation confirmation with first trial and next action
 
-The accepted plan's activation confirmation with first-trial issuance, task create/replace/cancel, IVR resolve, direct DTMF authorization, usage settlement, reservation reconciliation, order creation, payment-to-issuance, evidence solidification and share admission with ticket reconstruction are not authored in S1. They remain frozen handoff for S2/S3. This document does not claim those transactions were designed, executed or tested.
+This is one IVR-owned local transaction. The IVR endpoint authenticates the service and protocol version and validates `callId`, `sessionId`, node and immutable caller/subject/access-number identity **before** reading or disclosing any stored result.
 
-S2 handoff for canonical-number acquisition: whenever an S2 IVR claim/authorization path needs the canonical-number advisory lock, it acquires that key after the canonical-caller key and before the subject/session/call/activation keys, preserving the accepted surrounding order. S1 records the placement only; it does not author S2 transaction code, tables or tests.
+1. Authenticate the IVR service/protocol and immutable call/session identity. Validate the confirmation `eventId` is nonblank and 1-128 characters before `idempotency_begin` or any domain effect; a blank or over-128 ID is refused with the stable protocol argument error `IVR_ARGUMENT_INVALID` and writes nothing (the general 1-512 platform key capacity is unchanged). Acquire the canonical-caller lock; acquire the subject lifecycle advisory lock when a subject is resolved. Lock only the IVR-owned `inbound_session` and current `call_record`; then call `activation-consent.lock_service_activation` at rank 4 to take the existing `service_activation` row lock through the owner role (a missing row is serialized by the subject advisory lock and locks nothing). Re-read the locked rows after acquisition. The IVR never takes a cross-owner `FOR UPDATE`. Hold the current task-backed access rows through the §9.0.1 organization, membership and owner/creator account advisory locks plus exact `SELECT` re-reads when the call is task-backed; only the owning module takes its own row lock. Do the same on a best-effort basis for the no-task path only for predicates that exist.
+2. Call `platform.idempotency_begin('IVR_CONFIRM', eventId, canonicalConfirmationFingerprint)` after the caller/session/access locks and **before** any task/reservation (explicit S2 placement in §9.0.1 item 10). The canonical confirmation fingerprint is exactly §10.17: it excludes `eventId`, so a regenerated event ID with identical semantic confirmation fields matches and replays the first result.
+   - `REPLAY`: validate the stored caller/call identity and return the stored first result; no consent, trial, claim, reservation or Outbox effect.
+   - `CONFLICT`: changed input for the same event ID; reject atomically with no side effect.
+   - Only `NEW` continues.
+3. Read the existing `(callId, ACTIVATION_NEXT_ACTION)` decision **before** the `SUSPENDED` check and before any consent/trial/claim/reservation effect.
+   - Existing decision and matching stored canonical fingerprint: complete this event's `NEW` row with the existing decision ID and frozen result, enqueue no new side effect and commit. A replay never renews authorization.
+   - Existing decision and different fingerprint: roll back the transaction (discarding the `NEW` row), return a stable semantic conflict and write no accepted effect.
+   - `CONFIRMED` session without a decision: fail closed as `DATA_INTEGRITY`, change no state.
+4. A fresh confirmation requires the original `(callId, INBOUND_RESOLVE)` decision to be `GUIDE_ACTIVATION`; any other action returns `REJECT`/`CONFIRMATION_NOT_ALLOWED` with no consent or activation effect. This is the IVR confirmation chain; the separate direct-authorization chain is §9.14.
+5. **Phase A (pre-activation).** Apply the identity, fresh-origin and other-active/`UNKNOWN`-call guard (excluding the current `callId`) and the fresh `SUSPENDED` gate. For a fresh `SUSPENDED` subject, fail closed: write no accepted consent, transition, trial/grant/balance, reservation or success Outbox; persist exactly one rejected `ACTIVATION_NEXT_ACTION` decision with action `REJECT_SUSPENDED`, source domain `IVR_CONFIRM`; optionally append one audit fact; mark the inbound session `REJECTED` only when it is not already `CONFIRMED`; call `platform.idempotency_complete` with the rejected decision ID; commit. For an identity failure, invalid origin or an already-inconsistent current `UNKNOWN` attempt, create no accepted effect and no unauthorized persistent write, discard any `NEW` row and return the stable refusal. The current `UNKNOWN` call, an already-`CONFIRMED` session and any unrelated competing call are never destructively changed.
+6. **Phase B (accepted activation/consent).** Call `activation-consent.record_activation_confirmation` with `Propagation.MANDATORY`. It validates the current prompt and consent policy-version/key/content before appending anything. Invalid/stale content returns `REJECT`/`CONSENT_REQUIRED` with no accepted write; the wrapper does not reimplement the predicate. On the accepted branch it appends the `consent_record` with `event_domain = 'IVR_CONFIRM'`, `event_id` equal to the already validated nonblank 1-128 confirmation `eventId`, `source_ref = 'ivr-session:' || lower(session_id)` (the 48-character deterministic value, independent of the transport event ID) and the immutable §10.17 `SERVICE_ACTIVATION` fingerprint; a same-semantic retry with a new transport event ID returns the first decision and consent before any append and never rewrites the first consent `event_id` or adds a consent. It creates or updates `service_activation` and appends exactly one transition with `to_revision = from_revision + 1`; an already-`ACTIVE` row keeps its status and appends no duplicate transition, and the confirmation anchor is the new transition ID or the current latest transition ID. It reuses the rank-4 activation row lock taken at step 1 (or inserts the first row under the subject advisory when none existed) and never acquires rank 4 after the idempotency row. It returns `consentRecordId`, `confirmationAnchorId` and `activationStatus`.
+7. Call `entitlement-metering.issueFirstTrial` with `Propagation.MANDATORY`. The V006 function performs the sole authoritative enabled/published/expected-version policy read and retains the selected immutable content through the grant/Outbox; the wrapper lookup is preliminary only. Replay and already-granted return the immutable prior trial result before any new policy selection, and there is no second enabled recheck. It alone writes `trial_grant`, `entitlement_grant`, `entitlement_balance` and Outbox, and returns `GRANTED`, `REPLAY` or `ALREADY_GRANTED`. An existing trial is never reissued; a changed-fingerprint conflict or an inconsistent trial row fails closed.
+8. **Establish the same-connection attempt savepoint now**, after the accepted activation/trial writes and **before** the shared selector can perform any tentative claim, reservation or balance debit. No claim/reservation may exist in the transaction at this point.
+9. Call `ivr.select_call_action` with entry mode `POST_ACTIVATION` and the validated approved allocation-policy input (§10.18). It re-applies the shared ordered predicates: the current-call-excluded active/`UNKNOWN` guard, current activation/consent, caller/subject/binding and owner-workspace access including organization/membership/owner/creator account lifecycle, the bounded `PENDING`/revision/`clock_timestamp()` task predicate and the single-eligible-balance/positive-entitlement predicate. It persists exactly one `ACTIVATION_NEXT_ACTION` decision:
+   - `DIAL_TASK_CALLEE` only when every task and entitlement predicate passes: conditional claim, current `ACTIVE` call binding, one reservation from the selected balance and the frozen typed response;
+   - `GUIDE_PURCHASE` when `NO_AVAILABLE_ENTITLEMENT` (no positive available entitlement), with no claim or reservation;
+   - `ENTER_CALLEE` only after a positive no-`PENDING`/`CLAIMED`-task check and a positive selected balance;
+   - `REJECT` for revoked access/binding/integrity or a policy/integrity allocation denial, `REJECT_CALL_IN_PROGRESS` for a competing active call, and `REJECT_SUSPENDED` only when the phase-A gate applies.
+10. The shared selector writes the `DIAL_TASK_CALLEE` decision only after its tentative claim/reservation branch succeeds; it writes no dial decision while the branch can still be rolled back. If a phase-B task-access, organization/membership/account, binding, entitlement, allocation or active-call condition blocks dialing, execute `ROLLBACK TO SAVEPOINT` and then commit the category-2 result: valid activation/trial retained, session `CONFIRMED`, exactly one no-dial decision and its completion, no claim and no reservation. A zero-row conditional claim or an expected reservation denial follows the same path with one bounded reread and a deterministic non-dial result; never a raw constraint error and never an arbitrary second task. The no-dial decision/completion are written after the rollback so they survive.
+11. Call `platform.idempotency_complete(recordId, expectedRevision, 'ACTIVATION_CONFIRMATION', nextActionDecisionId, redactedResultSnapshot, resultSha256)` exactly once. The decision ID is the stable non-null first result for every branch, including already `ACTIVE` and call-rejected outcomes; the rejected decision ID is the first result for a suspended fresh rejection. Enqueue Outbox/audit for activation facts and, when claimed, task/call/reservation facts; commit.
+12. A claim cannot commit without its reservation. A technical failure in either phase (SQL error, lock/advisory timeout, storage I/O, decision/completion/Outbox failure) is category 3: it does **not** roll back to the attempt savepoint; it rolls back the `NEW` row, completion, consent, activation, transition, entitlement, tentative claim/reservation, decision and Outbox, commits no decision and returns a bounded retryable error. A database exception is never swallowed and a rollback-only transaction is never used to commit.
+13. Serial-order outcomes are exact. If an operations suspension or an access revocation commits **before** the confirmation acquires the relevant lifecycle/access locks, the fresh path observes the suspended/revoked state and returns the category-1 suspended refusal or the category-2 no-dial access refusal; when valid activation/trial already committed in this transaction, they remain committed with the session `CONFIRMED` and no claim/reservation. If the confirmation/claim commits **first** while every predicate passed, a frozen `DIAL_TASK_CALLEE` with its claim and reservation may survive a later revocation; the later revocation governs only later calls. There is no post-commit access re-read, decision reversal or invented rejection. A replay after suspension with a `CONFIRMED` session returns the original decision and never changes `CONFIRMED → REJECTED`; a fresh suspended confirmation on a never-confirmed session may be rejected under the round-6 write-set assertion in §13.7.
 
-### 9.12 S1 deterministic behavior assertions
+### 9.12 T-S2-02 Task create, replace and cancel
+
+1. Resolve the authenticated account/workspace, `callerBindingId` and client idempotency key. Acquire the canonical-caller lock. Verify the binding belongs to the subject and is usable by the workspace, the creating account is `ACTIVE`, and for an organization workspace the organization is `ACTIVE` and the creator membership is `ACTIVE` with current task access; verify no other `ACTIVE`/`UNKNOWN` call exists for that canonical caller. These lifecycle rows are read under their exact advisory locks and re-read after acquisition; no pre-lock value is reused.
+2. **Replay first.** If `(created_by_account_id, idempotency_key)` exists, same `request_fingerprint` returns the existing task without TTL refresh or housekeeping; a changed fingerprint returns a stable conflict. This keyed replay precedes expiry housekeeping and every accepted task effect.
+3. Under the lock, expire stale `PENDING` tasks using `clock_timestamp()` (`now >= expires_at` becomes `EXPIRED` with `terminal_at`); this housekeeping never refreshes a live row and runs only when no keyed replay returned.
+4. If an identical caller/callee/business/workspace `PENDING` task exists (after housekeeping), return it without refreshing TTL. A task frozen to another workspace/creator is not returned as success and never discloses its callee.
+5. Create `PENDING` with server `ttl_seconds` (default 30, configurable) and `expires_at = created_at + ttl_seconds`. A create never revives a terminal task.
+6. Replace is allowed only for the current workspace's and current account's `PENDING` task after rechecking the current account/organization/membership lifecycle under their locks: mark it `REPLACED` with `terminal_at` and insert the new task in the same transaction. A `CLAIMED` task cannot be replaced or cancelled.
+7. Cancel is allowed only for the current workspace's and current account's `PENDING` task after the same lifecycle recheck. Claim, replace and cancel compete on the same caller lock and conditional status update; exactly one wins; losers return the current state or a stable conflict. Enqueue Outbox/audit; commit.
+
+### 9.13 T-S2-03 IVR initial resolve
+
+1. Authenticate the IVR service/protocol and validate immutable `callId`/node/caller identity; normalize the trusted caller and acquire the canonical-caller lock. If the caller is missing/untrusted, return `REJECT`/`CALLER_UNTRUSTED` with no task claim/reservation and no accepted activation/trial.
+2. Read any existing `(callId, INBOUND_RESOLVE)` decision **before** task-expiry housekeeping, subject find-or-create, session/call creation or any other mutation. Same initial-resolve fingerprint returns the frozen decision and action unchanged; changed caller/access/node identity or fingerprint is a stable conflict. Replay precedes housekeeping and every accepted effect.
+3. Only when no decision exists, acquire the canonical-number lock and call `subject-number.find_or_create_ivr_subject` (§10.20) with the trusted normalized number, on the same connection and in the same transaction, **before** the subject/session/call/activation locks. It reuses the unique active binding or atomically creates one unowned `IVR` subject and one active binding with both owner columns null; no customer account, login identity, owner or enterprise claim is created. The returned subject is then re-read under the subject lifecycle advisory and the IVR session/current-call locks in the §9.0.1 order; the activation row is a non-locking exact `SELECT` re-read under the subject advisory (this entry needs no activation row lock), and the owner lock-only collaborator is used only if a later side-effecting activation write requires its row lock. Disabled/retired/conflicting binding and concurrent-unique outcomes are fail-closed or reused exactly as §10.20 states; a technical failure rolls the tentative subject/binding back with the resolve.
+4. Create or reuse the inbound session and expire stale `PENDING` tasks using `clock_timestamp()`. Housekeeping runs only after replay and the find-or-create identity step.
+5. For a task-backed call, acquire the organization lifecycle advisory (7), the membership pair advisory (8) and the owner/creator account lifecycle advisory (9) after the session/call locks and before the task/entitlement checks, and re-read the exact §10.12 columns; only the owning module takes its own row lock. Apply the shared ordered predicates: the other `ACTIVE`/`UNKNOWN` call guard excludes the current `callId`; a competing call yields `REJECT_CALL_IN_PROGRESS` with a terminal `REJECTED` current call record (only when absent or a never-started/rejectable `ACTIVE` row) and no claim/reservation; a fresh `SUSPENDED` subject yields `REJECT_SUSPENDED`; no activation or missing current consent yields `GUIDE_ACTIVATION` (`ACTIVATION_REQUIRED`/`CONSENT_REQUIRED`); current caller/subject/binding/owner-workspace access, activation/consent, the bounded unique task and the §10.18 single-eligible-balance/positive-entitlement predicate are checked in order. Organization/membership/account lifecycle applies only to the task-backed path; the no-task direct path requires no customer login, membership or real-name.
+6. Create or bind the current call record `ACTIVE` for any non-terminal action. Then establish the same-connection attempt savepoint before any tentative task claim/reservation/balance debit; the session and call record created above are outside the tentative branch and survive a category-2 rollback to this savepoint.
+7. For `DIAL_TASK_CALLEE`, require the task `PENDING`, bound to the current caller/subject/binding/owner workspace, with current creator/workspace access and expected revision; conditionally update it with `expires_at > clock_timestamp()` and `claimed_call_id`; call `entitlement-metering.reserve_call_usage` with the validated allocation policy in the same transaction; freeze the typed decision. For `ENTER_CALLEE` (only after a positive no-`PENDING`/`CLAIMED`-task check), `GUIDE_PURCHASE` or `GUIDE_ACTIVATION`, write no claim or reservation.
+8. A 0-row claim or expected reservation/typed allocation denial executes `ROLLBACK TO SAVEPOINT`, performs one bounded reread and freezes a deterministic non-dial decision (and its completion where applicable). A technical failure is category 3 and rolls back the whole transaction including task, call record, session, reservation, decision, event, and any tentative subject/binding side effects; it never rolls back only to the savepoint. A current `UNKNOWN` call is never destructively finalized. Enqueue Outbox/audit and commit before returning an authorization.
+
+### 9.14 T-S2-04 Direct DTMF authorization
+
+1. Authenticate the IVR service and immutable call/session/caller identity; validate the direct-authorization confirmation `eventId` is nonblank and 1-128 characters before any decision read, idempotency or domain effect, refusing a blank or over-128 ID with stable `IVR_ARGUMENT_INVALID` and no write; acquire the canonical-caller lock and the same subject/IVR session/current-call locks as initial resolve. Foreign organization/membership/account rows use their advisory locks plus exact `SELECT` re-reads; the activation row is a non-locking exact read under the subject advisory. Read the existing `(callId, DIRECT_AUTHORIZATION)` decision first: same fingerprint returns the frozen authorization; changed content is a stable conflict. Replay precedes every check and effect; a replayed success never creates a second reservation or starts a redial.
+2. Require a valid **current purpose chain**, not necessarily `INBOUND_RESOLVE = ENTER_CALLEE`:
+   - (a) **Direct inbound chain**: the frozen `(callId, INBOUND_RESOLVE)` decision is `ENTER_CALLEE`, and no later `ACTIVATION_NEXT_ACTION` or other decision supersedes or conflicts with it; or
+   - (b) **Post-activation chain**: the frozen `(callId, INBOUND_RESOLVE)` decision is `GUIDE_ACTIVATION`, the inbound session is `CONFIRMED` with the same subject, and exactly one committed `(callId, ACTIVATION_NEXT_ACTION)` decision is `ENTER_CALLEE`. This is the legitimate `GUIDE_ACTIVATION → CONFIRMED → ENTER_CALLEE → direct DTMF authorization` path permitted by docs/13 §6.3-6.4 and the accepted plan D23/INV-34.
+   The request must not carry a non-empty `taskId` or any task-backed fallback. Reject a task-backed decision/call (non-null `call_record.task_id` or `claimed_call_id`), a later decision whose action is a no-dial action (`GUIDE_PURCHASE`, `REJECT`, `REJECT_SUSPENDED`, `REJECT_CALL_IN_PROGRESS`), an unconfirmed or contradictory session/subject purpose chain, an obsolete earlier `ENTER_CALLEE` superseded by a later no-dial decision, and any request that tries to re-enter or rewrite the original resolve. The original `INBOUND_RESOLVE` decision is immutable and is never updated to `ENTER_CALLEE`.
+3. After a positive no-task check, recheck no `PENDING`/`CLAIMED` task for the caller and no other `ACTIVE`/`UNKNOWN` call excluding the current `callId`. A competing call yields `REJECT_CALL_IN_PROGRESS` with no reservation and finalizes only the current call's record when it is absent or a never-started/rejectable `ACTIVE` row. An existing current `UNKNOWN` row is referenced unchanged.
+4. Reuse the shared trusted-caller, subject, activation/current consent and single-eligible-balance/positive-entitlement checks (§10.18) without a customer login, membership, real-name or platform-registration prerequisite. Create or bind the current `call_record ACTIVE` if needed; then establish the same-connection attempt savepoint before the tentative reservation/claim branch; create or reuse exactly one reservation for the `callId` from the selected balance.
+5. Freeze the typed decision. Success has purpose `DIRECT_AUTHORIZATION`, `action` null, stable `reasonCode = DIRECT_AUTHORIZED`, `taskMatch = NONE`, null task fields, the committed `reservationId`/`authorizedRecordingSeconds`/`authorizationExpiresAt` and the confirmed callee only under `authorization.calleeNumber` in the encrypted payload. It never returns `ENTER_CALLEE` after the callee was confirmed and never introduces an eighth action. A direct refusal freezes a permitted non-dial action with no reservation and no authorization object; an allocation policy/integrity denial uses `REJECT`/`DATA_INTEGRITY` with the typed code only in the encrypted internal payload/audit.
+6. Enqueue Outbox/audit and commit. An expected reservation/typed allocation denial executes `ROLLBACK TO SAVEPOINT` and freezes the refusal; a technical failure is category 3 and rolls back everything. Retry returns the first decision and never authors a second reservation or a redial. `authorizationExpiresAt` is copied from the reservation and is the last instant to start the B-leg. The IVR persists one unique `callId` B-leg operation in its existing local authoritative store before any line request; that local operation, not business `ivr.call_leg`, proves outbound uniqueness (Q28). A task-backed dial, when separately authorized through the task path, always uses the frozen task callee and never asks the caller to confirm it; the direct DTMF path does not fall back to it.
+
+### 9.15 T-S2-05 Usage settlement
+
+1. Accept the authoritative end/usage fact by `(call_id, event_domain, event_id)` from the validated IVR owner handoff (§9.24); lock the reservation and selected balance rows in the §9.0.1 suborder; validate the reservation identity, source event identity, occurrence time, end reason and authoritative units. Receipt of a durable `call_event` row is not itself proof of authoritative usage; only the validated terminal usage outcome may settle.
+2. Apply the F-10 boundary exactly:
+   - **Known use within the authorized boundary** (`1 <= reportedUnits <= authorized_units`): settle once. In one conditional balance `UPDATE` keyed by the locked `id`/expected revision, decrement `reserved_units` by `authorized_units`, increment `consumed_units` by `reportedUnits`, and set the derived `status` in the same statement (`EXHAUSTED` exactly when the new `consumed_units = granted_units`, otherwise unchanged), so `ck_entitlement_balance_status_shape` holds immediately (OQ-8). Set the reservation's `settled_units = reportedUnits`, `status = 'SETTLED'`, `terminal_at`, `authority_source = 'IVR'`; append exactly one `usage_fact` with `units = reportedUnits` and the same source event; append Outbox/audit; commit. The unused remainder (`authorized_units - reportedUnits`) is released once in the same transaction.
+   - **Reported units greater than `authorized_units`**: do not clamp to `authorized_units`, do not settle, do not release and do not create a usage fact or evidence. Move/maintain the reservation in `RECONCILING` with `reconciliation_due_at`, increment `reconciliation_attempt_count`, set `last_error_code = 'DURATION_EXCEEDS_AUTHORIZED'`, quarantine the event/terminal fact for audit and alert. This includes a value within any hypothetical future tolerance because no tolerance is approved (Q8). Only an approved later reconciliation outcome may resolve it.
+   - **Known zero use** (`reportedUnits = 0`, with an authority-confirmed terminal fact that no effective recording occurred): transition `HELD`/`RECONCILING → RELEASED` with `settled_units = 0`, release the reserved units once, set `authority_source = 'IVR'` and `terminal_at`; create **no** `usage_fact` because `units >= 1` is required. Known zero use is not fabricated positive usage, and release never marks the balance `EXHAUSTED`.
+   - **Negative, missing, reversed, mismatched or contradictory facts**: quarantine for audit and reconciliation; no usage fact, no release, no settlement. `UNKNOWN` authority keeps the reservation occupied (`HELD` until expiry, then `RECONCILING`) and never releases it.
+3. A late or duplicate event returns the first settlement/release and never recharges or re-releases. The unique `(reservation_id, usage_type)` and `(source_event_domain, source_event_id)` keys converge duplicates. Contradictory terminal facts are never applied as success.
+4. Unused units release at most once. A reservation whose call never started and whose authority confirms no usage becomes `RELEASED` with `settled_units = 0`; a started call with known zero effective recording also releases once with no usage fact. Unknown use never releases, and an over-authorized report never releases.
+4a. The balance counters and derived status are never updated by separate statements: each settlement or release uses one conditional `UPDATE` that satisfies the balance CHECKs at every intermediate point. An `UNKNOWN` or excess-duration outcome writes no balance counter and no status, so uncertain use stays occupied and is never released (OQ-8).
+5. Any SQL/lock/I/O/Outbox failure is category 3: the whole settlement transaction rolls back; no swallowed exception and no partial settle/release.
+
+### 9.16 T-S2-06 Reservation reconciliation
+
+1. A scheduler scans `HELD` reservations whose `authorization_expires_at` has passed and whose call has no accepted terminal usage fact. Acquire the canonical-caller lock and the reservation row lock in the §9.0.1 order.
+2. Move `HELD → RECONCILING` with `reconciliation_due_at`, increment `reconciliation_attempt_count`, and enqueue an alert if authority is unavailable.
+3. Query the authoritative IVR record by `callId`. If terminal and known usage is within `1..authorized_units`, settle used units, release the remainder once, append one usage fact, set `SETTLED` and enqueue Outbox. If the call never started or the authority confirms known zero effective recording, set `RELEASED` with `settled_units = 0` and no positive usage fact. If reported use exceeds `authorized_units`, keep `RECONCILING` with `DURATION_EXCEEDS_AUTHORIZED`, quarantine/alert and release nothing until an approved reconciliation. If authority is unknown, keep `RECONCILING`, keep the active-call guard occupied, block a new reservation for that caller and alert.
+4. A late authoritative event may converge `RECONCILING` once; duplicate events return the first result. `UNKNOWN` is never treated as no usage or permission to redial. Reconciliation never silently clamps, fabricates usage, releases over-authorized use or treats a later entitlement expiry/suspension as erasing already-observed usage.
+
+### 9.17 T-S2-07 Order creation
+
+1. Authenticate the account and derive the workspace server-side; acquire the subject lifecycle advisory lock (3); then call `activation-consent.lock_service_activation` at rank 4 to take the existing activation row lock through the owner role (a missing row is serialized by subject (3) and locks nothing); then acquire the organization lifecycle advisory (7), the membership lifecycle advisory for the logical pair (8) and the account lifecycle advisory (9) in the §9.0.1 order, re-reading current authority with the exact §10.12 columns after each advisory lock. Only the owning module takes its own row lock; the order service never takes a foreign row lock. Verify subject access, ordinary-client real-name, current active service activation and the current `ACTIVE` offer/version token. Validate the client key length at 1-475 before any mutation (a 476-512 key is rejected with no order/consent/idempotency write, F-13); reject a new checkout while an existing order for the same subject/offer is `UNKNOWN` and require a query of that original order.
+2. Compute the amount on the server and derive `purchaseConsentEventId` exactly once as `purchase-consent:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, clientIdempotencyKey}` from the authenticated canonical lowercase account UUID and the exact client key, a fixed 81-character value used for both the consent `event_id` and its `source_ref`; the order client key remains 1-475 and the platform key 1-512, with no truncation, random per-attempt identity, caller-chosen alternative or schema expansion (OQ-1). Build the §10.17 `PURCHASE` order fingerprint from the immutable semantic fields, including that stable identity. Call `platform.idempotency_begin('PURCHASE', account_id || ':' || idempotency_key, request_fingerprint)` after the caller/session/access locks and the rank-4 activation lock, and before any order or consent append (S2 placement §9.0.1 item 10).
+3. `REPLAY` returns the first completed order result and appends no second consent. `CONFLICT` rejects changed input atomically. Only `NEW` continues.
+4. For `NEW`, call `activation-consent.append_purchase_consent` with `Propagation.MANDATORY` (§10.20) using the current prompt/policy version/key/content, the authenticated subject/account/channel and the derived 81-character `purchaseConsentEventId` as both the consent `event_id` and `source_ref`. It reuses the rank-4 activation lock taken at step 1 and never acquires rank 4 after the idempotency row. It returns the one immutable `purchase_consent_id` for an explicit `ACCEPT`; missing/stale/declined/mismatched consent returns a typed denial, and the order transaction rolls back the `NEW` idempotency row and any tentative consent append so no partial row commits. In the same transaction validate the consent's `purpose = 'PURCHASE'`, `subject_id`, `channel`, `source_type = 'ACCOUNT'`, `account_id`, current policy/prompt fields, `action = 'ACCEPT'`, `event_domain/event_id`, `source_ref` and fingerprint; any mismatch fails closed before order insert and rolls back the same writes. The order service does not insert `consent_record` directly and does not infer consent.
+5. Insert the order once with `request_fingerprint`, the exact §10.19 frozen commerce/schedule snapshot built from the validated approved catalog input, `UNPAID` payment state, the validated consent reference and the accepted version token. Call `platform.idempotency_complete(recordId, revision, 'ORDER', orderId, redactedOrderSnapshot, snapshotSha256)` in the same transaction; append Outbox/audit; commit. A forced failure rolls back the order, consent, idempotency record and Outbox together. An enterprise quote cannot enter personal self-service payment; no order-level entitlement status is written.
+
+### 9.18 T-S2-08 Payment to entitlement issuance
+
+1. Verify the provider event and insert one `payment_event`; lock the payment order and update payment status only from verified evidence; enqueue Outbox in the same transaction. This payment fact is independent of issuance.
+2. Receive a validated approved `installmentNo` input (the due-installment trigger remains Q20 and is not inferred). For each benefit line of that installment, the consumer inserts or claims one `entitlement_issuance` row by `(order_id, installment_no, entitlement_type)`, locks it, reads the frozen §10.19 order snapshot (never current catalog state), requires exactly one matching schedule entry for the line/installment/type, and validates units/validity window/quantity/type against the approved schedule. It writes the grant, balance and Outbox in one transaction, sets `grant_id`/`ISSUED`, and increments `attempt_count`/`revision` conditionally. `valid_from`/`expires_at` are copied from the validated approved schedule entry; the grant's `snapshot`/`snapshot_sha256` copy the immutable order/version/line facts and the consumed schedule entry, never current catalog state; no due date, grace period or calendar arithmetic is computed and no price/quantity/date is guessed.
+3. Missing/unapproved/ambiguous timing, a snapshot/schedule/type/quantity mismatch or a non-matching installment records stable `FAILED`/`last_error_code` with no grant, no balance and no guessed units; the payment fact remains `PAID` and independently observable. Retry moves `FAILED → PENDING` under the issuance row lock and never duplicates the grant. An order-level entitlement view is a computed projection. No module writes another module's issuance or order status directly.
+4. The §10.19 snapshot is immutable and historical; a later catalog publication/offsale or policy change never rewrites it. A partial multi-line failure is observable per row.
+
+### 9.19 T-S2-09 Operations suspend and resume
+
+1. An operations suspend runs in the activation-consent-owned operations lifecycle service, which acquires the subject lifecycle advisory lock and its own `service_activation` row lock, then the employee row and administrator advisory lock in the §9.0.1 order. It appends exactly one `ACTIVE → SUSPENDED` transition with `source_action_domain = 'OPERATIONS'`, non-null action event identity, fingerprint, employee actor and reason; it updates status/revision and enqueues audit. A non-`OPERATIONS` suspend is rejected by the service even though the broad DB check would accept the shape (OQ-7). Suspension blocks new accepted activation/reservation but preserves history.
+2. Resume appends only `SUSPENDED → ACTIVE` with its own action event identity, employee actor and reason. It never calls `issue_first_trial`, never creates a trial/grant/balance and never rewrites consent or evidence.
+3. A concurrent IVR confirmation serializes on the subject lifecycle lock: if suspend commits first, the fresh confirmation returns `REJECT_SUSPENDED`; if the confirmation commits first, the later suspend does not undo the granted trial and a replay after suspend returns the original decision without changing `CONFIRMED → REJECTED`.
+
+### 9.20 T-S2-10 Consent-gap recovery
+
+1. On initial resolve, an `ACTIVE` activation whose required current consent is missing or expired returns `GUIDE_ACTIVATION` with stable `CONSENT_REQUIRED`, no task claim and no reservation.
+2. The same confirmation path presents the current prompt, validates the current policy version/key/content and appends the current consent. It returns `GUIDE_ACTIVATION`/`CONSENT_REQUIRED` when the confirmation content is stale/invalid, and on accepted current consent it reuses the existing trial (`ALREADY_GRANTED`/`REPLAY`) rather than issuing a second trial.
+3. Phase B then requires the resulting consent to be current. A stale or invalid confirmation content is rejected before any accepted consent/transition/trial append. The consent gap never rewrites the original resolve decision.
+
+### 9.21 T-S2-11 IVR replay, conflict and cutoff precedence
+
+1. Event-level `IVR_CONFIRM`: same key/fingerprint returns the stored first result; same key/changed fingerprint, including a different `callId`, is a stable conflict; only `NEW` continues.
+2. Call/purpose-level: an existing `(callId, ACTIVATION_NEXT_ACTION)` is compared by its own stored canonical fingerprint. A match with a new event ID completes that event's `NEW` row with the existing decision ID and frozen result, and performs no consent/trial/claim/reservation/Outbox. A mismatch rolls back the transaction and returns a stable semantic conflict.
+3. Only when no call/purpose decision exists does a fresh confirmation proceed. The unique `(call_id, purpose)` index is a concurrency backstop: a loser rolls back, rereads and returns the existing decision on a fingerprint match or a stable conflict otherwise.
+4. Existing-result handling precedes the `SUSPENDED` check and every confirmation side effect. A completed decision is never overwritten and a `CONFIRMED` session never becomes `REJECTED`.
+5. A replay at or after `authorizationExpiresAt` returns the same frozen cutoff and never renews it or authorizes a new B-leg. A B-leg started before the cutoff continues under the frozen authorized seconds. A lost response is recovered by `callId`; no second B-leg is started.
+
+### 9.22 S2 transaction assertions (document level)
+
+The §13.7 S2 test matrix is the normative assertion list. At minimum, the specification requires: exactly one `NEW` winner per idempotency key; replay returns the first immutable result; changed input conflicts with the `NEW` row rolled back; a task claim never commits without a reservation; category 1, 2 and 3 outcomes are distinct; the attempt savepoint is established after accepted activation/trial and before any tentative claim/reservation, and a category-2 rollback preserves activation/trial while category 3 rolls back every write; the order path and IVR confirmation take the rank-4 activation row lock through the owner lock-only collaborator before ranks 7/8/9 and the idempotency row, and later consent/activation services reuse it; a single eligible balance is selected under an approved policy or the attempt fails closed with no claim/reservation; a task claim never commits without a reservation and no second balance is debited; known zero use releases once without a positive usage fact while unknown use stays occupied and excess use is quarantined; exactly one publication/trial-policy winner commits after retiring the previous current row first, and a stale loser returns a stable current state; both direct-authorization purpose chains are accepted and task-backed/obsolete/later-no-dial chains are rejected; an unknown parent call returns `CALL_UNKNOWN` before insert and the first call-event terminal outcome is absorbing; no cross-owner table write or row-lock privilege is used; no post-commit access re-read reverses an issued authorization; and a duplicate/reordered call event never double-settles or releases unknown use.
+
+### 9.23 S1 deterministic behavior assertions
 
 The following are document-level S1 requirements for the later executable suite; no PostgreSQL or concurrency test was run in S1:
 
@@ -1322,11 +2780,52 @@ The following are document-level S1 requirements for the later executable suite;
 - The last enabled administrator cannot be disabled or demoted.
 - `entitlement_metering.issue_first_trial` is absent from V001 and from every S1 dependency.
 
+### 9.24 T-S2-12 Call-event ingestion, processing and settlement handoff (F-08)
+
+1. Authenticate the IVR service identity and validate the immutable `callId`, `eventId`, `eventType`, `sequenceNo` (when supplied), `occurredAt`, payload hash and leg ID (when supplied). The `eventId` must be nonblank and 1-128 characters; a blank or over-128 ID is refused with the stable protocol argument error `IVR_ARGUMENT_INVALID` before any idempotency row or domain effect, while the general platform key capacity remains 1-512. Normalize and compute the §10.17 call-event fingerprint. Acquire the canonical-caller lock when the event can affect usage.
+2. **Replay and conflict first, before any mutation.** Recompute the §10.17 call-event fingerprint from the request. Read the existing `(event_domain='IVR_EVENT', event_id)` row and recompute its fingerprint from the immutable `payload_redacted` members (`source.eventType`, `source.legId`, `source.sequenceNo`, the digest of `source.payload`), never from the indexed mutable `sequence_no`.
+   - Same stored fingerprint: return the stored first processing outcome (`APPLIED`/`QUARANTINED`/`IGNORED`) and mutate nothing.
+   - Changed fingerprint/type/sequence: return a stable `EVENT_ID_CONFLICT` without updating the original row, payload, status, call/leg or settlement, including when the first stored outcome was `SEQUENCE_CONFLICT`; an optional conflict audit uses that same event identity and adds no schema object.
+3. **Validate the parent call before insert.** A missing/unknown `call_id` (no `ivr.call_record` parent) returns stable `CALL_UNKNOWN` with no `call_event`, call, leg or settlement write and no raw FK. Never create a placeholder call or nullable parent link.
+4. **Acquire the owned state locks before sequence detection or insert.** In the §9.0.1 rank-4 suborder, lock the owned `ivr.inbound_session` row first and then the current `ivr.call_record` row, and re-read both after acquisition. Validate session/task/leg identity: a leg ID that does not belong to the call is classified `LEG_UNKNOWN` and receives no call/leg mutation or settlement (an unknown parent call was already refused in step 3 with no row). No reservation/balance lock is taken here.
+5. **Detect the sequence conflict and insert once, while the call lock is held.** Insert exactly one `call_event` row for the known call with `processing_status = 'RECEIVED'`, the encrypted raw payload and the exact §4.27 `payload_redacted` shape (`source` plus server-written `receipt`), where `payload_sha256` hashes only the canonical `source.payload` and `receipt.eventFingerprint` holds the fingerprint from step 2. A `LEG_UNKNOWN` classification from step 4 is persisted by this same insert as `processing_status = 'QUARANTINED'` with `reason_code = 'LEG_UNKNOWN'`. If a different `event_id` reuses an already-used non-null `(call_id,sequence_no)`, detect it under the held call lock before insert and persist the new event with indexed `sequence_no = NULL`, `processing_status = 'QUARANTINED'` and `reason_code = 'SEQUENCE_CONFLICT'`; the original sequence and fingerprint remain in `payload_redacted`, so only a same-semantic retry of that same event returns this first `QUARANTINED` outcome. Never expose the partial unique violation as a protocol error and never apply the event.
+6. Apply event facts deterministically:
+   - outbound/answer/bridge/recording start/recording end/end events set only forward-consistent call or leg facts; an event that would move a terminal call/leg backwards, contradict an already accepted terminal fact or supply a conflicting authoritative duration is `QUARANTINED` (`CONTRADICTORY_FACT`) and is never applied;
+   - an out-of-order but consistent event is applied once; the missing sequence gap does not by itself block an authoritative terminal fact;
+   - a terminal end event sets `call_record.status` to `ENDED`/`FAILED` (or `UNKNOWN` when the line/call outcome is not authoritative), `ended_at`, `end_reason` and `authoritative_seconds` only when the source is accepted; `UNKNOWN` remains occupied and is never finalized `REJECTED` or released;
+   - `call_leg` updates use the same forward/terminal rules; unrelated calls/legs are never touched.
+   Set `processing_status` to exactly one terminal `APPLIED`/`QUARANTINED`/`IGNORED` with a stable reason and conditional revision; that first terminal outcome is absorbing and is never changed by a later delivery. A duplicate applied event returns its first outcome.
+7. **Settlement handoff.** If the event is an accepted authoritative terminal/usage fact and the call has a reservation, call `entitlement-metering.settle_call_usage` with the validated immutable `callId`, reservation ID, `(IVR_EVENT,eventId)`, authoritative units, occurrence time and authority source in the same transaction, using `Propagation.MANDATORY`. The entitlement owner performs §9.15, appends at most one `usage_fact`/terminal transition/Outbox and never reads or writes IVR tables. Durable `call_event` receipt (`RECEIVED`/`APPLIED`) is distinct from accepted authoritative usage; a non-authoritative, missing, negative, contradictory or over-authorized event produces no settlement and no release.
+8. Duplicates, late and out-of-order events converge to one first settlement/outcome; a duplicate end event returns the first settlement and never recharges. A second terminal event with a conflicting duration is quarantined and alertable; no second usage fact or release.
+9. No double settlement: the reservation's one terminal transition, the unique `usage_fact` keys and the §9.15 state/outcome rules are authoritative. `UNKNOWN` never releases. The task/call terminal handoff is owner-safe: `ivr` owns call/leg/call_event status; `entitlement-metering` owns reservation/balance/usage. No cross-owner DML.
+10. Enqueue Outbox/audit and commit. Any SQL/lock/I/O/Outbox failure is category 3: roll back the event row, processing status, call/leg updates, settlement, usage fact and Outbox together. A database exception is never swallowed. T-S2-05 starts from the accepted end event produced by this sequence.
+
+### 9.25 T-S2-13 MINIAPP/WEB activation and first trial (F-05)
+
+1. Authenticate an active account and derive the personal or organization workspace server-side. Validate current subject access and the current prompt/policy version/key/content. The service re-reads `customer_account(id,status)`, `organization(id,status)`, `organization_membership(organization_id,account_id,role,status)` and `business_subject(id,owner_account_id,owner_organization_id,revision)` under the rank-7/8/9 and subject advisory locks using the exact §10.12 grants; it takes no foreign row lock and never writes those rows. The client supplies only the explicit accept/decline, the stable activation event ID and the semantic fields; it cannot supply account, workspace, subject ownership, role, policy or trial outcome. The stable activation event ID must be nonblank and 1-128 characters, refused with `IVR_ARGUMENT_INVALID` before any replay read or effect; the server derives `source_ref` from the authenticated account and that exact event ID.
+2. Acquire the subject lifecycle advisory lock (3), lock its own existing `service_activation` row (4) as the owning module, then acquire the organization lifecycle advisory (7), the membership pair advisory (8) and the account lifecycle advisory (9) in the §9.0.1 order. Re-read all current lifecycle/access/consent predicates with the exact §10.12 columns after the advisory locks; no cross-owner row lock is taken.
+3. Replay first: read the unique transition by `(source_action_domain='ACTIVATION', source_action_event_id=eventId)` and the §10.17 activation-transition fingerprint. The transition fingerprint binds the immutable `SERVICE_ACTIVATION` consent fingerprint; comparisons use request semantic inputs and persisted immutable originals, never a generated consent ID or the current transition revision. Same fingerprint returns the first consent/activation/trial result and performs no effect; changed fingerprint is a stable conflict; a different stable action event at the current revision is a distinct transition or a stable current-state conflict. A missing/declined/stale consent returns a typed `CONSENT_REQUIRED`/`ACTIVATION_CONSENT_DECLINED` refusal with no accepted append.
+4. On a fresh accepted decision, call `activation-consent.record_client_activation` (§10.20) with `Propagation.MANDATORY`: append exactly one immutable `SERVICE_ACTIVATION` consent (`channel = 'MINIAPP'|'WEB'`, `source_type = 'ACCOUNT'`, `source_ref` = `activation:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, activationEventId}` (75 characters) from the authenticated canonical account and stable action ID, `action = 'ACCEPT'`, purpose `SERVICE_ACTIVATION`, event domain `ACTIVATION`, the validated stable event ID, and the exact §10.17 `SERVICE_ACTIVATION` consent fingerprint); create or update the one `service_activation` row; append exactly one transition (`INACTIVE → ACTIVE`, `to_revision = from_revision + 1`) whose fingerprint binds that immutable consent fingerprint; call `entitlement-metering.issueFirstTrial` with `source_action_domain = 'ACTIVATION'`, the same event ID and the canonical granting-action fingerprint. The service reuses the rank-4 activation lock taken at step 2 and never re-acquires rank 4. An already-`ACTIVE` row appends no duplicate transition and reuses the existing trial outcome (`ALREADY_GRANTED`/`REPLAY`); it never reissues a trial.
+5. Do not invent trial eligibility: the only trial gate is the validated current activation consent plus the V006 policy/function outcomes. No login identity, owner, real-name or enterprise fact is created by this service. Category 1 (pre-activation refusal) appends no accepted consent/transition/trial; category 3 rolls back all writes; a normal client refusal is a committed refusal result only if it does not require accepted activation.
+6. Append Outbox/audit and commit. A fresh activation and its trial, transition and Outbox commit together. No `NEW` platform idempotency scope is added; the unique event identity/fingerprint is the replay key.
+
+### 9.26 T-S2-14 Catalog-version and trial-policy publication (F-09)
+
+1. Authenticate the operations employee and validate the allowed catalog/trial-policy publication action. The employee identity is authentication context, not a cross-module table write. Publication does not mutate employee state and therefore does not take the administrator-mutation advisory lock; it takes only the owner publication serialization in step 2 and the owning module's rows.
+2. Acquire the owner serialization:
+   - for a catalog version, `pg_advisory_xact_lock(hashtextextended('catalog_order.publication:<product_id>', 0))`;
+   - for a trial policy, `pg_advisory_xact_lock(hashtextextended('entitlement_metering.trial_policy:FIRST-TRIAL', 0))`.
+   These are owner-scoped transaction advisory namespaces, not new tables, functions or product rules. They serialize publication/offsale/disable for the same product or campaign without requiring `UPDATE` on the append-only product row.
+3. Catalog publication: with the caller's expected current active version/revision (or explicit "no active"), re-read under the lock. Require the candidate `DRAFT` with `published_at IS NULL`, validated immutable content and benefit lines, and `version_no` uniqueness. If the current active version differs from the caller's expectation, return stable `CATALOG_PUBLICATION_CONFLICT`/`PUBLICATION_STALE_VIEW` with no change (the loser rereads and returns the current state; it does not retry by selecting another version). On success, in one transaction: **first** set the previous `ACTIVE` version `sale_status = 'OFFSALE'` with revision +1; **then** set the candidate `published_at` and `sale_status = 'ACTIVE'` with revision +1; leave published content, benefit lines, historical orders and grants byte-identical; append audit and the §10.17 `CATALOG_VERSION_PUBLISHED`/`CATALOG_VERSION_OFFSALE` Outbox identities; commit. The old-current retirement must precede the candidate activation because `uq_catalog_version_active` is an immediate partial unique index; no statement may see two qualifying `ACTIVE` rows. An already-`ACTIVE` candidate with the same expected state returns the current immutable state (idempotent); a raw unique violation is mapped to a stable conflict after one bounded reread, never exposed.
+4. Catalog offsale: under the same lock, require the version `ACTIVE` (or already `OFFSALE` for an idempotent replay), set `OFFSALE`, revision +1, append audit/Outbox. It stops new orders only; it never changes a frozen order, consent, grant or issuance row. This S2 specification does not implement or claim an independent `catalog_offer` withdrawal endpoint/transaction; that decision belongs to Product/Operations/catalog-order and the catalog operations OpenAPI work (OQ-4), and version offsale remains the S2 control that blocks new orders.
+5. Trial-policy publication: under the trial-policy lock, require the candidate never-published (`published_at IS NULL`), validate its immutable content, **first** disable the previously enabled published version (`enabled = false`, revision +1), **then** publish the candidate with ONE owner `UPDATE` that, while the candidate's `OLD.published_at IS NULL`, sets `published_by_employee_id` to the actual authenticated publishing employee, `published_at`, `enabled = true` and `revision + 1` together, in the same transaction, so the immediate partial unique `uq_trial_policy_enabled` sees at most one qualifying row at every statement. The guard admits that single statement and rejects any later change to publisher identity or published content; no separate pre-publication publisher statement is required, the publisher value is the actual authenticated publisher at publication, not a draft-owner label, and no same-employee-only rule is invented (OQ-5). A stale expected-current-version loser returns `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW` with no change. The sole authoritative policy read used by issuance is the V006 `issue_first_trial` function's enabled/published/expected-version read inside the entitlement owner (§10.9): replay and already-granted return prior immutable results before any new policy selection; a missing/disabled/stale policy fails closed at that read; a disable committed before that read is observed and fails closed; a disable committed after it does not revoke the already-selected grant; the application wrapper lookup is preliminary only and there is no second enabled recheck (OQ-6). Trial-policy disable sets `enabled = false` with revision +1 under the same lock; an already-disabled policy is an idempotent current state. Published content, snapshot and history are never rewritten; existing grants keep their frozen policy snapshot.
+6. Concurrent publications have exactly one winner under the owner lock; the loser returns the stable current-state/conflict outcome, never a raw unique error and never a second active version or enabled policy. A technical failure rolls back all rows, audit and Outbox together. No generic workflow, version-approval engine or new table is introduced.
+
 ## 10. Cross-Schema Function Contracts
 
 ### 10.1 Frozen function-wave baseline
 
-The accepted plan has five function-wave rows: four V001/S1 functions and one visibly planned V006/S2 function. The block is verbatim. S1 authors only the four V001 contracts.
+The accepted plan has five function-wave rows: four V001/S1 functions and one V006/S2 function. The block is verbatim. S1 authored the four V001 contracts; S2 now authors the V006 `entitlement_metering.issue_first_trial` contract. The four V001 contracts remain unchanged and S1-owned. The S2 IVR action selection, reservation and activation-confirmation contracts are application services, not additional SQL functions, so the function-wave block remains five rows (4 V001 + 1 V006).
 
 <!-- function-wave:start -->
 platform.idempotency_begin|V001|platform.idempotency_record
@@ -1494,19 +2993,395 @@ The following `BEFORE UPDATE` trigger functions are local structural controls, o
 
 The append-only triggers `audit.reject_row_mutation` and `subject_number.reject_row_mutation` remain the only triggers on their tables. The guard triggers are installed in the same V002/V003 wave as their tables and are not counted as published functions. The migration grants `EXECUTE` on each guard trigger function only to its owning module runtime role(s) (`customer_iam_role`, `organization_access_role`, `operations_iam_role`, `subject_number_role` and `subject_identity_verification_role` as applicable); direct invocation is not a supported API and no cross-schema `EXECUTE` is granted.
 
-### 10.9 Planned V006/S2 first-trial function (not authored in S1)
+### 10.9 entitlement_metering.issue_first_trial (V006/S2)
 
-`entitlement_metering.issue_first_trial` is visibly planned in the frozen function-wave block as a V006/S2 function. It is not created, called, required or tested by S1. Its detailed contract remains the accepted plan's frozen handoff and must be authored in S2 after `trial_policy_version`, `entitlement_grant`, `trial_grant` and `entitlement_balance` exist. S1 actions must not depend on it.
+Signature target:
+
+`entitlement_metering.issue_first_trial(p_subject_id uuid, p_campaign_key text, p_trial_policy_version_id uuid, p_action_domain text, p_action_event_id text, p_request_fingerprint text) RETURNS TABLE (trial_grant_id uuid, entitlement_grant_id uuid, entitlement_balance_id uuid, outcome text, first_granted_at timestamptz)`
+
+| Item | Contract |
+| --- | --- |
+| Owner / mode | `entitlement_metering_owner`; `SECURITY DEFINER`; `SET search_path = entitlement_metering, platform, pg_temp`; created in V006 after `trial_policy_version`, `entitlement_grant`, `trial_grant` and `entitlement_balance`; not created in V001-V005. The nested `platform.outbox_append` call executes with this owner's privileges, so the owner itself receives `USAGE` without `CREATE` on `platform` and `EXECUTE` on `platform.outbox_append` (internal owner capabilities; not a runtime-role grant and not `PUBLIC`). |
+| Caller roles | `EXECUTE` to `activation_consent_role` and `entitlement_metering_role` only; both hold `USAGE` on `entitlement_metering` and `platform` without `CREATE`; `PUBLIC` receives no EXECUTE and no table privilege. The application service wrapper uses `Propagation.MANDATORY`; no transaction is created, committed or rolled back by the function. |
+| Arguments | `p_subject_id` non-null existing subject; `p_campaign_key` exactly `FIRST-TRIAL`; `p_trial_policy_version_id` the expected policy version id, with the function itself performing the sole authoritative enabled/published/version-checked read and failing closed if it is missing, disabled or stale; `p_action_domain` `IVR_CONFIRM` or `ACTIVATION`; non-empty `p_action_event_id` length 1-128; lowercase canonical SHA-256 `p_request_fingerprint` |
+| Outcomes | `GRANTED` with the new trial/grant/balance ids and `first_granted_at`; `REPLAY` with the original ids for the same `(action_domain, action_event_id)` and the same fingerprint; `ALREADY_GRANTED` with the original ids when the subject has a trial granted by a different action identity |
+| Errors | `TRIAL_ARGUMENT_INVALID`; `TRIAL_CAMPAIGN_INVALID` for a campaign other than `FIRST-TRIAL`; `TRIAL_ACTION_CONFLICT` for the same action identity with a changed fingerprint; `TRIAL_DATA_INTEGRITY` when an existing trial lacks its grant or balance or the persisted source identity is inconsistent; `TRIAL_POLICY_NOT_FOUND` for a missing, disabled or stale expected policy version at the function's sole authoritative read |
+| Semantics | Acquire the subject lifecycle advisory lock (re-entrant with the activation transaction). Read the permanent `trial_grant` for the subject first. If a trial exists with the same `(source_action_domain, source_action_event_id)` and the same fingerprint, return its original ids as `REPLAY`; if the same action identity has a changed fingerprint, raise `TRIAL_ACTION_CONFLICT`; if a different action identity granted the trial, return the original ids as `ALREADY_GRANTED`. These prior-result outcomes perform no new policy selection and do not re-read enabled state. Only when no trial exists does the function perform its single authoritative read of `trial_policy_version` for `campaign_key = 'FIRST-TRIAL' AND enabled AND published_at IS NOT NULL AND id = p_trial_policy_version_id`; a missing, disabled or stale version raises `TRIAL_POLICY_NOT_FOUND` and creates nothing. The function retains the selected version's immutable `granted_seconds`, `valid_days` and `snapshot` in local values through the grant and Outbox, and performs no second enabled recheck. It then inserts one `entitlement_grant` (`source_type = 'TRIAL'`, `source_ref_id = p_trial_policy_version_id`, the retained granted units and validity window, frozen policy snapshot), one `trial_grant` (`campaign_key`, policy version, action domain/event and fingerprint), one `entitlement_balance` and one Outbox event through `platform.outbox_append`, then returns `GRANTED`. Never insert a second trial, grant or balance. A trial without its grant or balance raises `TRIAL_DATA_INTEGRITY` and alerts. The function generates inserted `id` values with `pg_catalog.gen_random_uuid()`; there is no `p_id` argument. |
+| Atomicity | Runs on the caller's connection and transaction; any exception aborts the caller's transaction and rolls back consent/activation/transition, trial, grant, balance and Outbox together. It contains no `COMMIT`, `ROLLBACK`, autonomous transaction or transaction-level `SET`; a database exception is never swallowed. |
+| Redaction | The Outbox and result snapshots contain internal ids, campaign/policy facts and redacted status only; no raw number, callee, identity or secret. The §10.7 denylist applies. |
+
+First-trial result semantics are explicit: `GRANTED` means this invocation inserted the one trial; `REPLAY` means the same action identity and fingerprint already produced it; `ALREADY_GRANTED` means another action for an already-granted subject reuses the original trial. A changed fingerprint for the same action conflicts and never reissues. The caller returns the original ids for `REPLAY` and `ALREADY_GRANTED` and never creates a second balance. On `GRANTED`, the function captures `granted_at` once from `clock_timestamp()`, sets `valid_from = granted_at` and `expires_at = granted_at + (policy.valid_days * interval '1 day')` in UTC, and stores the frozen policy snapshot; it does not infer month arithmetic, business calendars, grace periods or any production validity value beyond the approved positive `valid_days` (Q4/Q10/Q20). The V006 function itself performs the sole authoritative enabled/published/expected-version policy read and retains its immutable content; any application-wrapper lookup is preliminary only and has no selection authority. No cross-module trial-policy read grant is needed.
+
+Policy-selection linearization (OQ-6): the V006 `issue_first_trial` function performs exactly one authoritative read of the enabled published `FIRST-TRIAL` `trial_policy_version` inside the entitlement owner transaction (`campaign_key = 'FIRST-TRIAL' AND enabled AND published_at IS NOT NULL` with the caller's expected version id), but only after the replay/already-granted check shows no existing trial. That single function-internal read is the policy-selection linearization point for the grant; the selected version id and its immutable content (`granted_seconds`, `valid_days`, `snapshot`) are retained in local values through the grant and Outbox. Any wrapper-level lookup is preliminary/advisory only and must never supply an unchecked or stale policy; it is not a second authority. Missing, disabled or stale state fails closed at that one read with `TRIAL_POLICY_NOT_FOUND` and creates no grant. If a publication/disable commits before the authoritative read, the read observes the new state; if a disable commits after the authoritative read, it does not revoke the already-selected grant, which keeps its frozen policy snapshot. Replay and already-granted outcomes return the immutable prior result before any new policy selection. There is no second enabled recheck, savepoint exception or lock inversion, and the publication advisory key is never combined with the IVR call-path lock order.
 
 ### 10.10 S1 function verification requirements
 
 The later executable suite must prove each S1 function's owner is NOLOGIN/NOSUPERUSER, `PUBLIC` has no EXECUTE, the fixed `search_path` cannot be shadowed, and no function contains transaction control. It must also prove same-key replay/conflict, finalize-once, committed-`NEW` alerting, same-transaction rollback, Outbox dedupe, audit append-only, protected-key rejection and cross-role denial. It must additionally prove each function caller has schema `USAGE` without `CREATE`, the declared cross-module `SELECT` columns are readable while all cross-module writes are denied, no cross-owner row lock is attempted, and the guard triggers reject rebinding while legitimate status/revision/time/key-version updates succeed. S1 records these as document requirements; no function was executed against PostgreSQL in this S1 authoring.
 
+### 10.11 S2 function verification requirements
+
+The executable suite must prove `entitlement_metering.issue_first_trial` is absent from V001-V005, created only in V006 after its four dependency tables, owned by `entitlement_metering_owner`, `SECURITY DEFINER`, not executable by `PUBLIC`, fixed to `search_path = entitlement_metering, platform, pg_temp`, and free of transaction control. It must prove EXECUTE is granted only to `activation_consent_role` and `entitlement_metering_role`; the NOLOGIN `entitlement_metering_owner` has `USAGE` on `platform` and `EXECUTE` on `platform.outbox_append` so the nested Outbox call succeeds under `SECURITY DEFINER`, and no runtime role or `PUBLIC` receives those owner grants; a forced failure (including a forced nested Outbox failure) rolls back trial/grant/balance/Outbox with the activation transaction; `GRANTED` inserts exactly one trial/grant/balance/Outbox; same action plus same fingerprint returns the original ids and `REPLAY`; same action plus changed fingerprint raises `TRIAL_ACTION_CONFLICT`; a different action returns the original ids and `ALREADY_GRANTED`; an inconsistent existing trial raises `TRIAL_DATA_INTEGRITY`; the function performs the sole authoritative enabled/published/expected-version read; replay and already-granted return prior ids before any policy selection; a missing, disabled or stale expected version raises `TRIAL_POLICY_NOT_FOUND`; there is no second enabled recheck after the authoritative read; and no second trial/grant/balance is created for any replay, retry, policy-version, channel, claim or import path. S2 records these as document requirements; no PostgreSQL test is claimed.
+
+### 10.12 S2 grant matrix
+
+S2 runtime roles receive `USAGE` without `CREATE` on `platform` and `audit`, `EXECUTE` on the four S1 functions per §10.8, and the S2-specific grants below. No S2 runtime role receives `DELETE` or `TRUNCATE` on any business table. `PUBLIC` receives nothing. Every declared cross-module `SELECT` below is paired with `USAGE` without `CREATE` on the containing S1 or S2 schema for the same grantee in that role's creation/first-read wave (F-01); a column/table privilege without schema `USAGE` is not a valid contract. Schema `USAGE` never implies a table privilege or a write path.
+
+Function, schema and platform grants:
+
+| Object | Owner | S2 grants |
+| --- | --- | --- |
+| `catalog_order` schema | `catalog_order_owner` | `USAGE` without `CREATE` to `catalog_order_role`, `entitlement_metering_role`; no table privilege from schema USAGE |
+| `ivr` schema | `ivr_owner` | `USAGE` without `CREATE` to `ivr_role`; no other S2 role |
+| `entitlement_metering` schema | `entitlement_metering_owner` | `USAGE` without `CREATE` to `entitlement_metering_role`, `activation_consent_role`, `ivr_role` and `catalog_order_role` (read-only entitlement projections); no table privilege from schema USAGE |
+| `activation_consent` schema | `activation_consent_owner` | `USAGE` without `CREATE` to `activation_consent_role`, `ivr_role`, `catalog_order_role` (exact reads only) |
+| `customer_iam` schema | `customer_iam_owner` | `USAGE` without `CREATE` to `ivr_role`, `catalog_order_role` and `activation_consent_role` for their declared account/profile reads; existing S1 `subject_number_role` grant unchanged. No table write or `CREATE`. |
+| `organization_access` schema | `organization_access_owner` | `USAGE` without `CREATE` to `ivr_role`, `catalog_order_role` and `activation_consent_role` for their declared organization/membership reads; existing S1 grants unchanged. No table write or `CREATE`. |
+| `subject_number` schema | `subject_number_owner` | `USAGE` without `CREATE` to `ivr_role`, `catalog_order_role`, `entitlement_metering_role` and `activation_consent_role` for their declared subject reads; existing S1 grants unchanged. No table write or `CREATE`. |
+| `platform.idempotency_begin`, `platform.idempotency_complete`, `platform.outbox_append` | `platform_reliability_owner` | `EXECUTE` to `catalog_order_role`, `ivr_role`, `entitlement_metering_role`, `activation_consent_role`; existing S1 grants unchanged |
+| `audit.append_fact` | `audit_owner` | `EXECUTE` to the same four S2 roles; no table privilege |
+| `entitlement_metering.issue_first_trial` | `entitlement_metering_owner` | `EXECUTE` only to `activation_consent_role`, `entitlement_metering_role`; `PUBLIC` denied; created V006 |
+| `platform` schema and `platform.outbox_append` (internal owner capability) | `platform_reliability_owner` | `USAGE` without `CREATE` on `platform` and `EXECUTE` on `platform.outbox_append` to the NOLOGIN `entitlement_metering_owner` only, so the `SECURITY DEFINER` body's nested append succeeds. This is not a runtime-role grant, not a table grant and not `PUBLIC`. |
+
+Owned-table column grants (no `DELETE`/`TRUNCATE`):
+
+| Table | Role | `SELECT` | `INSERT` | `UPDATE` columns |
+| --- | --- | --- | --- | --- |
+| `catalog_order.catalog_product` | `catalog_order_role` | all | all | none (append-only) |
+| `catalog_order.catalog_version` | `catalog_order_role` | all | all | draft content columns, `sale_status`, `offer_type`, `audience`, `price_cents`, `currency`, `billing_cycle`, `installments`, `grant_interval_months`, `snapshot`, `snapshot_sha256`, `published_at`, `revision` |
+| `catalog_order.catalog_offer` | `catalog_order_role` | all | all | `offer_status`, `version_token`, `revision` |
+| `catalog_order.catalog_benefit_line` | `catalog_order_role` | all | all | none (append-only) |
+| `catalog_order.customer_order` | `catalog_order_role` | all | all | `payment_status`, `paid_at`, `closed_at`, `revision` |
+| `catalog_order.payment_order` | `catalog_order_role` | all | all | `status`, `provider_transaction_id`, `updated_at`, `revision` |
+| `catalog_order.payment_event` | `catalog_order_role` | all | all | none (append-only) |
+| `ivr.outbound_call_task` | `ivr_role` | all | all | `status`, `reason_code`, `claimed_call_id`, `claimed_at`, `terminal_at`, `updated_at`, `revision` |
+| `ivr.inbound_session` | `ivr_role` | all | all | `status`, `confirmed_subject_id`, `guidance_status`, `confirmed_at`, `revision` |
+| `ivr.call_record` | `ivr_role` | all | all | `status`, `started_at`, `bridged_at`, `recording_started_at`, `recording_ended_at`, `ended_at`, `authoritative_seconds`, `end_reason`, `revision` |
+| `ivr.call_leg` | `ivr_role` | all | all | `state`, `answered_at`, `ended_at`, `end_reason`, `revision` |
+| `ivr.call_event` | `ivr_role` | all | all | `processing_status`, `reason_code`, `revision` |
+| `ivr.ivr_decision` | `ivr_role` | all | all | none (append-only; insert only through `ivr.select_call_action`) |
+| `entitlement_metering.trial_policy_version` | `entitlement_metering_role` | all | all | `published_by_employee_id`, `enabled`, `published_at`, `revision` (the single publication `UPDATE` sets the actual authenticated publisher, `published_at` once from NULL, `enabled` and `revision` together while `OLD.published_at IS NULL`; no separate publisher statement) |
+| `entitlement_metering.entitlement_grant` | `entitlement_metering_role` | all | all | none (append-only) |
+| `entitlement_metering.trial_grant` | `entitlement_metering_role` | all | none (function only) | none (append-only) |
+| `entitlement_metering.entitlement_balance` | `entitlement_metering_role` | all | all | `reserved_units`, `consumed_units`, `status`, `revision`, `updated_at` |
+| `entitlement_metering.entitlement_issuance` | `entitlement_metering_role` | all | all | `status`, `attempt_count`, `last_error_code`, `grant_id`, `first_attempt_at`, `issued_at`, `updated_at`, `revision` |
+| `entitlement_metering.usage_reservation` | `entitlement_metering_role` | all | all | `status`, `settled_units`, `reconciliation_due_at`, `reconciliation_attempt_count`, `last_reconciled_at`, `authority_source`, `last_error_code`, `terminal_at`, `revision` |
+| `entitlement_metering.usage_fact` | `entitlement_metering_role` | all | all | none (append-only) |
+| `activation_consent.consent_record` | `activation_consent_role` | all | all | none (append-only) |
+| `activation_consent.service_activation` | `activation_consent_role` | all | all | `status`, `revision`, `updated_at` |
+| `activation_consent.service_activation_transition` | `activation_consent_role` | all | all | none (append-only) |
+
+Cross-module `SELECT` grants (no `INSERT`/`UPDATE`/`DELETE`, no row-lock privilege):
+
+| Grantee | Table | Exact columns | Purpose |
+| --- | --- | --- | --- |
+| `ivr_role` | `customer_iam.customer_account` | `id`, `status` | Owner/creator account lifecycle |
+| `ivr_role` | `organization_access.organization` | `id`, `status` | Organization `ACTIVE` predicate |
+| `ivr_role` | `organization_access.organization_membership` | `organization_id`, `account_id`, `role`, `status` | Membership lifecycle and role under the logical pair lock |
+| `ivr_role` | `subject_number.business_subject` | `id`, `owner_account_id`, `owner_organization_id`, `revision` | Subject owner/access predicate |
+| `ivr_role` | `subject_number.caller_number_binding` | `id`, `subject_id`, `number_hmac`, `status`, `verified_at`, `revision` | Current binding predicate |
+| `ivr_role` | `subject_number.subject_risk_state` | `caller_number_binding_id`, `risk_type`, `state`, `revision` | Claim-risk policy read; not a blanket dial ban |
+| `ivr_role` | `activation_consent.service_activation` | `id`, `subject_id`, `status`, `revision` | Current activation predicate |
+| `ivr_role` | `activation_consent.consent_record` | `subject_id`, `purpose`, `channel`, `policy_code`, `policy_version`, `prompt_version`, `action`, `event_domain`, `event_id`, `accepted_at` | Current-consent predicate |
+| `ivr_role` | `entitlement_metering.entitlement_balance` | `id`, `grant_id`, `granted_units`, `reserved_units`, `consumed_units`, `status` | Routing snapshot only, not spend authorization; `granted_units` is required to compute `granted_units - reserved_units - consumed_units` under the declared read grant |
+| `ivr_role` | `entitlement_metering.entitlement_grant` | `id`, `subject_id`, `entitlement_type`, `granted_units`, `valid_from`, `expires_at` | Routing snapshot validity and the declared `balance.granted_units = grant.granted_units` predicate (OQ-2) |
+| `catalog_order_role` | `customer_iam.customer_account` | `id`, `status` | Account access |
+| `catalog_order_role` | `customer_iam.identity_profile` | `account_id`, `real_name_status` | Ordinary-client real-name condition |
+| `catalog_order_role` | `organization_access.organization` | `id`, `status` | Workspace access |
+| `catalog_order_role` | `organization_access.organization_membership` | `organization_id`, `account_id`, `role`, `status` | Workspace access |
+| `catalog_order_role` | `subject_number.business_subject` | `id`, `owner_account_id`, `owner_organization_id`, `revision` | Subject access |
+| `catalog_order_role` | `activation_consent.service_activation` | `id`, `subject_id`, `status`, `revision` | Current activation |
+| `catalog_order_role` | `activation_consent.consent_record` | `id`, `subject_id`, `purpose`, `channel`, `event_domain`, `event_id`, `policy_code`, `policy_version`, `prompt_version`, `action`, `source_type`, `source_ref`, `account_id`, `request_fingerprint`, `accepted_at` | Purchase-consent subject/purpose/channel/source/policy currentness and `event_id = source_ref = purchaseConsentEventId` validation (F-07); read-only, no foreign row lock |
+| `activation_consent_role` | `subject_number.business_subject` | `id`, `owner_account_id`, `owner_organization_id`, `revision` | Subject existence, ownership and revision for client activation |
+| `activation_consent_role` | `customer_iam.customer_account` | `id`, `status` | Authenticated account active predicate for client activation |
+| `activation_consent_role` | `organization_access.organization` | `id`, `status` | Organization workspace `ACTIVE` predicate for client activation |
+| `activation_consent_role` | `organization_access.organization_membership` | `organization_id`, `account_id`, `role`, `status` | Current membership/role predicate for client activation |
+| `entitlement_metering_role` | `subject_number.business_subject` | `id`, `owner_account_id`, `owner_organization_id`, `revision` | Subject/owner facts |
+| `entitlement_metering_role` | `catalog_order.customer_order` | `id`, `account_id`, `owner_organization_id`, `subject_id`, `catalog_version_id`, `snapshot`, `snapshot_sha256`, `payment_status`, `currency`, `created_at` | Frozen paid-order snapshot |
+| `entitlement_metering_role` | `catalog_order.payment_order` | `id`, `order_id`, `status`, `amount_cents`, `currency`, `updated_at` | Verified payment facts |
+| `entitlement_metering_role` | `catalog_order.payment_event` | `id`, `payment_order_id`, `provider`, `provider_event_id`, `event_type`, `signature_verified`, `amount_cents`, `occurred_at` | Source event identity |
+| `catalog_order_role` | `entitlement_metering.entitlement_issuance` | `order_id`, `installment_no`, `entitlement_type`, `status`, `grant_id`, `issued_at`, `last_error_code` | Computed order-level entitlement projection (R-04); read-only |
+| `catalog_order_role` | `entitlement_metering.entitlement_grant` | `id`, `subject_id`, `entitlement_type`, `granted_units`, `valid_from`, `expires_at` | Computed order-level entitlement projection inputs (R-04); read-only |
+
+- A cross-module reader re-reads after acquiring the lifecycle advisory lock and never takes `FOR SHARE`/`FOR UPDATE` on another module's table. If a row lock is genuinely required, the owning module exposes a same-transaction application-service collaborator under its own role; no cross-module row-lock privilege exists.
+- `ivr_role` has `SELECT`/`INSERT` on `ivr_decision` and no `UPDATE`; the insert path is the IVR-owned service. `activation_consent_role` and `entitlement_metering_role` have no `ivr_decision` privilege.
+- The S2 sensitive columns are not added to any public response projection. The `platform` and `audit` functions reject protected plaintext, and no S2 role receives platform/audit table privileges.
+
+### 10.13 S2 published application-service contracts
+
+These are application services inside one local transaction; they are not SQL `SECURITY DEFINER` functions, do not add a function-wave row and never commit or roll back independently.
+
+| Published service | Owner | Called by / transaction | Writes | Returns |
+| --- | --- | --- | --- | --- |
+| `activation-consent.record_activation_confirmation` | activation-consent | IVR confirmation transaction with `Propagation.MANDATORY`, after replay and phase-A guards | Validates the current prompt and consent policy-version/key/content before any accepted append; accepted branch only writes `consent_record` (`event_domain = 'IVR_CONFIRM'`, `event_id` equal to the already validated nonblank 1-128 confirmation `eventId`, the transport-independent 48-character `ivr-session:` `source_ref`, and the §10.17 `SERVICE_ACTIVATION` fingerprint), `service_activation`, `service_activation_transition`; reuses the rank-4 activation row lock taken by the lock-only collaborator and takes no IVR row lock | Invalid/stale content: stable `REJECT`/`CONSENT_REQUIRED` with no accepted ids. Accepted: `consentRecordId`, `confirmationAnchorId` (new transition ID, or current latest transition ID for an already-`ACTIVE` row), `activationStatus` |
+| `entitlement-metering.issueFirstTrial` | entitlement-metering | IVR confirmation and MINIAPP/WEB client-activation transactions with `Propagation.MANDATORY`; wraps `issue_first_trial` | The V006 `issue_first_trial` function performs the single authoritative enabled/published/expected-version `FIRST-TRIAL` policy read inside the entitlement owner (the OQ-6 selection linearization point), retains that exact immutable version/content in local values through the grant and Outbox, and writes trial, grant, balance and Outbox; replay/already-granted returns prior immutable results before any policy selection; a wrapper lookup is preliminary only and there is no second enabled recheck | `GRANTED`/`REPLAY`/`ALREADY_GRANTED` with original ids and `firstGrantedAt`; no trial-policy table read is granted to activation-consent |
+| `entitlement-metering.reserve_call_usage` | entitlement-metering | The IVR confirmation, resolve and direct-authorization transactions with `Propagation.MANDATORY` | Selects exactly one eligible balance under the validated approved allocation policy (§10.18), inserts `usage_reservation` and conditionally updates the selected `entitlement_balance` under its row lock; no direct write to another module and no second balance debit | `reservationId`, `authorizedUnits`, `authorizationExpiresAt`, `selectedBalanceId`, `balanceSnapshot`; absent/unapproved/ambiguous policy, no entitlement, stale availability, cross-subject balance or invalid authorization input returns a typed domain denial for the attempt savepoint, while a technical error propagates to full rollback |
+| `activation-consent.record_client_activation` | activation-consent | MINIAPP/WEB activation/order entry with `Propagation.MANDATORY` | One immutable `SERVICE_ACTIVATION` consent with the exact §10.17 fingerprint, the bound transition, activation and first-trial call; re-reads account/organization/membership/subject with the exact §10.12 grants; see §10.20 | Existing/first consent and transition ids, activation status, trial outcome |
+| `activation-consent.append_purchase_consent` | activation-consent | Catalog-order creation with `Propagation.MANDATORY` | One immutable `PURCHASE` consent keyed by the derived 81-character `purchaseConsentEventId` (`purchase-consent:` + lowercase SHA-256 of `{accountId, clientIdempotencyKey}`), used as both `event_id` and `source_ref` (OQ-1); reuses the rank-4 activation lock and acquires no rank-4 lock after idempotency; see §10.20 | `consentRecordId` or a typed denial |
+| `subject-number.find_or_create_ivr_subject` | subject-number | IVR initial resolve/direct attempt with `Propagation.MANDATORY` | Reuses the unique active binding or atomically creates an unowned IVR subject and active binding; no account/login/owner; see §10.20 | `subjectId`, `bindingId`, outcome |
+| `ivr.process_call_event` | ivr | IVR event endpoint | Replay/conflict comparison from immutable stored payload, parent-call validation before insert, call-event insert/dedupe/apply/quarantine, absorbing first terminal outcome, call/leg update and settlement handoff; an unknown parent call returns `CALL_UNKNOWN` with no insert; see §9.24 | `callEventId`, `processingStatus`, applied/quarantine reason |
+| `entitlement-metering.settle_call_usage` | entitlement-metering | IVR call-event owner service with `Propagation.MANDATORY` | Reservation settlement/release/quarantine from validated IVR facts, with the derived balance status set in the same conditional update (§9.15, OQ-8); see §9.24 | Terminal reservation outcome and first settlement identity |
+| `catalog-order.publish_catalog_version` / `catalog-order.offsale_catalog_version` | catalog-order | Operations catalog endpoint | Serialized publication/offsale that retires the previous `ACTIVE` version before activating the candidate, with immutable content, audit/Outbox and stable loser; see §9.26 | Current version/status or stable conflict |
+| `entitlement-metering.publish_trial_policy` / `disable_trial_policy` | entitlement-metering | Operations trial-policy endpoint | Serialized publication/disable that disables the previous enabled policy before publishing the candidate in one owner UPDATE that sets the actual authenticated publisher, `published_at`, `enabled` and `revision` together while `OLD.published_at IS NULL`, and keeps immutable content/audit/Outbox with a stable loser; see §9.26 | Current policy version/enabled state or stable conflict |
+| `ivr.select_call_action` | ivr | Initial resolve (`entryMode = INITIAL_RESOLVE`) and the confirmation wrapper (`entryMode = POST_ACTIVATION`); direct authorization reuses its ordered predicates | One `ivr_decision` for the derived purpose, written only after the branch's tentative claim/reservation succeeds (a typed denial writes no dial decision inside the tentative branch); for `DIAL_TASK_CALLEE` the conditional task claim, current `ACTIVE` call binding and the reservation service call; for a successful direct authorization, `action` null with committed reservation fields and no task; for `REJECT_CALL_IN_PROGRESS`, the current call's terminal `REJECTED` record and never the competing row | `decisionId`, `action` (null only for successful direct authorization), `reasonCode`, typed snapshot and encrypted internal payload |
+| `ivr.record_activation_next_action` | ivr | Thin IVR entry wrapper inside the confirmation transaction | Delegates all predicates and writes to `ivr.select_call_action`; persists no decision of its own | `nextActionDecisionId`, `action`, typed snapshot |
+
+The confirmation transaction is one local IVR-owned transaction. The cross-owner services use `Propagation.MANDATORY` and never commit or roll back independently. The endpoint wrappers add only authentication, replay handling and the confirmation gate; all ordered predicates and every `ivr_decision` write live in `ivr.select_call_action`. A repeated confirmation with the same event ID or a new event ID with the same semantic fingerprint returns the stored `nextActionDecisionId`, action and frozen typed result; changed input conflicts with no side effect. The original `INBOUND_RESOLVE` decision is never updated.
+
+The self-developed IVR owns the actual outbound B-leg, A/B bridge, recording, recording cutoff and the authoritative call/media/usage facts it reports; ONECALL owns accounts, activation, task/claim, entitlement, reservation, settlement and evidence state. The IVR does not create an order, claim payment, complete a payment or run a payment loop; it can only play a purchase guide to the WeChat mini-program. A matched task is taken once on inbound and its frozen callee is auto-dialed after committed authorization without asking the caller to confirm the number. There is no latest-callee lookup, FIFO queue, arbitrary second task or fallback to a historical callee.
+
+### 10.14 Typed frozen action response snapshot
+
+Every `ivr_decision` stores one immutable, purpose-discriminated snapshot. `response_snapshot` is the typed redacted JSON used for replay, audit and ordinary inspection; `response_payload_ciphertext` is the encrypted internal payload returned only to the authenticated IVR. `response_sha256` is the SHA-256 of the canonical redacted snapshot; the encrypted payload's redacted projection must equal that snapshot, and replay decrypts the same immutable payload rather than recomputing current state. The platform idempotency `result_snapshot` stores only the redacted typed result (decision ID, purpose, action or null, reason and masked task/authorization fields) and never duplicates the full callee.
+
+| Field | Type / enum | Nullability | Source and rule |
+| --- | --- | --- | --- |
+| `decisionId` | uuid | NOT NULL | The frozen `ivr_decision.id`; the idempotency first result |
+| `callId` | text | NOT NULL | Root protocol identity; included in every fingerprint |
+| `purpose` | `INBOUND_RESOLVE`, `ACTIVATION_NEXT_ACTION`, `DIRECT_AUTHORIZATION` | NOT NULL | Derived from the authenticated endpoint/session, never caller-supplied |
+| `action` | the seven actions, or null | NOT NULL for `INBOUND_RESOLVE`/`ACTIVATION_NEXT_ACTION`; NULL for successful `DIRECT_AUTHORIZATION`; a direct refusal uses `GUIDE_PURCHASE`, `REJECT`, `REJECT_SUSPENDED` or `REJECT_CALL_IN_PROGRESS` | Selected by the shared service; `DIRECT_AUTHORIZATION` is a purpose, not an eighth action |
+| `callerState` | `UNREGISTERED`, `INACTIVE`, `ACTIVE`, `SUSPENDED` | NOT NULL | docs/13 stable enum; `UNREGISTERED` does not block IVR guidance/direct activation/trial |
+| `taskMatch` | `CLAIMED`, `NONE`, `EXPIRED`, `REJECTED`, `CONFLICT` | NOT NULL | Section 10.1 matrix; `NONE` means no candidate was selected/evaluated, not proof that none exists |
+| `reasonCode` | stable registry in §2.9 | NOT NULL | `DIRECT_AUTHORIZED` exactly when `action` is null; no free-text reason |
+| `availableRecordingSeconds` | integer >= 0 | NOT NULL | Routing snapshot only, not spend authorization. It is the available units of the single balance selected by the same validated approved allocation-policy input and eligible-balance predicate used by `entitlement-metering.reserve_call_usage` at the same locked snapshot (§10.18); it never sums multiple balances (no stacking). When no balance is eligible, or the approved policy is absent/unapproved/ambiguous, it is `0` and no dial/reservation occurs. |
+| `balanceAsOf` | timestamptz | NOT NULL | Database transaction snapshot time |
+| `task.taskId` | uuid | NULL unless a candidate/claimed task was evaluated; always NULL for `DIRECT_AUTHORIZATION` | Frozen task identity; `CLAIMED` requires it |
+| `task.businessType` | text | NULL unless a task exists; always NULL for `DIRECT_AUTHORIZATION` | Frozen task business type |
+| `task.calleeNumber` | text | NULL in the redacted snapshot; NOT NULL only inside the encrypted internal payload when `action = DIAL_TASK_CALLEE` | Task-path callee only; never used for direct authorization |
+| `task.calleeMasked` | text | NULL unless a task exists; always NULL for `DIRECT_AUTHORIZATION` | Safe display/log value |
+| `authorization.calleeNumber` | text | NULL except a successful `DIRECT_AUTHORIZATION`, and then only inside the encrypted internal payload | Confirmed direct callee; never in task fields, the redacted snapshot, logs, audit or customer responses |
+| `reservationId` | uuid | NOT NULL iff `action = DIAL_TASK_CALLEE` or (`purpose = DIRECT_AUTHORIZATION` and `action` is NULL); otherwise NULL | Committed reservation only; a direct refusal has none |
+| `authorizedRecordingSeconds` | integer > 0 | NOT NULL iff a reservation exists | Committed `usage_reservation.authorized_units` under the baseline 1 unit = 1 second conversion |
+| `authorizationExpiresAt` | timestamptz | NOT NULL iff a reservation exists | Copied from the committed reservation; last instant to start the B-leg; replay never renews |
+| `decisionAt` | timestamptz | NOT NULL | Decision commit time; never part of a fingerprint |
+
+Action-specific consistency rules:
+
+- `DIAL_TASK_CALLEE`: `taskMatch = CLAIMED`; `taskId`, `businessType`, `reservationId`, `authorizedRecordingSeconds` and `authorizationExpiresAt` are non-null; the encrypted internal payload contains the full `calleeNumber` under `task.calleeNumber`. The response is returned only after the task claim, reservation and decision commit in one transaction. A technical failure rolls all three back; an expected claim/reservation denial yields a frozen no-dial decision (category 2) with no `DIAL_TASK_CALLEE`. The single balance selected for the reservation is the same balance whose available units produced `availableRecordingSeconds`; a changed balance between the routing snapshot and the locked conditional debit is a typed reservation denial, never a different balance debit.
+- Successful `DIRECT_AUTHORIZATION` (`action` null): `taskMatch = NONE`; task fields are null; the reservation fields are non-null; the encrypted payload contains the confirmed callee only under `authorization.calleeNumber`. It never carries a task ID, never uses task fields for the callee, never returns `ENTER_CALLEE` after the callee was entered/confirmed and is returned only after the reservation and decision commit.
+- Direct refusal (`purpose = DIRECT_AUTHORIZATION`, action one of the four permitted non-dial actions): reservation fields and authorization object are null; no claim is made; the callee is not stored.
+- `ENTER_CALLEE`, `GUIDE_PURCHASE`, `GUIDE_ACTIVATION`, `REJECT`, `REJECT_SUSPENDED`, `REJECT_CALL_IN_PROGRESS` on `INBOUND_RESOLVE`/`ACTIVATION_NEXT_ACTION`: reservation fields are null; no claim is made. `ENTER_CALLEE` is only the pre-input no-task instruction and requires a positive no-`PENDING`/`CLAIMED` task check.
+- `availableRecordingSeconds` may be zero or positive for any action and never overrides authorized seconds.
+- The full callee is never written to `response_snapshot`, logs, audit, Outbox or a customer response. The redacted snapshot and logs use `calleeMasked` and task/decision IDs only. A direct authorization's redacted projection uses a masked callee; `authorization.calleeNumber` exists only in the encrypted payload.
+
+B-leg and replay rules: after a committed `DIAL_TASK_CALLEE` or successful `DIRECT_AUTHORIZATION`, the IVR must persist a unique `callId` B-leg operation in its existing local authoritative store before issuing any line request; that local durable operation, not business `ivr.call_leg`, proves outbound uniqueness. The executable local key/protocol and lost-response recovery remain deferred to the IVR protocol work unit (Q28), and no business schema expansion is added. The IVR must not start a new B-leg at or after `authorizationExpiresAt`; a response lost or an unknown line outcome is reconciled/recovered by `callId` without a second dial. The task path never prompts the caller to confirm the callee. A replay after the cutoff returns the same frozen payload and cutoff, never renews the authorization and never becomes redial permission; a B-leg started before the cutoff continues under the frozen authorized seconds.
+
+### 10.15 S2 transaction outcome contract
+
+One classification applies to every fresh decision path:
+
+1. **Category 1 — refusal before accepted activation/trial.** A fresh `SUSPENDED` subject, an invalid/stale confirmation origin or content, an identity/session mismatch or the phase-A active/`UNKNOWN`-call guard rejects before any accepted consent, transition, trial/grant/balance or reservation. An authenticated fresh normal rejection persists only its stable rejected decision (with `IVR_CONFIRM` completion where the entry uses it), the required `call_record` parent (creating a terminal `REJECTED` current call when absent or finalizing its own never-started/rejectable `ACTIVE` row) and, only where the existing rejection branch provides for it — a fresh `SUSPENDED` or `REJECT_CALL_IN_PROGRESS` rejection — marks a not-yet-confirmed session `REJECTED`. It writes no accepted side effect. A current `UNKNOWN` call, an already-`CONFIRMED` session and any unrelated competing call are never destructively changed. An identity/authentication failure or a semantic/fingerprint conflict produces no accepted effect and no unauthorized persistent write and discards any `NEW` idempotency row (and uncommitted parent) created for the attempt.
+2. **Category 2 — normal domain no-dial result after valid activation/trial.** Once accepted consent, activation and any first-trial outcome are validly established, a later shared-selection domain result — revoked task/workspace/binding/owner/creator access, `NO_AVAILABLE_ENTITLEMENT`, an absent/unapproved/ambiguous allocation policy, a stale/changed balance selection, task expiry/cancellation/replacement, a competing active/`UNKNOWN` call or an expected reservation denial — commits the accepted activation/trial facts, keeps the session `CONFIRMED`, commits exactly one frozen no-dial decision (and its completion where the entry uses `IVR_CONFIRM`) and commits no claim or reservation. A tentative claim/reservation is undone by `ROLLBACK TO SAVEPOINT` at the same-connection savepoint established after the activation/trial writes and before the tentative claim; the no-dial decision and completion are then written after the rollback and committed. There is no autonomous transaction, independent service or independently committed subtransaction. For an initial-resolve or direct-authorization attempt there are no activation/trial facts to preserve, but the same savepoint/no-dial freeze rule applies to an expected claim/reservation denial; the session/call identity created before the savepoint survives a category-2 rollback, and a technical failure still rolls back the whole transaction.
+3. **Category 3 — technical transaction failure.** A SQL error, lock/advisory timeout, storage I/O error, decision/completion/Outbox write failure or any other unexpected runtime error rolls back every write in the local transaction, including the `NEW` idempotency row, consent/activation/trial/grant/balance, any tentative claim/reservation and the decision/Outbox. No decision commits, no completion commits, and the caller receives a bounded retryable error. A database exception is never swallowed and a rollback-only transaction is never used to commit.
+
+A non-technical domain refusal never rolls back valid activation/trial, and a technical failure never commits them. Pre-confirmation guards run before consent/activation/trial; the shared fresh selection runs after successful activation/trial in the same locked transaction. The current-caller, subject-lifecycle, access and task locks are held across both phases, so an access revocation either commits before the confirmation acquires those locks or after the confirmation commits; tests assert the two serial orders in §13.7 and never an interleaving while the same locks are already held. The only committed outcomes are a category-1 rejected decision (plus a permitted terminal current call), a category-2 frozen no-dial decision with valid activation/trial where applicable, or a successful frozen decision with its optional claim/reservation and exact completion. A replay returns an already committed decision; category 3 commits nothing.
+
+### 10.16 S2 local immutability guard triggers
+
+The following `BEFORE UPDATE` trigger functions are local structural controls owned by the schema owner, `SECURITY INVOKER`, with no transaction control and no function-wave entry. They complement the column grants; they are not callable cross-schema service APIs.
+
+| Trigger | Guard predicate |
+| --- | --- |
+| `catalog_order.reject_row_mutation` | Reject update/delete on the append-only catalog product, benefit line and payment event tables. |
+| `catalog_order.guard_catalog_version_published` | Reject a change to published commercial columns, `snapshot`, `snapshot_sha256`, `created_by_employee_id`, `created_at` or `published_at` once `published_at` is set; allow `sale_status`/`revision`. |
+| `catalog_order.guard_catalog_offer` | Reject changes to `catalog_version_id` or `channel`. |
+| `catalog_order.guard_customer_order_snapshot` | Reject changes to every immutable commercial/consent/fingerprint column; allow only payment status/terminal time/revision. |
+| `catalog_order.guard_payment_order_identity` | Reject changes to `order_id`, `provider`, `merchant_order_no`, `amount_cents`, `currency` or `created_at`. |
+| `ivr.guard_outbound_call_task` | Reject changes to task identity/callee/ttl/expiry/idempotency columns; reject a terminal → non-terminal transition and a change to a set `claimed_call_id`. |
+| `ivr.guard_inbound_session` | Reject changes to `call_id`, `trusted_caller`, caller/access/node/protocol/prompt fields or `created_at`. |
+| `ivr.guard_call_record_parties` | Reject changes to `call_id`, `session_id`, `task_id`, party ciphertext/masked values, `access_number_masked`, `node_id`, `protocol_version` or `started_at`. |
+| `ivr.guard_call_leg` | Reject changes to `call_id`, `leg_id`, `leg_type`, `direction` or `started_at`. |
+| `ivr.reject_row_mutation` | Reject update/delete on append-only `ivr_decision`. |
+| `entitlement_metering.guard_trial_policy_version` | Reject changes to campaign/version/granted seconds/valid days/snapshot/publisher/`published_at` after publication; while `OLD.published_at IS NULL`, allow the one owner publication `UPDATE` that sets `published_by_employee_id` to the actual authenticated publisher, `published_at` once from NULL, `enabled` and `revision` together, and reject any later change to publisher identity or content. The guard admits that single statement and does not require a separate pre-publication publisher update. |
+| `entitlement_metering.guard_entitlement_grant` | Reject any update/delete; the grant is append-only. |
+| `entitlement_metering.guard_trial_grant` | Reject any update/delete; only `issue_first_trial` inserts. |
+| `entitlement_metering.guard_entitlement_balance` | Reject changes to `grant_id` or `granted_units`. |
+| `entitlement_metering.guard_entitlement_issuance` | Reject changes to `order_id`, `installment_no`, `entitlement_type` or source event columns. |
+| `entitlement_metering.guard_usage_reservation` | Reject changes to `call_id`, `balance_id`, `subject_id`, `authorized_units`, `authorization_expires_at` or `created_at`. |
+| `entitlement_metering.reject_row_mutation` | Reject update/delete on append-only `usage_fact`. |
+| `activation_consent.reject_row_mutation` | Reject update/delete on append-only `consent_record` and `service_activation_transition`. |
+| `activation_consent.guard_service_activation` | Reject changes to `id`, `subject_id` or `created_at`; allow status/revision/time through the owning service. |
+
+The guard triggers are installed in the same V004-V007 wave as their tables. The migration grants `EXECUTE` on each guard function only to the owning runtime role; direct invocation is not a supported API. No guard trigger relaxes the append-only, revision, ownership or event-identity rules.
+
+### 10.17 S2 semantic fingerprint and Outbox identity registry (F-11)
+
+This is a bounded **persisted-data registry** for the semantic fingerprint and Outbox identity of each S2 fact. It fixes which persisted fields cause replay versus conflict and which fields identify an Outbox fact. It does not define a generic event/JSON framework, does not add a table, column or SQL function, and does not fix wire encoding or the final IVR JSON-schema version (Q15/Q26). Those remain with their named later owners.
+
+Canonicalization rules:
+
+- A fingerprint is the lowercase SHA-256 of the section 2.5 canonical JSON of the exact semantic field set below. The field list names the semantic set; the serializer sorts object keys by UTF-16 code units in the normal canonical way.
+- Optional values are either an explicit JSON `null` (null-safe fields) or omitted when the documented field is absent. UUIDs are canonical lowercase 36-character text. Enums are the exact uppercase codes. Text is UTF-8 with no transport padding. Numbers are ECMAScript shortest round-trip JSON numbers.
+- Every emitted field must be readable with the declared owner/cross-module grants; an owning service builds its own payload from its own immutable rows. If a field cannot be read under the declared grants, the contract is invalid.
+- Excluded from every semantic fingerprint: transport request IDs, network timestamps (`receivedAt`/`createdAt`/`updatedAt`/`decidedAt`/`occurredAt`/`acceptedAt`/`terminalAt`), generated identities other than the persisted fact identity named below, and every mutable balance, status, result, task, reservation or revision value.
+- A repair or re-encryption that preserves the logical fields does not change the fingerprint. A changed callee is normalized to its canonical business-number form before hashing and is never persisted in the fingerprint input.
+- For consent-driven activation scopes, the comparison basis is the persisted immutable consent fingerprint plus request semantic inputs; a newly generated consent ID, transition ID or current revision/status is never a fingerprint input (R-08).
+
+| Fingerprint scope | Exact semantic fields (null-safe where the column is nullable) | Exclusions and replay rule |
+| --- | --- | --- |
+| `IVR_CONFIRM` event and `ACTIVATION_NEXT_ACTION` decision | `callId`, `sessionId`, `confirmedSubjectId`, `callerNumberHmac`, `nodeId`, `promptVersion`, `policyCode`, `policyVersion`, `purpose`, `confirmationKey` | Excludes `eventId`, `requestId`, decision/idempotency result IDs and all timestamps. A regenerated event ID with the same semantic confirmation fields therefore produces the same fingerprint and REPLAYS the first decision; the same event ID with any changed field conflicts. |
+| `INBOUND_RESOLVE` decision | `accessNumberMasked`, `callId`, `callerNumberHmac`, `entryMode`, `nodeId`, `protocolVersion` | Excludes `requestId`, task/balance/status, decision IDs and all timestamps. Same call/fingerprint replays the frozen decision before task housekeeping. |
+| `DIRECT_AUTHORIZATION` decision | `callId`, `callerNumberHmac`, `confirmationEventId`, `confirmationKey`, `nodeId`, `promptVersion`, `subjectId`, `calleeNumberNormalized` (ephemeral input, hashed only) | Excludes task/balance/status, reservation/authorization results and all timestamps. The same confirmation event with changed callee/prompt/key conflicts; a retry with identical content returns the first authorization. The normalized callee is never stored in the fingerprint column in plaintext. |
+| `trial_grant` granting action — `IVR_CONFIRM` | `callId`, `sessionId`, `confirmedSubjectId`, `policyVersionId`, `policyCode`, `policyVersion`, `promptVersion`, `sourceActionDomain`, `sourceActionEventId` | Excludes granted-at/expiry (derived from the policy and database time), generated grant/balance IDs and mutable status. Same domain/event and same fingerprint replays the original IDs; same event and changed fingerprint is `TRIAL_ACTION_CONFLICT`; a different event for an already-granted subject is `ALREADY_GRANTED`. |
+| `trial_grant` granting action — `ACTIVATION` | `accountId`, `activationEventId`, `channel`, `consentRequestFingerprint`, `policyVersionId`, `sourceActionDomain`, `subjectId` | Same replay/conflict/`ALREADY_GRANTED` rules as the IVR-confirm scope; the immutable consent fingerprint replaces the generated consent ID. |
+| `PURCHASE` order | `accountId`, `amountCents`, `catalogOfferId`, `catalogVersionId`, `channel`, `currency`, `ownerOrganizationId`, `purchaseConsentEventId` (the derived 81-character identity), `subjectId`, `versionToken` | Excludes the idempotency key (it is the platform key), generated order/consent IDs, `createdAt`, payment state, payment evidence, issuance state and the snapshot hash. Identical retry returns the first order; any changed purchase semantic field conflicts. |
+| `PURCHASE` consent | `accountId`, `action`, `channel`, `eventDomain`, `eventId`, `policyCode`, `policyVersion`, `promptVersion`, `purpose`, `sourceType`, `subjectId` | `eventId` is the derived 81-character `purchaseConsentEventId`, which is also persisted as `source_ref`; it is not a separate caller-chosen value. Excludes `acceptedAt`, generated consent ID, snapshot hash and mutable current policy state. Same `(eventDomain,eventId)` and same fingerprint returns the first consent ID; changed fields conflict; a different event is a distinct consent unless the order replay already returned the first order. |
+| `SERVICE_ACTIVATION` consent (IVR, `MINIAPP`, `WEB`) | `accountId` (null-safe; null for IVR), `action`, `channel`, `eventDomain`, `policyCode`, `policyVersion`, `promptVersion`, `purpose`, `sourceRef`, `sourceType`, `subjectId` | `sourceRef` is exact and transport-independent: `ivr-session:` + the canonical lowercase session UUID (48 characters) for IVR; `activation:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, activationEventId}` (75 characters) for `MINIAPP`/`WEB`. The IVR row uses `eventDomain = 'IVR_CONFIRM'` and `event_id` equal to the already validated nonblank 1-128 confirmation `eventId`, while `sourceRef` stays the 48-character `ivr-session:` value independent of that transport ID. Excludes the transport `eventId`, `acceptedAt`, generated consent ID, snapshot hash and current revision/status. The same semantic fields with a regenerated transport event ID fingerprint identically (the IVR decision fingerprint also excludes `eventId` and returns the first result before any append, so the original consent `event_id` is never rewritten and no second consent is added); any changed policy/prompt/source/action field is a stable conflict, never a replay. |
+| Task creation | `businessType`, `calleeNumberNormalized` (ephemeral input, hashed only), `callerBindingId`, `callerNumberHmac`, `createdByAccountId`, `ownerAccountId`, `ownerOrganizationId`, `subjectId` | Excludes the client idempotency key (part of `(created_by_account_id,idempotency_key)`), task protocol ID, TTL/expiry, status and timestamps. Same key/input returns the existing task without TTL refresh; changed input conflicts. |
+| Call event | `callId`, `eventId`, `eventType`, `legId`, `payloadSha256`, `sequenceNo` | `payloadSha256` is the SHA-256 of the §4.27 canonical `payload_redacted.source.payload` only; the semantic inputs and digest are hashed before the `receipt` metadata is added, and `receipt` (`payloadSha256`, `eventFingerprint`) is server-written metadata excluded from the hash and fingerprint input. Excludes `receivedAt`, `sequence_no` when absent (null-safe), processing status/reason, revision and authoritative result. The original values and fingerprint are stored explicitly in the immutable `payload_redacted.source`/`receipt`; replay recomputes from them even when the indexed `sequence_no` is `NULL` for a sequence conflict. Only a same-semantic duplicate with the same stored fingerprint returns the first terminal processing outcome and mutates nothing; a changed payload/type/sequence always returns a stable conflict with no mutation, even when the first outcome was `SEQUENCE_CONFLICT`, and never overwrites the first outcome or applies as success. |
+| Activation transition | `accountId`, `actorEmployeeId`, `channel`, `consentRequestFingerprint`, `reasonCode`, `sourceActionDomain`, `sourceActionEventId`, `statusEventDomain`, `statusEventId`, `subjectId`, `toStatus` | Excludes generated transition ID, generated consent ID, `fromRevision`, `fromStatus` and `occurredAt`; it binds the immutable `SERVICE_ACTIVATION` consent fingerprint. Same action event plus same fingerprint replays the first transition; changed input conflicts; a different stable action event at the current revision is a distinct transition or a stable current-state conflict. |
+| Payment event processing | `amountCents`, `eventType`, `paymentOrderId`, `payloadSha256`, `provider`, `providerEventId`, `signatureVerified`, `transactionId` | Excludes `occurredAt`/`receivedAt`, processing status and any payment result. Same provider event with the same fingerprint returns the first processing result; changed content is quarantined, never applied. |
+| Usage settlement/release | `callId`, `reservationId`, `sourceEventDomain`, `sourceEventId`, `units`, `usageType` | Excludes `created_at`, terminal status, balance values and snapshot hash. The unique source event and reservation/type keys make a duplicate converge to the first outcome; `units = 0` is the known-zero-use release outcome only when the authoritative outcome is known. |
+
+Stable source identities (OQ-1). `purchaseConsentEventId` is not a freshly generated identity and has no caller-chosen variant. The order service derives it as `purchase-consent:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, clientIdempotencyKey}`, using the authenticated canonical lowercase 36-character account UUID and the exact client idempotency key (UTF-8 code points, no Unicode normalization or case folding). The result is always 81 characters and is used as both the consent `event_id` and the purchase consent `source_ref`. A retry of the same order key and semantic input reproduces the same identity and fingerprint; a fresh random per-attempt ID, truncation, alternative derivation or schema expansion is forbidden. Changed semantic purchase data still conflicts under the existing order/consent fingerprints. The order client key remains 1-475 characters and the platform key 1-512; 74/75/128/475-character keys are accepted, a 476-character key is rejected before any effect, and same-key replay returns the first result. The exact wire field name and encoding remain the order OpenAPI owner's work (Q15/Q26), not this schema contract.
+
+Outbox identity registry. Every row below is appended through `platform.outbox_append` in the domain transaction. `dedupe_key` is derived only from persisted immutable identities; `payload_sha256` hashes the canonical redacted payload fields listed. A replay of the persisted fact computes the same domain/dedupe key and hash, so the function returns the existing Outbox ID and appends no duplicate event. A different hash under the same key is `OUTBOX_DEDUPE_CONFLICT`, never a second event.
+
+| Event domain | Dedupe key | Aggregate type / ID | Event type | Exact redacted payload fields | Produced by |
+| --- | --- | --- | --- | --- | --- |
+| `ACTIVATION` | `trial_grant:<trial_grant_id>` | `TRIAL_GRANT` / `trial_grant_id` | `FIRST_TRIAL_GRANTED` | `trialGrantId`, `entitlementGrantId`, `entitlementBalanceId`, `subjectId`, `campaignKey`, `trialPolicyVersionId`, `grantedUnits`, `validFrom`, `expiresAt`, `grantedAt` | `issue_first_trial` |
+| `ACTIVATION_STATUS` | `activation_transition:<transition_id>` | `SERVICE_ACTIVATION` / `activation_id` | `ACTIVATION_TRANSITION_APPLIED` | `activationId`, `transitionId`, `subjectId`, `fromStatus`, `toStatus`, `fromRevision`, `toRevision`, `sourceChannel`, `sourceActionDomain`, `sourceActionEventId`, `statusEventDomain`, `statusEventId`, `occurredAt` | activation-consent owner service |
+| `PURCHASE` | `consent_record:<consent_id>` | `CONSENT_RECORD` / `consent_id` | `PURCHASE_CONSENT_RECORDED` | `consentId`, `subjectId`, `accountId`, `channel`, `purpose`, `eventId`, `policyCode`, `policyVersion`, `promptVersion`, `action`, `snapshotSha256`, `acceptedAt` | purchase-consent owner service |
+| `PURCHASE` | `customer_order:<order_id>` | `CUSTOMER_ORDER` / `order_id` | `ORDER_CREATED` | `orderId`, `orderNo`, `accountId`, `ownerOrganizationId`, `subjectId`, `channel`, `catalogVersionId`, `catalogOfferId`, `purchaseConsentId`, `amountCents`, `currency`, `versionToken`, `snapshotSha256`, `createdAt` | catalog-order order service |
+| `PAYMENT` | `payment_event:<payment_event_id>` | `PAYMENT_ORDER` / `payment_order_id` | `PAYMENT_EVENT_APPLIED` | `paymentEventId`, `paymentOrderId`, `orderId`, `provider`, `providerEventId`, `eventType`, `transactionId`, `amountCents`, `signatureVerified`, `occurredAt` | catalog-order payment service |
+| `PAYMENT` | `entitlement_issuance:<issuance_id>` | `ENTITLEMENT_ISSUANCE` / `issuance_id` | `ENTITLEMENT_ISSUED` | `issuanceId`, `orderId`, `installmentNo`, `entitlementType`, `grantId`, `sourceEventDomain`, `sourceEventId`, `issuedAt` | entitlement-metering issuance service |
+| `IVR_CONFIRM` | `ivr_decision:<decision_id>` | `IVR_DECISION` / `decision_id` | `IVR_CONFIRMATION_DECIDED` | `decisionId`, `callId`, `purpose`, `action`, `reasonCode`, `reservationId`, `taskId`, `authorizedRecordingSeconds`, `authorizationExpiresAt` | `ivr.select_call_action` |
+| `IVR_DIRECT_AUTH` | `ivr_decision:<decision_id>` | `IVR_DECISION` / `decision_id` | `IVR_DIRECT_AUTHORIZATION_DECIDED` | `decisionId`, `callId`, `action`, `reasonCode`, `reservationId`, `authorizedRecordingSeconds`, `authorizationExpiresAt` | `ivr.select_call_action` |
+| `IVR_EVENT` | `outbound_task:<task_id>:created` | `OUTBOUND_CALL_TASK` / `task_id` | `TASK_CREATED` | `taskId`, `callerBindingId`, `subjectId`, `ownerAccountId`, `ownerOrganizationId`, `createdByAccountId`, `businessType`, `expiresAt`, `createdAt` | task create service |
+| `IVR_EVENT` | `outbound_task:<task_id>:replaced:<new_task_id>` | `OUTBOUND_CALL_TASK` / `task_id` | `TASK_REPLACED` | `taskId`, `newTaskId`, `subjectId`, `ownerAccountId`, `ownerOrganizationId`, `reasonCode`, `terminalAt` | task replace service |
+| `IVR_EVENT` | `outbound_task:<task_id>:cancelled` | `OUTBOUND_CALL_TASK` / `task_id` | `TASK_CANCELLED` | `taskId`, `subjectId`, `ownerAccountId`, `ownerOrganizationId`, `reasonCode`, `terminalAt` | task cancel service |
+| `IVR_EVENT` | `outbound_task:<task_id>:claimed:<call_id>` | `OUTBOUND_CALL_TASK` / `task_id` | `TASK_CLAIMED` | `taskId`, `callId`, `subjectId`, `ownerAccountId`, `ownerOrganizationId`, `claimedAt`, `reservationId` | `ivr.select_call_action` |
+| `IVR_EVENT` | `call_event:<event_id>` | `CALL_RECORD` / `call_record_id` | `CALL_EVENT_APPLIED` | `callEventId`, `callId`, `eventId`, `eventType`, `sequenceNo`, `occurredAt`, `authoritativeSeconds` | call-event owner service |
+| `IVR_EVENT` | `usage_reservation:<reservation_id>:settled` or `...:released` | `USAGE_RESERVATION` / `reservation_id` | `USAGE_SETTLED` or `USAGE_RELEASED` | `reservationId`, `callId`, `balanceId`, `subjectId`, `authorizedUnits`, `settledUnits`, `sourceEventDomain`, `sourceEventId`, `terminalStatus`, `terminalAt` | entitlement-metering settlement service |
+| `OPERATIONS` | `catalog_version:<version_id>:published` or `...:offsale` | `CATALOG_VERSION` / `catalog_version_id` | `CATALOG_VERSION_PUBLISHED` or `CATALOG_VERSION_OFFSALE` | `catalogVersionId`, `productId`, `versionNo`, `saleStatus`, `publishedAt`, `snapshotSha256` | catalog-order publication service |
+| `OPERATIONS` | `trial_policy_version:<id>:published` or `...:disabled` | `TRIAL_POLICY_VERSION` / `trial_policy_version_id` | `TRIAL_POLICY_PUBLISHED` or `TRIAL_POLICY_DISABLED` | `trialPolicyVersionId`, `campaignKey`, `versionNo`, `grantedSeconds`, `validDays`, `enabled`, `publishedAt`, `snapshotSha256` | entitlement-metering trial-policy service |
+
+Activation event identities are deterministic and exact: for a client/IVR transition, `source_action_event_id` is the validated channel action event (the confirmation `eventId` or the client activation `eventId`), validated nonblank 1-128 characters before any effect, and `status_event_id` is `'activation-status:' || lower(activation_id) || ':' || to_revision` with canonical lowercase UUID text and decimal revision. The transition's own generated `id` is used only for its Outbox dedupe key (`activation_transition:<transition_id>`). This gives every `ACTIVATION_STATUS` fact one exact identity per activation revision without a new column, table or function. An `OPERATIONS` transition uses its own stable operations action event and the same status-event derivation.
+
+An S2 caller may use only these identities for the listed facts. A new fact with the same domain/dedupe key but a different hash is a conflict, not a second event. The wire encoding, consumer JSON schema version and transport envelope remain Q15/Q26.
+
+### 10.18 Balance selection, available-seconds projection and authorized units (F-04)
+
+This section defines the single eligible-balance selector used by both the IVR routing snapshot and the reservation service. It does not approve any allocation product rule. Q5/Q25 do not approve trial-first, FIFO, stacking, offset order or any arbitrary balance ordering; this baseline must not invent one.
+
+Inputs (all server-validated; the client cannot force a balance, policy or amount):
+
+- `allocationPolicy`: a server-side **approved allocation-policy reference** `{policyCode, policyVersion}` selected from the owning module's approved configuration/registry. An absent, unknown, disabled or unapproved policy reference fails closed with typed `ALLOCATION_POLICY_UNAVAILABLE`. A client-supplied policy token is accepted only if the approved IVR protocol later defines it (Q15/Q26) and it still resolves to an approved reference; a token cannot name an arbitrary policy.
+- `requestedUnits`: the positive requested recording seconds from the validated approved IVR/request input, when that input exists.
+- `perCallCapUnits`: the positive approved per-call cap from the approved IVR/entitlement configuration.
+- At least one of `requestedUnits` or `perCallCapUnits` must be present and valid; otherwise the service fails closed with typed `AUTHORIZATION_INPUT_UNAVAILABLE`. No default duration is invented. `authorization_expires_at` is a separate approved/caller-supplied window input (Q25) and is frozen once; it is not derived from either unit input.
+- The owning Product/Finance/Entitlement and IVR/Backend later owners approve the policy code/version and the two numeric inputs; no production value is fixed here.
+
+Eligible balance predicate. For a reservation with subject `s`, after the §9.0.1 locks and under the balance/grant snapshot at database time `t = clock_timestamp()`:
+
+```
+balance.status = 'AVAILABLE'
+grant.subject_id = s
+grant.entitlement_type = 'RECORDING_SECONDS'
+grant.valid_from <= t AND t < grant.expires_at
+balance.granted_units = grant.granted_units
+balance.granted_units - balance.reserved_units - balance.consumed_units > 0
+```
+
+`availableUnits(balance) = balance.granted_units - balance.reserved_units - balance.consumed_units`. The selector reads at most one row per grant and never sums across balances. A future or expired grant is ineligible even when it has unused units (docs/12 §9.1). `EXHAUSTED` remains the consumed-equals-granted marker; a fully reserved but unconsumed balance is not `EXHAUSTED` and has `availableUnits = 0`. The IVR routing projection evaluates this predicate from its exact §10.12 columns (`entitlement_balance.granted_units/reserved_units/consumed_units/status/grant_id` plus `entitlement_grant.subject_id/entitlement_type/granted_units/valid_from/expires_at`); `entitlement_grant.granted_units` is granted to `ivr_role` so the declared equality is evaluable (OQ-2). The owning reservation service additionally verifies `balance.granted_units = grant.granted_units` and the immutable grant identity under its own locks. No role reads an undeclared column.
+
+Selection mechanics:
+
+1. Read all eligible balances for the subject under the canonical-caller/subject locks using the exact §10.12 columns.
+2. The approved policy must resolve deterministically to exactly one eligible balance:
+   - the baseline-validated mechanical form `SOLE_ELIGIBLE` selects only when exactly one eligible balance exists;
+   - a future approved policy may return one `balanceId` that must belong to the eligible set; returning a non-eligible ID is typed `ALLOCATION_POLICY_INVALID`.
+   - zero eligible balances is typed `NO_AVAILABLE_ENTITLEMENT` (a no-entitlement denial, not a policy error);
+   - more than one candidate, or a policy that would require trial-first/FIFO/stacking/expiry ordering, is typed `ALLOCATION_AMBIGUOUS` or `ALLOCATION_POLICY_UNAVAILABLE`; the service does not choose by row order, UUID, expiry or any other hidden tie-break.
+3. Every absent/unapproved/ambiguous policy or non-selected candidate ends the attempt with **no task claim and no reservation**, and produces a typed domain denial for the category-2 no-dial path. The redacted frozen decision maps `NO_AVAILABLE_ENTITLEMENT` to `GUIDE_PURCHASE`/`NO_AVAILABLE_ENTITLEMENT`; a policy/integrity denial maps to `REJECT`/`DATA_INTEGRITY`, with the typed allocation code retained only in the encrypted internal payload and audit, never in the redacted snapshot or as a new reason registry value.
+
+Authorized units:
+
+```
+authorizedUnits = min(present requestedUnits, present perCallCapUnits, availableUnits(selectedBalance))
+```
+
+At least one approved bound is present; the result must be a positive integer. If it is `0` or below, the typed denial is `NO_AVAILABLE_ENTITLEMENT`; if a bound input is present but invalid/non-positive, the typed denial is `AUTHORIZATION_INPUT_UNAVAILABLE`. `authorizedUnits` is frozen into `usage_reservation.authorized_units`; `authorizedRecordingSeconds` is its explicit 1:1 conversion. No demo or default duration is used.
+
+Conditional debit and routing consistency:
+
+- The reservation service locks the selected balance row, re-reads the grant validity and the exact predicate, and conditionally updates:
+  `SET reserved_units = reserved_units + :authorizedUnits, revision = revision + 1, updated_at = clock_timestamp() WHERE id = :selectedBalanceId AND status = 'AVAILABLE' AND revision = :expectedRevision AND granted_units - reserved_units - consumed_units >= :authorizedUnits AND granted_units = :immutableGrantUnits`.
+  A zero-row update performs one bounded reread and returns typed `BALANCE_SELECTION_STALE`/`NO_AVAILABLE_ENTITLEMENT`; it never debits a different balance or commits a partial claim. The subject/type/validity predicates are repeated in the same locked transaction; a balance whose `grant.subject_id` differs from the reservation subject is `BALANCE_SUBJECT_MISMATCH` and is never debited.
+- The routing snapshot and the reservation service call the same selector with the same approved policy reference. `availableRecordingSeconds` is the selected balance's available units at the routing snapshot, not a sum and not an authorization. The reservation re-evaluates under the balance row lock; if availability changed, the typed denial follows the category-2 path (no dial, no claim, no reservation) and the routing snapshot is never treated as a spend authorization.
+- Expiry is evaluated as a predicate; the read/selection path does not mutate `status`. The owning service may conditionally mark a balance `EXPIRED` only while holding its row lock and only when no live reservation or unknown use depends on it; marking never releases units. It never marks a balance `EXPIRED` merely because the current time passed while a call or reconciliation is active, and it never marks a fully consumed balance `EXPIRED`: `EXHAUSTED` (consumed = granted) remains the derived status required by `ck_entitlement_balance_status_shape`.
+- There is no cross-subject balance id, no caller-supplied balance id, no partial multi-balance debit and no hidden retry against another balance.
+
+### 10.19 Frozen typed commerce and schedule snapshots (F-12)
+
+Order/benefit snapshot (version 1). `catalog_order.catalog_version.snapshot` stores the version/product/benefit/schedule/terms fields; `catalog_order.customer_order.snapshot` copies those immutable fields and adds the chosen `catalogOfferId`, `channel` and `versionToken`. The example below is the order snapshot; the catalog-version snapshot omits only the offer-specific fields it does not own.
+
+```json
+{
+  "schemaVersion": 1,
+  "catalogVersionId": "<uuid>",
+  "catalogOfferId": "<uuid>",
+  "channel": "<MINIAPP|WEB>",
+  "versionToken": "<exact accepted server token>",
+  "productCode": "<approved stable code>",
+  "versionNo": 1,
+  "offerType": "<SUBSCRIPTION|ONE_TIME|ADD_ON|QUOTE>",
+  "audience": "<PERSONAL|ENTERPRISE>",
+  "priceCents": "<approved integer cents or null for QUOTE>",
+  "currency": "<approved ISO-4217>",
+  "billingCycle": "<approved cycle>",
+  "installments": "<approved positive count>",
+  "benefitLines": [
+    {
+      "lineKey": "<catalog_benefit_line.id>",
+      "entitlementType": "<registry type>",
+      "quantity": "<approved positive units per installment>",
+      "validityDays": "<approved positive days>",
+      "grantIntervalMonths": "<approved non-negative months>",
+      "schedule": [
+        {
+          "installmentNo": 1,
+          "entitlementType": "<same registry type>",
+          "units": "<approved positive units>",
+          "validFrom": "<approved absolute timestamptz>",
+          "expiresAt": "<approved absolute timestamptz>"
+        }
+      ]
+    }
+  ],
+  "terms": "<approved immutable commercial terms object>"
+}
+```
+
+Rules:
+
+- `lineKey` is the immutable `catalog_benefit_line.id`; there is exactly one object per benefit line and one schedule entry per `installmentNo` in `1..catalog_version.installments` for that type.
+- A schedule entry's `entitlementType` equals its line; `units` equals the approved line `quantity`; `validFrom`/`expiresAt` are **copied from the validated approved schedule input** captured for that version. The order service never computes due dates, grace periods or calendar arithmetic (Q20), never reconstructs a schedule from current catalog state, and never invents a date, price or quantity. If the approved schedule for a line/installment is missing, ambiguous or inconsistent, publication fails closed and the line is not sellable; an unapproved or missing timing input at issuance does not falsify the payment fact and does not issue a guessed grant.
+- Publication validates: `schemaVersion = 1`; exact object/array types; `catalogVersionId`/`catalogOfferId`/`channel`/`versionToken` match the exact immutable version and offer used for the order; `installments >= 1`; line count/keys/types match the immutable benefit lines; each schedule covers exactly `1..installments`; each window satisfies `expiresAt > validFrom`; units/quantity/validity are positive; money is integer cents; no protected value. The canonical redacted snapshot hash is computed after validation. The snapshot is immutable after publication and is never recomputed from a later catalog change.
+- The approved schedule input is an approved catalog/commercial input owned by Product/Finance/Operations (Q4, Q20). The registry does not approve a due-date trigger, grace/retry rule or calendar arithmetic. The validated input may be supplied as immutable absolute windows; any later approved payment-relative rule must be explicitly approved before it can replace them.
+- Issuance consumes the frozen snapshot, not the current catalog row. The issuance service receives a validated approved `installmentNo` (the due-installment input; Q20) and requires one matching schedule entry for each benefit line/type. Missing/ambiguous timing, a non-matching installment, a snapshot/line mismatch, a window already wholly in the past at issuance (`expires_at <= clock_timestamp()`) or a payment event that cannot be tied to a verified paid fact leaves the payment fact unchanged and records a stable issuance `FAILED`/`last_error_code` with no grant and no guessed quantity/date; retry is allowed once the approved input is valid.
+- Trial dates use one explicitly supported approved validity-unit calculation with a clear database-time source: `granted_at` is captured once from `clock_timestamp()` in the granting transaction; `valid_from = granted_at`; `expires_at = granted_at + (valid_days * interval '1 day')` in UTC. No month arithmetic, business-calendar or grace rule is inferred. A later approved policy that requires another arithmetic rule needs an explicit approved rule; the policy's `valid_days` remains the approved positive input (Q4/Q10).
+- The snapshot registry is versioned (`schemaVersion`), so a later approved wire/JSON schema (Q15/Q26) can add a new version without rewriting historical snapshots. This document writes version 1 only.
+
+### 10.20 Additional S2 published application-service contracts (F-05, F-07, F-08, F-09, OQ-1)
+
+These are application services on one connection and one local transaction; they are not SQL functions and add no function-wave row. Cross-owner calls use `Propagation.MANDATORY` under the owning runtime role and never commit or roll back independently. Each service authenticates its caller, validates current access/grants/lifecycle, and re-reads after locks; no caller-supplied role, owner, amount, balance, policy or result is trusted.
+
+| Service | Owner | Called by | Exact contract |
+| --- | --- | --- | --- |
+| `activation-consent.lock_service_activation` | activation-consent | IVR confirmation and order creation on the same connection, `Propagation.MANDATORY`; the owner's MINIAPP/WEB client-activation service takes the same rank-4 row lock directly | Rank-4 lock-only collaborator. Locks an existing `service_activation` row for the subject under `activation_consent_role` and returns its current facts; a missing row is serialized by the already-held subject lifecycle advisory and locks nothing. It creates, updates, appends and enqueues nothing, takes no foreign row lock and adds no SQL function. Later owner services (`record_activation_confirmation`, `record_client_activation`, `append_purchase_consent`) reuse the held lock and never acquire rank 4 after the idempotency row. |
+| `subject-number.find_or_create_ivr_subject` | subject-number | IVR initial resolve/direct attempt on the same connection, `Propagation.MANDATORY` | Inputs: trusted normalized canonical number, `number_type`, server-computed `number_hmac`, ciphertext/masked value, `source = 'IVR'`, database time. Runs only after the authenticated immutable replay checks and under the canonical-number advisory lock, before subject/session/call/activation locks. Reads the unique `ACTIVE` binding for `number_hmac`: if one exists, returns its `subject_id`; an active binding whose subject later fails an activation/consent/access predicate still returns the stable subject identity, and the later ordered predicates make the decision. A `DISABLED`/`RETIRED` binding is never treated as active. If none exists, atomically inserts one `business_subject` with both owner columns null, `source = 'IVR'`, real-name `UNVERIFIED`, and one `caller_number_binding` with `status = 'ACTIVE'`, `verified_at = clock_timestamp()` (trusted-line observation), using the same transaction. It never creates a customer account, `auth_identity`, owner, organization claim or real-name fact. A `DISABLED` binding for the number is not revived and returns stable `IVR_NUMBER_BINDING_DISABLED`; a `RETIRED` history row does not block a new active binding for the newly resolved subject; more than one active binding is `IVR_NUMBER_BINDING_CONFLICT` and fails closed. A unique loser rolls back the whole resolve and retries bounded from the start; after the winner commits it reuses the winner's subject and never creates a second active binding. A category-3 failure rolls back the tentative subject/binding/session/call; a normal refusal decision may commit the stable subject/binding identity with the refusal because it is not activation, trial or consent. `ALREADY_GRANTED`/`REPLAY`/`ACTIVE` existing bindings are reused without writes. No enterprise ownership policy is invented. |
+| `activation-consent.record_client_activation` | activation-consent | MINIAPP/WEB activation entry with `Propagation.MANDATORY` | Inputs: authenticated active account, server-derived workspace/personal context, subject with current access, exactly one explicit `ACCEPT` for the current prompt/policy, channel `MINIAPP` or `WEB`, `source_type = 'ACCOUNT'`, `source_ref` = `activation:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, activationEventId}` (75 characters) from the authenticated canonical account and stable action ID, event domain `ACTIVATION`, the stable `eventId` validated nonblank 1-128 characters before any effect, and the exact §10.17 `SERVICE_ACTIVATION` consent fingerprint. Lock order: subject lifecycle advisory (3), its own existing `service_activation` row (4), organization advisory (7), membership pair advisory (8), account advisory (9). Re-reads `customer_account(id,status)`, `organization(id,status)`, `organization_membership(organization_id,account_id,role,status)` and `business_subject(id,owner_account_id,owner_organization_id,revision)` with the exact §10.12 grants; takes no foreign row lock. Replay: find the unique transition by `(ACTIVATION,eventId)` before any append; the transition fingerprint binds the immutable consent fingerprint, so same fingerprint returns the first consent/transition/activation result and changed policy/prompt/source input is a stable conflict. If activation is already `ACTIVE` and the same legitimate action replays, return the existing ids and append no second transition. Otherwise append one `SERVICE_ACTIVATION` consent row (purpose `SERVICE_ACTIVATION`, action `ACCEPT`), create/transition `service_activation` `INACTIVE → ACTIVE`, append exactly one transition (`to_revision = from_revision + 1`) with the §10.17 `source_action_event_id`/deterministic `status_event_id`, then call `entitlement-metering.issueFirstTrial` with `source_action_domain = 'ACTIVATION'`, the same `eventId` and the canonical granting-action fingerprint. Do not invent a second trial eligibility rule; the trial outcome is `GRANTED`/`REPLAY`/`ALREADY_GRANTED` from the V006 function. Missing/stale/declined consent returns a typed `CONSENT_REQUIRED`/`ACTIVATION_CONSENT_DECLINED` domain refusal with no accepted append; category 3 rolls back everything; no login identity is created by IVR and no new table/function is used. |
+| `activation-consent.append_purchase_consent` | activation-consent | catalog-order order creation on the same connection, `Propagation.MANDATORY` | Validates the authenticated active account, subject with current access, current prompt/policy version/key/content, explicit `ACCEPT` only, channel `MINIAPP`/`WEB`, source `ACCOUNT`, purpose `PURCHASE`, event domain `PURCHASE`, the derived 81-character `purchaseConsentEventId` (OQ-1) used as both `event_id` and `source_ref`, and canonical consent fingerprint (§10.17). The identity is exactly `purchase-consent:` + the lowercase SHA-256 of the section 2.5 canonical JSON `{accountId, clientIdempotencyKey}` from the authenticated canonical account and exact client key; the order client key remains 1-475 and no caller-chosen alternative exists. Reuses the rank-4 activation lock taken by the order entry and never acquires rank 4 after the idempotency row. Appends exactly one immutable `consent_record` with the redacted snapshot/hash and returns its ID. A missing/stale/mismatched/declined consent returns a typed `PURCHASE_CONSENT_REQUIRED`/`PURCHASE_CONSENT_STALE`/`PURCHASE_CONSENT_DECLINED` denial and appends no accepted row; a replay of the same event/fingerprint returns the first ID; changed input conflicts. The order service then validates in the same transaction: consent `purpose = PURCHASE`, `subject_id = order.subject_id`, `channel = order.channel`, `source_type = ACCOUNT`, `account_id = authenticated account`, current policy/prompt fields, `event_domain`, `event_id = source_ref = purchaseConsentEventId`, `action = ACCEPT`, and `request_fingerprint`; any mismatch fails the order with no order row. No new table/column/function. |
+| `ivr.process_call_event` | ivr | IVR event endpoint; may call `entitlement-metering.settle_call_usage` on the same connection | Replay/conflict comparison first, from the immutable stored `payload_redacted` fingerprint inputs (original type/leg/sequence/hash). Validates the parent `call_id` before any insert: an unknown call returns stable `CALL_UNKNOWN` with no `call_event`/call/leg/settlement write and no raw FK. For a known call it inserts/dedupes one `call_event` by `(IVR_EVENT,event_id)`, validates session/leg identity and sequence, applies or quarantines the event once, updates call/leg facts and the absorbing first terminal `processing_status`, and hands an authoritative terminal event with a reservation to settlement. See §9.24. A duplicate with the same stored fingerprint returns the first processing outcome and appends/changes nothing; a changed input returns a stable conflict; a contradictory fact is `QUARANTINED` and alertable, never applied as success. `RECEIVED` durable receipt is distinct from accepted authoritative usage. No order/payment/consent write. |
+| `entitlement-metering.settle_call_usage` | entitlement-metering | IVR call-event owner service on the same connection, `Propagation.MANDATORY` | Receives validated immutable `callId`, reservation identity, source `(IVR_EVENT, eventId)`, authoritative units, occurrence time and authority source from the IVR owner service. Locks the reservation and selected balance in the §9.0.1 suborder, validates the predicate and identity, settles/releases/quarantines per §9.15 with the derived balance status set in the same conditional `UPDATE` (OQ-8), appends at most one `usage_fact`, one terminal transition and Outbox/audit. It does not read or write IVR-owned tables; the IVR owner remains the authoritative source of the call fact. A duplicate/late event returns the first outcome; contradictory/excess/negative facts are quarantined and never release unknown use. |
+| `catalog-order.publish_catalog_version` and `catalog-order.offsale_catalog_version` | catalog-order | Operations catalog publication/offsale endpoint | Acquire the owner publication serialization (§9.0.1), re-read with the caller's expected current version/revision, validate DRAFT/ACTIVE and immutable content, first set the previous `ACTIVE` version `OFFSALE` with revision +1 and then set the candidate `published_at` and `ACTIVE` with revision +1 (or perform `ACTIVE → OFFSALE`), in one transaction; append audit and the §10.17 Outbox identity. A concurrent/stale caller returns a stable `CATALOG_PUBLICATION_CONFLICT`/current state, never a raw unique error; historical orders/grants are never rewritten. This service does not claim an independent `catalog_offer` withdrawal entry (OQ-4). See §9.26. |
+| `entitlement-metering.publish_trial_policy` and `disable_trial_policy` | entitlement-metering | Operations trial-policy publication/disable endpoint | Acquire the trial-policy serialization, require the caller's expected current enabled/published version, first disable the previous enabled published version (revision +1), then publish the candidate with ONE owner UPDATE that, while `OLD.published_at IS NULL`, sets the actual authenticated publisher in `published_by_employee_id`, `published_at`, `enabled = true` and revision +1 together, or disable the current version, in one transaction; the guard admits that statement and then freezes publisher identity/content; immutable content/history preserved; audit/Outbox appended; a stale/concurrent loser returns a stable `TRIAL_POLICY_PUBLICATION_CONFLICT`/current state. Existing grants keep their frozen policy. The sole authoritative issuance policy read is the enabled/published/expected-version read performed by the V006 `issue_first_trial` function; replay/already-granted returns prior immutable results before any new policy selection; the wrapper lookup is preliminary only and there is no second enabled recheck (OQ-6). See §9.26. |
+
 ## 11. Linear Flyway Migration Order
 
 ### 11.1 Frozen nine-wave migration baseline
 
-The following nine rows are the accepted migration order. They are verbatim from the accepted plan. S1 authors only V001-V003; V004-V009 remain planned S2/S3 handoff.
+The following nine rows are the accepted migration order. They are verbatim from the accepted plan. S1 authored V001-V003; S2 authored V004-V007; V008-V009 remain planned S3 handoff.
 
 | V001 | `V001__platform_schemas_roles_idempotency_outbox_audit.sql` | `platform.idempotency_record`, `platform.outbox_event`, `audit.audit_fact` | Every later module needs idempotency begin/complete, Outbox, audit and the four platform/audit functions; no entitlement table or function is created here |
 | V002 | `V002__identity_organization_and_employee.sql` | `customer_iam.customer_account`, `customer_iam.auth_identity`, `customer_iam.identity_profile`, `organization_access.organization`, `organization_access.organization_membership`, `operations_iam.employee_account` | Stable account, organization and employee identities are parents for subject, task, order and evidence facts |
@@ -1520,7 +3395,7 @@ The following nine rows are the accepted migration order. They are verbatim from
 
 ### 11.2 Frozen slice membership baseline
 
-The exact slice membership blocks are verbatim from the accepted plan. S1 is 13 tables; S2 is 23 planned tables; S3 is 8 planned tables. The frozen membership is structural closure, not proof that S2/S3 dictionaries are authored.
+The exact slice membership blocks are verbatim from the accepted plan. S1 is 13 authored tables; S2 is 23 authored tables; S3 is 8 planned tables. The frozen membership is structural closure, not proof that S3 dictionaries are authored.
 
 <!-- slice-S1-tables:start -->
 - `platform.idempotency_record`
@@ -1608,9 +3483,42 @@ V003: subject, binding, claim and risk tables.
 
 All S1 FK columns and constraints are created in the wave shown in section 5.3. No S1 wave has a forward reference. Flyway checksums are immutable; S1 expects no destructive rollback. Future changes use expand/contract.
 
-### 11.4 S2/S3 migration reservation
+### 11.4 S2 V004-V007 intra-wave creation order
 
-V004-V009 and their intra-wave details, `entitlement_metering.issue_first_trial` in V006, the evidence composite deferred FK cycle in V008 and all sharing tables in V009 are not authored here. Their frozen wave rows and slice membership remain the accepted handoff. S1 does not require, create or test any S2/S3 object.
+V004: catalog, order and payment.
+
+1. Create schemas `catalog_order`, `ivr`, `entitlement_metering` and `activation_consent`; create the four owner/runtime role pairs from §2.9; revoke `CREATE` on all business schemas from `PUBLIC`. Grant the four S2 runtime roles `USAGE` without `CREATE` on `platform` and `audit` and `EXECUTE` on the four S1 functions per §10.8-§10.12; grant `USAGE` without `CREATE` on `catalog_order` to `catalog_order_role`/`entitlement_metering_role`, on `activation_consent` to `activation_consent_role`/`ivr_role`/`catalog_order_role`, and on `entitlement_metering` to `entitlement_metering_role`/`activation_consent_role`/`ivr_role` according to §10.12. No table privilege is implied by schema `USAGE`.
+2. Create `catalog_order.catalog_product` → `catalog_order.catalog_version` (FK to product and employee) → `catalog_order.catalog_offer` and `catalog_order.catalog_benefit_line` (FK to version) → `catalog_order.customer_order` (FKs to account, organization, subject, version and offer; `purchase_consent_id` is NOT NULL but its FK is deferred to V007) → `catalog_order.payment_order` → `catalog_order.payment_event`.
+3. Add all V004 indexes and named checks from §4.16-§4.22. Create the catalog/order/payment guard and append-only triggers from §10.16.
+4. Apply V004 owned-table grants and the cross-module `SELECT` grants from §10.12. For `catalog_order_role`'s declared reads, grant `USAGE` without `CREATE` on `customer_iam`, `organization_access` and `subject_number` (F-01); the already-created S1 schemas are readable but no S1 table write is granted. No V004 table references a table created later; `purchase_consent_id` intentionally has no FK in this wave.
+5. Do not create any entitlement, IVR, activation or S3 table in V004. Do not create `issue_first_trial`.
+
+V005: IVR task, session, call, leg, event and decision.
+
+1. Create `ivr.outbound_call_task` (FKs to binding, subject, accounts and organization; `claimed_call_id` column without the FK) → `ivr.inbound_session` (FKs to subject and confirmed subject; `call_id` has no FK) → `ivr.call_record` (unique `call_id`, FK to session and task; `call_id` has no parent FK) → `ivr.call_leg` (FK to call) → `ivr.call_event` (FK to call) → `ivr.ivr_decision` (FKs to session and call; `reservation_id` column without the FK).
+2. Add all V005 indexes and named checks from §4.23-§4.28, including the partial unique caller indexes.
+3. `ALTER TABLE ivr.outbound_call_task ADD CONSTRAINT fk_outbound_task_claimed_call FOREIGN KEY (claimed_call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT` after `call_record` exists. This is an ordinary immediate `ALTER_FK`, not deferrable.
+4. Create the IVR guard/append-only triggers from §10.16 and apply the V005 grants and cross-module `SELECT` grants. Grant `ivr_role` `USAGE` without `CREATE` on its own `ivr` schema and on `customer_iam`, `organization_access` and `subject_number` for its declared lifecycle/subject reads (F-01); no foreign table write or `CREATE` is granted. The `ivr_decision.reservation_id` FK is not added in V005.
+5. Do not create an S2 SQL function in V005. `ivr.select_call_action` and `ivr.record_activation_next_action` are application services.
+
+V006: trial, entitlement, issuance, reservation and usage.
+
+1. Create `entitlement_metering.trial_policy_version` (FK to employee) → `entitlement_metering.entitlement_grant` (FKs to subject and order) → `entitlement_metering.trial_grant` (FKs to subject, policy and grant; unique subject/grant/source) → `entitlement_metering.entitlement_balance` (FK to grant) → `entitlement_metering.entitlement_issuance` (FKs to order and grant) → `entitlement_metering.usage_reservation` (FKs to call, balance and subject) → `entitlement_metering.usage_fact` (FKs to reservation, balance and call).
+2. Add all V006 indexes and named checks from §4.29-§4.35 and create the entitlement guard/append-only triggers from §10.16.
+3. Create `entitlement_metering.issue_first_trial` only now, after `trial_policy_version`, `entitlement_grant`, `trial_grant` and `entitlement_balance` exist. Revoke all from `PUBLIC`; grant `EXECUTE` only to `activation_consent_role` and `entitlement_metering_role`; grant `USAGE` on `entitlement_metering` and `platform` without `CREATE` to those roles. Grant the NOLOGIN `entitlement_metering_owner` itself `USAGE` without `CREATE` on `platform` and `EXECUTE` on `platform.outbox_append` so the function body's nested append executes under `SECURITY DEFINER` (F-02); these are internal owner capabilities, not runtime or `PUBLIC` grants.
+4. `ALTER TABLE ivr.ivr_decision ADD CONSTRAINT fk_ivr_decision_reservation FOREIGN KEY (reservation_id) REFERENCES entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE RESTRICT` after the reservation table exists. This is an ordinary immediate `ALTER_FK`, not deferrable.
+5. Apply the V006 owned-table and cross-module grants from §10.12. Grant `entitlement_metering_role` `USAGE` without `CREATE` on `subject_number` for its declared subject/owner read (F-01); `ivr_role` already holds the declared read grants including `entitlement_balance.granted_units` and `entitlement_grant.granted_units` (F-03/OQ-2). Grant `catalog_order_role` `USAGE` without `CREATE` on `entitlement_metering` and the exact read-only columns on `entitlement_issuance(order_id, installment_no, entitlement_type, status, grant_id, issued_at, last_error_code)` and `entitlement_grant(id, subject_id, entitlement_type, granted_units, valid_from, expires_at)` for the computed order-level entitlement projection (R-04); no write or foreign row lock is granted. No V006 table or function references an S3 table.
+
+V007: consent and activation.
+
+1. Create `activation_consent.consent_record` (FKs to subject, session, account and employee) → `activation_consent.service_activation` (unique subject FK) → `activation_consent.service_activation_transition` (FKs to activation, subject, actor account/employee and consent).
+2. Add all V007 indexes and named checks from §4.36-§4.38 and create the activation guard/append-only triggers from §10.16.
+3. `ALTER TABLE catalog_order.customer_order ADD CONSTRAINT fk_customer_order_consent FOREIGN KEY (purchase_consent_id) REFERENCES activation_consent.consent_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT` after `consent_record` exists. This is an ordinary immediate `ALTER_FK`, not deferrable.
+4. Apply the V007 owned-table and cross-module grants from §10.12. Grant `activation_consent_role` `USAGE` without `CREATE` on `subject_number`, `customer_iam` and `organization_access` for its declared subject/account/workspace reads, with the exact `SELECT` columns on `business_subject(id, owner_account_id, owner_organization_id, revision)`, `customer_account(id, status)`, `organization(id, status)` and `organization_membership(organization_id, account_id, role, status)` (F-01/R-03); no foreign write, row lock or `CREATE` is granted. The activation-confirmation, lock-only activation collaborator, reservation, client-activation, purchase-consent, call-event, publication and IVR action-selection services are application services, not SQL functions; no function is created in V007.
+
+### 11.5 S3 migration reservation
+
+V008-V009 and their intra-wave details, the evidence composite deferred FK cycle, the deferred constraint trigger and all sharing tables are not authored here. Their frozen wave rows and slice membership remain the accepted handoff. S2 does not require, create or test any S3 object. The final 44-table structural closure across S1-S3 remains a later S3 gate.
 
 ## 12. Deletion, Retention and Retention-Hook Policy
 
@@ -1621,7 +3529,7 @@ V004-V009 and their intra-wave details, `entitlement_metering.issue_first_trial`
 | Mutable head | platform.idempotency_record, platform.outbox_event, customer_iam.customer_account, customer_iam.auth_identity, customer_iam.identity_profile, organization_access.organization, organization_access.organization_membership, operations_iam.employee_account, subject_number.business_subject, subject_number.caller_number_binding, subject_number.subject_risk_state | Status/terminal-time retirement and revision-controlled updates; no ordinary hard delete |
 | Append-only or frozen | audit.audit_fact, subject_number.subject_claim | No update/delete privilege; append-only trigger; stable identity and hash where applicable |
 
-Every S1 table has exactly one class. The all-44 classification remains the frozen baseline matrix; S2/S3 lifecycle details are authored in their own slices.
+Every S1 table has exactly one class. The all-44 classification remains the frozen baseline matrix; S2 lifecycle details are authored in §12.5, while S3 details remain planned.
 
 ### 12.2 S1 deletion policy
 
@@ -1651,11 +3559,30 @@ Every S1 table has exactly one class. The all-44 classification remains the froz
 - Subject real-name: separate verification role with `SELECT` on `id`; claim runtime role has no update privilege and the guard rejects other writers.
 - Membership revocation and binding retirement are terminal for the row and are never overwritten.
 
+### 12.5 S2 lifecycle classes
+
+| Class | S2 tables | Rule |
+| --- | --- | --- |
+| Mutable head | catalog_order.catalog_version, catalog_offer, customer_order, payment_order; ivr.outbound_call_task, inbound_session, call_record, call_leg, call_event; entitlement_metering.trial_policy_version, entitlement_balance, entitlement_issuance, usage_reservation; activation_consent.service_activation | Status/terminal-time retirement, conditional revision, no ordinary hard delete |
+| Append-only or frozen | catalog_order.catalog_product, catalog_benefit_line, payment_event; ivr.ivr_decision; entitlement_metering.entitlement_grant, trial_grant, usage_fact; activation_consent.consent_record, service_activation_transition | No update/delete privilege; append-only trigger; stable identity and hash where applicable |
+
+The 14 mutable and 9 append-only S2 tables plus the S1 11/2 and S3 planned 3/5 produce the frozen 28 mutable-head / 16 append-only closure. The S2 split is not a third lifecycle class; payment status, issuance status, reservation status and call status are independent state dimensions.
+
+### 12.6 S2 deletion and retention policy
+
+- No S2 runtime role has `DELETE` or `TRUNCATE`. Every S2 FK is `ON DELETE RESTRICT`; no cascade exists.
+- `catalog_product`, `catalog_benefit_line` and `payment_event` are append-only. `catalog_version` retires by `OFFSALE`; only a never-published, unreferenced `DRAFT` is a future deletion candidate, and no deletion is implemented. Published, referenced or historical rows are never hard-deleted.
+- Orders, payment facts, trial/grant/balance/usage facts, decisions, consent and activation transitions are retained. Payment status and entitlement issuance remain independently observable; neither is deleted to hide a failure.
+- Task and call rows retire by terminal status/time; `UNKNOWN` remains occupied until reconciliation. Evidence/media retention and sharing deletion stay S3/legal inputs.
+- No S2 table stores a retention period, erasure procedure, backup-deletion rule or legal-hold column. These remain Q3/Q13/Q21 (and later legal/security) inputs; this specification does not guess a duration.
+- `entitlement_issuance` and `usage_reservation` retries are operational states, not deletion triggers. A committed `NEW` idempotency row remains an alert and reconciliation input.
+- Quarantined call events, over-authorized duration facts, contradictory terminal facts and unknown-use reservations are retained for audit/reconciliation. They are never deleted to make a retry succeed, never silently clamped and never converted into positive usage or evidence without the approved reconciliation outcome.
+
 ## 13. Deterministic Validation Commands
 
-### 13.1 Document-level S1 checks
+### 13.1 Document-level S1 and S2 checks
 
-Run from the repository root. These are documentation checks only; they do not execute PostgreSQL or migrations. `FILE` is the S1 specification.
+Run from the repository root. These are documentation checks only; they do not execute PostgreSQL or migrations. `FILE` is the cumulative S1+S2 specification.
 
 ```bash
 FILE=docs/14-production-data-model-and-flyway-schema-spec.md
@@ -1663,11 +3590,14 @@ test -s "$FILE"
 for section in "Scope, Status and Source Relationship" "Database Conventions" "Module and Schema Ownership Matrix" "Complete Table Dictionary" "Foreign-Key Catalog" "Invariant Matrix" "State Machines" "Sensitive-Field Inventory" "Transaction Sequences" "Cross-Schema Function Contracts" "Linear Flyway Migration Order" "Deletion, Retention and Retention-Hook Policy" "Deterministic Validation Commands" "Open Production Inputs" "Goal-Alignment and No-Over-Design Check" "Completion Report Template"; do
   grep -q -E "^## [0-9]+\. $section$" "$FILE" || { echo "MISSING SECTION: $section"; exit 1; }
 done
-test "$(grep -c -E '^### 4\.[0-9]+ [a-z_]+\.[a-z_]+$' "$FILE")" -eq 13 || { echo "S1 DICTIONARY HEADING COUNT FAILED"; exit 1; }
+test "$(grep -c -E '^### 4\.[0-9]+ [a-z_]+\.[a-z_]+$' "$FILE")" -eq 36 || { echo "DICTIONARY HEADING COUNT FAILED"; exit 1; }
 test "$(grep -c -E '^### 10\.[3-6] (platform|audit)\.[a-z_]+$' "$FILE")" -eq 4 || { echo "S1 FUNCTION CONTRACT COUNT FAILED"; exit 1; }
 test "$(grep -c -E '^\| INV-[0-9][0-9] \(S1' "$FILE")" -eq 14 || { echo "S1 INVARIANT EXPANSION COUNT FAILED"; exit 1; }
+test "$(grep -c -E '^\| INV-[0-9][0-9] \(S2' "$FILE")" -eq 22 || { echo "S2 INVARIANT EXPANSION COUNT FAILED"; exit 1; }
 test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && NF' "$FILE" | wc -l)" -eq 5 || { echo "FUNCTION WAVE COUNT FAILED"; exit 1; }
 test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && /^platform\.|^audit\./ && /[|]V001[|]/' "$FILE" | wc -l)" -eq 4 || { echo "V001 FUNCTION COUNT FAILED"; exit 1; }
+test "$(awk '/^<!-- function-wave:start -->$/{f=1;next} /^<!-- function-wave:end -->$/{f=0} f && /entitlement_metering\.issue_first_trial[|]V006[|]/' "$FILE" | wc -l)" -eq 1 || { echo "V006 FUNCTION WAVE FAILED"; exit 1; }
+test "$(grep -c '^### 10\.9 entitlement_metering\.issue_first_trial' "$FILE")" -eq 1 || { echo "V006 FUNCTION CONTRACT MISSING"; exit 1; }
 # The frozen structural script in 13.3 additionally rejects the legacy
 # audit-schema underscore token, the stale FK-mode token and stale baseline
 # counts. Those forbidden strings are intentionally not repeated here.
@@ -1677,8 +3607,11 @@ test -z "$(grep -n 'section 10\.4' "$FILE")" || { echo "STALE DENYLIST NAVIGATIO
 test -z "$(grep -n 'section 10\.5' "$FILE")" || { echo "STALE FUNCTION-GRANT NAVIGATION"; exit 1; }
 test -z "$(grep -n 'organization_access\.membership:<membership_id>' "$FILE")" || { echo "STALE MEMBERSHIP-ID LOCK KEY"; exit 1; }
 test -z "$(grep -n 'docs/12 section 8\.3' "$FILE")" || { echo "STALE OWNERSHIP CITATION"; exit 1; }
-for term in CLAIM_REPLAY_CONFLICT CLAIM_CONTEXT_CONFLICT CLAIM_ORGANIZATION_OWNERSHIP_UNAPPROVED CLAIM_SUBJECT_NOT_FOUND CLAIM_ACCOUNT_NOT_FOUND CLAIM_ORGANIZATION_NOT_FOUND CLAIM_CONCURRENCY_EXHAUSTED CLAIM_DATA_INTEGRITY BINDING_DISABLED_CONFLICT 'pg_catalog.gen_random_uuid' 'subject_number.subject:' 'customer_iam.account:' 'organization_access.membership:' 'docs/12 section 7.2'; do
-  grep -q -F "$term" "$FILE" || { echo "MISSING FIX CONTRACT TERM: $term"; exit 1; }
+grep -q 'S2 status is \*\*fix-4 author-complete / independent re-review pending\*\*' "$FILE" || { echo "STALE S2 STATUS"; exit 1; }
+grep -q 'Navigation correction (F-15' "$FILE" || { echo "MISSING F-15 NAVIGATION NOTE"; exit 1; }
+grep -q 'ck_ivr_decision_reason' "$FILE" || { echo "MISSING F-15 NAMED CHECK"; exit 1; }
+for term in CLAIM_REPLAY_CONFLICT CLAIM_CONTEXT_CONFLICT CLAIM_ORGANIZATION_OWNERSHIP_UNAPPROVED CLAIM_SUBJECT_NOT_FOUND CLAIM_ACCOUNT_NOT_FOUND CLAIM_ORGANIZATION_NOT_FOUND CLAIM_CONCURRENCY_EXHAUSTED CLAIM_DATA_INTEGRITY BINDING_DISABLED_CONFLICT BINDING_SUBJECT_NOT_FOUND 'pg_catalog.gen_random_uuid' 'subject_number.subject:' 'customer_iam.account:' 'organization_access.membership:' 'docs/12 section 7.2' PURCHASE REJECT_SUSPENDED ACTIVATION_NEXT_ACTION DIRECT_AUTHORIZATION DIRECT_AUTHORIZED 'authorization.calleeNumber' authorizedRecordingSeconds authorizationExpiresAt REJECT_CALL_IN_PROGRESS NO_AVAILABLE_ENTITLEMENT CONSENT_REQUIRED CALL_STATE_UNRESOLVED RECONCILING savepoint select_call_action record_activation_next_action ALREADY_GRANTED TRIAL_ACTION_CONFLICT 'taskMatch = NONE' 'expires_at > clock_timestamp' 'one permanent first trial per subject' 'find_or_create_ivr_subject' 'record_client_activation' 'append_purchase_consent' 'process_call_event' 'settle_call_usage' 'publish_catalog_version' 'publish_trial_policy' 'ALLOCATION_POLICY_UNAVAILABLE' 'ALLOCATION_AMBIGUOUS' 'ALLOCATION_POLICY_INVALID' 'AUTHORIZATION_INPUT_UNAVAILABLE' 'BALANCE_SELECTION_STALE' 'DURATION_EXCEEDS_AUTHORIZED' 'CATALOG_PUBLICATION_CONFLICT' 'TRIAL_POLICY_PUBLICATION_CONFLICT' 'EVENT_ID_CONFLICT' 'CONTRADICTORY_FACT' 'ACTIVATION_CONSENT_DECLINED' 'PURCHASE_CONSENT_REQUIRED' 'IVR_NUMBER_BINDING_DISABLED' 'catalog_order.publication:' 'entitlement_metering.trial_policy:FIRST-TRIAL' 'SOLE_ELIGIBLE' 'schemaVersion' 'INBOUND_RESOLVE = ENTER_CALLEE' 'ACTIVATION_NEXT_ACTION = ENTER_CALLEE' 'ck_ivr_decision_reason'; do
+  grep -q -F "$term" "$FILE" || { echo "MISSING S1/S2 CONTRACT TERM: $term"; exit 1; }
 done
 test -z "$(grep -n -E '[[:blank:]]+$' "$FILE")" || { echo "TRAILING WHITESPACE"; exit 1; }
 ```
@@ -1740,6 +3673,67 @@ test "$ok" -eq 1 && echo ALL_EXACT
 
 Expected: 13 `exact` lines and `ALL_EXACT`. This proves that no accepted S1 column was dropped, renamed or replaced.
 
+### 13.2.1 S2 per-table dictionary coverage
+
+This `awk` program verifies that each of the 23 S2 dictionary sections exists once and contains the exact accepted column count. It is a document check, not a PostgreSQL check.
+
+```bash
+FILE=docs/14-production-data-model-and-flyway-schema-spec.md
+awk '
+BEGIN {
+  need["catalog_order.catalog_product"]=4; need["catalog_order.catalog_version"]=17; need["catalog_order.catalog_offer"]=7;
+  need["catalog_order.catalog_benefit_line"]=6; need["catalog_order.customer_order"]=21; need["catalog_order.payment_order"]=11;
+  need["catalog_order.payment_event"]=12; need["ivr.outbound_call_task"]=23; need["ivr.inbound_session"]=17;
+  need["ivr.call_record"]=22; need["ivr.call_leg"]=11; need["ivr.call_event"]=14; need["ivr.ivr_decision"]=15;
+  need["entitlement_metering.trial_policy_version"]=11; need["entitlement_metering.entitlement_grant"]=13;
+  need["entitlement_metering.trial_grant"]=10; need["entitlement_metering.entitlement_balance"]=8;
+  need["entitlement_metering.entitlement_issuance"]=14; need["entitlement_metering.usage_reservation"]=16;
+  need["entitlement_metering.usage_fact"]=12; need["activation_consent.consent_record"]=19;
+  need["activation_consent.service_activation"]=6; need["activation_consent.service_activation_transition"]=18;
+}
+/^## / { t=""; next }
+/^### / {
+  if ($0 ~ /^### 4\.[0-9]+ [a-z_]+\.[a-z_]+$/) { t=$3; seen[t]++ } else { t="" }
+  next
+}
+t!="" && /^\| [a-z0-9_]+ \| (uuid|text|timestamptz|integer|bigint|jsonb|boolean) \|/ { c[t]++ }
+END {
+  bad=0
+  for (k in need) {
+    if (seen[k]!=1) { print "S2 DICTIONARY COUNT " k " " seen[k]+0; bad=1 }
+    if (c[k]!=need[k]) { print "S2 COLUMN COUNT " k " " c[k]+0 " != " need[k]; bad=1 }
+  }
+  exit bad
+}
+' "$FILE"
+```
+
+Expected: exit 0 with no output. The 23 S2 dictionaries total 307 column rows; together with the 121 S1 rows the cumulative detailed total is 428.
+
+Exact accepted-column-name comparison (catalog field 6 versus dictionary first column) for all 23 S2 tables:
+
+```bash
+FILE=docs/14-production-data-model-and-flyway-schema-spec.md
+ok=1
+for t in catalog_order.catalog_product catalog_order.catalog_version catalog_order.catalog_offer catalog_order.catalog_benefit_line catalog_order.customer_order catalog_order.payment_order catalog_order.payment_event ivr.outbound_call_task ivr.inbound_session ivr.call_record ivr.call_leg ivr.call_event ivr.ivr_decision entitlement_metering.trial_policy_version entitlement_metering.entitlement_grant entitlement_metering.trial_grant entitlement_metering.entitlement_balance entitlement_metering.entitlement_issuance entitlement_metering.usage_reservation entitlement_metering.usage_fact activation_consent.consent_record activation_consent.service_activation activation_consent.service_activation_transition; do
+  catcols=$(awk -F'|' -v t="$t" '{x=$2; gsub(/[ `]/,"",x); if (x==t) print $6}' "$FILE" | grep -o '`[a-z0-9_]*`' | tr -d '`' | sort -u)
+  dictcols=$(awk -v t="$t" '
+    $0 ~ "^### 4\\.[0-9]+ " t "$" {f=1; next}
+    /^### / {f=0}
+    f && /^\| [a-z0-9_]+ \| (uuid|text|timestamptz|integer|bigint|jsonb|boolean) \|/ {
+      n=split($0,a,"|"); gsub(/ /,"",a[2]); print a[2]
+    }' "$FILE" | sort -u)
+  if [ "$catcols" = "$dictcols" ]; then
+    printf '%s exact %s columns\n' "$t" "$(printf '%s\n' "$dictcols" | wc -l)"
+  else
+    echo "$t MISMATCH"; ok=0
+  fi
+done
+test "$ok" -eq 1 && echo ALL_EXACT
+```
+
+Expected: 23 `exact` lines with counts `4,17,7,6,21,11,12,23,17,22,11,14,15,11,13,10,8,14,16,12,19,6,18` (307 total) and `ALL_EXACT`. This proves that no accepted S2 column was dropped, renamed or replaced.
+
 ### 13.3 Frozen structural-script-v2 run
 
 Extract the exact accepted structural script and run it unchanged against this document with `FILE` and `FIX2` explicitly set. `FIX2` is the preserved fix-6 artifact; it is a file-presence gate for the frozen baseline, not an S1 content dependency.
@@ -1759,12 +3753,19 @@ sha256sum docs/gateflow/a0-production-data-model-schema-spec-plan.md
 sha256sum docs/gateflow/a0-production-data-model-schema-spec-plan-fix-6.md
 # expected: 8976F64A215A2B7B5CB116A14D5123AFF91F754F512B6FD212E0D8C0C7045F59
 git status --porcelain=v1 | grep -E '\.sql$|db/migration/' && exit 1 || true
-# New artifacts are untracked, so a global git diff --check does not inspect them.
-# The targeted blank-at-EOL scan below is the equivalent whitespace gate.
-test -z "$(grep -n -E '[[:blank:]]+$' docs/14-production-data-model-and-flyway-schema-spec.md docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md)"
+# New artifacts are untracked or modified, so a global git diff --check is not
+# the authoritative gate. The targeted blank-at-EOL scan below is equivalent.
+test -z "$(grep -n -E '[[:blank:]]+$' docs/14-production-data-model-and-flyway-schema-spec.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md docs/gateflow/a0-production-data-model-schema-spec-s1-fix-1.md)"
+# Whole-new-file diff comparison: exit 1 with zero output diagnostics is a
+# content difference, not a whitespace failure.
+git diff --no-index --check /dev/null docs/14-production-data-model-and-flyway-schema-spec.md >/tmp/a0-s2-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-ws.out
+git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md >/tmp/a0-s2-fix1-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-fix1-ws.out
+git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md >/tmp/a0-s2-fix2-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-fix2-ws.out
+git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md >/tmp/a0-s2-fix3-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-fix3-ws.out
+git diff --no-index --check /dev/null docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md >/tmp/a0-s2-art-ws.out; rc=$?; test "$rc" -eq 1 && test ! -s /tmp/a0-s2-art-ws.out
 ```
 
-Expected: plan and fix-6 hashes unchanged; no `.sql` or `db/migration` path in `git status`; zero trailing-whitespace lines in the current specification, the historical implementation artifact and the fix-1 artifact. A global `git diff --check` is intentionally not used as the S1 gate because the pre-existing, out-of-scope `logo/preview.html` change contains trailing whitespace; the targeted scan is authoritative for the new artifacts. Pre-existing modified QA screenshots, `logo/preview.html` and the unrelated `docs/reviews/plan-review-20261021-205118.md` are outside this work unit and must remain untouched.
+Expected: plan and fix-6 hashes unchanged; no `.sql` or `db/migration` path in `git status`; zero trailing-whitespace lines in the current specification and the S1/S2 artifacts including the fix-2 and fix-3 artifacts; each whole-new-file whitespace check exits 1 with no diagnostic output (the comparison-status exit is expected for a new file). A global `git diff --check` is intentionally not used because the pre-existing, out-of-scope `logo/preview.html` change contains trailing whitespace. Pre-existing modified QA screenshots, `logo/preview.html` and the unrelated `docs/reviews/plan-review-20261021-205118.md` are outside this work unit and must remain untouched.
 
 ### 13.5 S1 control-coverage assertions
 
@@ -1772,18 +3773,110 @@ These checks prove that every S1 dictionary names its lifecycle, sensitive repre
 
 ```bash
 FILE=docs/14-production-data-model-and-flyway-schema-spec.md
-test "$(sed -n '/^### 4.3 /,/^## 5\./p' "$FILE" | grep -c '^Purpose:.*Lifecycle:')" -eq 13 || { echo "S1 LIFECYCLE COVERAGE FAILED"; exit 1; }
-test "$(sed -n '/^### 4.3 /,/^## 5\./p' "$FILE" | grep -c '^Sensitive representation:')" -eq 13 || { echo "S1 SENSITIVE COVERAGE FAILED"; exit 1; }
-test "$(sed -n '/^### 4.3 /,/^## 5\./p' "$FILE" | grep -c -E '^(Revision/immutability|Append-only control):')" -eq 13 || { echo "S1 REVISION/IMMUTABILITY COVERAGE FAILED"; exit 1; }
-test "$(sed -n '/^### 5.3 S1 foreign-key detail/,/^## 6\./p' "$FILE" | grep -c '| FK |')" -eq 11 || { echo "S1 FK DETAIL COUNT FAILED"; exit 1; }
+test "$(sed -n '/^### 4.3 /,/^### 4.16 /p' "$FILE" | grep -c '^Purpose:.*Lifecycle:')" -eq 13 || { echo "S1 LIFECYCLE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.3 /,/^### 4.16 /p' "$FILE" | grep -c '^Sensitive representation:')" -eq 13 || { echo "S1 SENSITIVE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.3 /,/^### 4.16 /p' "$FILE" | grep -c -E '^(Revision/immutability|Append-only control):')" -eq 13 || { echo "S1 REVISION/IMMUTABILITY COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 5.3 S1 foreign-key detail/,/^### 5.4 /p' "$FILE" | grep -c '| FK |')" -eq 11 || { echo "S1 FK DETAIL COUNT FAILED"; exit 1; }
 test "$(sed -n '/^### 8.2 S1 sensitive-field detail/,/^### 8.3/p' "$FILE" | grep -c '^| ')" -ge 20 || { echo "S1 SENSITIVE DETAIL FAILED"; exit 1; }
 ```
 
 Expected: exit 0. The exact S1 FK count is 11; the S1 sensitive detail covers every S1 table that stores a protected value and explicitly marks the others as non-sensitive.
 
-### 13.6 Honest limitations
+### 13.6 S2 control-coverage assertions
 
-S1 ran only document checks and shell/awk validation. No PostgreSQL instance, Flyway migration, constraint, function, privilege, concurrency test or Testcontainers suite was executed. A green structural script proves document structure and frozen membership only; it does not prove S2/S3 detailed dictionaries or any production behavior.
+These checks prove that every S2 dictionary names its lifecycle, sensitive representation, revision/immutability or append-only control, and that the S2 FK detail has exactly 54 rows. They are document checks only.
+
+```bash
+FILE=docs/14-production-data-model-and-flyway-schema-spec.md
+test "$(sed -n '/^### 4.16 /,/^## 5\./p' "$FILE" | grep -c '^Purpose:.*Lifecycle:')" -eq 23 || { echo "S2 LIFECYCLE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.16 /,/^## 5\./p' "$FILE" | grep -c '^Sensitive representation:')" -eq 23 || { echo "S2 SENSITIVE COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 4.16 /,/^## 5\./p' "$FILE" | grep -c -E '^(Revision/immutability|Append-only control):')" -eq 23 || { echo "S2 REVISION/IMMUTABILITY COVERAGE FAILED"; exit 1; }
+test "$(sed -n '/^### 5.4 S2 foreign-key detail/,/^## 6\./p' "$FILE" | grep -c -E '\| (FK|ALTER_FK|NO_FK) \|')" -eq 54 || { echo "S2 FK DETAIL COUNT FAILED"; exit 1; }
+test "$(sed -n '/^### 8.5 S2 sensitive-field detail/,/^## 9\./p' "$FILE" | grep -c '^| ')" -ge 23 || { echo "S2 SENSITIVE DETAIL FAILED"; exit 1; }
+test "$(grep -c '^### 10\.9 entitlement_metering\.issue_first_trial' "$FILE")" -eq 1 || { echo "V006 FUNCTION CONTRACT FAILED"; exit 1; }
+test "$(grep -c '^### 9\.11 T-S2-01' "$FILE")" -eq 1 || { echo "S2 ACTIVATION SEQUENCE MISSING"; exit 1; }
+```
+
+Expected: exit 0. The exact S2 FK count is 54; the S2 dictionary coverage is 23/23/23 with one lifecycle, one sensitive representation and one revision/append-only statement per table.
+
+### 13.7 S2 behavior test matrix
+
+These are document-level requirements for the later executable suite. They are not executed tests and do not claim PostgreSQL, IVR, payment-provider or production behavior.
+
+| ID | Assertion | Expected outcome | Class |
+| --- | --- | --- | --- |
+| T-S2-01 | Create an order with a fresh `PURCHASE` key; replay the same key and semantic input. | Exactly one order and one completed idempotency result; replay returns the first immutable order and snapshot. | DB+TX |
+| T-S2-02 | Reuse the `PURCHASE` key with changed amount, subject, offer, version token or consent. | Stable conflict; no second order, no overwritten snapshot. | DB+TX |
+| T-S2-03 | Apply a verified payment event, an unverified event and a duplicate verified event. | Only the verified event advances payment; a duplicate returns the first processing result; unverified never advances. | DB+TX |
+| T-S2-04 | Pay a multi-line/multi-installment order with one benefit failing once, then retry, using validated approved installment/schedule inputs. | One durable issuance row per order/installment/type; each grant copies the matching frozen snapshot schedule entry (units/validity window) and never current catalog state; a missing/ambiguous schedule fails with `attempt_count`/`last_error_code` and no grant; retry reaches `ISSUED` without duplicating a grant. | DB+TX+SERVICE |
+| T-S2-05 | Grant the first trial, then change policy version, channel, campaign key, claim, re-entry and replay the action. | Exactly one permanent `FIRST-TRIAL` per subject; policy/version/channel/claim changes never reissue; no second grant or balance. | DB+TX |
+| T-S2-06 | Invoke first-trial with the same action and fingerprint, same action and changed fingerprint, and a different action. | `REPLAY` original ids; `TRIAL_ACTION_CONFLICT`; `ALREADY_GRANTED` original ids. No new grant/balance in any case. | DB+TX |
+| T-S2-07 | Force a failure inside the activation transaction after trial/grant/balance/Outbox writes. | All trial/grant/balance/Outbox and the `NEW` idempotency row roll back together; no orphan trial/balance. | TX |
+| T-S2-08 | Create tasks for the same canonical caller across different accounts/workspaces. | At most one `PENDING`/`CLAIMED` task globally for that caller; a second live task fails closed and does not disclose the callee. | DB+TX |
+| T-S2-09 | Retry a task request with the same key/input and with a changed input. | Same key/input returns the existing task without refreshing `expires_at`; changed input conflicts. An identical tuple may return the existing task without TTL refresh. | DB+TX |
+| T-S2-10 | Claim at 29.999 seconds, at exactly 30 seconds, and after 30 seconds; then create a new task. | 29.999 succeeds if database time is before expiry; 30 or later fails; stale `PENDING` is archived to `EXPIRED` under the caller lock; no configured TTL is invented. | DB+TX |
+| T-S2-11 | Replace or cancel a `PENDING` task owned by another workspace/account; then try a `CLAIMED` task. | Stable ownership rejection with no mutation and no callee disclosure; `CLAIMED` cannot be replaced or cancelled. The owner's `PENDING` replace/cancel wins atomically. | DB+TX |
+| T-S2-12 | Present a current call whose own record is `ACTIVE`/`UNKNOWN` with no other call. | The current `callId` is excluded from the guard; the call proceeds and never blocks itself. | TX |
+| T-S2-13 | Present another `ACTIVE`/`UNKNOWN` call for the same caller while the current call is absent or never-started `ACTIVE`. | `REJECT_CALL_IN_PROGRESS`, no claim/reservation, valid terminal `REJECTED` current parent; the competing call and its decision are untouched. | DB+TX |
+| T-S2-14 | Resolve a valid pending task with positive entitlement. | One local transaction: conditional `PENDING → CLAIMED`, current `ACTIVE` call binding, one reservation, one frozen `DIAL_TASK_CALLEE` decision; all commit together. | DB+TX |
+| T-S2-15 | Lose the conditional claim (expiry/revision), then lose a reservation race. | 0-row claim causes one bounded reread and a non-dial decision; reservation denial rolls back to the same-connection savepoint and freezes one no-dial decision; no `CLAIMED` task without reservation. | TX |
+| T-S2-16 | Replay the same call/purpose fingerprint; then send a new event ID with the same confirmation fingerprint. | Replay returns the first decision/action; the new event completes with the existing decision ID and repeats no consent/trial/claim/reservation/Outbox. The confirmation event ID is validated nonblank 1-128 before `idempotency_begin`: a 128-character ID is accepted, and a blank or 129-character ID is refused with `IVR_ARGUMENT_INVALID` and no idempotency/domain write while the general 1-512 platform key is unchanged. | DB+TX |
+| T-S2-17 | Reuse the same event ID with changed consent/prompt/content, and a new event ID with a changed fingerprint. | Stable conflict; any `NEW` row inserted for the attempt is rolled back; no accepted effect. | DB+TX |
+| T-S2-18 | Reuse the same `IVR_CONFIRM` event ID for another `callId`. | Stable conflict because `callId` is in the fingerprint; no second activation/trial/dial. | DB+TX |
+| T-S2-19 | Replay initial resolve with the same fingerprint after a task would have expired; repeat with changed caller/access/node identity. | Replay returns the frozen first result before expiry housekeeping; changed identity is a stable conflict and mutates nothing. | DB+TX |
+| T-S2-20 | Inject a fault into any shared IVR predicate and run both initial resolve and post-activation selection. | Both entries change consistently; no predicate exists only in one wrapper; `ivr.select_call_action` is the single implementation. | SERVICE |
+| T-S2-21 | Direct authorization with a task ID, with a remaining `PENDING`/`CLAIMED` task, with a task-backed call, or without either valid current purpose chain (direct inbound `ENTER_CALLEE` or `GUIDE_ACTIVATION` + `CONFIRMED` + `ACTIVATION_NEXT_ACTION = ENTER_CALLEE`). | Rejected; never falls through to the task path, never dials, never creates a reservation; an obsolete earlier `ENTER_CALLEE` superseded by a later no-dial decision is refused. | DB+TX |
+| T-S2-22 | Successful direct authorization after either valid current purpose chain (F-16). | Purpose `DIRECT_AUTHORIZATION`, `action` null, `taskMatch = NONE`, null task fields, committed reservation/seconds/cutoff, callee only under encrypted `authorization.calleeNumber`; no `ENTER_CALLEE` is returned after confirmation and the original resolve decision is never rewritten. | DB+TX |
+| T-S2-23 | Direct authorization refusal (no entitlement/access/suspended/competing call). | One permitted non-dial action, no reservation, no authorization object; no task claim. | DB+TX |
+| T-S2-24 | Replay a `DIAL_TASK_CALLEE`/direct authorization at or after `authorizationExpiresAt`; lose the response. | Same frozen cutoff and payload return; cutoff is never renewed; no second B-leg; local `callId` operation recovers the original. | SERVICE |
+| T-S2-25 | Fresh confirmation of a `SUSPENDED` subject with no prior trial, and with an existing trial. | `REJECT_SUSPENDED`; no accepted consent/transition/trial/grant/balance/reservation/Outbox; existing trial is not reissued; activation stays suspended. | DB+TX |
+| T-S2-26 | Round-6 write-set assertion: a fresh suspended/in-progress category-1 refusal targets a current session that has never been confirmed, while an already-`CONFIRMED` session, a current `UNKNOWN` call and unrelated calls exist. | Only the never-confirmed current session may be marked `REJECTED`; the already-`CONFIRMED` session, current `UNKNOWN` row and unrelated calls remain byte-for-byte unchanged. The full §10.15 category-1 write set is asserted, not an abbreviated one. | DB+TX |
+| T-S2-27 | Initial resolve on an `ACTIVE` activation with missing/expired current consent; then confirm with current consent. | `GUIDE_ACTIVATION`/`CONSENT_REQUIRED` and no task/reservation; the confirmation appends current consent and returns the existing trial (`ALREADY_GRANTED`/`REPLAY`) rather than a second trial. | DB+TX |
+| T-S2-28 | Confirmation with stale prompt/policy version/key/content. | `REJECT`/`CONSENT_REQUIRED` before any accepted consent/transition/trial append; no accepted effect. | DB+TX |
+| T-S2-29 | Confirmation transitions and an operations suspend/resume. | Every transition has unique action/`ACTIVATION_STATUS` event identity and fingerprint; `to_revision = from_revision + 1`; concurrent transitions have one winner; operations resume never calls `issue_first_trial`. The owner service rejects a non-`OPERATIONS` `ACTIVE → SUSPENDED`, an `OPERATIONS` `INACTIVE → ACTIVE`, and any client/IVR suspend or resume, even where the broad `ck_activation_transition_matrix` shape admits the row (OQ-7). | DB+TX |
+| T-S2-30 | Review an already-`CONFIRMED` session after operations suspension; repeat a fresh confirmation. | Replay returns the original decision and the session stays `CONFIRMED`; a fresh suspended path rejects only a never-confirmed session. | DB+TX |
+| T-S2-31 | Race an access revocation against a task-backed confirmation in both serial orders. | Revocation first: category-2 no-dial access rejection with valid activation/trial retained, `CONFIRMED` session, no claim/reservation. Confirmation/claim first: frozen `DIAL_TASK_CALLEE` with claim/reservation survives; later revocation governs later calls only. No post-commit reread or reversal. | TX |
+| T-S2-32 | Expected reservation denial after a tentative claim but after valid activation/trial. | Roll back to the same-connection savepoint; one no-dial decision commits; activation/trial and `CONFIRMED` session remain; no claim/reservation. | TX |
+| T-S2-33 | Force a technical error at each write boundary (claim, reservation, decision, completion, Outbox). | Every write including the `NEW` row rolls back; no decision/completion commits; bounded retryable error; no swallowed database exception. | TX |
+| T-S2-34 | Concurrent reservations and settlements on one selected balance, with multiple/expired/future/cross-subject candidates. | `reserved + consumed <= granted` always; the conditional revision update affects one row; no overcommit, negative balance, cross-subject debit or second-balance fallback; an expired/future/fully reserved balance is never selected; a single-unambiguous candidate is debited once; absent/ambiguous policy fails closed. | DB+TX |
+| T-S2-35 | Partial use settlement and a second terminal event. | Actual units settle once, the remainder releases once, one usage fact exists; a repeat returns the first settlement and does not recharge. | DB+TX |
+| T-S2-36 | Missing, late, duplicate, zero, excess and unknown end facts (OQ-8). | Missing known-end facts settle before release; late events converge once; duplicates return the first settlement; known zero use releases once with no positive usage fact; reported use above `authorized_units` stays `RECONCILING` with `DURATION_EXCEEDS_AUTHORIZED` and no settle/clamp/release/fact; unknown use stays `RECONCILING` and never releases. A settlement that reaches the granted units sets `EXHAUSTED` in the same conditional balance `UPDATE` as its counters, and an excess/unknown outcome writes no balance counter or status. | DB+TX+SERVICE |
+| T-S2-37 | Current call `UNKNOWN` with inconsistent fresh attempt; then authoritative terminal reconciliation. | Fresh attempt returns `CALL_STATE_UNRESOLVED` with no destructive change, reservation or dial; `UNKNOWN` converges only to `ENDED`/`FAILED`; never to `REJECTED`/release. | DB+TX |
+| T-S2-38 | Early refusal before task evaluation; then `ENTER_CALLEE`/direct authorization with no task. | Early refusal reports `taskMatch = NONE` with null task fields and makes no "no task exists" claim; `ENTER_CALLEE`/direct requires a positive no-`PENDING`/`CLAIMED` check. | DB+TX |
+| T-S2-39 | Inspect the frozen snapshot for `DIAL_TASK_CALLEE`, direct success and direct refusal. | Exact non-null reservation/seconds/cutoff for the first two; direct success has `action` null and no task fields; direct refusal has no reservation/authorization; redacted snapshots contain no full callee; `response_sha256` matches. | DB+SERVICE |
+| T-S2-40 | Effective-entitlement routing snapshot versus spend authorization. | `availableRecordingSeconds` is computed from the declared `entitlement_balance.granted_units`/`reserved_units`/`consumed_units` plus the grant validity window under the same approved allocation policy as reservation; the routing predicate reads `entitlement_grant.granted_units` to evaluate the documented equality (OQ-2), while the reservation rechecks it under the locked balance; it is routing-only and may be zero; only the committed reservation's authorized units govern; a concurrent balance change cannot make the snapshot a spend authorization and never causes a different balance to be debited. | TX |
+| T-S2-41 | No cross-owner write or row-lock privilege; schema `USAGE` (F-01/R-02/R-03/R-04). | Every S2 role can execute every declared cross-module `SELECT` only with the schema `USAGE` and exact column grant in §10.12, including `activation_consent_role`'s account/organization/membership/subject-ownership reads, `catalog_order_role`'s issuance/grant projection reads and its purchase-consent validation read of the exact §10.12 columns including `source_ref` (the order-side `event_id = source_ref = purchaseConsentEventId` check executes); no S2 role can insert/update/delete another module's table, `CREATE` in a schema, or take a cross-owner `FOR SHARE`/`FOR UPDATE`; `ivr_role` cannot lock `service_activation`, while `activation-consent.lock_service_activation` holds that row lock under the owner role; owner services run on the same connection under the owner role; no raw unique error is a protocol success. | DB+TX |
+| T-S2-42 | Function creation and grants (F-02). | Only V006 creates `issue_first_trial` after its four tables; V001-V005 never create it; EXECUTE is limited to the two runtime roles; the NOLOGIN `entitlement_metering_owner` has the internal `platform` `USAGE` and `outbox_append` EXECUTE needed for the nested call, and no runtime/`PUBLIC` role gets those capabilities; fixed `search_path`; no transaction control; forced nested-Outbox failure rolls back atomically. | DB |
+| T-S2-43 | No S2 prerequisite on S3. | V004-V007 migrate and their listed behavior is testable without any V008/V009 table, function or service. The frozen S3 membership remains planned only. | Structural |
+| T-S2-44 | IVR behavior boundaries. | The IVR never creates an order or claims payment; purchase guidance only. A direct no-task caller can activate/trial/record without customer registration, login, enterprise membership or real-name. A matched task is taken once and auto-dials the frozen callee without asking the caller to confirm the number. | SERVICE |
+| T-S2-45 | Call parent and FK timing. | `call_record.call_id` is the canonical parent for task/session/legs/events/decision/reservation/usage; `inbound_session.call_id` and `call_record.call_id` are the two `NO_FK` roots; `claimed_call_id`, decision reservation and purchase consent FKs are added only in their later same-wave `ALTER` steps. | DB |
+| T-S2-46 | Action enum and `DIRECT_AUTHORIZATION` purpose. | Exactly seven actions; `DIRECT_AUTHORIZATION` is a purpose; a successful direct authorization has `action` null; there is no eighth action and no direct success as `ENTER_CALLEE` after confirmation. | DB+TX |
+| T-S2-47 | Order snapshot and entitlement-status absence. | The order stores no entitlement status; a later catalog publication/offsale never changes the frozen snapshot or amount; issuance is the only per-line state. | DB+SERVICE |
+| T-S2-48 | Payment `UNKNOWN` checkout. | A second checkout is blocked while an existing order is `UNKNOWN`; querying the original order resolves the state; a duplicate callback does not create a second order or entitlement. | DB+TX |
+| T-S2-49 | Historical trial and policy change. | An existing trial/grant keeps its frozen policy snapshot and expiry after a new policy version is enabled; a later first-trial attempt is not reissued. For OQ-6, the V006 `issue_first_trial` function performs the sole authoritative enabled/published/expected-version read and retains its immutable content; replay/already-granted returns prior ids before any policy selection; a disable committed before that read is observed (missing/disabled/stale fails closed with `TRIAL_POLICY_NOT_FOUND`), while a disable committed after that read does not revoke the already-selected trial; the wrapper lookup is preliminary and there is no second enabled recheck. | DB+TX |
+| T-S2-50 | B-leg reproducibility. | The IVR persists one local `callId` B-leg operation before the line request; a lost response/unknown line outcome recovers or reconciles that operation and never issues a second dial; business `ivr.call_leg` records facts only. | SERVICE |
+| T-S2-51 | Privilege allow/deny/nested owner (F-01/F-02/F-03/R-03/R-04/OQ-2). | Each S2 role can execute every declared cross-module `SELECT` (schema `USAGE` plus exact column grant) and its granted functions; `activation_consent_role` can read the declared account/organization/membership/subject-ownership columns, and `catalog_order_role` can read the declared issuance/grant projection columns and the declared purchase-consent validation columns including `source_ref`, executing the read-only `event_id = source_ref = purchaseConsentEventId` check without a foreign row lock; every foreign write, foreign row lock, `DELETE`, `TRUNCATE`, schema `CREATE` and unlisted `consent_record` column read is denied. The NOLOGIN `entitlement_metering_owner` has only internal platform `USAGE`/`outbox_append` EXECUTE and the first-trial nested Outbox append succeeds; forced nested failure rolls it back with the caller. `ivr_role` can read `entitlement_balance.granted_units` and `entitlement_grant.granted_units` and compute available seconds. | DB |
+| T-S2-52 | Balance selection and authorization (F-04). | One eligible balance with an approved `SOLE_ELIGIBLE` policy is selected and debited exactly once; zero eligible returns `NO_AVAILABLE_ENTITLEMENT`; two eligible with no single-candidate policy returns `ALLOCATION_AMBIGUOUS`; absent/unapproved policy returns `ALLOCATION_POLICY_UNAVAILABLE`; none of these claims a task, creates a reservation or debits a balance. A cross-subject balance ID, future grant, expired grant, `status <> AVAILABLE`, fully reserved balance or stale conditional update is a typed denial with no debit. `authorizedUnits = min(present approved request/cap, available)` and is positive; absent/invalid bounds return `AUTHORIZATION_INPUT_UNAVAILABLE` with no invented default. Routing and reservation select the same balance; a changed balance between them yields a no-dial denial. | DB+TX |
+| T-S2-53 | Order client-key boundary (F-13/OQ-1). | 74/75/128/475-character client keys with a canonical 36-character account UUID plus colon are accepted; the 475-character key produces a 512-character platform key and creates the order, and each accepted key derives an 81-character `purchaseConsentEventId` (`purchase-consent:` + lowercase SHA-256) that fits the consent `event_id`/`source_ref` 1-128 contract. 476 and 512-character client keys are rejected before any order/consent/idempotency row, and the same key reproduces the same consent identity. The check matches `ck_customer_order_idempotency` and the platform 1-512 key contract. | DB+TX |
+| T-S2-54 | MINIAPP/WEB activation and trial (F-05/R-03/R-08). | A fresh accepted activation appends one current `ACCOUNT`/`MINIAPP`/`WEB` consent with the exact `SERVICE_ACTIVATION` fingerprint, one `INACTIVE → ACTIVE` transition and one trial outcome in one transaction; the service re-reads current account/organization/membership/subject ownership with the exact §10.12 grants and takes no foreign row lock; `source_ref` is exactly `activation:` + lowercase SHA-256 of `{accountId, activationEventId}` (75 characters) for MINIAPP/WEB and `ivr-session:` + canonical lowercase session UUID (48 characters) for the IVR consent, independent of the transport event ID; the first accepted IVR `SERVICE_ACTIVATION` consent stores `event_domain = 'IVR_CONFIRM'` and `event_id` exactly equal to the validated confirmation `eventId`; the activation event ID is validated nonblank 1-128 before any effect; the transition fingerprint binds the immutable consent fingerprint, so a changed policy/prompt/source with the same stable action event conflicts and is not replayed from a generated consent ID or current revision; a regenerated IVR confirmation event ID with identical semantics replays the first IVR decision and returns the first consent before any append without rewriting the original consent `event_id` or adding a consent; same event/fingerprint replays the first ids without a second consent/transition/trial; already-`ACTIVE` appends no duplicate transition and returns `ALREADY_GRANTED`/`REPLAY`; missing/stale/declined consent returns a typed refusal with no accepted append; concurrent confirmations have one winner; no login identity/owner is created. | DB+TX |
+| T-S2-55 | Purchase consent (F-07/OQ-1). | Missing, declined, stale policy/prompt, wrong subject/account/channel/purpose/source, or an already-consumed event yields a typed denial and no order; a valid explicit `ACCEPT` appends exactly one `PURCHASE` consent and the order stores its ID; 74/75/128/475-character client keys each derive the same fixed 81-character `purchaseConsentEventId`, used for both the consent `event_id` and `source_ref`, and a 476-character key is rejected before any effect; Unicode/exact-key input is hashed without normalization or case folding, so a composed/decomposed or differently cased key is a different identity; same event/fingerprint replays without a second consent; a same-order-key/semantic retry reproduces the same deterministic `purchaseConsentEventId` and fingerprint (no truncation, random regenerated identity or caller-chosen alternative); changed semantic purchase data still conflicts under the existing fingerprint; the order cannot reference another subject's or another purpose's consent; the order-side validation of `purpose`/`subject_id`/`channel`/`source_type`/`account_id`/current policy/prompt/`event_domain`/`event_id = source_ref = purchaseConsentEventId`/`action`/`request_fingerprint` executes under the exact §10.12 `catalog_order_role` `consent_record` `SELECT` including `source_ref`, read-only with no foreign row lock, and reads of unlisted `consent_record` columns or any foreign write are denied; no raw CHECK/unique violation is exposed as success; consent and order roll back together on forced failure. | DB+TX |
+| T-S2-56 | Call-event ingestion, duplicate, reorder and settlement handoff (F-08/F-10/R-06/R-07/C-01/C-02). | The event ID is validated nonblank 1-128 before any idempotency/domain effect; an unknown parent call returns stable `CALL_UNKNOWN` with no `call_event`/call/leg/settlement write and no raw FK; a known call with an unknown leg may persist one `QUARANTINED` `LEG_UNKNOWN` receipt; ingestion acquires the owned `inbound_session` then current `call_record` locks at rank 4 before sequence detection/insert; `payload_redacted` has exactly the §4.27 `source`/`receipt` shape, `payload_sha256` hashes only `source.payload`, the fingerprint is recomputed from that digest plus immutable inputs, and the stored `receipt` metadata is excluded from the hash and cannot be supplied or bypassed by a client; a duplicate event with the same stored fingerprint returns the first terminal outcome and creates no second row/usage fact; a changed fingerprint/type/sequence always returns a stable conflict and is never applied, including after a first `SEQUENCE_CONFLICT` outcome; a same-semantic sequence-conflict retry returns the first `QUARANTINED`/`SEQUENCE_CONFLICT` outcome reconstructed from the original sequence in the immutable payload even when the indexed `sequence_no` is `NULL`; a changed re-delivery after `APPLIED` leaves `APPLIED` and the call/leg/settlement facts unchanged; an out-of-order consistent event converges once; a terminal-reversing/contradictory terminal event is quarantined; a known end within `1..authorized_units` settles once and releases the remainder; known zero releases once with no positive usage fact; a report above `authorized_units` stays `RECONCILING` with no settle/release/fact; `UNKNOWN` stays occupied and never releases; no double settlement and no cross-owner DML. | DB+TX+SERVICE |
+| T-S2-57 | Catalog publication/offsale race (F-09/R-01). | With a pre-existing `ACTIVE` version, the winner first retires it to `OFFSALE` with revision +1 and then sets the candidate `published_at`/`ACTIVE` with revision +1, so exactly one `ACTIVE` row exists at every statement and the immediate partial unique never rejects the normal second publication; two concurrent publications for one product with the same expected current version have one winner; the stale loser returns `CATALOG_PUBLICATION_CONFLICT`/`PUBLICATION_STALE_VIEW` and changes nothing; existing orders/grants/snapshots are byte-identical; a later offsale stops new orders only; no raw unique error is exposed. | DB+TX |
+| T-S2-58 | Semantic fingerprint and Outbox replay (F-11). | For each §10.17 scope, changing an included field changes the fingerprint and conflicts; changing an excluded field (eventId, timestamps, mutable status/balance/reservation results) does not; a new event ID with the same semantic confirmation fields replays the first decision; each S2 fact appends its exact Outbox domain/dedupe key/aggregate/type/payload hash; replaying the fact returns the existing Outbox ID and appends no duplicate; same key/different hash raises `OUTBOX_DEDUPE_CONFLICT`; every payload field is readable under the declared grants. | DB+TX |
+| T-S2-59 | Frozen commerce/schedule snapshots (F-12). | A multi-installment order copies the validated approved per-installment/type/units/window schedule into the immutable snapshot; issuance reads the snapshot, not current catalog state; a later catalog offsale/publication/policy change does not alter the order or prior grant; a missing/ambiguous/unsupported schedule fails closed with no guessed grant while the payment fact remains observable; a snapshot/schedule/type/quantity/window mismatch fails issuance; trial dates use `granted_at + valid_days * interval '1 day'` with `clock_timestamp()` and satisfy `expires_at > valid_from`; no Q20 due/grace/calendar value is invented. | DB+TX |
+| T-S2-60 | Direct authorization positive chains (F-16). | (a) `INBOUND_RESOLVE = ENTER_CALLEE` with no superseding decision and (b) `GUIDE_ACTIVATION` + `CONFIRMED` + committed `ACTIVATION_NEXT_ACTION = ENTER_CALLEE` each authorize one reservation, freeze `action` null/`taskMatch = NONE`/`DIRECT_AUTHORIZED`, keep the resolve decision immutable and return the callee only under `authorization.calleeNumber`; both accept an unregistered/unverified caller with no login/membership/real-name prerequisite. | DB+TX |
+| T-S2-61 | Direct authorization refusal regressions (F-16). | A task-backed call, non-empty taskId, `PENDING`/`CLAIMED` task, obsolete earlier `ENTER_CALLEE` superseded by a later no-dial decision, unconfirmed/contradictory session, or competing call is rejected with a permitted non-dial action and no reservation; the task path never falls back to DTMF, a task-backed dial uses the frozen callee without confirmation, and a replay never redials or rewrites resolve. | DB+TX |
+| T-S2-62 | IVR subject find-or-create (OQ-1). | A trusted normalized number with no binding atomically creates one unowned `IVR` subject and one active binding with both owner columns null and no account/login/owner; a second concurrent resolve under the canonical-number lock reuses the winner and creates no second active binding; a `DISABLED` binding is not revived; `RETIRED` history may be followed by a new active binding without erasing history; conflicting/multiple active bindings fail closed; a unique loser or category-3 failure leaves no partial subject/binding after the bounded retry/rollback. | DB+TX |
+| T-S2-63 | Idempotency placement, savepoint and category outcomes (F-06/R-02/R-05). | The `IVR_CONFIRM` idempotency row is acquired after caller/session/access locks and before any tentative claim/reservation; the IVR confirmation and the order path take the rank-4 activation lock through `activation-consent.lock_service_activation` before ranks 7/8/9 and before the idempotency row; `record_activation_confirmation`, `record_client_activation` and `append_purchase_consent` reuse that held lock and never first acquire rank 4 after rank 10; replay precedes task-expiry housekeeping and every effect; the attempt savepoint is established after accepted activation/trial and before the tentative claim/reservation; a category-2 denial executes `ROLLBACK TO SAVEPOINT`, keeps activation/trial/session `CONFIRMED` and commits one no-dial decision/completion with no claim/reservation; a category-3 SQL/lock/I/O/Outbox error rolls back everything and is not swallowed; no transaction takes a task/reservation then the idempotency row. | DB+TX |
+| T-S2-64 | Trial-policy publication/disable (F-09/R-01/OQ-5/OQ-6). | With a pre-existing enabled published policy, the winner first disables it with revision +1 and then publishes the candidate with ONE owner UPDATE that, while `OLD.published_at IS NULL`, sets the actual authenticated publisher, `published_at`, `enabled = true` and revision +1 together, so exactly one enabled published row exists at every statement and the immediate partial unique never rejects the normal second publication; the guard admits that statement and rejects later changes to publisher identity/content, and no separate pre-publication publisher statement is required; concurrent trial-policy publications have one winner under the campaign lock; the stale loser returns `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW`; disable is idempotent and appends one audit/Outbox fact; the publisher column is frozen after publication and no same-employee-only rule is applied; the V006 `issue_first_trial` function performs the sole authoritative enabled/published/expected-version read, replay/already-granted returns prior immutable results before any new policy selection, a disable committed before that read is observed while a disable after it does not revoke the selected grant, the wrapper lookup is preliminary only, and there is no second enabled recheck; published content/snapshot history and existing trial grants never change; no raw unique error. | DB+TX |
+| T-S2-65 | Status/frozen-navigation document assertions (F-14/F-15). | The document status states S1 accepted / S2 fix-3 authored-re-review-pending / S3 planned and `issue_first_trial` authored in V006; §4.28 points to §2.9 and `ck_ivr_decision_reason`; §4.1 remains byte-identical to the accepted plan and is not edited for the low-severity navigation correction. | Document |
+| T-S2-66 | IVR source event-ID bounds (fix-3 Open Question 1). | For IVR confirmation, direct authorization and call-event ingestion, a blank or 129-character event ID is refused with stable `IVR_ARGUMENT_INVALID` before `idempotency_begin`, any decision/domain write or any `call_event` insert; 1- and 128-character IDs are accepted and persist in the 1-128 S2 source-event columns; the general platform 1-512 key capacity and the 1-475 order client key are unchanged. | DB+TX |
+
+All S2 assertions are document requirements for a later Testcontainers/IVR/payment integration suite. No production test is claimed.
+
+### 13.8 Honest limitations
+
+S1 and S2 ran only document checks and shell/awk validation. No PostgreSQL instance, Flyway migration, constraint, function, privilege, concurrency test, IVR line, payment provider or Testcontainers suite was executed. A green structural script and the S2 test matrix prove document structure, membership and planned assertions only; they do not prove PostgreSQL behavior, S3 dictionaries, executable migrations or production behavior.
 
 ## 14. Open Production Inputs
 
@@ -1824,49 +3917,66 @@ No unresolved input is filled with a demo value, a guessed retention period or a
 
 The enterprise claim/ownership rule is **not** added as a new open-input row; the frozen 28-row block is unchanged. docs/11 section 2 and section 6 defer organizational ownership/transfer policy to the future business-subject service, and docs/12 section 7.2 (line 265) requires refusing ambiguous ownership. S1 therefore preserves the approved verified-personal claim of an unowned IVR subject and fails closed for a fresh organization-scoped claim (`CLAIM_ORGANIZATION_OWNERSHIP_UNAPPROVED`) without selecting personal versus organization ownership from an optional workspace ID. Owner: Product/Subject-number; destination: enterprise claim/ownership policy and its S1 follow-up.
 
+S2-relevant open inputs are Q4 (production prices, quantities and catalog approval), Q5 (renewal/stacking/refund), Q6 (payment provider identifiers/payload), Q7/Q8 (SIP/line, media and duration tolerance), Q10 (recording prompt/consent wording), Q15/Q26 (IVR event/wire mappings and snapshot schema version), Q16 (task-key retention/abuse limits), Q18 (TTL configuration key), Q20 (installment due-date/grace), Q21 (reconciliation cadence), Q24 (call-blocking risk), Q25 (authorization window/clock skew), Q27 (task-access role matrix) and Q28 (IVR-local B-leg key/recovery). None is guessed by S2. The 30-second pending-task TTL is the source default and is frozen per task; the production configuration key/approval remains Q18. `authorizationExpiresAt` has no approved window value, so S2 stores the committed reservation value and invents none (Q25). The organization task-access role matrix is not narrowed (Q27); only current lifecycle/role/resource checks are required. B-leg uniqueness stays IVR-local (Q28).
+
+Fix 1 introduces **validated inputs, not new open-input rows**. The approved allocation-policy code/version and the per-call cap/request bound (§10.18) are Product/Finance/Entitlement inputs with IVR/Backend, destination Phase C/IVR protocol and Q5/Q25-adjacent review; no policy code or numeric value is approved here. The approved immutable per-installment schedule/windows and due-installment input (§10.19) are Product/Finance/Operations inputs for Q4/Q20; no date, grace or calendar rule is inferred. Current prompt/policy content remains Q10; the authoritative-duration tolerance remains Q8 (none approved); publication serialization is an owner transaction, not a product policy. The first-time IVR subject/binding find-or-create is owned by subject-number (OQ-1) and creates no account/enterprise ownership. The 28-row open-input block remains byte-identical; these inputs are named in the service contracts and residuals rather than added as rows.
+
+Review OQ outcomes are recorded without changing the frozen input rows. OQ-1 is accepted and implemented as the §10.20 `subject-number.find_or_create_ivr_subject` collaborator plus §9.13 placement. OQ-2 remains **deferred-with-owner** to Platform/Database/Security / deployment-security design and executable role-provisioning/privilege tests (Q17/Q23); the specification requires same-connection owner services but claims no LOGIN/`SET ROLE` mechanism. OQ-3 remains **deferred-with-owner** to the existing Product/Finance/IVR/Backend owners / Q5/Q8/Q20/Q25 and the named later IVR/commerce/acceptance work; fix 1 clarifies validated inputs and fail-closed boundaries, not production values or policies. OQ-4 (trial-policy publication path) is covered by accepted F-09 and §9.26; no separate open-input row or service beyond the owner transaction is added.
+
+Fix 2 re-review OQ outcomes use the re-review's separate numbering and add no open-input row. OQ-1 is **accepted** as a bounded identity clarification: `purchaseConsentEventId` is a deterministic account-scoped source identity derived from existing order inputs, never a fresh random ID per retry (§10.17/§10.20); fix 3 fixes the exact 81-character SHA-256 derivation. OQ-2 is **accepted** as precise read alignment: `ivr_role` also reads `entitlement_grant.granted_units` so the routing predicate is evaluable; the locked reservation authorization is unchanged. OQ-3 is **accepted** as matrix reconciliation: §3.2 distinguishes exact `SELECT` collaborators from owner-service fact handoffs and grants no extra access. OQ-4 is **deferred-with-owner** to Product/Operations/catalog-order and the catalog operations OpenAPI work; S2 specifies no independent `catalog_offer` withdrawal endpoint or transaction and relies on version offsale to block new orders. OQ-5 is **accepted**: the actual authenticated publisher is recorded in the existing `published_by_employee_id` in the publication update and frozen on publication; no same-employee-only rule is invented; fix 3 requires one owner UPDATE that sets publisher, `published_at`, `enabled` and revision together while `OLD.published_at IS NULL`. OQ-6 is **accepted** as a serialization clarification: the V006 `issue_first_trial` function's single authoritative enabled-policy read is the selection linearization point and that immutable version/content is retained through the grant (§10.9/§10.13); fix 3 adds replay-before-selection and excludes a second enabled recheck. OQ-7 is **accepted** as an enforcement-layer clarification: the DB transition check is a broad shape bound and the sole owner service enforces the narrower source/state matrix (§4.38). OQ-8 is **accepted**: settlement sets the derived `EXHAUSTED` status in the same conditional balance `UPDATE` as its counters (§9.15).
+
+Fix-2 re-review corrections and controller clarifications are recorded without adding an open-input row or a new schema object. The purchase identity is now the fixed 81-character `purchase-consent:` + lowercase SHA-256 derivation, with no truncation, random or caller-chosen alternative (§10.17/§9.17/§10.20). IVR confirmation, direct-authorization and call-event source event IDs are validated nonblank 1-128 before `idempotency_begin` or any domain effect (§9.11/§9.14/§9.24/§10.17; the general 1-512 platform key and 1-475 order key are unchanged). The V006 `issue_first_trial` function is the sole authoritative enabled/published/expected-version policy read, retains the selected content through grant/Outbox, returns replay/already-granted results before any new selection and performs no second enabled recheck (§10.9/§10.11). `SERVICE_ACTIVATION` source references are exact and deterministic (`ivr-session:` + 36-character session UUID = 48; `activation:` + SHA-256 = 75), independent of the transport event ID (§4.36/§9.11/§9.25/§10.17). Trial-policy publication is one owner `UPDATE` setting publisher, `published_at`, `enabled` and revision together while `OLD.published_at IS NULL`, admitted by the guard and then frozen (§4.29/§9.26/§10.16/§10.20). Call-event `payload_redacted` distinguishes the hashed `source` payload from server-generated `receipt` metadata, removing the hash/fingerprint circularity (§4.27/§9.24/§10.17). Call-event ingestion acquires the owned session then current-call locks before sequence detection/insert (C-01), and a changed fingerprint always returns a stable conflict, including after an original `SEQUENCE_CONFLICT` (C-02) (§4.27/§9.24/§10.17). No product rule, policy value, workflow or provider input is invented; Q15/Q26 wire encoding remains with its named later owner.
+
 ## 15. Goal-Alignment and No-Over-Design Check
 
 ### 15.1 Goal alignment
 
-| Confirmed goal area | S1 evidence |
+| Confirmed goal area | S1/S2 evidence |
 | --- | --- |
-| Account/login identity | customer_account, auth_identity, identity_profile; login only through active identity + active account |
-| Organization membership | organization and organization_membership; workspace access derived from active membership; no independent login |
-| Employee identity | employee_account in a separate issuer domain; last-admin guard |
-| Business subject/number binding | business_subject, caller_number_binding; HMAC lookup; owner exclusivity; no login inference |
-| Consent/activation | Not authored in S1; S1 provides the identity/subject/binding contracts consumed by S2 |
-| IVR/trial/entitlement/calls | Not authored in S1; S1 provides subject/binding/risk and platform controls consumed by S2 |
-| Commerce/payment/issuance | Not authored in S1; S2 owns these tables |
-| Evidence/media/sharing | Not authored in S1; S3 owns these tables |
-| Idempotency/Outbox/audit | Both platform tables and audit table, four V001 functions, S1 privilege/atomicity/replay contracts |
-| Sensitive fields | Enveloped ciphertext, HMAC, masked and redacted representations; function denylist |
-| Deletion policy | No delete/cascade; status retirement; append-only controls; retention inputs assigned |
-| Migration order | Nine frozen waves; V001-V003 authored; no forward reference |
+| Account/login identity | S1 customer_account, auth_identity, identity_profile; login only through active identity + active account |
+| Organization membership | S1 organization and organization_membership; workspace access derived from active membership; no independent login |
+| Employee identity | S1 employee_account in a separate issuer domain; last-admin guard |
+| Business subject/number binding | S1 business_subject, caller_number_binding; HMAC lookup; owner exclusivity; no login inference |
+| Consent/activation | S2 consent_record, service_activation and transition ledger; explicit current consent, revision transitions, operations-only resume and one activation per subject |
+| IVR/trial/entitlement/calls | S2 outbound task, inbound session, canonical call record, legs, events, frozen decisions, first-trial grant, entitlement balance, reservation and usage facts; one shared action service |
+| Commerce/payment/issuance | S2 immutable catalog/version/offer/benefit, PURCHASE-idempotent order, verified payment events and durable per-line issuance |
+| Evidence/media/sharing | S3 remains planned; the frozen eight-table membership and deferred evidence cycle are preserved |
+| Idempotency/Outbox/audit | S1 platform/audit tables and four V001 functions; S2 uses the IVR_CONFIRM/PURCHASE scopes, Outbox and audit without new write paths |
+| Sensitive fields | Enveloped ciphertext, HMAC, masked and redacted representations; typed IVR snapshot with encrypted callee payload; function denylist |
+| Deletion policy | No delete/cascade; status retirement; append-only controls; retention inputs assigned and not guessed |
+| Migration order | Nine frozen waves; V001-V007 authored with no forward reference; V008-V009 planned |
 
 ### 15.2 No-over-design check
 
 - S1 adds no table, function contract, domain or slice beyond the accepted baseline. The only S1 tables are the exact 13 V001-V003 tables.
-- S1 does not author S2/S3 dictionaries, transactions, state machines or tests. The frozen 44-table catalog, matrix, FK/key/sensitive/function-wave and wave/slice blocks are copied for closure, not claimed as implementation.
-- S1 does not add a generic workflow engine, event-sourcing layer, microservice split, provider configuration, capacity value, retention period, credential or cost estimate.
-- S1 uses one local PostgreSQL transaction and four small cross-schema functions. `issue_first_trial` remains a visibly planned V006/S2 function and is not pulled into S1.
-- Claim replay uses the existing encrypted `verification_ref_ciphertext`; no new column, request-fingerprint column or platform idempotency scope is added.
-- Cross-module lifecycle serialization uses existing transaction advisory locks, including the stable logical membership pair key; no new table, cross-module DML grant, column grant, ID-discovery loop or published database function is added. The guard trigger functions in section 10.8.1 are local structural controls, not registry functions.
-- The subject real-name column grants are a minimal DB control for the accepted independence rule; they add no table or function. Removing the owner-column INSERT and `owner_organization_id` UPDATE privileges narrows an unsupported write path without adding scope.
-- A fresh organization-scoped claim fails closed; the deferred enterprise ownership/transfer policy is not guessed, and the exact role-to-claim permission remains with Product/Subject-number and Organization-access rather than being narrowed by S1.
-- Every S1 table has one owner and write path. Every S1 invariant portion has one owner and an exact enforcement location.
-- Unresolved inputs are assigned to owners/destinations in section 14; no policy is invented to make a check green.
+- S2 adds no table beyond the exact 23 V004-V007 tables and no SQL function beyond the accepted V006 `issue_first_trial`. It adds no eighth IVR action, no fourth slice, no generic workflow engine, no event-sourcing layer, no microservice split and no provider configuration.
+- S1 does not author S2/S3 dictionaries, transactions, state machines or tests; S2 does not author S3 dictionaries or behavior. The frozen 44-table catalog, matrix, FK/key/sensitive/function-wave and wave/slice blocks are copied for closure, not claimed as S3 implementation.
+- The S2 application services (`ivr.select_call_action`, `ivr.record_activation_next_action`, `activation-consent.lock_service_activation`, `activation-consent.record_activation_confirmation`, `activation-consent.record_client_activation`, `activation-consent.append_purchase_consent`, `subject-number.find_or_create_ivr_subject`, `ivr.process_call_event`, `entitlement-metering.reserve_call_usage`, `entitlement-metering.settle_call_usage`, `catalog-order.publish_catalog_version`/`offsale_catalog_version`, `entitlement-metering.publish_trial_policy`/`disable_trial_policy`) are application services inside one local transaction on one connection, not SQL functions. `activation-consent.lock_service_activation` is lock-only: it takes the rank-4 activation row lock under the owner role and writes nothing. The only SQL function is V006 `issue_first_trial`; fixes 1-3 add no function-wave entry.
+- S2 uses one local PostgreSQL transaction and one intentional same-connection savepoint for a tentative phase-B claim/reservation. The savepoint is a transaction-scoped control, not an autonomous transaction, independent service or committed subtransaction.
+- S2 stores no order-level entitlement status; `entitlement_issuance` is the PR-004-required durable per-line/installment/type fact and `customer_order.payment_status` remains payment-only. No S2 table duplicates entitlement or evidence state.
+- S2 does not add a generic workflow engine, provider-specific pricing, a production configuration key, capacity value, retention period, credential or cost estimate. The 30-second pending-task TTL is the source default; the production key remains Q18. `authorizationExpiresAt` has no approved value and stores the committed reservation value only.
+- Cross-module lifecycle serialization uses the exact S1 advisory namespaces, including the stable logical membership pair key, and owner-only row locks. S2 adds two owner-scoped transaction advisory serializations for catalog publication and trial-policy publication; they are transaction control, not tables, functions or product rules. S2 adds no cross-module DML grant, cross-owner row-lock privilege, ID-discovery loop or hidden query service.
+- Fix 1 adds no table, column, invariant, wave, slice, action, reason-registry value or SQL function. It adds exact privilege `USAGE`/owner grants, a bounded fingerprint/Outbox data registry, one approved-policy selector contract, typed snapshot/schedule validation, and application-service transactions for existing state machines. No tolerance, production price/quantity/date, trial-first/FIFO/stacking rule or authentication provisioning mechanism is invented; Q8/Q20/Q25 and the deployment Q17/Q23 remain with their owners.
+- Fix 2 adds no table, column, invariant, wave, slice, action, reason-registry value or SQL function. It corrects the publication statement order, names one activation-consent-owned lock-only application collaborator, adds exact read/schema-usage alignments for client activation and the computed order entitlement projection, makes the unknown-call and call-event first-outcome contracts executable, adds the `SERVICE_ACTIVATION` consent fingerprint scope, and states the accepted OQ-1..OQ-8 clarifications. No product rule, policy value, operations workflow or provider input is invented.
+- Fix 3 adds no table, column, invariant, wave, slice, action, reason-registry value or SQL function. It fixes the purchase-consent identity length with the 81-character SHA-256 derivation, bounds IVR source event IDs at 1-128 before effects, makes the V006 function the sole authoritative policy read with replay-before-selection, fixes deterministic activation source references, publishes a trial policy in one owner `UPDATE`, removes the call-event payload/fingerprint circularity, and corrects the call-event lock/sequence ordering and changed-fingerprint conflict rule. No product rule, policy value, workflow or provider input is invented; final wire encoding remains Q15/Q26 work.
+- A direct no-task IVR caller remains eligible for activation/trial/recording without registration, login, enterprise membership or real-name; no S2 predicate imposes a dialing ban or rewrites historical evidence.
+- Every S1 and S2 table has one owner and write path. Every S1/S2 invariant portion has one owner and an exact enforcement location.
+- Unresolved inputs are assigned to owners/destinations in §14; no policy is invented to make a check green. No S2 behavior requires S3.
 
 ## 16. Completion Report Template
 
-The S1 author uses this template in `docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md`. It is not a claim of independent review acceptance.
+The S1 author used this template in `docs/gateflow/a0-production-data-model-schema-spec-s1-implementation.md`. The S2 author used it in `docs/gateflow/a0-production-data-model-schema-spec-s2-implementation.md`; the bounded S2 fix 1, fix 2 and fix 3 record their evidence in `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-1.md`, `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-2.md` and `docs/gateflow/a0-production-data-model-schema-spec-s2-fix-3.md`. It is not a claim of independent review acceptance.
 
 - Task label, provider and gate
 - Changed artifact paths
-- S1 tables, invariants and functions completed
+- Binding inputs, accepted S1 checkpoint and hashes
+- S1 acceptance state and S2 tables/invariants/functions/behavior completed
+- S2 dictionary coverage (23 tables, 307 columns), the V006 `issue_first_trial` contract and the S2 application services
 - Frozen baseline counts and membership preserved
-- Exact validation commands, exits and outputs
+- Exact validation commands, exits and outputs, including the unchanged structural script with `FILE` and `FIX2`
 - Docs decision
 - Residual risks classified as fixed-current, later-approved-slice or later-work-unit, with owner and destination
+- Open production inputs preserved (including Q18/Q24/Q27/Q28)
 - Uncovered areas and explicit limitations
 - Completion or blocked statement
 - Explicit statement that no independent review, later slice, Git stage/commit/push/PR/merge or production test was performed
