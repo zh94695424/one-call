@@ -30,7 +30,7 @@ Before production implementation, section 18 of the design source requires code-
 - ID: `A0-production-data-model-schema-spec`
 - Type: architecture-sensitive deliverable.
 - Status: active.
-- Current gate / next entry point: `create draft PR` — `codex/project-execution` was pushed successfully to `origin` at readiness commit `d4a4065b98d44b5f93d49fb88e99255218323170`. Draft-PR creation is externally blocked because `gh` is not installed and the available authenticated tools expose no GitHub PR-creation API; Git credential material will not be extracted. Create the draft PR through the authenticated GitHub page, then resume at mandatory `PR review`.
+- Current gate / next entry point: `PR review` — GitHub PR #1 exists at `https://github.com/zh94695424/one-call/pull/1`. Git refs verify base `main` at `535e38f991d1ff8d3c254b77146bffa824a02b33d5`, head `codex/project-execution` at `f13c842923a9f35987b34f06fe5c6f65cdf45fac`, and an exact local-head match before this bookkeeping update. The user resumed after the instructed draft creation; the draft flag, title and author remain unavailable to the terminal because no authenticated metadata API is present. Proceed to independent PR review after pushing this control update.
 - Design source: `docs/12-technology-stack-and-system-architecture.md`, with current business rules referenced there in `docs/09-business-activation-and-lean-admin.md`, `docs/10-cross-channel-rules.md`, `docs/11-account-identity-and-workspaces.md`, and `docs/13-ivr-call-task-and-inbound-design.md`.
 - Motivation: the repository contains reviewed prototypes and design artifacts but no production Maven project, database migrations or production service code. The architecture explicitly requires the production data model and Flyway initial schema specification before implementation.
 
@@ -115,7 +115,7 @@ The pre-existing modified QA screenshots and untracked `docs/reviews/plan-review
 | accepted deepreview commit | passed | `2002cc9c2bff89600588a8d437cd894869f08c61`; seven exact specification/aggregate-fix/review/control paths; staged whitespace exit 0 | proceed to draft-PR readiness; unrelated screenshots/old review excluded |
 | ready-to-open-draft-PR | passed | plan/S1/S2/S3/deepreview checkpoint chain verified against `main`; validations and residual owners recorded | proceed to `push`; draft PR summary must remain document-only |
 | push | passed | `origin/codex/project-execution` created at `d4a4065b98d44b5f93d49fb88e99255218323170`; upstream configured; `git ls-remote` matched | proceed to `create draft PR` |
-| create draft PR | blocked on authenticated GitHub UI/client | `gh` absent; available MCP tools have no PR-create API; compare URL prepared | user creates a draft PR against `main`; then proceed to mandatory independent `PR review` |
+| create draft PR | passed; metadata partially verified | PR #1; `refs/pull/1/head` = `f13c8429`; merge parents = `535e38f` + `f13c8429`; URL `https://github.com/zh94695424/one-call/pull/1` | proceed to mandatory independent `PR review`; title/author/draft flag unavailable without authenticated metadata API |
 
 ### Plan gate execution record
 
@@ -286,7 +286,7 @@ Fix round 4 is plan-only. Allowed Agent writes are the plan and new fix-4 artifa
 
 ## Next entry point
 
-Create a draft PR from `codex/project-execution` to `main` at `https://github.com/zh94695424/one-call/compare/main...codex/project-execution?expand=1`. Suggested title: `docs: define production data model and Flyway schema baseline`. After the PR exists, resume at mandatory independent `PR review` through the configured DeepSeek runner; do not advance directly to `draft-PR-pass`.
+Run independent `PR review` for PR #1 through the configured DeepSeek runner against the exact Git base/head refs. Title, author, draft flag and CI metadata must be recorded as unavailable unless an authenticated official API becomes available; do not invent them. If the review passes without a fix, create the accepted PR review checkpoint, push it, then enter `draft-PR-pass` and `final closeout`.
 
 ### Fix round 4 result and controller validation
 
@@ -749,3 +749,11 @@ Six review questions are resolved within existing scope; they do not require a n
 - Draft-PR creation URL: `https://github.com/zh94695424/one-call/compare/main...codex/project-execution?expand=1`. Suggested title: `docs: define production data model and Flyway schema baseline`.
 - Suggested body summary: define the PostgreSQL 16/Flyway production data-model baseline across identity, organization, IVR, activation, entitlement, commerce, evidence, sharing, idempotency, Outbox and audit; make ownership, state machines, lock order, replay/conflict semantics, migration waves and deferred production inputs explicit; include complete Gateflow plan, slice and aggregate review evidence. Validation is document-only: structural script, exact 44-table/522-column checker, ten embedded checks and whitespace/encoding checks pass. No executable migration, service implementation, cloud resource, runtime verification or production readiness is claimed.
 - Stop condition: draft PR URL/number is required before `PR review` can be dispatched. Once the user creates it as a draft, Phaseflow must record its facts, run independent PR review through the configured DeepSeek runner, fix/re-review if needed, create the accepted PR review checkpoint, push, and complete `draft-PR-pass` plus `final closeout`.
+
+### Draft PR creation result and PR review entry
+
+- The user resumed after being instructed to create the PR with GitHub's `Create draft pull request` action. Remote Git evidence confirms PR #1 exists: `refs/pull/1/head` is `f13c842923a9f35987b34f06fe5c6f65cdf45fac`; `refs/pull/1/merge` is `12e04223d78d1e3c254b77146bffa824a02b33d5` with parents base `535e38f991d1ff8d3c0205d588d9d558576214ba` and head `f13c842923a9f35987b34f06fe5c6f65cdf45fac`; merge-base equals `origin/main`; local HEAD matched the PR head before this bookkeeping update.
+- PR facts verified from official Git refs: repository `zh94695424/one-call`, PR number `1`, URL `https://github.com/zh94695424/one-call/pull/1`, base `main`, head `codex/project-execution`. PR title, author, draft flag and CI/check state are not exposed by Git refs; unauthenticated GitHub REST returns 404 for this repository, `gh` is absent and the available authenticated app tools have no PR metadata API. Those fields remain explicitly unavailable rather than inferred.
+- The independent reviewer must review the exact `origin/main...origin/pr/1/head` diff and current specification/contracts, inspect the complete PR content and all prior accepted review evidence, rerun the unchanged structural/exact/embedded/encoding checks, and treat unavailable GitHub metadata/CI as a stated limitation rather than a semantic pass or failure.
+- Reviewer write scope is exactly one timestamped `docs/reviews/pr-1-review-YYYYMMDD-HHMMSS.md` artifact. Every existing repository path and Git state is read-only. No commit, push, PR mutation, approval, comment, reviewer request, merge or next-gate transition is allowed.
+- Decision: after committing and pushing this controller-only bookkeeping update, dispatch `a0-spec-pr1-review-ds-20261023-01` through Claude Code / `ds` / DeepSeek-V4.1-Flash using the Deepreview PR mode. Controller will independently validate the manifest, artifact, findings and residual risks before any accepted PR review checkpoint.
