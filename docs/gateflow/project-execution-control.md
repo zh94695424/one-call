@@ -30,7 +30,7 @@ Before production implementation, section 18 of the design source requires code-
 - ID: `A0-production-data-model-schema-spec`
 - Type: architecture-sensitive deliverable.
 - Status: active.
-- Current gate / next entry point: `accepted PR review commit` — independent PR re-review `docs/reviews/pr-1-review-20261023-102439.md` passed the complete fixed local PR range with no material finding. PR-01..PR-05 and OQ-PR-01 are controller-accepted as `已修复`; structural and semantic verdicts are document-only PASS. Create the protected local checkpoint with exactly the five intended specification/fix/review/control paths, excluding all screenshots and `docs/reviews/plan-review-20261021-205118.md`, then proceed to final push.
+- Current gate / next entry point: `push` — accepted PR review checkpoint `b7fe5d49cb017eb39e3026dc8b0c5f3abf61b7e1` contains exactly the cumulative specification, PR fix artifact, initial PR review, accepted PR re-review and control document. Push the complete accepted branch range, verify the remote branch and PR head match the resulting bookkeeping HEAD, then enter `draft-PR-pass` and continue to `final closeout`.
 - Design source: `docs/12-technology-stack-and-system-architecture.md`, with current business rules referenced there in `docs/09-business-activation-and-lean-admin.md`, `docs/10-cross-channel-rules.md`, `docs/11-account-identity-and-workspaces.md`, and `docs/13-ivr-call-task-and-inbound-design.md`.
 - Motivation: the repository contains reviewed prototypes and design artifacts but no production Maven project, database migrations or production service code. The architecture explicitly requires the production data model and Flyway initial schema specification before implementation.
 
@@ -119,6 +119,7 @@ The pre-existing modified QA screenshots and untracked `docs/reviews/plan-review
 | PR review | failed; findings adjudicated | `docs/reviews/pr-1-review-20261023-094149.md`; runner exit 0; success JSON; artifact SHA256 `44434E457BB3C9BAD99D6DFC590D79E4BC811FFA98CC33B0A17818E7580C3E3B`; exactly this artifact added | accept PR-01..PR-05 for one bounded fix; accept the ticket-expiry formula as a precision clarification without selecting Q22 TTL; structural pass remains separate from semantic failure |
 | fix | PR fix 1 author-complete; independent acceptance pending | revised specification; `docs/gateflow/a0-production-data-model-schema-spec-pr-fix-1.md`; runner exit 0 with valid success JSON; exact two-path author scope; controller structural/exact dictionary checks pass | proceed to mandatory independent PR re-review; author completion and static checks do not establish semantic acceptance |
 | re-review | PR fix 1 passed; controller accepted | `docs/reviews/pr-1-review-20261023-102439.md`; runner exit 0; valid success JSON; artifact SHA256 `A68D6DD230C4477189296C1414A678E782F164A5C640960A3C961143817FF8E6`; exactly this review added by the Agent | PR-01..PR-05 and OQ-PR-01 `已修复`; no material finding or blocking question; proceed to the exact accepted PR review checkpoint |
+| accepted PR review commit | passed | `b7fe5d49cb017eb39e3026dc8b0c5f3abf61b7e1`; exactly five intended specification/fix/review/control paths; staged whitespace check passed | proceed to final `push`; unrelated screenshots and old plan review remain excluded |
 
 ### Plan gate execution record
 
@@ -289,7 +290,7 @@ Fix round 4 is plan-only. Allowed Agent writes are the plan and new fix-4 artifa
 
 ## Next entry point
 
-Create `gateflow: accept PR review for A0-production-data-model-schema-spec` by staging exactly the cumulative specification, PR fix artifact, initial PR review, accepted PR re-review and this control document. Then push the complete accepted range, verify the remote branch and PR head match the accepted checkpoint, enter `draft-PR-pass`, and continue immediately to `final closeout`. Do not stage or modify screenshots or `docs/reviews/plan-review-20261021-205118.md`; do not merge, approve, mark ready, request reviewers or comment externally.
+Push the complete accepted branch range and this controller bookkeeping state to `origin/codex/project-execution`, then verify both that remote branch and `refs/pull/1/head` match the pushed HEAD. If they match, record `draft-PR-pass` and continue immediately to `final closeout`. Do not stage or modify screenshots or `docs/reviews/plan-review-20261021-205118.md`; do not merge, approve, mark ready, request reviewers or comment externally.
 
 ### Fix round 4 result and controller validation
 
@@ -794,3 +795,10 @@ Six review questions are resolved within existing scope; they do not require a n
 - The review's parenthetical `EVIDENCE_SOLIDIFIED` length nit is `rejected-with-reason`: the literal prefix `evidence-solidified:` is 20 characters and the lowercase SHA-256 digest is 64 characters, so the specification's stated total of 84 is exact. It is not a residual risk and requires no document cleanup. The tie-order precision concern remains a classified low residual owned by Evidence/Sharing/Backend for Q15/Q26 and S3 executable tests; all other runtime, deployment, security, cloud, policy and retention residuals keep their previously named owners/destinations.
 - PR title, author, draft flag and CI/check state remain unavailable without an authenticated official metadata API. This is an observability limitation, not a semantic failure or passing-CI claim. No unclassified residual risk remains for this documentation gate.
 - Decision: create the protected accepted PR review checkpoint by staging exactly five paths: `docs/14-production-data-model-and-flyway-schema-spec.md`, `docs/gateflow/a0-production-data-model-schema-spec-pr-fix-1.md`, `docs/reviews/pr-1-review-20261023-094149.md`, `docs/reviews/pr-1-review-20261023-102439.md` and this control document. Exclude all unrelated screenshots and `docs/reviews/plan-review-20261021-205118.md`. After the checkpoint, proceed immediately to final push, verify the PR head, then `draft-PR-pass` and `final closeout`.
+
+### Accepted PR review checkpoint and final-push readiness
+
+- Accepted PR review checkpoint: `b7fe5d49cb017eb39e3026dc8b0c5f3abf61b7e1`, `gateflow: accept PR review for A0-production-data-model-schema-spec`. The commit contains exactly five intended paths: the cumulative specification, PR fix artifact, initial PR review, accepted PR re-review and this control document. `git diff --cached --check` exited `0`; the index was clean after commit.
+- The fixed specification remains SHA256 `5CC3A7FC4F1CD27D961459339CABE9E814B931A921F48DF145122449C9049303`; the PR re-review remains SHA256 `A68D6DD230C4477189296C1414A678E782F164A5C640960A3C961143817FF8E6`. PR-01..PR-05 and OQ-PR-01 have final `已修复` status; there is no accepted finding awaiting a fix and no blocking or unclassified residual risk.
+- Unrelated screenshot changes and `docs/reviews/plan-review-20261021-205118.md` remain outside the commit and untouched by this work unit. No merge, approval, mark-ready action, reviewer request, external comment or issue mutation occurred.
+- Decision: record this checkpoint in one controller-only bookkeeping commit, then perform the final branch push. The push gate must verify the remote branch and PR head against the resulting bookkeeping HEAD before `draft-PR-pass`.
