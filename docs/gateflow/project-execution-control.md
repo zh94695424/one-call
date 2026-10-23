@@ -29,8 +29,8 @@ Before production implementation, section 18 of the design source requires code-
 
 - ID: `A0-production-data-model-schema-spec`
 - Type: architecture-sensitive deliverable.
-- Status: active.
-- Current gate / next entry point: `push` — accepted PR review checkpoint `b7fe5d49cb017eb39e3026dc8b0c5f3abf61b7e1` contains exactly the cumulative specification, PR fix artifact, initial PR review, accepted PR re-review and control document. Push the complete accepted branch range, verify the remote branch and PR head match the resulting bookkeeping HEAD, then enter `draft-PR-pass` and continue to `final closeout`.
+- Status: completed (`final closeout pass`).
+- Current gate / next entry point: `final closeout pass` — PR review checkpoint `b7fe5d49cb017eb39e3026dc8b0c5f3abf61b7e1` was followed by controller bookkeeping HEAD `4aa7f310882a1f8f32908c2ac34f6e18a45987b3`; the final push succeeded and both `origin/codex/project-execution` and `refs/pull/1/head` matched that HEAD. Final closeout is recorded in `docs/gateflow/a0-production-data-model-schema-spec-final-closeout.md`. After the user merges PR #1, pull the updated target `main` and start a new Phaseflow goal confirmation for `A1-production-openapi-surfaces-spec`.
 - Design source: `docs/12-technology-stack-and-system-architecture.md`, with current business rules referenced there in `docs/09-business-activation-and-lean-admin.md`, `docs/10-cross-channel-rules.md`, `docs/11-account-identity-and-workspaces.md`, and `docs/13-ivr-call-task-and-inbound-design.md`.
 - Motivation: the repository contains reviewed prototypes and design artifacts but no production Maven project, database migrations or production service code. The architecture explicitly requires the production data model and Flyway initial schema specification before implementation.
 
@@ -120,6 +120,9 @@ The pre-existing modified QA screenshots and untracked `docs/reviews/plan-review
 | fix | PR fix 1 author-complete; independent acceptance pending | revised specification; `docs/gateflow/a0-production-data-model-schema-spec-pr-fix-1.md`; runner exit 0 with valid success JSON; exact two-path author scope; controller structural/exact dictionary checks pass | proceed to mandatory independent PR re-review; author completion and static checks do not establish semantic acceptance |
 | re-review | PR fix 1 passed; controller accepted | `docs/reviews/pr-1-review-20261023-102439.md`; runner exit 0; valid success JSON; artifact SHA256 `A68D6DD230C4477189296C1414A678E782F164A5C640960A3C961143817FF8E6`; exactly this review added by the Agent | PR-01..PR-05 and OQ-PR-01 `已修复`; no material finding or blocking question; proceed to the exact accepted PR review checkpoint |
 | accepted PR review commit | passed | `b7fe5d49cb017eb39e3026dc8b0c5f3abf61b7e1`; exactly five intended specification/fix/review/control paths; staged whitespace check passed | proceed to final `push`; unrelated screenshots and old plan review remain excluded |
+| push | passed | `4aa7f310882a1f8f32908c2ac34f6e18a45987b3`; `git push origin codex/project-execution` succeeded; remote branch and `refs/pull/1/head` both matched | proceed to `draft-PR-pass` |
+| draft-PR-pass | passed | PR #1 contains the accepted fixed range and both PR review artifacts; final push verified; no accepted finding remains open | proceed immediately to `final closeout` |
+| final closeout | passed | `docs/gateflow/a0-production-data-model-schema-spec-final-closeout.md`; residual risks reconciled with owners/destinations; issue status not applicable | mark A0 complete; post-merge next entry is A1 OpenAPI-surfaces goal confirmation |
 
 ### Plan gate execution record
 
@@ -290,7 +293,7 @@ Fix round 4 is plan-only. Allowed Agent writes are the plan and new fix-4 artifa
 
 ## Next entry point
 
-Push the complete accepted branch range and this controller bookkeeping state to `origin/codex/project-execution`, then verify both that remote branch and `refs/pull/1/head` match the pushed HEAD. If they match, record `draft-PR-pass` and continue immediately to `final closeout`. Do not stage or modify screenshots or `docs/reviews/plan-review-20261021-205118.md`; do not merge, approve, mark ready, request reviewers or comment externally.
+After the user merges PR #1, switch to or update the target `main` branch from `origin/main`, then start a new Phaseflow goal confirmation for `A1-production-openapi-surfaces-spec` using `docs/12-technology-stack-and-system-architecture.md` as the design source and this control document as the completed predecessor state. Do not start A1 from the unmerged feature branch. Merge, approval, mark-ready, reviewer requests and external comments remain user-authorized actions and were not performed here.
 
 ### Fix round 4 result and controller validation
 
@@ -802,3 +805,13 @@ Six review questions are resolved within existing scope; they do not require a n
 - The fixed specification remains SHA256 `5CC3A7FC4F1CD27D961459339CABE9E814B931A921F48DF145122449C9049303`; the PR re-review remains SHA256 `A68D6DD230C4477189296C1414A678E782F164A5C640960A3C961143817FF8E6`. PR-01..PR-05 and OQ-PR-01 have final `已修复` status; there is no accepted finding awaiting a fix and no blocking or unclassified residual risk.
 - Unrelated screenshot changes and `docs/reviews/plan-review-20261021-205118.md` remain outside the commit and untouched by this work unit. No merge, approval, mark-ready action, reviewer request, external comment or issue mutation occurred.
 - Decision: record this checkpoint in one controller-only bookkeeping commit, then perform the final branch push. The push gate must verify the remote branch and PR head against the resulting bookkeeping HEAD before `draft-PR-pass`.
+
+### Final push, draft-PR-pass and final closeout
+
+- Final reviewed-content push succeeded: local/controller bookkeeping HEAD `4aa7f310882a1f8f32908c2ac34f6e18a45987b3` was pushed to `origin/codex/project-execution`. `git ls-remote` returned that exact hash for both `refs/heads/codex/project-execution` and `refs/pull/1/head`; local versus upstream was `0 0`. PR #1 remains `https://github.com/zh94695424/one-call/pull/1`.
+- `draft-PR-pass` is accepted: initial PR review, bounded fix, independent re-review, accepted PR review checkpoint and final push all exist; PR-01..PR-05 and OQ-PR-01 are `已修复`; no blocking open question or unclassified residual risk remains. PR title, author, draft flag and CI state remain unavailable and are not represented as passing metadata.
+- Final closeout summary: `docs/gateflow/a0-production-data-model-schema-spec-final-closeout.md`. It records the delivered PostgreSQL 16/Flyway schema specification, exact validation evidence, finding disposition, document-only limitation, residual owners/destinations, PR URL and next entry point.
+- Residual-risk reconciliation is complete. Runtime PostgreSQL/Flyway/roles/locks/concurrency belongs to Backend/Database/Platform/Security/IVR and Testcontainers; artifact/wire precision to Evidence/Sharing/Backend plus Q15/Q26; ticket TTL/skew/revocation to Security/Sharing/Backend plus Q22; cloud/media to Infrastructure/Security/Backend; OTP/KDF to Security/Product/Sharing; retention to Legal/Security; B-leg recovery to Telephony/IVR; product/finance/risk inputs retain their named Q4/Q5/Q8/Q10/Q20/Q24/Q25/Q27 owners. The incorrect 83-character reviewer nit was rejected because `evidence-solidified:` is 20 characters and the 64-hex suffix yields the specified 84.
+- Issue handling is not applicable: this architecture-sensitive work unit was not tied to a GitHub issue, so no issue link, closing keyword, closeout comment or issue mutation is required or claimed.
+- A0 is complete at `final closeout pass`. No merge, approval, mark-ready action, reviewer request, external comment, issue mutation or branch deletion occurred. The closeout artifact and this final controller state are delivered in a controller-only closeout commit after the already verified reviewed-content push; that delivery does not change the accepted specification or review result.
+- Post-merge next entry: after the user merges PR #1, update the target `main` branch and begin `A1-production-openapi-surfaces-spec` with a fresh Phaseflow goal confirmation. The next work unit must not start from this unmerged branch and must not reuse A0 goal confirmation as authorization for its API scope.
