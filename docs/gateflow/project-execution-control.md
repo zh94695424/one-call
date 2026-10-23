@@ -4,11 +4,11 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/project-execution`
+> Branch: `codex/a1-production-openapi-surfaces-spec`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
-> Dispatch provider: `ds` using API model ID `deepseek-flash` (DeepSeek-V4.1-Flash); use `claude-agent-run` while the Codex Responses adapter cannot complete write-tool result correlation
+> Dispatch providers: default `ds` using API model ID `deepseek-flash` (DeepSeek-V4.1-Flash); A1 re-review round 3 switched by user instruction to `mimo26` using `mimo-v2.6-pro`. Both use `claude-agent-run` while the Codex Responses adapter cannot complete write-tool result correlation.
 
 ## Project objective
 
@@ -26,6 +26,107 @@ The architecture design defines the authoritative coarse order:
 Before production implementation, section 18 of the design source requires code-ready specifications in this order: data model and initial schema, OpenAPI surfaces, IVR protocol, security design, capacity/deployment sizing, and the production acceptance matrix. These are delivered as bounded work units rather than one oversized implementation phase.
 
 ## Current work unit
+
+- ID: `A1-production-openapi-surfaces-spec`
+- Type: architecture-sensitive deliverable.
+- Status: active; goal confirmation accepted from the user's `继续` instruction on 2026-10-23.
+- Base: merged `origin/main` commit `4d488ccfd28947b9e557b4f801bcaa990a18a5c8` (PR #1 / A0).
+- Plan-fix status: plan-fix-1 resolved F-01..F-08 at plan level; plan-fix-2 resolved F-09. Controller static acceptance confirms 49 unique versioned routes with surface counts 18/21/6/3/1, no unversioned method/path token, no duplicate route or operation ID, retained `servers: /`, UTF-8 content and no whitespace defect.
+- Plan-fix-3 status: controller static acceptance confirms F-10..F-13 and all accepted clarifications are reflected without changing the 49 operations, exact routes, five surfaces or 14/18/17 slices. O18-O21 have no platform idempotency scope/header, stage checks are explicit, errors are exact, and `R-A0-O20-PUBLISHER` is classified with an owner/destination rather than hidden by an invented publisher value.
+- Re-review status: MiMo round-3 retry concluded `pass-with-risks` in `docs/reviews/plan-review-20261023-230300.md`; F-01..F-13 and all five accepted clarifications are fixed with no material finding. Controller independent route/count/uniqueness, UTF-8, whitespace and worktree-scope checks pass.
+- Current gate / next entry point: `accepted plan commit` — create the exact A1 plan/fix/review/control checkpoint, excluding pre-existing screenshots, prototype changes, the historical `docs/reviews/plan-review-20261021-205118.md` and temporary runner files; then enter S1 implementation.
+- Design source: `docs/12-technology-stack-and-system-architecture.md` section 8 and section 18, interpreted with `docs/09-business-activation-and-lean-admin.md`, `docs/10-cross-channel-rules.md`, `docs/11-account-identity-and-workspaces.md`, `docs/13-ivr-call-task-and-inbound-design.md`, and the accepted A0 schema specification `docs/14-production-data-model-and-flyway-schema-spec.md`.
+- Motivation and direct evidence: the architecture requires OpenAPI contracts for customer, operations, IVR, public sharing and callbacks immediately after the data-model specification. The repository has no production Maven/Spring project, existing OpenAPI/Swagger source or generated client; its HTML prototypes and QA fixtures are behavior evidence only.
+
+### A1 binding goal contract
+
+- Goal: produce a code-generation-ready, machine-readable OpenAPI 3.1 contract source and the minimum companion mapping/validation artifacts for the five approved trust surfaces: customer (`/api/v1/customer/**`), operations (`/api/v1/operations/**`), self-built IVR (`/api/v1/ivr/**`), public recording shares (`/api/v1/public/shares/**`) and authenticated provider callbacks (`/api/v1/callbacks/**`).
+- Success signal: every approved first-release operation has an explicit owner surface, authentication/trust requirement, server-derived authorization boundary, request/response schema, stable status and RFC 9457 error mapping, idempotency or event identity semantics for writes, cursor semantics where a list is exposed, and direct mapping to the accepted A0 data/state contracts. Generated TypeScript-client compatibility and OpenAPI validation are specified and reproducible without claiming a runtime service exists.
+- Scope boundary: document/API-contract design and static validation only. The work unit may add canonical OpenAPI source, bounded explanatory or validation artifacts, Gateflow artifacts and controller updates. The interface contracts must not contradict the A0 schema or approved customer/IVR/share flows.
+- Non-goals: no backend/Maven project, executable controller/service code, Flyway migration, UI/prototype change, payment or identity-provider integration, cloud resource, vendor credential, provider-specific callback payload, detailed IVR session/retry/media protocol, security numeric policy (token TTL, replay window, KDF/rate limits), organization-role matrix, online work-order/refund/invoice workflow or microservice split.
+- No over-design: use REST/JSON, OpenAPI 3.1 and RFC 9457 as required by the architecture; model only approved first-release verbs and state transitions. Keep unresolved values and exact provider/policy formats as explicit typed inputs or later-work-unit destinations instead of inventing security values, vendors, configurations or generic workflow endpoints.
+- Blocking open questions: none for the surface contract. Q1/Q6/Q7/Q8/Q10/Q12/Q14/Q15/Q18/Q19/Q22/Q25/Q26/Q27/Q28 remain named, owned inputs. A1 may define safe interface boundaries and stable business errors around them, but must not select their unapproved values or detailed protocols.
+
+### A1 project constraints
+
+- Customer, employee, IVR service, public capability and callback identities stay separate; client input never establishes account, workspace, role, price, payment success, evidence solidification or recording ownership.
+- IVR inbound routing must preserve the one-normalized-caller/one-nonterminal-task invariant, 30-second configured-and-frozen task expiry baseline, atomic claim/reservation/frozen authorization, no-task direct-trial flow and no implicit latest-callee fallback.
+- Sharing must preserve verification modes `NONE`, code, designated mobile and enterprise member; page open/prefetch cannot consume admission, while atomic admission/replay/revocation generation remain server enforced.
+- Operations keeps only fixed `ADMIN` and `OPS` roles; employee authentication source and MFA are deferred. Operations metadata access does not imply recording playback.
+- Payment remains customer mini-program/Web initiated and server-confirmed; IVR only gives purchase guidance. Work orders, refunds and invoices remain offline support entries, not online workflows.
+- A0 supplies the accepted persistence names, immutable facts, state machines and concurrency/ownership constraints. An API projection cannot expose COS keys, raw credentials, protected personal data, internal SQL structures or internal/provider failure detail.
+- Existing HTML prototypes, `shared/onecall-business.js`, modified QA screenshots and untracked `docs/reviews/plan-review-20261021-205118.md` are outside A1 and must remain untouched and unstaged.
+
+### A1 slice principle
+
+Implementation slices must be behaviorally verifiable and minimize Gateflow review cost. The planning Agent must group the canonical contract and explanatory validation by cohesive external behavior rather than mechanically by files or API namespaces; a plan proposing more than three slices must explain why they cannot be safely combined.
+
+### A1 gate record
+
+| Gate | Status | Artifact / evidence | Decision |
+| --- | --- | --- | --- |
+| preflight | passed | branch `codex/a1-production-openapi-surfaces-spec` starts at merged `origin/main` `4d488cc`; 75 modified QA screenshots plus one untracked historical review classified outside scope | proceed on dedicated work branch; preserve all existing dirty paths |
+| goal confirmation | passed | user instructed `继续`; controller restated and bound the five-surface contract above on 2026-10-23 | proceed to `plan`; no new product/security/provider decision is authorized |
+| plan | passed | `docs/gateflow/a1-production-openapi-surfaces-spec-plan.md`; DeepSeek plan task `a1-openapi-plan-ds-01` returned structured success; 47 operations in three behaviorally bounded slices | plan is code-generation-ready input to independent adversarial review; no implementation starts before review acceptance |
+| plan review | failed; findings adjudicated | `docs/reviews/plan-review-20261023-162543.md`; Claude Code / DeepSeek task `a1-openapi-plan-review-ds-20261023-01` exited 0 with valid structured success and an independent `fail` conclusion | accept F-01..F-08 for one bounded plan-fix pass; no implementation starts |
+| fix | completed; pending independent acceptance | revised `docs/gateflow/a1-production-openapi-surfaces-spec-plan.md`; `docs/gateflow/a1-production-openapi-surfaces-spec-plan-fix-1.md`; `docs/gateflow/a1-production-openapi-surfaces-spec-plan-fix-2.md`; both Claude Code / DeepSeek fix tasks exited 0 with valid success JSON and empty stderr | F-01..F-08 resolved by plan-fix-1; F-09 resolved by plan-fix-2. Controller path audit confirms 49 unique routes, 18/21/6/3/1 surface counts, zero unversioned tokens, retained `servers: /`, and clean UTF-8/whitespace checks. Proceed to fresh independent re-review |
+| re-review | failed; findings adjudicated | `docs/reviews/plan-review-20261023-171627.md`; Claude Code / DeepSeek task `a1-openapi-planreview-ds-20261023-02` exited 0 with valid success JSON and empty stderr; independent conclusion `fail` | F-01..F-09 remain fixed at their original contract level. Accept F-10..F-13 plus the bounded server-root, exact-error and credential-redaction clarifications for one plan-fix pass; implementation remains unauthorized |
+| fix | completed; pending independent acceptance | revised `docs/gateflow/a1-production-openapi-surfaces-spec-plan.md`; `docs/gateflow/a1-production-openapi-surfaces-spec-plan-fix-3.md`; Claude Code / DeepSeek task `a1-openapi-planfix-ds-20261023-03` exited 0 with valid success JSON and empty stderr | Controller confirms F-10..F-13 and accepted clarifications are present; route/count/slice invariants, UTF-8 and whitespace checks pass. Proceed to fresh independent re-review |
+| re-review | passed with classified risks; controller accepted | `docs/reviews/plan-review-20261023-230300.md`; Claude Code / `mimo26` / `mimo-v2.6-pro` task `a1-openapi-planreview-mimo26-20261023-01-retry1`; exit 0, valid success JSON, 55 turns, empty stderr, SHA-256 `42CF7F9DEC9CC4AFB8E62FCB4B17EB2B0192B2ABCCAD7E69522AD7A4E2EA639F` | no material findings; F-01..F-13 and all accepted clarifications fixed; `R-A0-O20-PUBLISHER` remains non-blocking for A1 static contracts and blocking for runtime O20; proceed to accepted plan commit |
+
+#### A1 re-review round 3 dispatch health and retry
+
+- Initial task `a1-openapi-planreview-ds-20261023-03` used Claude Code / `ds` / DeepSeek-V4.1-Flash and remained alive for 4:03:14 without a completion event, repository artifact, stdout result or stderr. The Claude child was sleeping in `epoll_wait`, had no child tool process or open network socket at the diagnostic snapshot, and both `/tmp/a1-openapi-planreview3.UPdzUI/result.json` and `stderr.log` remained zero bytes.
+- The user explicitly instructed `中断并重试`. The controller sent the interrupt; the wrapper returned exit `1`, and PIDs 161359/161361/161373 no longer exist. No review artifact or A1 plan change is attributable to the interrupted run.
+- Per the Sub-agents retry contract, one same-provider retry is authorized with a new instance/run directory, targeted read discipline and a one-hour watchdog so another provider/CLI hang terminates with explicit timeout evidence instead of remaining indefinitely in-flight. This is the only same-provider retry for this dispatch; a second failure must be adjudicated before any provider switch.
+- DeepSeek retry task `a1-openapi-planreview-ds-20261023-03-retry1` also remained alive without stdout, stderr or repository artifact until the user instructed the controller to use the newly configured MiMo Agent for review. The controller interrupted it as the explicit provider switch; `/tmp/a1-openapi-planreview3-retry.LwfCdX/result.json` and `stderr.log` remained zero bytes and no process survived.
+- The new `mimo26` provider maps to `https://token-plan-cn.xiaomimimo.com/anthropic`, model `mimo-v2.6-pro` and environment credential `MIMO_PLAN_API_KEY`. A no-tool health check exited 0 with valid `success`, `MIMO26_AGENT_OK`, `stop_reason=end_turn` and empty stderr.
+- The first formal MiMo review invocation did not reach the model: `claude-agent-run` placed the positional prompt after variadic `--add-dir`, so Claude consumed the prompt as another directory and waited for stdin. A bounded probe reproduced the launcher error. The controller patched the user-local runner to insert the option terminator `--` before the prompt; this changed no repository file. A two-turn `Read`-tool probe then exited 0 with `MIMO26_TOOL_OK`, model `mimo-v2.6-pro` and empty stderr. The failed review invocation had zero-byte outputs and wrote no artifact.
+- The single justified MiMo retry `a1-openapi-planreview-mimo26-20261023-01-retry1` completed normally in 55 turns. Its outer process exited 0; `result.json` has `subtype=success`, `is_error=false`, `stop_reason=end_turn`, the actual model name `mimo-v2.6-pro` and a non-empty completion report; stderr is empty. It added exactly `docs/reviews/plan-review-20261023-230300.md`.
+
+#### A1 re-review round 3 controller acceptance
+
+- Complete review artifact SHA-256 is `42CF7F9DEC9CC4AFB8E62FCB4B17EB2B0192B2ABCCAD7E69522AD7A4E2EA639F` (23056 bytes / 109 lines). Its conclusion is `pass-with-risks`, with no material finding. F-01..F-13 and the server-root, exact-error, credential-redaction, P1 member-gating and O20-publisher clarifications are all `fixed`.
+- Controller extraction independently confirms 49 inventory rows, surface counts `18/21/6/3/1`, no duplicate key/operationId/method+path and no invalid prefix. Target plan/fix mtimes and sizes are unchanged from pre-dispatch evidence. The review artifact passes strict UTF-8 decoding, replacement-character/trailing-whitespace/conflict-marker counts of zero and `git diff --check`.
+- Residual `R-A0-O20-PUBLISHER` is accepted as classified: A0 schema/catalog-order/entitlement-metering owns the mismatch; it does not block this static-contract work unit, but runtime O20 draft insertion must stop until A0 supplies a valid persistence model. O18-O21 concurrency, O1 cursor stability, credential/share runtime behavior and stage-tool execution retain the review artifact's named later implementation/security/QA destinations.
+- Decision: the re-review loop passes. Create the protected accepted-plan local commit from exactly the A1 plan, three fix artifacts, three A1 review artifacts and this controller document. Preserve and exclude all unrelated dirty files. The next gate after that checkpoint is S1 implementation, not another plan fix.
+
+### A1 plan-review finding adjudication
+
+| Finding | Decision | Required correction / destination |
+| --- | --- | --- |
+| F-01 | accepted | Remove C19/O18 support-entry operations. The approved unified offline contact/instructions remain UI/deployment configuration, not an anonymous persisted-business API or a fabricated A0 mapping. Record that exclusion in the revised plan. |
+| F-02 | accepted | Require every `x-onecall-a0-models` entry to be an exact schema-qualified name from the A0 44-table catalog. Expand shorthand/wildcards, including all required `catalog_order.*` entries, and make static validation reject short names, wildcards and wrong schemas. |
+| F-03 | accepted | Add a distinct `ShareCodeRotation` response. It may return the new extraction code once but can never return or reconstruct `capabilityToken`; add generated-type validation for that exclusion. |
+| F-04 | accepted | Model ordinary frozen IVR outcomes as `200 IvrDecision`, including in-progress/reject/confirmation-not-allowed/consent-required/direct-authorization non-dial results. Reserve `409` for true identity/fingerprint conflicts that prevent a frozen decision. |
+| F-05 | accepted | Require current `service_activation.status = ACTIVE` for C10 and define a stable denial. Clarify C6 also requires current active activation and no other `ACTIVE`/`UNKNOWN` call before it creates a task. |
+| F-06 | accepted | Add the minimal state-conditional create/replace operations for DRAFT catalog-version and trial-policy-version candidates, with no generic CRUD or independent offer withdrawal. Recompute endpoint counts and S2 scope. |
+| F-07 | accepted | Give C9 deterministic sort keys and bind its opaque cursor to the normalized filter digest. |
+| F-08 | accepted | Allow P3 an already-admitted, valid session while the grant is `LOCKED`; `LOCKED` blocks only new P2 admission. Preserve generation, expiry, risk and member-witness checks. |
+| F-09 | accepted | The plan mandates `/api/v1/**` with `servers: /`, but all 49 inventory rows use unversioned paths. Update every operation path and route example to its exact `/api/v1/...` form, retain `servers: /`, and add a row-by-row/static audit that proves all five surface prefixes and no unversioned operation path remain. |
+| F-10 | accepted | C6/C8 cannot reuse IVR decision reasons as HTTP Problem codes while the global registry forbids them. Define distinct customer-surface Problem codes for active-call conflict, outbound-task conflict and non-cancellable task state; remove `TASK_CONFLICT`/`CALL_IN_PROGRESS`/`TASK_CLAIMED`/`TASK_UNAVAILABLE` from C6/C8 Problem mappings and preserve those values only as IVR decision reasons. |
+| F-11 | accepted | O18-O21 must not map to `platform.idempotency_record`: A0 fixes its scope registry to `IVR_CONFIRM` and `PURCHASE`. Remove that A0 mapping and the unsupported `Idempotency-Key` contract. Use state-conditional idempotency from the existing natural unique keys plus canonical stored-content comparison for creates, and `expectedRevision` plus requested/current content comparison for replacements; same semantic replay returns current/first DRAFT and changed content returns the existing stable DRAFT conflict/stale code. Do not add an A0 scope, table or transaction. |
+| F-12 | accepted | Make O1 deterministic: `createdAt desc, subjectId desc`, bind the cursor to the normalized documented filter digest, and enumerate `CURSOR_INVALID`/`CURSOR_FILTER_MISMATCH`. Keep filters structured and exclude full-number search. |
+| F-13 | accepted | Make path/count validation slice-aware. Shared Redocly rules must always enforce versioned approved prefixes and route uniqueness, while an explicit stage-aware check asserts the exact S1, S2 and final S3 operation sets/counts. Each slice must invoke its own reproducible check command; final 49 counts must not make S1/S2 fail. |
+
+### A1 re-review clarification adjudication
+
+- `servers` is required, not optional: the canonical document must contain exactly the approved relative root `url: /`; validation must reject missing, absolute or additional server roots.
+- Inventory summaries must not use wildcard/bare error placeholders. Expand C4 `CLAIM_*`, C10 `PURCHASE_CONSENT_*`, and bare O4/O11/O14 409s into the exact approved external Problem codes used by the registry/docs/15.
+- `RecordingDeclaration.upload.credential`, `ShareAdmission.mediaAuthorization.credential` and `MediaAuthorization.credential` are response credentials and must be `readOnly` plus `x-onecall-log-redaction: required`; no return-once claim is added unless the underlying replay semantics require it.
+- For `ORGANIZATION_MEMBER`, P1 without a matching authenticated customer session may expose only verification/challenge metadata, not shared content metadata; P2/P3 retain the admitted recipient witness and tenant checks.
+- The O20 provisional non-null `published_by_employee_id` is an A0 persistence mismatch, because A0 defines it as the actual publisher fact. A1 must not expose it, relabel it as draft creator, or claim the API solved the schema issue. Record it as a runtime prerequisite/residual owned by A0 schema/catalog-order before runtime trial-policy draft creation; the A1 work unit may still specify the public request/response contract and static mapping but must make no runtime claim.
+
+### A1 bounded plan-fix requirements
+
+- Resolve the review open questions within the plan where they are contract-shape decisions: P1 is observation-free; a P2 ticket failure after committed admission is fail-closed `503` and replay reissues without recounting; P3 is the credential-issuance/reconstruction control plane while the media gateway validates the credential and `ORGANIZATION_MEMBER` reissue remains bound to the admitted recipient witness.
+- Correct OpenAPI secrecy annotations: response-only capability token/generated code use `readOnly` plus `x-onecall-return-once`; incoming verification secrets use `writeOnly`.
+- Keep `limit` default `20` and max `100` only as explicitly labelled V1 API-governance defaults, owned by Backend/API governance rather than security or product policy.
+- Recompute all operation and slice counts from the revised inventory. The intended bounded shape is customer 18, operations 21, IVR 6, public-share 3 and callback 1 (49 total), but the plan author must verify the exact inventory rather than treat this as a substitute for the calculation.
+- Allowed plan-fix edits: `docs/gateflow/a1-production-openapi-surfaces-spec-plan.md` and one new `docs/gateflow/a1-production-openapi-surfaces-spec-plan-fix-*.md` artifact. No commits, push, PR, A0/source-doc/prototype/screenshot/review-artifact modification or later-gate action.
+- F-09 is a bounded follow-up to plan-fix-1: all 49 inventory paths and route examples must use their exact `/api/v1/**` forms while `servers: /` remains unchanged. Static validation must audit the full set. It must not change operation counts, endpoint semantics, A0 mappings, slices or non-goals.
+
+## Completed work unit (historical)
 
 - ID: `A0-production-data-model-schema-spec`
 - Type: architecture-sensitive deliverable.
