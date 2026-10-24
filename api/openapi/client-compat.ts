@@ -295,6 +295,21 @@ type AssertAuditFactActionCodeString =
 type AssertClaimVerificationMethod =
   Expect<Equal<components['schemas']['ClaimRequest']['verificationMethod'], 'SMS' | 'WECHAT_PHONE' | 'CALLER_CHALLENGE' | 'MANUAL_REVIEW'>>;
 
+// PR fix 1 (F-PR-01): ClaimResult exposes the A0
+// subject_number.subject_claim.verified_at fact under the canonical optional
+// wire name `verifiedAt`; `acceptedAt` is not an A0 column and must stay gone.
+type AssertClaimResultVerifiedAtKey =
+  Expect<Equal<'verifiedAt' extends keyof components['schemas']['ClaimResult'] ? true : false, true>>;
+type AssertClaimResultVerifiedAtOptional =
+  Expect<Equal<undefined extends components['schemas']['ClaimResult']['verifiedAt'] ? true : false, true>>;
+type AssertClaimResultVerifiedAtNonNullable =
+  Expect<Equal<components['schemas']['ClaimResult']['verifiedAt'], string | undefined>>;
+type ForbiddenClaimResultAcceptedAtKey = Extract<
+  keyof components['schemas']['ClaimResult'],
+  'acceptedAt'
+>;
+type AssertClaimResultAcceptedAtAbsent = Expect<Equal<ForbiddenClaimResultAcceptedAtKey, never>>;
+
 type AssertActivationDecision =
   Expect<Equal<components['schemas']['ActivationRequest']['decision'], 'ACCEPT' | 'DECLINE'>>;
 
@@ -1020,6 +1035,10 @@ export type {
   AssertAuditFactTraceIdRequiredNullable,
   AssertAuditFactActionCodeString,
   AssertClaimVerificationMethod,
+  AssertClaimResultVerifiedAtKey,
+  AssertClaimResultVerifiedAtOptional,
+  AssertClaimResultVerifiedAtNonNullable,
+  AssertClaimResultAcceptedAtAbsent,
   AssertActivationDecision,
   AssertActivationStatus,
   AssertBusinessNumberActivationStatus,

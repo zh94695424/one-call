@@ -166,6 +166,7 @@
 
 - `TrialPolicyDraft.createdAt` 已从契约移除，且不从 audit fact 或其他事件派生：accepted plan §5.6 的 provisional `createdAt` 被 superseded，因为 A0 `entitlement_metering.trial_policy_version` 没有 owner 时间列（A0 §4.29 只有 `published_at`）。
 - `RecordingDeclaration.declaredAt` 与 `RecordingCompletion.completedAt` 的 wire 字段保持不变；精确映射为 `declaredAt <- evidence.recording.created_at`、`completedAt <- evidence.recording.validated_at`（A0 §4.40），不新增或推导其他时间戳。
+- `ClaimResult.acceptedAt` 是 accepted plan §5.6 的 provisional 拼写，已被 superseded：canonical wire 名为可选 `ClaimResult.verifiedAt`，精确映射为 `verifiedAt <- subject_number.subject_claim.verified_at`（A0 §4.14），且只对 `ACCEPTED` 结果存在（A0 `ck_claim_verified_shape`）；非 `ACCEPTED` 结果省略该字段，`verifiedAt` 不是必填。该命名与同表投影 `ClaimSummary.verifiedAt` 一致。历史 accepted plan 不回写。
 - `CatalogVersionDraft.snapshotSha256`、`TrialPolicyDraft.snapshotSha256`、`ShareState`/`ShareSummary`/`ShareCreated` 的 `evidenceId` 与 `codeGeneration` 为 A0 NOT NULL 事实，因此在公共响应投影中一律必填且非 null；分享状态 union 不因本修正收窄。
 
 ## 4. Problem 基座与精确错误码

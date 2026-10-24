@@ -4565,9 +4565,10 @@ components:
         subjectId:
           type: string
           format: uuid
-        acceptedAt:
+        verifiedAt:
           type: string
           format: date-time
+          description: Accepted-claim decision timestamp mapping to A0 subject_number.subject_claim.verified_at; present only for ACCEPTED results (A0 ck_claim_verified_shape).
     ActivationRequest:
       type: object
       additionalProperties: false

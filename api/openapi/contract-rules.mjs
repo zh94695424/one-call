@@ -2900,6 +2900,44 @@ function validateAggregateFix1Shapes(root) {
   return problems;
 }
 
+// PR fix 1 (F-PR-01): ClaimResult must expose the A0
+// subject_number.subject_claim.verified_at fact under one canonical wire name.
+// `acceptedAt` is not an A0 column and must never reappear; `verifiedAt` stays
+// optional because A0 verified_at is nullable and only ACCEPTED rows carry it
+// (ck_claim_verified_shape), and when present it is a non-null date-time.
+function validatePrFix1ClaimResult(root) {
+  const problems = [];
+  const claimResult = root?.components?.schemas?.ClaimResult;
+  if (!claimResult) {
+    problems.push('ClaimResult is required');
+    return problems;
+  }
+  const required = new Set(Array.isArray(claimResult.required) ? claimResult.required : []);
+  const props = claimResult.properties ?? {};
+  if ('acceptedAt' in props || required.has('acceptedAt')) {
+    problems.push('ClaimResult must not declare acceptedAt (canonical wire name is verifiedAt <- subject_number.subject_claim.verified_at)');
+  }
+  if (!('verifiedAt' in props)) {
+    problems.push('ClaimResult.verifiedAt is required as the canonical subject_number.subject_claim.verified_at projection');
+    return problems;
+  }
+  if (required.has('verifiedAt')) {
+    problems.push('ClaimResult.verifiedAt must stay optional (absent for non-ACCEPTED results)');
+  }
+  const verifiedAt = props.verifiedAt ?? {};
+  if (verifiedAt.type !== 'string' || Array.isArray(verifiedAt.type)) {
+    problems.push('ClaimResult.verifiedAt must be a non-nullable string');
+  }
+  if (verifiedAt.format !== 'date-time') {
+    problems.push('ClaimResult.verifiedAt must use format date-time');
+  }
+  const description = typeof verifiedAt.description === 'string' ? verifiedAt.description : '';
+  if (!description.includes('subject_number.subject_claim.verified_at') || !description.includes('ACCEPTED')) {
+    problems.push('ClaimResult.verifiedAt description must map to subject_number.subject_claim.verified_at and state it is present only for ACCEPTED');
+  }
+  return problems;
+}
+
 // Executable positive controls and adversarial negatives for F-01..F-07.
 function validateAggregateFix1Probes(root) {
   const problems = [];
@@ -2913,6 +2951,7 @@ function validateAggregateFix1Probes(root) {
     ['I4 response family', validateI4ResponseFamily(root)],
     ['registry surface backing', validateRegistrySurfaceBacking(root)],
     ['aggregate fix shapes', validateAggregateFix1Shapes(root)],
+    ['claim result verifiedAt', validatePrFix1ClaimResult(root)],
   ]) {
     if (messages.length > 0) {
       problems.push(`aggregate fix probe positive control failed (${label}): ${messages.join('; ')}`);
@@ -3211,6 +3250,73 @@ function validateAggregateFix1Probes(root) {
     }
   }
 
+  // PR fix 1 (F-PR-01) negatives: acceptedAt reintroduction,
+  // verifiedAt absence/requiredness/nullability/format drift and a missing
+  // A0 mapping description must all be rejected.
+  const claimResultBase = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['claimId', 'status', 'subjectId'],
+    properties: {
+      claimId: { type: 'string', format: 'uuid' },
+      status: { type: 'string' },
+      subjectId: { type: 'string', format: 'uuid' },
+    },
+  };
+  const claimResultWithVerifiedAt = (verifiedAt, required = ['claimId', 'status', 'subjectId']) => ({
+    type: 'object',
+    additionalProperties: false,
+    required,
+    properties: {
+      ...claimResultBase.properties,
+      verifiedAt,
+    },
+  });
+  const claimResultMapping = 'maps to subject_number.subject_claim.verified_at; present only for ACCEPTED';
+  for (const [label, schema, needle] of [
+    [
+      'a reintroduced acceptedAt',
+      {
+        ...claimResultWithVerifiedAt({ type: 'string', format: 'date-time', description: claimResultMapping }),
+        properties: {
+          ...claimResultBase.properties,
+          verifiedAt: { type: 'string', format: 'date-time', description: claimResultMapping },
+          acceptedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      'must not declare acceptedAt',
+    ],
+    ['an absent verifiedAt', claimResultBase, 'verifiedAt is required as the canonical'],
+    [
+      'a required verifiedAt',
+      claimResultWithVerifiedAt(
+        { type: 'string', format: 'date-time', description: claimResultMapping },
+        ['claimId', 'status', 'subjectId', 'verifiedAt'],
+      ),
+      'must stay optional',
+    ],
+    [
+      'a nullable verifiedAt',
+      claimResultWithVerifiedAt({ type: ['string', 'null'], format: 'date-time', description: claimResultMapping }),
+      'must be a non-nullable string',
+    ],
+    [
+      'a non-date-time verifiedAt',
+      claimResultWithVerifiedAt({ type: 'string', description: claimResultMapping }),
+      'must use format date-time',
+    ],
+    [
+      'a verifiedAt without the A0 mapping description',
+      claimResultWithVerifiedAt({ type: 'string', format: 'date-time' }),
+      'description must map to subject_number.subject_claim.verified_at',
+    ],
+  ]) {
+    const claimResultProblems = validatePrFix1ClaimResult({ components: { schemas: { ClaimResult: schema } } });
+    if (!claimResultProblems.some((message) => message.includes(needle))) {
+      problems.push(`aggregate fix probe: validatePrFix1ClaimResult must reject ${label}`);
+    }
+  }
+
   return problems;
 }
 
@@ -3400,6 +3506,8 @@ export default function onecallContractRules() {
           ...validateRegistrySurfaceBacking(root),
           ...validateAggregateFix1Shapes(root),
           ...validateAggregateFix1Probes(root),
+          // PR fix 1 (F-PR-01): one canonical ClaimResult verifiedAt wire name.
+          ...validatePrFix1ClaimResult(root),
           // Aggregate fix 2: read-filter parameter trust boundary.
           ...validateAggregateFix2Probes(root),
         ]),
