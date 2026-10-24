@@ -1,9 +1,9 @@
 // Compile-time compatibility fixture for the generated ONECALL v1 types.
 //
 // This file imports only the generated declaration file. It asserts the exact
-// S2 cumulative operation union, key path entries, Problem code registry and
-// sensitive field exclusions. It does not create, publish or exercise a
-// runtime client.
+// S3 cumulative 49-operation union, five-surface path entries, 59-code Problem
+// registry and sensitive field/secret exclusions. It does not create, publish
+// or exercise a runtime client.
 
 import type { components, operations, paths } from '../../tmp/openapi-client/onecall-v1';
 
@@ -45,7 +45,28 @@ type ExpectedOperationId =
   | 'createOperationsCatalogVersionDraft'
   | 'replaceOperationsCatalogVersionDraft'
   | 'createOperationsTrialPolicyDraft'
-  | 'replaceOperationsTrialPolicyDraft';
+  | 'replaceOperationsTrialPolicyDraft'
+  // S3 customer C6-C8 / C15-C18
+  | 'createCustomerOutboundCallTask'
+  | 'getCustomerOutboundCallTask'
+  | 'cancelCustomerOutboundCallTask'
+  | 'createCustomerShare'
+  | 'listCustomerShares'
+  | 'revokeCustomerShare'
+  | 'rotateCustomerShareCode'
+  // S3 ivr I1-I6
+  | 'resolveIvrInbound'
+  | 'confirmIvrActivation'
+  | 'authorizeIvrDirectOutbound'
+  | 'ingestIvrCallEvent'
+  | 'declareIvrRecording'
+  | 'completeIvrRecording'
+  // S3 public-share P1-P3
+  | 'getPublicShare'
+  | 'createPublicShareAdmission'
+  | 'authorizePublicShareMedia'
+  // S3 provider-callback K1
+  | 'receivePaymentProviderCallback';
 
 type ActualOperationId = keyof operations;
 type AssertOperationUnionExact = Expect<Equal<ExpectedOperationId, ActualOperationId>>;
@@ -62,6 +83,13 @@ type AssertCustomerPaths = [
   paths['/api/v1/customer/orders']['post'],
   paths['/api/v1/customer/orders']['get'],
   paths['/api/v1/customer/orders/{orderId}']['get'],
+  paths['/api/v1/customer/outbound-call-tasks']['post'],
+  paths['/api/v1/customer/outbound-call-tasks/{taskId}']['get'],
+  paths['/api/v1/customer/outbound-call-tasks/{taskId}/cancellations']['post'],
+  paths['/api/v1/customer/shares']['post'],
+  paths['/api/v1/customer/shares']['get'],
+  paths['/api/v1/customer/shares/{shareId}/revocations']['post'],
+  paths['/api/v1/customer/shares/{shareId}/code-rotations']['post'],
 ];
 
 type AssertOperationsPaths = [
@@ -87,6 +115,23 @@ type AssertOperationsPaths = [
   paths['/api/v1/operations/catalog/versions/{versionId}/draft']['put'],
   paths['/api/v1/operations/trial-policies/{policyVersionId}/draft']['put'],
 ];
+
+type AssertIvrPaths = [
+  paths['/api/v1/ivr/inbound/resolve']['post'],
+  paths['/api/v1/ivr/calls/{callId}/activation-confirmations']['post'],
+  paths['/api/v1/ivr/calls/{callId}/outbound-authorizations']['post'],
+  paths['/api/v1/ivr/calls/{callId}/events']['post'],
+  paths['/api/v1/ivr/calls/{callId}/recordings']['post'],
+  paths['/api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete']['post'],
+];
+
+type AssertPublicSharePaths = [
+  paths['/api/v1/public/shares/{capabilityToken}']['get'],
+  paths['/api/v1/public/shares/{capabilityToken}/admissions']['post'],
+  paths['/api/v1/public/shares/{capabilityToken}/admissions/{admissionId}/media-authorizations']['post'],
+];
+
+type AssertCallbackPaths = [paths['/api/v1/callbacks/payment-events']['post']];
 
 type ExpectedProblemCode =
   | 'UNAUTHENTICATED'
@@ -118,7 +163,37 @@ type ExpectedProblemCode =
   | 'TRIAL_POLICY_STALE_VIEW'
   | 'RATE_LIMITED'
   | 'SERVICE_UNAVAILABLE'
-  | 'INTERNAL';
+  | 'INTERNAL'
+  // S3 registry additions (29)
+  | 'OUTBOUND_CALL_IN_PROGRESS'
+  | 'OUTBOUND_TASK_CONFLICT'
+  | 'OUTBOUND_TASK_NOT_CANCELLABLE'
+  | 'SHARE_CREATION_CONFLICT'
+  | 'SHARE_ACCESS_POLICY_UNAVAILABLE'
+  | 'SHARE_RISK_BLOCKED'
+  | 'SHARE_TRANSITION_CONFLICT'
+  | 'SHARE_GENERATION_STALE'
+  | 'SHARE_REVOKED'
+  | 'IVR_ARGUMENT_INVALID'
+  | 'SESSION_IDENTITY_MISMATCH'
+  | 'CALL_UNKNOWN'
+  | 'EVENT_ID_CONFLICT'
+  | 'UPLOAD_OBSERVATION_REQUIRED'
+  | 'RECORDING_IDENTITY_CONFLICT'
+  | 'UPLOAD_EXPIRED'
+  | 'STORAGE_UNKNOWN'
+  | 'SHARE_TOKEN_INVALID'
+  | 'SHARE_VERIFICATION_FAILED'
+  | 'SHARE_WRONG_TENANT'
+  | 'SHARE_LOCKED'
+  | 'SHARE_ADMISSION_LIMIT_REACHED'
+  | 'SHARE_SESSION_EXPIRED'
+  | 'SHARE_EXPIRED'
+  | 'SHARE_SESSION_POLICY_UNAVAILABLE'
+  | 'DEPENDENCY_UNAVAILABLE'
+  | 'CALLBACK_SIGNATURE_INVALID'
+  | 'PAYMENT_EVENT_CONFLICT'
+  | 'CALLBACK_RETRY_LATER';
 
 type AssertProblemCodeExact = Expect<Equal<components['schemas']['ProblemCode'], ExpectedProblemCode>>;
 
@@ -232,11 +307,312 @@ type AssertPaymentStatus =
 type AssertIssuanceStatus =
   Expect<Equal<components['schemas']['Order']['issuanceStatus'], 'NONE' | 'PENDING' | 'ISSUED' | 'FAILED' | 'MIXED'>>;
 
-type AssertOrderCurrency =
-  Expect<Equal<components['schemas']['Order']['currency'], 'CNY'>>;
+// S3: ShareCodeRotation must never carry capabilityToken (plan §5.6).
+type ForbiddenShareRotationKey = Extract<
+  keyof components['schemas']['ShareCodeRotation'],
+  'capabilityToken'
+>;
+type AssertShareRotationNoCapabilityToken = Expect<Equal<ForbiddenShareRotationKey, never>>;
+
+// S3 F-02/F-03/F-04/R-01/R-03: flattened ShareCreated and discriminated
+// ShareCodeRotation with canonical wire literals on the branches.
+type AssertShareCreatedCapabilityTokenRequired =
+  Expect<Equal<undefined extends components['schemas']['ShareCreated']['capabilityToken'] ? false : true, true>>;
+type AssertShareCreatedExtractionCodeOptional =
+  Expect<Equal<undefined extends components['schemas']['ShareCreated']['extractionCode'] ? true : false, true>>;
+type AssertShareCreatedNoCreatedAt =
+  Expect<Equal<'createdAt' extends keyof components['schemas']['ShareCreated'] ? true : false, false>>;
+type AssertShareSummaryNoCreatedAt =
+  Expect<Equal<'createdAt' extends keyof components['schemas']['ShareSummary'] ? true : false, false>>;
+type ShareCodeRotationRotated = components['schemas']['ShareCodeRotationRotated'];
+type ShareCodeRotationReplayed = components['schemas']['ShareCodeRotationReplayed'];
+type ShareCodeRotation = components['schemas']['ShareCodeRotation'];
+type AssertShareRotationRotatedExtractionCodeRequired =
+  Expect<Equal<undefined extends ShareCodeRotationRotated['extractionCode'] ? false : true, true>>;
+type AssertShareRotationReplayedExtractionCodeForbidden =
+  Expect<Equal<'extractionCode' extends keyof ShareCodeRotationReplayed ? true : false, false>>;
+// R-01: canonical wire discriminator values are generated on the closed
+// branches (not component-name literals) and the wrapper is inhabitable as
+// exactly the branch union with no duplicate envelope intersection.
+type AssertShareRotationRotatedResultLiteral =
+  Expect<Equal<ShareCodeRotationRotated['result'], 'ROTATED'>>;
+type AssertShareRotationReplayedResultLiteral =
+  Expect<Equal<ShareCodeRotationReplayed['result'], 'REPLAYED'>>;
+type AssertShareRotationWrapperIsBranchUnion =
+  Expect<Equal<ShareCodeRotation, ShareCodeRotationRotated | ShareCodeRotationReplayed>>;
+type AssertShareRotationWrapperNotNever =
+  Expect<Equal<[ShareCodeRotation] extends [never] ? true : false, false>>;
+// R-03: no unowned timestamp projection remains on the wrapper or branches
+// (the F-03 shapes validator pins absence in the YAML source of truth).
+
+// R-01 inhabitance: canonical wire values are accepted on the wrapper union;
+// component-name discriminator literals and a replayed extractionCode are
+// rejected at the branch types (where closure is owned).
+const shareRotationRotatedFixture: ShareCodeRotation = {
+  result: 'ROTATED',
+  shareId: 'SHARE-20261024-001',
+  verificationMode: 'EXTRACTION_CODE',
+  status: 'ACTIVE',
+  codeGeneration: 1,
+  revocationGeneration: 0,
+  extractionCode: 'CODE-ONCE-001',
+};
+const shareRotationReplayedFixture: ShareCodeRotation = {
+  result: 'REPLAYED',
+  shareId: 'SHARE-20261024-001',
+  verificationMode: 'EXTRACTION_CODE',
+  status: 'ACTIVE',
+  codeGeneration: 1,
+  revocationGeneration: 0,
+};
+const shareRotationReplayedWithExtractionCode: ShareCodeRotationReplayed = {
+  result: 'REPLAYED',
+  shareId: 'SHARE-20261024-001',
+  verificationMode: 'EXTRACTION_CODE',
+  status: 'ACTIVE',
+  codeGeneration: 1,
+  revocationGeneration: 0,
+  // @ts-expect-error REPLAYED must never accept extractionCode.
+  extractionCode: 'CODE-ONCE-001',
+};
+const shareRotationComponentNameLiteral: ShareCodeRotationRotated = {
+  // @ts-expect-error component-name discriminator values are not wire values.
+  result: 'ShareCodeRotationRotated',
+  shareId: 'SHARE-20261024-001',
+  verificationMode: 'EXTRACTION_CODE',
+  status: 'ACTIVE',
+  codeGeneration: 1,
+  revocationGeneration: 0,
+  extractionCode: 'CODE-ONCE-001',
+};
+
+// S3 F-06: OutboundCallTask.expiresAt stays non-nullable string.
+type AssertOutboundTaskExpiresAtNonNullable =
+  Expect<Equal<components['schemas']['OutboundCallTask']['expiresAt'], string>>;
+// S3 F-06: I4 sequenceNo optional; payload present.
+type AssertIvrCallEventSequenceNoOptional =
+  Expect<Equal<undefined extends components['schemas']['IvrCallEventRequest']['sequenceNo'] ? true : false, true>>;
+type AssertIvrCallEventPayloadRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrCallEventRequest']['payload'] ? false : true, true>>;
+
+// S3 F-07: RecordingDeclarationRequest.sha256 required.
+type AssertRecordingDeclarationSha256Required =
+  Expect<Equal<undefined extends components['schemas']['RecordingDeclarationRequest']['sha256'] ? false : true, true>>;
+
+// S3 F-08/R-01: IvrDecision five frozen domain fields required. The two
+// routing snapshot fields are non-null per A0 §10.14; only the three
+// reservation-conditional fields are nullable.
+type AssertIvrDecisionRecordingSecondsRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDecision']['availableRecordingSeconds'] ? false : true, true>>;
+type AssertIvrDecisionBalanceAsOfRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDecision']['balanceAsOf'] ? false : true, true>>;
+type AssertIvrDecisionReservationIdRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDecision']['reservationId'] ? false : true, true>>;
+type AssertIvrDecisionAuthorizedSecondsRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDecision']['authorizedRecordingSeconds'] ? false : true, true>>;
+type AssertIvrDecisionAuthorizationExpiresAtRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDecision']['authorizationExpiresAt'] ? false : true, true>>;
+type AssertIvrDecisionRecordingSecondsNonNullable =
+  Expect<Equal<components['schemas']['IvrDecision']['availableRecordingSeconds'], number>>;
+type AssertIvrDecisionBalanceAsOfNonNullable =
+  Expect<Equal<components['schemas']['IvrDecision']['balanceAsOf'], string>>;
+type AssertIvrDecisionReservationIdNullable =
+  Expect<Equal<components['schemas']['IvrDecision']['reservationId'], string | null>>;
+type AssertIvrDecisionAuthorizedSecondsNullable =
+  Expect<Equal<components['schemas']['IvrDecision']['authorizedRecordingSeconds'], number | null>>;
+type AssertIvrDecisionAuthorizationExpiresAtNullable =
+  Expect<Equal<components['schemas']['IvrDecision']['authorizationExpiresAt'], string | null>>;
+
+// S3 F-09: I2 decision required; I3 three confirmation fields required.
+type AssertIvrActivationConfirmDecisionRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrActivationConfirmRequest']['decision'] ? false : true, true>>;
+type AssertIvrDirectAuthPromptVersionRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDirectAuthorizationRequest']['promptVersion'] ? false : true, true>>;
+type AssertIvrDirectAuthConfirmationKeyRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDirectAuthorizationRequest']['confirmationKey'] ? false : true, true>>;
+type AssertIvrDirectAuthConfirmationContentRequired =
+  Expect<Equal<undefined extends components['schemas']['IvrDirectAuthorizationRequest']['confirmationContent'] ? false : true, true>>;
+
+// S3: ShareCreateRequest / ShareCodeRotationRequest reject client secrets.
+type ForbiddenShareCreateKey = Extract<
+  keyof components['schemas']['ShareCreateRequest'],
+  'capabilityToken' | 'extractionCode' | 'creatorAccountId' | 'workspaceId' | 'tokenHash'
+>;
+type AssertShareCreateSecretsAbsent = Expect<Equal<ForbiddenShareCreateKey, never>>;
+
+type ForbiddenShareRotationRequestKey = Extract<
+  keyof components['schemas']['ShareCodeRotationRequest'],
+  'capabilityToken' | 'extractionCode'
+>;
+type AssertShareRotationRequestSecretsAbsent = Expect<Equal<ForbiddenShareRotationRequestKey, never>>;
+
+// S3: extraction-code verification variant exposes only mode + writeOnly code.
+type AssertShareVerificationExtractionCodeKeys =
+  Expect<Equal<keyof components['schemas']['ShareVerificationExtractionCode'], 'mode' | 'code'>>;
+
+// R-01: P2 verification branches carry canonical wire mode literals (not
+// component-name literals), so the generated verification union is inhabitable.
+type AssertShareVerificationNoneModeLiteral =
+  Expect<Equal<components['schemas']['ShareVerificationNone']['mode'], 'NONE'>>;
+type AssertShareVerificationExtractionCodeModeLiteral =
+  Expect<Equal<components['schemas']['ShareVerificationExtractionCode']['mode'], 'EXTRACTION_CODE'>>;
+type AssertShareVerificationDesignatedMobileModeLiteral =
+  Expect<Equal<components['schemas']['ShareVerificationDesignatedMobile']['mode'], 'DESIGNATED_MOBILE'>>;
+type AssertShareVerificationOrganizationMemberModeLiteral =
+  Expect<Equal<components['schemas']['ShareVerificationOrganizationMember']['mode'], 'ORGANIZATION_MEMBER'>>;
+type ShareAdmissionVerification = components['schemas']['ShareAdmissionRequest']['verification'];
+const shareVerificationNoneFixture: ShareAdmissionVerification = { mode: 'NONE' };
+const shareVerificationExtractionCodeFixture: ShareAdmissionVerification = {
+  mode: 'EXTRACTION_CODE',
+  code: 'CODE-001',
+};
+const shareVerificationComponentNameLiteral: ShareAdmissionVerification = {
+  // @ts-expect-error component-name mode values are not wire values.
+  mode: 'ShareVerificationNone',
+};
+
+// S3: PublicShareView.content / verificationChallenge stay optional.
+type AssertPublicShareViewContentOptional =
+  Expect<Equal<'content' extends keyof components['schemas']['PublicShareView'] ? true : false, true>>;
+type AssertPublicShareViewContentNotRequired =
+  Expect<
+    Equal<
+      'content' extends Required<components['schemas']['PublicShareView']> ? true : false,
+      false
+    >
+  >;
+type AssertPublicShareViewChallengeOptional =
+  Expect<
+    Equal<
+      'verificationChallenge' extends Required<components['schemas']['PublicShareView']> ? true : false,
+      false
+    >
+  >;
+
+// S3: media/upload credentials are readable, never client-submitted.
+type ForbiddenMediaAuthorizationRequestKey = Extract<
+  keyof components['schemas']['MediaAuthorizationRequest'],
+  'credential' | 'expiresAt'
+>;
+type AssertMediaAuthorizationRequestNoCredential =
+  Expect<Equal<ForbiddenMediaAuthorizationRequestKey, never>>;
+
+type ForbiddenShareAdmissionRequestKey = Extract<
+  keyof components['schemas']['ShareAdmissionRequest'],
+  'credential' | 'mediaAuthorization'
+>;
+type AssertShareAdmissionRequestNoCredential =
+  Expect<Equal<ForbiddenShareAdmissionRequestKey, never>>;
+
+type ForbiddenRecordingDeclarationRequestKey = Extract<
+  keyof components['schemas']['RecordingDeclarationRequest'],
+  'credential' | 'upload' | 'objectKey' | 'bucket'
+>;
+type AssertRecordingDeclarationRequestNoCredential =
+  Expect<Equal<ForbiddenRecordingDeclarationRequestKey, never>>;
+
+// S3: payment callback payload stays opaque.
+type AssertPaymentCallbackPayloadOpaque =
+  Expect<
+    Equal<
+      keyof components['schemas']['PaymentProviderCallbackRequest'],
+      'payload'
+    >
+  >;
+
+// R-02: the two approved opaque payloads are explicitly open records
+// (unknown-valued), not Record<string, never>.
+type AssertIvrEventPayloadOpenRecord =
+  Expect<Equal<components['schemas']['IvrEventPayload'], Record<string, unknown>>>;
+type AssertOpaqueProviderPayloadOpenRecord =
+  Expect<Equal<components['schemas']['OpaqueProviderPayload'], Record<string, unknown>>>;
+type AssertIvrEventPayloadNotNeverRecord =
+  Expect<
+    Equal<
+      components['schemas']['IvrEventPayload'] extends Record<string, never> ? false : true,
+      true
+    >
+  >;
+type AssertOpaqueProviderPayloadNotNeverRecord =
+  Expect<
+    Equal<
+      components['schemas']['OpaqueProviderPayload'] extends Record<string, never> ? false : true,
+      true
+    >
+  >;
+// R-02 inhabitance: non-empty string keys with unknown values are admitted on
+// both opaque payloads and on the I4/K1 request payload property types.
+const ivrEventPayloadInhabited: components['schemas']['IvrEventPayload'] = {
+  vendorField: 'value',
+  nested: { count: 1 },
+};
+const opaqueProviderPayloadInhabited: components['schemas']['OpaqueProviderPayload'] = {
+  transactionId: 'TX-20261024-001',
+  amountCents: 100,
+};
+const ivrCallEventPayloadInhabited: components['schemas']['IvrCallEventRequest']['payload'] = {
+  vendorEventType: 'ring',
+};
+const paymentCallbackPayloadInhabited: components['schemas']['PaymentProviderCallbackRequest']['payload'] = {
+  vendorSignature: 'sig',
+};
+
+type AssertOutboundTaskStatus =
+  Expect<
+    Equal<
+      components['schemas']['OutboundCallTask']['status'],
+      'PENDING' | 'CLAIMED' | 'REPLACED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'COMPLETED' | 'FAILED'
+    >
+  >;
+
+type AssertShareStatus =
+  Expect<Equal<components['schemas']['ShareState']['status'], 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'LOCKED'>>;
+
+type AssertShareVerificationMode =
+  Expect<
+    Equal<
+      components['schemas']['ShareState']['verificationMode'],
+      'NONE' | 'EXTRACTION_CODE' | 'DESIGNATED_MOBILE' | 'ORGANIZATION_MEMBER'
+    >
+  >;
+
+type AssertIvrDecisionPurpose =
+  Expect<
+    Equal<
+      components['schemas']['IvrDecision']['purpose'],
+      'INBOUND_RESOLVE' | 'ACTIVATION_NEXT_ACTION' | 'DIRECT_AUTHORIZATION'
+    >
+  >;
+
+type AssertIvrDecisionAction =
+  Expect<
+    Equal<
+      components['schemas']['IvrDecision']['action'],
+      | 'GUIDE_ACTIVATION'
+      | 'DIAL_TASK_CALLEE'
+      | 'ENTER_CALLEE'
+      | 'GUIDE_PURCHASE'
+      | 'REJECT'
+      | 'REJECT_SUSPENDED'
+      | 'REJECT_CALL_IN_PROGRESS'
+      | null
+    >
+  >;
+
+type AssertCallEventProcessingStatus =
+  Expect<
+    Equal<
+      components['schemas']['CallEventReceipt']['processingStatus'],
+      'APPLIED' | 'QUARANTINED' | 'IGNORED'
+    >
+  >;
 
 type AssertCatalogOfferCurrency =
   Expect<Equal<components['schemas']['CatalogOffer']['currency'], 'CNY'>>;
+
+// S3 F-05: one direct generated-type assertion that Order.currency is CNY.
+type AssertOrderCurrency =
+  Expect<Equal<components['schemas']['Order']['currency'], 'CNY'>>;
 
 type AssertOrderSnapshotCurrency =
   Expect<Equal<components['schemas']['OrderSnapshotProjection']['currency'], 'CNY'>>;
@@ -611,8 +987,64 @@ export type {
   AssertTransitionDomain,
   AssertPaymentStatus,
   AssertIssuanceStatus,
-  AssertOrderCurrency,
   AssertCatalogOfferCurrency,
+  AssertOrderCurrency,
+  AssertIvrPaths,
+  AssertPublicSharePaths,
+  AssertCallbackPaths,
+  AssertShareRotationNoCapabilityToken,
+  AssertShareCreatedCapabilityTokenRequired,
+  AssertShareCreatedExtractionCodeOptional,
+  AssertShareCreatedNoCreatedAt,
+  AssertShareSummaryNoCreatedAt,
+  AssertShareRotationRotatedExtractionCodeRequired,
+  AssertShareRotationReplayedExtractionCodeForbidden,
+  AssertShareRotationRotatedResultLiteral,
+  AssertShareRotationReplayedResultLiteral,
+  AssertShareRotationWrapperIsBranchUnion,
+  AssertShareRotationWrapperNotNever,
+  AssertOutboundTaskExpiresAtNonNullable,
+  AssertIvrCallEventSequenceNoOptional,
+  AssertIvrCallEventPayloadRequired,
+  AssertRecordingDeclarationSha256Required,
+  AssertIvrDecisionRecordingSecondsRequired,
+  AssertIvrDecisionBalanceAsOfRequired,
+  AssertIvrDecisionReservationIdRequired,
+  AssertIvrDecisionAuthorizedSecondsRequired,
+  AssertIvrDecisionAuthorizationExpiresAtRequired,
+  AssertIvrDecisionRecordingSecondsNonNullable,
+  AssertIvrDecisionBalanceAsOfNonNullable,
+  AssertIvrDecisionReservationIdNullable,
+  AssertIvrDecisionAuthorizedSecondsNullable,
+  AssertIvrDecisionAuthorizationExpiresAtNullable,
+  AssertIvrActivationConfirmDecisionRequired,
+  AssertIvrDirectAuthPromptVersionRequired,
+  AssertIvrDirectAuthConfirmationKeyRequired,
+  AssertIvrDirectAuthConfirmationContentRequired,
+  AssertShareCreateSecretsAbsent,
+  AssertShareRotationRequestSecretsAbsent,
+  AssertShareVerificationExtractionCodeKeys,
+  AssertShareVerificationNoneModeLiteral,
+  AssertShareVerificationExtractionCodeModeLiteral,
+  AssertShareVerificationDesignatedMobileModeLiteral,
+  AssertShareVerificationOrganizationMemberModeLiteral,
+  AssertPublicShareViewContentOptional,
+  AssertPublicShareViewContentNotRequired,
+  AssertPublicShareViewChallengeOptional,
+  AssertMediaAuthorizationRequestNoCredential,
+  AssertShareAdmissionRequestNoCredential,
+  AssertRecordingDeclarationRequestNoCredential,
+  AssertPaymentCallbackPayloadOpaque,
+  AssertIvrEventPayloadOpenRecord,
+  AssertOpaqueProviderPayloadOpenRecord,
+  AssertIvrEventPayloadNotNeverRecord,
+  AssertOpaqueProviderPayloadNotNeverRecord,
+  AssertOutboundTaskStatus,
+  AssertShareStatus,
+  AssertShareVerificationMode,
+  AssertIvrDecisionPurpose,
+  AssertIvrDecisionAction,
+  AssertCallEventProcessingStatus,
   AssertOrderSnapshotCurrency,
   AssertOrderSummaryCurrency,
   AssertCatalogVersionSummaryCurrency,

@@ -83,8 +83,9 @@ const DRAFT_COMMERCIAL_OPERATION_IDS = new Set([
 ]);
 // Approved open-object exceptions for the response-side closure walker. These
 // are the only component schemas allowed to leave additionalProperties open
-// (provider opaque payloads / IVR event payloads, plan §4.11-§4.12). Any schema
-// may also opt in via the explicit x-onecall-opaque: true annotation.
+// (provider opaque payloads / IVR event payloads, plan §4.11-§4.12). Opaque
+// opt-in via x-onecall-opaque: true is fail-closed: only these two named
+// components may carry the annotation; any other occurrence is rejected.
 const OPAQUE_CLOSURE_EXCEPTION_SCHEMAS = new Set([
   'OpaqueProviderPayload',
   'IvrEventPayload',
@@ -113,6 +114,8 @@ const IDEMPOTENCY_KEY_MAX_LENGTHS = new Map([
   ['createCustomerOrder', 475],
   ['createCustomerOutboundCallTask', 512],
   ['cancelCustomerOutboundCallTask', 512],
+  ['revokeCustomerShare', 128],
+  ['rotateCustomerShareCode', 128],
 ]);
 // Request bodies must never accept server-derived trust facts (docs/15 §6 /
 // plan §5 No-expose). Exact property-name match only; legitimate identifiers
@@ -184,7 +187,34 @@ function a0ContractAnchors() {
   const text = readA0();
   const anchors = new Set();
   for (const match of text.matchAll(/\bT-S[123]-\d{2}\b/g)) anchors.add(match[0]);
-  for (const section of ['§7.1', '§7.2', '§7.3', '§7.4']) anchors.add(section);
+  // F-10: section anchors are an explicit approved ownership set, not every
+  // §N.N token in docs/14. Each approved section is verified to exist in the
+  // A0 text so a renamed/removed section fails closed instead of silently
+  // validating. §7.2 is deliberately absent (not a cited A1 contract anchor).
+  const APPROVED_A0_SECTION_ANCHORS = [
+    '§7.1',
+    '§7.3',
+    '§7.4',
+    '§9.18',
+    '§9.24',
+    '§9.27',
+    '§9.28',
+    '§10.14',
+    '§10.17',
+  ];
+  for (const section of APPROVED_A0_SECTION_ANCHORS) {
+    // A0 owns a section through Markdown headings such as "### 7.1 S1 state
+    // machines", not necessarily a literal "§7.1" token. Validate each approved
+    // anchor against an exact heading number so a renamed/removed section fails
+    // closed, while a same-numbered heading anywhere still satisfies the check.
+    const sectionNumber = section.slice(1);
+    const escapedNumber = sectionNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const headingPattern = new RegExp(`^#{1,6}\\s+${escapedNumber}(?:\\s|$)`, 'm');
+    if (!headingPattern.test(text)) {
+      throw new Error(`docs/14 is missing approved A0 section anchor ${section}`);
+    }
+    anchors.add(section);
+  }
   for (const domain of ['ACTIVATION_STATUS', 'EVIDENCE', 'IVR_EVENT', 'SHARE_ACCESS']) anchors.add(domain);
   for (const match of text.matchAll(/\b(?:uq|ck)_[a-z0-9_]+\b/g)) anchors.add(match[0]);
   cachedAnchors = anchors;
@@ -747,6 +777,76 @@ function validateProblemComplete(root) {
       'TRIAL_POLICY_DRAFT_CONFLICT',
       'TRIAL_POLICY_DRAFT_STALE_VIEW',
     ],
+    // S3: customer outbound-call tasks (C6-C8), shares (C15-C18),
+    // IVR (I1-I6), public-share (P1-P3) and payment callback (K1).
+    createCustomerOutboundCallTask: [
+      'ACTIVATION_NOT_ACTIVE',
+      'OUTBOUND_CALL_IN_PROGRESS',
+      'OUTBOUND_TASK_CONFLICT',
+    ],
+    getCustomerOutboundCallTask: ['NOT_FOUND'],
+    cancelCustomerOutboundCallTask: [
+      'NOT_FOUND',
+      'OUTBOUND_TASK_NOT_CANCELLABLE',
+      'OUTBOUND_TASK_CONFLICT',
+    ],
+    createCustomerShare: [
+      'SHARE_CREATION_CONFLICT',
+      'SHARE_ACCESS_POLICY_UNAVAILABLE',
+      'SHARE_RISK_BLOCKED',
+    ],
+    listCustomerShares: ['CURSOR_INVALID'],
+    revokeCustomerShare: [
+      'NOT_FOUND',
+      'SHARE_TRANSITION_CONFLICT',
+      'SHARE_GENERATION_STALE',
+      'SHARE_REVOKED',
+    ],
+    rotateCustomerShareCode: ['NOT_FOUND', 'SHARE_TRANSITION_CONFLICT'],
+    resolveIvrInbound: ['IVR_ARGUMENT_INVALID', 'SESSION_IDENTITY_MISMATCH'],
+    confirmIvrActivation: ['IVR_ARGUMENT_INVALID', 'SESSION_IDENTITY_MISMATCH'],
+    authorizeIvrDirectOutbound: ['IVR_ARGUMENT_INVALID', 'SESSION_IDENTITY_MISMATCH'],
+    ingestIvrCallEvent: ['IVR_ARGUMENT_INVALID', 'CALL_UNKNOWN', 'EVENT_ID_CONFLICT'],
+    declareIvrRecording: ['IVR_ARGUMENT_INVALID', 'CALL_UNKNOWN', 'RECORDING_IDENTITY_CONFLICT'],
+    completeIvrRecording: [
+      'IVR_ARGUMENT_INVALID',
+      'CALL_UNKNOWN',
+      'UPLOAD_OBSERVATION_REQUIRED',
+      'RECORDING_IDENTITY_CONFLICT',
+      'UPLOAD_EXPIRED',
+      'STORAGE_UNKNOWN',
+    ],
+    getPublicShare: ['SHARE_TOKEN_INVALID', 'SHARE_REVOKED', 'SHARE_EXPIRED'],
+    createPublicShareAdmission: [
+      'SHARE_VERIFICATION_FAILED',
+      'SHARE_RISK_BLOCKED',
+      'SHARE_WRONG_TENANT',
+      'SHARE_TOKEN_INVALID',
+      'SHARE_REVOKED',
+      'SHARE_EXPIRED',
+      'SHARE_LOCKED',
+      'SHARE_ADMISSION_LIMIT_REACHED',
+      'SHARE_GENERATION_STALE',
+      'SHARE_SESSION_EXPIRED',
+      'SHARE_SESSION_POLICY_UNAVAILABLE',
+      'DEPENDENCY_UNAVAILABLE',
+    ],
+    authorizePublicShareMedia: [
+      'SHARE_RISK_BLOCKED',
+      'SHARE_WRONG_TENANT',
+      'SHARE_TOKEN_INVALID',
+      'SHARE_REVOKED',
+      'SHARE_EXPIRED',
+      'SHARE_GENERATION_STALE',
+      'SHARE_SESSION_EXPIRED',
+      'SHARE_SESSION_POLICY_UNAVAILABLE',
+      'DEPENDENCY_UNAVAILABLE',
+    ],
+    receivePaymentProviderCallback: [
+      'CALLBACK_SIGNATURE_INVALID',
+      'PAYMENT_EVENT_CONFLICT',
+      'CALLBACK_RETRY_LATER',
+    ],
   };
   eachOperation(root, (operation) => {
     const expected = exactDomainSets[operation.operationId];
@@ -832,7 +932,7 @@ function validateCursorListings(root) {
         problems.push('listOperationsSubjects: full-number and free-text search are forbidden');
       }
     }
-    // S2 stable sort / filter-digest contracts (plan §4.8).
+    // S2/S3 stable sort / filter-digest contracts (plan §4.8 / S3).
     const s2Sorts = new Map([
       ['listCustomerCatalogOffers', 'productCode asc, versionNo desc, catalogOfferId asc'],
       ['listCustomerOrders', 'createdAt desc, orderId desc'],
@@ -840,6 +940,7 @@ function validateCursorListings(root) {
       ['listOperationsTrialPolicies', 'versionNo desc, policyVersionId desc'],
       ['listOperationsOrders', 'createdAt desc, orderId desc'],
       ['listOperationsAuditFacts', 'occurredAt desc, auditId desc'],
+      ['listCustomerShares', 'validFrom desc, shareId desc'],
     ]);
     const expectedSort = s2Sorts.get(operation.operationId);
     if (expectedSort && operation['x-onecall-sort'] !== expectedSort) {
@@ -926,7 +1027,9 @@ function validateIdempotencyWrites(root) {
     if (value === 'event-body') {
       const schema = requestSchema(root, operation);
       const properties = schema?.properties ?? {};
-      const hasEventIdentity = Object.keys(properties).some((name) => /EventId$/.test(name));
+      // Plan mandates the body field named `eventId` (camelCase) for I2/I3/I4;
+      // keep matching PascalCase *EventId aliases as well.
+      const hasEventIdentity = Object.keys(properties).some((name) => /[eE]ventId$/.test(name));
       if (!operation.requestBody?.required) problems.push(`${key}: event-body idempotency requires a required request body`);
       if (!hasEventIdentity) problems.push(`${key}: event-body idempotency requires a stable *EventId request field`);
       if (idempotencyHeader) problems.push(`${key}: event-body operations must not declare Idempotency-Key`);
@@ -1045,11 +1148,24 @@ function walkRequestSchema(root, schema, visitor, seen = new Set(), onProblem = 
   // objects and must set additionalProperties false. Boolean false remains an
   // allowed closed/nothing schema (handled above); boolean true remains
   // rejected above.
+  // F-10: opaque closure exemptions are restricted to the two named component
+  // schemas (OpaqueProviderPayload / IvrEventPayload). The exemption is by
+  // node identity with the approved component, not by annotation alone. Any
+  // other node carrying x-onecall-opaque: true — including inline schemas —
+  // fails closed with an explicit problem.
+  const opaqueComponentSchemas = root?.components?.schemas ?? {};
+  const opaqueRequestException = node === opaqueComponentSchemas.OpaqueProviderPayload
+    || node === opaqueComponentSchemas.IvrEventPayload;
+  if (node['x-onecall-opaque'] === true && !opaqueRequestException) {
+    if (onProblem) {
+      onProblem('x-onecall-opaque is approved only on OpaqueProviderPayload and IvrEventPayload components');
+    }
+  }
   const typeDefinitivelyExcludesObject = node.type !== undefined
     && (typeof node.type === 'string'
       ? node.type !== 'object'
       : (Array.isArray(node.type) ? !node.type.includes('object') : false));
-  if (!typeDefinitivelyExcludesObject && node.additionalProperties !== false) {
+  if (!opaqueRequestException && !typeDefinitivelyExcludesObject && node.additionalProperties !== false) {
     if (onProblem) {
       onProblem('request object schema must set additionalProperties false');
     }
@@ -1078,7 +1194,7 @@ function walkRequestSchema(root, schema, visitor, seen = new Set(), onProblem = 
       : (Array.isArray(node.type)
         ? node.type.length > 0 && !node.type.includes('array')
         : false));
-  if (!typeDefinitivelyExcludesArray && !Object.prototype.hasOwnProperty.call(node, 'items')) {
+  if (!opaqueRequestException && !typeDefinitivelyExcludesArray && !Object.prototype.hasOwnProperty.call(node, 'items')) {
     if (onProblem) {
       onProblem('request array schema must declare items');
     }
@@ -1102,7 +1218,13 @@ function walkRequestSchema(root, schema, visitor, seen = new Set(), onProblem = 
   // additionalProperties is dead contract surface (it cannot apply to any
   // non-object instance) — descending into a dead `{}`/schema subschema there
   // would raise a false closure/trusted-fact positive on ignored keywords.
-  if (node.additionalProperties && !typeDefinitivelyExcludesObject) {
+  // The approved opaque component nodes deliberately declare
+  // `additionalProperties: true` as their approval contract; that exact boolean
+  // declaration is not an ordinary schema-valued traversal position, so it is
+  // not re-walked into the generic boolean-true rejection. Direct boolean true
+  // schemas and every non-approved additionalProperties position still fail.
+  const approvedOpaqueOpen = opaqueRequestException && node.additionalProperties === true;
+  if (node.additionalProperties && !typeDefinitivelyExcludesObject && !approvedOpaqueOpen) {
     walkRequestSchema(root, node.additionalProperties, visitor, seen, onProblem);
   }
   for (const keyword of ['allOf', 'anyOf', 'oneOf']) {
@@ -1119,21 +1241,33 @@ function validateSensitiveFields(root) {
   const schemas = root?.components?.schemas ?? {};
   for (const [name, schema] of Object.entries(schemas)) {
     walkSchema(schema, (node) => {
-      // F-04 closure: any type array admitting 'object' is object-admitting
-      // and must set additionalProperties false. Only the approved opaque
-      // provider/IVR exceptions (by schema name or x-onecall-opaque: true)
-      // may remain open.
+      // F-04/F-10 closure: any type array admitting 'object' is object-admitting
+      // and must set additionalProperties false. Only the two named opaque
+      // provider/IVR component schemas may remain open; the exemption is
+      // name-based (not annotation-based). Any other schema carrying
+      // x-onecall-opaque: true fails closed with an explicit problem so an
+      // unapproved annotation cannot bypass closure.
       const admitsObject = node.type === 'object'
         || (Array.isArray(node.type) && node.type.includes('object'));
+      if (node['x-onecall-opaque'] === true && !OPAQUE_CLOSURE_EXCEPTION_SCHEMAS.has(name)) {
+        problems.push(`${name}: x-onecall-opaque is approved only on OpaqueProviderPayload and IvrEventPayload`);
+      }
       if (admitsObject && node.additionalProperties !== false) {
-        const opaqueException = OPAQUE_CLOSURE_EXCEPTION_SCHEMAS.has(name)
-          || node['x-onecall-opaque'] === true;
+        const opaqueException = OPAQUE_CLOSURE_EXCEPTION_SCHEMAS.has(name);
         if (!opaqueException) {
           problems.push(`${name}: object schemas must set additionalProperties false`);
         }
       }
-      for (const property of Object.keys(node.properties ?? {})) {
-        if (FORBIDDEN_PROPERTY_NAMES.has(property)) {
+      for (const [property, field] of Object.entries(node.properties ?? {})) {
+        if (!FORBIDDEN_PROPERTY_NAMES.has(property)) continue;
+        // IvrDecision.task.calleeNumber / authorization.calleeNumber are the
+        // only approved internal-payload exceptions (plan §6.1): response-only
+        // readOnly fields marked x-onecall-internal-payload with mandatory log
+        // redaction. Requests still reject these names via trusted-fact rules.
+        const internalPayloadException = field?.readOnly === true
+          && field?.['x-onecall-internal-payload'] === true
+          && field?.['x-onecall-log-redaction'] === 'required';
+        if (!internalPayloadException) {
           problems.push(`${name}: forbidden sensitive property ${property}`);
         }
       }
@@ -1260,15 +1394,56 @@ function validateSecretDirection(root) {
       }
     });
   }
+  // F-02: ShareCreated secret-direction validation must actually inspect
+  // capabilityToken/extractionCode after ref/composition shape. A resolving
+  // property collector walks $ref chains and allOf/oneOf/anyOf compositions so
+  // a composed ShareCreated cannot hide its secrets from this check.
   if (schemas.ShareCreated) {
+    const collected = collectResolvedProperties(root, schemas.ShareCreated, new Set());
     for (const property of ['capabilityToken', 'extractionCode']) {
-      const field = schemas.ShareCreated.properties?.[property];
+      const field = collected.get(property);
       if (field && (field.readOnly !== true || field['x-onecall-return-once'] !== true)) {
         problems.push(`ShareCreated.${property}: one-time response secret annotation is required`);
       }
     }
   }
   return problems;
+}
+
+// F-02 helper: collect object properties from a schema, resolving $ref chains
+// and walking allOf/anyOf/oneOf compositions. Later duplicate property names
+// overwrite earlier ones (branch-local secrets win). Returns Map<name, field>.
+function collectResolvedProperties(root, schema, seen = new Set()) {
+  const collected = new Map();
+  if (!schema || typeof schema !== 'object') return collected;
+  if (typeof schema.$ref === 'string') {
+    if (seen.has(schema.$ref)) return collected;
+    seen.add(schema.$ref);
+    let target = root;
+    for (const part of schema.$ref.slice(2).split('/')) {
+      const key = part.replace(/~1/g, '/').replace(/~0/g, '~');
+      target = target?.[key];
+    }
+    if (target && typeof target === 'object') {
+      for (const [name, field] of collectResolvedProperties(root, target, seen)) {
+        collected.set(name, field);
+      }
+    }
+    return collected;
+  }
+  for (const [name, field] of Object.entries(schema.properties ?? {})) {
+    collected.set(name, field);
+  }
+  for (const keyword of ['allOf', 'anyOf', 'oneOf']) {
+    if (Array.isArray(schema[keyword])) {
+      for (const branch of schema[keyword]) {
+        for (const [name, field] of collectResolvedProperties(root, branch, seen)) {
+          collected.set(name, field);
+        }
+      }
+    }
+  }
+  return collected;
 }
 
 function validateIvrDecisionStatus(root) {
@@ -1310,6 +1485,76 @@ function validateShareSemantics(root) {
       problems.push('authorizePublicShareMedia must not include SHARE_LOCKED');
     }
   });
+  // P1: PublicShareView.content and verificationChallenge stay optional so an
+  // unauthenticated ORGANIZATION_MEMBER page can omit content (plan §5.4).
+  const view = root?.components?.schemas?.PublicShareView;
+  if (view) {
+    const required = new Set(Array.isArray(view.required) ? view.required : []);
+    if (required.has('content')) {
+      problems.push('PublicShareView.content must remain optional');
+    }
+    if (required.has('verificationChallenge')) {
+      problems.push('PublicShareView.verificationChallenge must remain optional');
+    }
+  }
+  // ShareCodeRotation must never carry capabilityToken (schema-level, in
+  // addition to the response walker assertion above).
+  const rotation = root?.components?.schemas?.ShareCodeRotation;
+  if (rotation?.properties?.capabilityToken) {
+    problems.push('ShareCodeRotation must never expose capabilityToken');
+  }
+  // P2 additive S3 assertion (never a relaxation of F5-01/R6-01):
+  // ShareAdmissionRequest.verification must stay an object-only closed
+  // discriminated union over exactly the four approved verification modes.
+  // The wrapper must declare `type: object` (definitively non-array) and
+  // `additionalProperties: false` (closed to unbounded objects); the oneOf
+  // must keep exactly the four ShareVerification* branches with a `mode`
+  // discriminator so branch-specific secrets (the writeOnly extraction
+  // `code`) stay confined to their own mode.
+  const admissionRequest = root?.components?.schemas?.ShareAdmissionRequest;
+  const verification = admissionRequest?.properties?.verification;
+  if (!verification) {
+    problems.push('ShareAdmissionRequest.verification is required');
+  } else {
+    if (verification.type !== 'object') {
+      problems.push('ShareAdmissionRequest.verification must be object-only');
+    }
+    if (verification.additionalProperties !== false) {
+      problems.push('ShareAdmissionRequest.verification must set additionalProperties false');
+    }
+    const expectedVerificationBranches = [
+      '#/components/schemas/ShareVerificationNone',
+      '#/components/schemas/ShareVerificationExtractionCode',
+      '#/components/schemas/ShareVerificationDesignatedMobile',
+      '#/components/schemas/ShareVerificationOrganizationMember',
+    ];
+    const verificationRefs = Array.isArray(verification.oneOf)
+      ? verification.oneOf.map((entry) => (entry && entry.$ref) || null)
+      : [];
+    if (verificationRefs.length !== expectedVerificationBranches.length
+      || expectedVerificationBranches.some((branch) => !verificationRefs.includes(branch))) {
+      problems.push('ShareAdmissionRequest.verification must keep exactly the four approved mode branches');
+    }
+    if (verification.discriminator?.propertyName !== 'mode') {
+      problems.push('ShareAdmissionRequest.verification must use a mode discriminator');
+    }
+    // R-01: the discriminator must carry an explicit canonical mapping so the
+    // generated union uses wire literals (NONE/EXTRACTION_CODE/
+    // DESIGNATED_MOBILE/ORGANIZATION_MEMBER), not component names.
+    const verificationMapping = verification.discriminator?.mapping;
+    const expectedVerificationMapping = {
+      NONE: '#/components/schemas/ShareVerificationNone',
+      EXTRACTION_CODE: '#/components/schemas/ShareVerificationExtractionCode',
+      DESIGNATED_MOBILE: '#/components/schemas/ShareVerificationDesignatedMobile',
+      ORGANIZATION_MEMBER: '#/components/schemas/ShareVerificationOrganizationMember',
+    };
+    if (!verificationMapping
+      || typeof verificationMapping !== 'object'
+      || Object.keys(verificationMapping).length !== Object.keys(expectedVerificationMapping).length
+      || Object.entries(expectedVerificationMapping).some(([value, ref]) => verificationMapping[value] !== ref)) {
+      problems.push('ShareAdmissionRequest.verification discriminator.mapping must map the four canonical verification modes');
+    }
+  }
   return problems;
 }
 
@@ -1644,6 +1889,590 @@ function validateS2FixShapes(root) {
   return problems;
 }
 
+// ---------------------------------------------------------------------------
+// S3 fix validators (F-01..F-11). Chained into the enabled sensitive-fields
+// rule so they run under redocly.yaml without adding a new named rule.
+// ---------------------------------------------------------------------------
+
+// F-01: opaque A0 protocol identities (taskId/callId/recordingId/shareId) map
+// non-UUID bounded strings, not internal UUIDs. Internal decisionId/sessionId/
+// reservationId/evidenceId/admissionId and true internal resources stay UUID.
+const OPAQUE_ID_BOUNDS = new Map([
+  ['taskId', 64],
+  ['callId', 128],
+  ['recordingId', 128],
+  ['shareId', 128],
+]);
+
+function assertOpaqueIdField(problems, label, field, maxLen) {
+  if (!field || field.type !== 'string') {
+    problems.push(`${label}: must be type string`);
+    return;
+  }
+  if (field.format === 'uuid') {
+    problems.push(`${label}: must not use format uuid (opaque A0 protocol identity)`);
+  }
+  if (field.minLength !== 1) {
+    problems.push(`${label}: must set minLength 1`);
+  }
+  if (field.maxLength !== maxLen) {
+    problems.push(`${label}: must set maxLength ${maxLen}`);
+  }
+}
+
+// OQ-3 (F-01 regression): a deterministic occurrence inventory of every
+// external taskId/callId/recordingId/shareId occurrence. The walk covers
+// operation path AND query parameters plus every component-schema property at
+// any nesting depth (inline objects, array items, composition subschemas);
+// $ref targets are not re-walked here so a shared component is counted once.
+// The exact per-name counts below fail closed when an expected occurrence
+// disappears, changes name or a new unreviewed occurrence appears.
+const EXPECTED_OPAQUE_ID_OCCURRENCE_COUNTS = new Map([
+  // 2 schema (OutboundCallTask.taskId, IvrDecision.task.taskId) + 3 params
+  // (C7 path, C8 path, listOperationsIvrSessions query).
+  ['taskId', 5],
+  // 5 schema (IvrSessionSummary, IvrSessionDetail, IvrDecision,
+  // IvrInboundResolveRequest, CallEventReceipt) + 6 params (I2-I6 path,
+  // listOperationsIvrSessions query).
+  ['callId', 11],
+  // 5 schema (ShareState, ShareSummary, ShareCreated, ShareCodeRotationRotated,
+  // ShareCodeRotationReplayed) + 2 params (C17 path, C18 path).
+  ['shareId', 7],
+  // 3 schema (RecordingDeclarationRequest, RecordingDeclaration,
+  // RecordingCompletion) + 1 param (I6 path).
+  ['recordingId', 4],
+]);
+
+function collectOpaqueIdOccurrences(root) {
+  const occurrences = [];
+  const paths = root?.paths ?? {};
+  for (const [, pathItem] of Object.entries(paths)) {
+    if (!pathItem || typeof pathItem !== 'object') continue;
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!operation || typeof operation !== 'object' || !operation.operationId) continue;
+      const rawParams = [
+        ...(Array.isArray(pathItem.parameters) ? pathItem.parameters : []),
+        ...(Array.isArray(operation.parameters) ? operation.parameters : []),
+      ];
+      for (const rawParam of rawParams) {
+        const param = deref(root, rawParam);
+        if (!param || typeof param.name !== 'string') continue;
+        const maxLen = OPAQUE_ID_BOUNDS.get(param.name);
+        if (maxLen === undefined) continue;
+        occurrences.push({
+          name: param.name,
+          label: `${method.toUpperCase()} ${operation.operationId} ${param.in ?? 'unknown'} param ${param.name}`,
+          field: param.schema,
+          maxLen,
+        });
+      }
+    }
+  }
+  const schemas = root?.components?.schemas ?? {};
+  const walk = (node, pathLabel) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.$ref) return; // counted at the target component, not through the alias
+    if (node.properties && typeof node.properties === 'object') {
+      for (const [propName, propSchema] of Object.entries(node.properties)) {
+        const childLabel = pathLabel ? `${pathLabel}.${propName}` : propName;
+        const maxLen = OPAQUE_ID_BOUNDS.get(propName);
+        if (maxLen !== undefined && propSchema && typeof propSchema === 'object') {
+          occurrences.push({ name: propName, label: childLabel, field: propSchema, maxLen });
+        }
+        walk(propSchema, childLabel);
+      }
+    }
+    if (node.items) walk(node.items, `${pathLabel}[]`);
+    if (Array.isArray(node.prefixItems)) {
+      node.prefixItems.forEach((child, index) => walk(child, `${pathLabel}[${index}]`));
+    }
+    if (node.additionalProperties && typeof node.additionalProperties === 'object') {
+      walk(node.additionalProperties, `${pathLabel}.*`);
+    }
+    for (const keyword of ['allOf', 'anyOf', 'oneOf']) {
+      if (Array.isArray(node[keyword])) {
+        node[keyword].forEach((child, index) => walk(child, `${pathLabel}.${keyword}[${index}]`));
+      }
+    }
+  };
+  for (const [schemaName, schema] of Object.entries(schemas)) {
+    walk(schema, schemaName);
+  }
+  return occurrences;
+}
+
+function validateOpaqueIdOccurrences(root) {
+  const problems = [];
+  const occurrences = collectOpaqueIdOccurrences(root);
+  const counts = new Map();
+  for (const occurrence of occurrences) {
+    counts.set(occurrence.name, (counts.get(occurrence.name) ?? 0) + 1);
+    assertOpaqueIdField(problems, occurrence.label, occurrence.field, occurrence.maxLen);
+  }
+  for (const [name, expected] of EXPECTED_OPAQUE_ID_OCCURRENCE_COUNTS) {
+    const found = counts.get(name) ?? 0;
+    if (found !== expected) {
+      problems.push(`opaque identity ${name}: expected exactly ${expected} occurrences, found ${found} (occurrence inventory changed)`);
+    }
+  }
+  return problems;
+}
+
+// Schema-driven opaque value probe: check one sample value against the real
+// discovered schema bounds (minLength/maxLength/format), so a bounds regression
+// on any occurrence fails the probe rather than a hardcoded literal length.
+function opaqueValueSatisfies(field, value) {
+  if (!field || typeof value !== 'string') return false;
+  if (field.format === 'uuid') return false;
+  if (typeof field.minLength === 'number' && value.length < field.minLength) return false;
+  if (typeof field.maxLength === 'number' && value.length > field.maxLength) return false;
+  return true;
+}
+
+function validateS3FixShapes(root) {
+  const problems = [];
+  const schemas = root?.components?.schemas ?? {};
+
+  // OQ-3/F-01: every external taskId/callId/recordingId/shareId occurrence —
+  // operation path AND query parameters plus every component-schema property
+  // at any nesting depth — is validated against its exact bounds and pinned by
+  // an explicit occurrence inventory, so a disappeared/renamed/added
+  // occurrence or a bounds/format regression fails closed.
+  problems.push(...validateOpaqueIdOccurrences(root));
+
+  // Internal UUID resources must stay uuid (regression guard).
+  const internalUuidProps = [
+    ['IvrDecision', 'decisionId'],
+    ['IvrDecision', 'reservationId'],
+    ['ShareState', 'evidenceId'],
+    ['ShareSummary', 'evidenceId'],
+    ['ShareCreated', 'evidenceId'],
+    ['ShareAdmission', 'admissionId'],
+  ];
+  for (const [schemaName, propName] of internalUuidProps) {
+    const field = schemas[schemaName]?.properties?.[propName];
+    if (field && field.format !== 'uuid') {
+      problems.push(`${schemaName}.${propName}: internal resource must keep format uuid`);
+    }
+  }
+
+  // F-02: ShareCreated must be a satisfiable closed object (no allOf+AP:false
+  // unsatisfiability), with capabilityToken required, extractionCode present
+  // but optional, and no createdAt.
+  const shareCreated = schemas.ShareCreated;
+  if (!shareCreated) {
+    problems.push('ShareCreated is required');
+  } else {
+    if (shareCreated.allOf) {
+      problems.push('ShareCreated must be a flattened closed object, not an allOf composition');
+    }
+    if (shareCreated.additionalProperties !== false) {
+      problems.push('ShareCreated must set additionalProperties false');
+    }
+    const required = new Set(Array.isArray(shareCreated.required) ? shareCreated.required : []);
+    const props = shareCreated.properties ?? {};
+    if (!required.has('capabilityToken')) {
+      problems.push('ShareCreated.capabilityToken must be required');
+    }
+    if (props.capabilityToken?.readOnly !== true || props.capabilityToken?.['x-onecall-return-once'] !== true) {
+      problems.push('ShareCreated.capabilityToken must be readOnly return-once');
+    }
+    if (props.extractionCode === undefined) {
+      problems.push('ShareCreated.extractionCode must be present (optional, mode-conditional)');
+    } else if (required.has('extractionCode')) {
+      problems.push('ShareCreated.extractionCode must stay optional (only EXTRACTION_CODE mode)');
+    }
+    if (props.extractionCode && (props.extractionCode.readOnly !== true || props.extractionCode?.['x-onecall-return-once'] !== true)) {
+      problems.push('ShareCreated.extractionCode must be readOnly return-once');
+    }
+    if ('createdAt' in props) {
+      problems.push('ShareCreated must not declare createdAt (validFrom is authoritative)');
+    }
+  }
+
+  // F-04: ShareSummary must not declare createdAt.
+  const shareSummary = schemas.ShareSummary;
+  if (shareSummary && 'createdAt' in (shareSummary.properties ?? {})) {
+    problems.push('ShareSummary must not declare createdAt (validFrom is authoritative)');
+  }
+
+  // F-03/R-01: ShareCodeRotation is one operation/status contract delivered as
+  // a closed discriminated result. The wrapper is a pure oneOf + discriminator
+  // carrier (no duplicate property/discriminator envelope) with an explicit
+  // canonical ROTATED/REPLAYED mapping so the generated union is inhabitable;
+  // the branches stay the closed authorities. ROTATED requires extractionCode;
+  // REPLAYED forbids it; neither branch has capabilityToken; no rotatedAt
+  // projection is exposed (R-03).
+  const rotation = schemas.ShareCodeRotation;
+  if (!rotation) {
+    problems.push('ShareCodeRotation is required');
+  } else {
+    if (rotation.type !== undefined) {
+      problems.push('ShareCodeRotation wrapper must stay a pure oneOf carrier (no duplicate type/envelope)');
+    }
+    if (rotation.properties !== undefined) {
+      problems.push('ShareCodeRotation wrapper must not re-declare a property envelope (R-01)');
+    }
+    if (rotation.additionalProperties !== undefined) {
+      problems.push('ShareCodeRotation wrapper must not declare additionalProperties (closed by branches)');
+    }
+    if (rotation.discriminator?.propertyName !== 'result') {
+      problems.push('ShareCodeRotation must declare discriminator propertyName result');
+    }
+    const rotationMapping = rotation.discriminator?.mapping;
+    if (!rotationMapping
+      || rotationMapping.ROTATED !== '#/components/schemas/ShareCodeRotationRotated'
+      || rotationMapping.REPLAYED !== '#/components/schemas/ShareCodeRotationReplayed'
+      || Object.keys(rotationMapping).length !== 2) {
+      problems.push('ShareCodeRotation discriminator.mapping must map ROTATED/REPLAYED to the canonical branches');
+    }
+    const oneOfRefs = Array.isArray(rotation.oneOf) ? rotation.oneOf.map((b) => b?.$ref) : [];
+    if (!oneOfRefs.includes('#/components/schemas/ShareCodeRotationRotated')
+      || !oneOfRefs.includes('#/components/schemas/ShareCodeRotationReplayed')
+      || oneOfRefs.length !== 2) {
+      problems.push('ShareCodeRotation oneOf must be exactly the Rotated and Replayed branches');
+    }
+    if ('rotatedAt' in (rotation.properties ?? {})) {
+      problems.push('ShareCodeRotation wrapper must not declare rotatedAt (R-03: unowned projection)');
+    }
+    // ROTATED branch: closed, extractionCode required, canonical const, no rotatedAt.
+    const rotated = schemas.ShareCodeRotationRotated;
+    if (!rotated || rotated.additionalProperties !== false) {
+      problems.push('ShareCodeRotationRotated must be a closed object branch');
+    }
+    const rotatedRequired = new Set(Array.isArray(rotated?.required) ? rotated.required : []);
+    if (!rotatedRequired.has('extractionCode')) {
+      problems.push('ShareCodeRotationRotated must require extractionCode');
+    }
+    if (rotated?.properties?.result?.const !== 'ROTATED') {
+      problems.push('ShareCodeRotationRotated.result must be the canonical const ROTATED');
+    }
+    if (rotated?.properties?.capabilityToken) {
+      problems.push('ShareCodeRotationRotated must not expose capabilityToken');
+    }
+    if ('rotatedAt' in (rotated?.properties ?? {})) {
+      problems.push('ShareCodeRotationRotated must not declare rotatedAt (R-03: unowned projection)');
+    }
+    // REPLAYED branch: closed, extractionCode absent (forbidden), canonical const, no rotatedAt.
+    const replayed = schemas.ShareCodeRotationReplayed;
+    if (!replayed || replayed.additionalProperties !== false) {
+      problems.push('ShareCodeRotationReplayed must be a closed object branch');
+    }
+    if (replayed?.properties?.result?.const !== 'REPLAYED') {
+      problems.push('ShareCodeRotationReplayed.result must be the canonical const REPLAYED');
+    }
+    if (replayed?.properties && 'extractionCode' in replayed.properties) {
+      problems.push('ShareCodeRotationReplayed must not declare extractionCode');
+    }
+    if (replayed?.properties?.capabilityToken) {
+      problems.push('ShareCodeRotationReplayed must not expose capabilityToken');
+    }
+    if ('rotatedAt' in (replayed?.properties ?? {})) {
+      problems.push('ShareCodeRotationReplayed must not declare rotatedAt (R-03: unowned projection)');
+    }
+  }
+
+  // F-06: protocolVersion required IVR input 1-32, not server-derived.
+  const inboundResolve = schemas.IvrInboundResolveRequest;
+  if (!inboundResolve) {
+    problems.push('IvrInboundResolveRequest is required');
+  } else {
+    const required = new Set(Array.isArray(inboundResolve.required) ? inboundResolve.required : []);
+    const pv = inboundResolve.properties?.protocolVersion;
+    if (!required.has('protocolVersion')) {
+      problems.push('IvrInboundResolveRequest.protocolVersion must be required');
+    }
+    if (pv?.minLength !== 1 || pv?.maxLength !== 32) {
+      problems.push('IvrInboundResolveRequest.protocolVersion must be bounded 1-32');
+    }
+  }
+  // F-06: I4 sequenceNo optional minimum 1, payload required, legId max 64.
+  const callEvent = schemas.IvrCallEventRequest;
+  if (!callEvent) {
+    problems.push('IvrCallEventRequest is required');
+  } else {
+    const required = new Set(Array.isArray(callEvent.required) ? callEvent.required : []);
+    if (required.has('sequenceNo')) {
+      problems.push('IvrCallEventRequest.sequenceNo must stay optional');
+    }
+    if (callEvent.properties?.sequenceNo?.minimum !== 1) {
+      problems.push('IvrCallEventRequest.sequenceNo must set minimum 1');
+    }
+    if (!required.has('payload')) {
+      problems.push('IvrCallEventRequest.payload must be required');
+    }
+    if (callEvent.properties?.legId?.maxLength !== 64) {
+      problems.push('IvrCallEventRequest.legId must set maxLength 64');
+    }
+  }
+  // F-06: OutboundCallTask.expiresAt required non-null date-time.
+  const outboundTask = schemas.OutboundCallTask;
+  if (outboundTask) {
+    const required = new Set(Array.isArray(outboundTask.required) ? outboundTask.required : []);
+    const expiresAt = outboundTask.properties?.expiresAt;
+    if (!required.has('expiresAt')) {
+      problems.push('OutboundCallTask.expiresAt must be required');
+    }
+    if (expiresAt && Array.isArray(expiresAt.type) && expiresAt.type.includes('null')) {
+      problems.push('OutboundCallTask.expiresAt must be non-nullable');
+    }
+  }
+
+  // F-07: RecordingDeclarationRequest sha256 required, durationSeconds min 1,
+  // mimeType max 64; RecordingCompletion.validatedDurationSeconds min 1.
+  const declRequest = schemas.RecordingDeclarationRequest;
+  if (!declRequest) {
+    problems.push('RecordingDeclarationRequest is required');
+  } else {
+    const required = new Set(Array.isArray(declRequest.required) ? declRequest.required : []);
+    if (!required.has('sha256')) {
+      problems.push('RecordingDeclarationRequest.sha256 must be required');
+    }
+    if (declRequest.properties?.durationSeconds?.minimum !== 1) {
+      problems.push('RecordingDeclarationRequest.durationSeconds must set minimum 1');
+    }
+    if (declRequest.properties?.mimeType?.maxLength !== 64) {
+      problems.push('RecordingDeclarationRequest.mimeType must set maxLength 64');
+    }
+  }
+  const completion = schemas.RecordingCompletion;
+  if (completion?.properties?.validatedDurationSeconds?.minimum !== 1) {
+    problems.push('RecordingCompletion.validatedDurationSeconds must set minimum 1');
+  }
+
+  // F-08/R-01: IvrDecision required includes the five frozen domain fields.
+  // A0 §10.14: the two routing snapshot fields are NOT NULL; only the three
+  // reservation-conditional fields are explicitly nullable.
+  const ivrDecision = schemas.IvrDecision;
+  if (!ivrDecision) {
+    problems.push('IvrDecision is required');
+  } else {
+    const required = new Set(Array.isArray(ivrDecision.required) ? ivrDecision.required : []);
+    const snapshotFields = ['availableRecordingSeconds', 'balanceAsOf'];
+    const nullableReservationFields = ['reservationId', 'authorizedRecordingSeconds', 'authorizationExpiresAt'];
+    for (const field of [...snapshotFields, ...nullableReservationFields]) {
+      if (!required.has(field)) {
+        problems.push(`IvrDecision must require ${field}`);
+      }
+    }
+    for (const field of snapshotFields) {
+      const prop = ivrDecision.properties?.[field];
+      if (!prop || Array.isArray(prop.type) || prop.type === 'null') {
+        problems.push(`IvrDecision.${field} must be non-nullable per A0 §10.14 NOT NULL`);
+      }
+    }
+    for (const field of nullableReservationFields) {
+      const prop = ivrDecision.properties?.[field];
+      if (prop && !(Array.isArray(prop.type) && prop.type.includes('null'))) {
+        problems.push(`IvrDecision.${field} must remain explicitly nullable`);
+      }
+    }
+  }
+
+  // F-09: I2 decision required ACCEPT; I3 promptVersion/confirmationKey/confirmationContent required.
+  const activationConfirm = schemas.IvrActivationConfirmRequest;
+  if (activationConfirm) {
+    const required = new Set(Array.isArray(activationConfirm.required) ? activationConfirm.required : []);
+    if (!required.has('decision')) {
+      problems.push('IvrActivationConfirmRequest.decision must be required');
+    }
+    if (activationConfirm.properties?.decision?.enum?.[0] !== 'ACCEPT') {
+      problems.push('IvrActivationConfirmRequest.decision must fix to ACCEPT');
+    }
+  } else {
+    problems.push('IvrActivationConfirmRequest is required');
+  }
+  const directAuth = schemas.IvrDirectAuthorizationRequest;
+  if (!directAuth) {
+    problems.push('IvrDirectAuthorizationRequest is required');
+  } else {
+    const required = new Set(Array.isArray(directAuth.required) ? directAuth.required : []);
+    for (const field of ['promptVersion', 'confirmationKey', 'confirmationContent']) {
+      if (!required.has(field)) {
+        problems.push(`IvrDirectAuthorizationRequest must require ${field}`);
+      }
+    }
+    for (const [field, maxLen] of [['promptVersion', 64], ['confirmationKey', 64], ['confirmationContent', 128]]) {
+      const prop = directAuth.properties?.[field];
+      if (!prop || prop.minLength !== 1 || prop.maxLength !== maxLen) {
+        problems.push(`IvrDirectAuthorizationRequest.${field} must be bounded 1-${maxLen}`);
+      }
+    }
+  }
+
+  return problems;
+}
+
+// F-10/F-11/OQ-3/OQ-4 focused probes: positive and negative fixtures run
+// in-process so a regression in the validators or the contract fails closed
+// at lint time.
+function validateS3FixProbes(root) {
+  const problems = [];
+  const schemas = root?.components?.schemas ?? {};
+
+  // OQ-3: schema-driven value probes against every discovered external
+  // taskId/callId/recordingId/shareId occurrence. A non-UUID value within the
+  // real occurrence's bounds must pass; empty and over-bound values must fail;
+  // the checks read min/maxLength/format from the discovered field schema so a
+  // bounds regression fails the probe instead of a hardcoded literal length.
+  const opaqueOccurrences = collectOpaqueIdOccurrences(root);
+  if (opaqueOccurrences.length === 0) {
+    problems.push('S3 probe: no external opaque identity occurrences discovered (inventory regression)');
+  }
+  const positiveProbeValue = 'PROBE-VALUE-0001';
+  for (const occurrence of opaqueOccurrences) {
+    const label = `S3 probe (${occurrence.label})`;
+    if (!opaqueValueSatisfies(occurrence.field, positiveProbeValue)) {
+      problems.push(`${label}: non-UUID positive value ${JSON.stringify(positiveProbeValue)} must satisfy the occurrence schema`);
+    }
+    if (opaqueValueSatisfies(occurrence.field, '')) {
+      problems.push(`${label}: empty value must fail the occurrence schema bounds`);
+    }
+    if (opaqueValueSatisfies(occurrence.field, 'x'.repeat(occurrence.maxLen + 1))) {
+      problems.push(`${label}: over-bound value of length ${occurrence.maxLen + 1} must fail the occurrence schema bounds`);
+    }
+  }
+
+  // F-02: the real ShareCreated must NOT be allOf (satisfiable flattened shape).
+  if (schemas.ShareCreated?.allOf) {
+    problems.push('S3 probe: ShareCreated must not use allOf (F-02 satisfiability)');
+  }
+
+  // F-02: secret-direction collector must resolve the flattened ShareCreated
+  // and find both secrets with return-once annotations.
+  const collected = collectResolvedProperties(root, schemas.ShareCreated, new Set());
+  for (const property of ['capabilityToken', 'extractionCode']) {
+    const field = collected.get(property);
+    if (!field) {
+      problems.push(`S3 probe: ShareCreated must expose ${property} after ref/composition resolution`);
+    } else if (field.readOnly !== true || field['x-onecall-return-once'] !== true) {
+      problems.push(`S3 probe: ShareCreated.${property} must be readOnly return-once`);
+    }
+  }
+
+  // F-10: the only schemas carrying x-onecall-opaque: true must be the two
+  // approved component schemas; any other annotation fails closed.
+  for (const [name, schema] of Object.entries(schemas)) {
+    if (schema && schema['x-onecall-opaque'] === true && !OPAQUE_CLOSURE_EXCEPTION_SCHEMAS.has(name)) {
+      problems.push(`S3 probe: unapproved x-onecall-opaque on ${name}`);
+    }
+  }
+
+  // OQ-4 executable opaque negatives: the real validators must reject an
+  // unapproved component annotation and an unapproved inline annotation.
+  const unapprovedComponentOpaqueRoot = {
+    components: {
+      schemas: {
+        UnapprovedOpaquePayload: {
+          type: 'object',
+          additionalProperties: false,
+          'x-onecall-opaque': true,
+        },
+      },
+    },
+  };
+  const componentOpaqueProblems = validateSensitiveFields(unapprovedComponentOpaqueRoot);
+  if (!componentOpaqueProblems.some((problem) => problem.includes('x-onecall-opaque is approved only on OpaqueProviderPayload and IvrEventPayload'))) {
+    problems.push('S3 probe: validateSensitiveFields must reject an unapproved component x-onecall-opaque: true schema');
+  }
+  const inlineOpaqueProblems = [];
+  walkRequestSchema(
+    root,
+    { type: 'object', additionalProperties: true, 'x-onecall-opaque': true },
+    () => {},
+    new Set(),
+    (problem) => inlineOpaqueProblems.push(problem),
+  );
+  if (!inlineOpaqueProblems.some((problem) => problem.includes('x-onecall-opaque is approved only on OpaqueProviderPayload and IvrEventPayload'))) {
+    problems.push('S3 probe: walkRequestSchema must reject an unapproved inline x-onecall-opaque: true schema');
+  }
+  if (!inlineOpaqueProblems.some((problem) => problem.includes('request object schema must set additionalProperties false'))) {
+    problems.push('S3 probe: an unapproved inline x-onecall-opaque: true object must not gain the additionalProperties exemption');
+  }
+  // OQ-4 executable negative: an ordinary (unannotated) open request object
+  // must still be rejected; the approved-node openness skip is identity-based.
+  const ordinaryOpenProblems = [];
+  walkRequestSchema(
+    root,
+    { type: 'object', additionalProperties: true },
+    () => {},
+    new Set(),
+    (problem) => ordinaryOpenProblems.push(problem),
+  );
+  if (!ordinaryOpenProblems.some((problem) => problem.includes('request object schema must set additionalProperties false'))) {
+    problems.push('S3 probe: walkRequestSchema must reject an ordinary request object with additionalProperties: true');
+  }
+  // OQ-4 executable negative: a directly traversed boolean true schema remains
+  // rejected; the approved additionalProperties skip must not weaken this.
+  const directBooleanProblems = [];
+  walkRequestSchema(root, true, () => {}, new Set(), (problem) => directBooleanProblems.push(problem));
+  if (!directBooleanProblems.some((problem) => problem.includes('request schema boolean true is forbidden'))) {
+    problems.push('S3 probe: walkRequestSchema must reject a directly traversed boolean true schema');
+  }
+  // The two approved component nodes must stay fully walker-clean under the
+  // same walker (node-identity exemption, not annotation-only). Requiring zero
+  // problems catches the fix-3 regression where the approved node's own
+  // boolean additionalProperties: true was re-walked as an ordinary schema.
+  for (const approvedName of OPAQUE_CLOSURE_EXCEPTION_SCHEMAS) {
+    const approvedSchema = schemas[approvedName];
+    if (!approvedSchema) {
+      problems.push(`S3 probe: approved opaque component ${approvedName} is missing`);
+      continue;
+    }
+    const approvedProblems = [];
+    walkRequestSchema(root, approvedSchema, () => {}, new Set(), (problem) => approvedProblems.push(problem));
+    if (approvedProblems.length > 0) {
+      problems.push(`S3 probe: approved opaque component ${approvedName} must produce zero walker problems, got: ${approvedProblems.join('; ')}`);
+    }
+  }
+
+  // F-10/OQ-4: every x-onecall-a0-contracts entry referencing a § anchor must
+  // be in the approved set (validateOperationMetadata already enforces
+  // membership; this probe asserts the approved set contains no unapproved
+  // extras and that the real validator rejects an unapproved anchor).
+  const APPROVED_A0_SECTION_ANCHORS = new Set([
+    '§7.1', '§7.3', '§7.4', '§9.18', '§9.24', '§9.27', '§9.28', '§10.14', '§10.17',
+  ]);
+  const citedSections = new Set();
+  for (const [, pathItem] of Object.entries(root?.paths ?? {})) {
+    if (!pathItem || typeof pathItem !== 'object') continue;
+    for (const [, operation] of Object.entries(pathItem)) {
+      if (!operation || typeof operation !== 'object') continue;
+      for (const contract of extensionArray(operation, 'x-onecall-a0-contracts') ?? []) {
+        if (typeof contract === 'string' && contract.startsWith('§')) {
+          citedSections.add(contract);
+        }
+      }
+    }
+  }
+  for (const section of citedSections) {
+    if (!APPROVED_A0_SECTION_ANCHORS.has(section)) {
+      problems.push(`S3 probe: cited A0 section anchor ${section} is not in the approved ownership set`);
+    }
+  }
+  // OQ-4 executable anchor negative: a synthetic operation citing the
+  // unapproved §7.2 anchor must be rejected by validateOperationMetadata with
+  // the explicit not-an-accepted-anchor problem (the approved set keeps §7.2
+  // deliberately absent; the exact Markdown-heading check is owned by
+  // a0ContractAnchors).
+  const unapprovedAnchorRoot = {
+    paths: {
+      '/probe': {
+        post: {
+          operationId: 'probeUnapprovedAnchor',
+          'x-onecall-a0-contracts': ['§7.2'],
+        },
+      },
+    },
+  };
+  const anchorProblems = validateOperationMetadata(unapprovedAnchorRoot);
+  if (!anchorProblems.some((problem) => problem.includes('is not an accepted docs/14 anchor') && problem.includes('§7.2'))) {
+    problems.push('S3 probe: validateOperationMetadata must reject the unapproved §7.2 A0 contract anchor');
+  }
+
+  return problems;
+}
+
 function makeRule(validator) {
   return function onecallRule() {
     return {
@@ -1676,6 +2505,8 @@ export default function onecallContractRules() {
           ...validateSensitiveFields(root),
           ...validateTrustedRequestFacts(root),
           ...validateS2FixShapes(root),
+          ...validateS3FixShapes(root),
+          ...validateS3FixProbes(root),
         ]),
         'server-relative': makeRule(validateServerRelative),
         'versioned-paths': makeRule(validateVersionedPaths),

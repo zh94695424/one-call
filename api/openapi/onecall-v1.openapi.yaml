@@ -24,13 +24,13 @@ tags:
     description: Fixed ADMIN/OPS employee read and activation-control surface; metadata access never grants recording playback.
     x-onecall-surface: operations
   - name: ivr
-    description: Self-built IVR service actions and event envelopes (later slices).
+    description: Self-built IVR service decision, event and recording surfaces.
     x-onecall-surface: ivr
   - name: public-share
-    description: Public recording-share capability surface (later slices).
+    description: Public recording-share capability surface with observation-free views and explicit admission.
     x-onecall-surface: public-share
   - name: provider-callback
-    description: Authenticated payment-provider callback surface (later slice).
+    description: Authenticated payment-provider callback surface for normalized provider events.
     x-onecall-surface: provider-callback
 x-onecall-contract:
   contractVersion: 1.0.0
@@ -43,7 +43,7 @@ x-onecall-contract:
   a0Baseline: docs/14-production-data-model-and-flyway-schema-spec.md
   problemRegistry: x-onecall-problem-registry
   runtime: not-implemented
-  notes: S2 freezes the cumulative 32 customer and operations operations (S1 14 + S2 18); ivr, public-share and provider-callback remain base-only.
+  notes: S3 freezes the cumulative 49 first-release operations across five surfaces (customer 18, operations 21, ivr 6, public-share 3, provider-callback 1); S1 14 + S2 18 + S3 17.
 x-onecall-problem-registry:
   UNAUTHENTICATED:
     httpStatus: 401
@@ -60,7 +60,7 @@ x-onecall-problem-registry:
   VALIDATION_FAILED:
     httpStatus: 422
     a0Origin: request schema, field and enum validation
-    surfaces: [customer, operations, ivr, provider-callback]
+    surfaces: [customer, operations, ivr, public-share, provider-callback]
   CURSOR_INVALID:
     httpStatus: 400
     a0Origin: cursor contract; opaque cursor cannot be parsed, is tampered or crosses surfaces
@@ -165,6 +165,122 @@ x-onecall-problem-registry:
     httpStatus: 500
     a0Origin: server failure; safe generic message only
     surfaces: [customer, operations, ivr, public-share, provider-callback]
+  OUTBOUND_CALL_IN_PROGRESS:
+    httpStatus: 409
+    a0Origin: ivr.call_record same canonical caller already has an ACTIVE or UNKNOWN call (current callId excluded); customer task create is not an IVR reason; T-S2-02
+    surfaces: [customer]
+  OUTBOUND_TASK_CONFLICT:
+    httpStatus: 409
+    a0Origin: ivr.outbound_call_task incompatible non-terminal task for the caller, or the same action identity has a changed semantic fingerprint; T-S2-02
+    surfaces: [customer]
+  OUTBOUND_TASK_NOT_CANCELLABLE:
+    httpStatus: 409
+    a0Origin: ivr.outbound_call_task already CLAIMED or no longer PENDING under the conditional cancel; T-S2-02
+    surfaces: [customer]
+  SHARE_CREATION_CONFLICT:
+    httpStatus: 409
+    a0Origin: sharing.evidence_share_grant same creationRequestId identity with a changed frozen scope fingerprint; deterministic shareId not reissued; T-S3-03
+    surfaces: [customer]
+  SHARE_ACCESS_POLICY_UNAVAILABLE:
+    httpStatus: 403
+    a0Origin: approved sharing policy or prompt for the evidence subject is missing or unreadable at creation time; no grant is created; T-S3-03
+    surfaces: [customer]
+  SHARE_RISK_BLOCKED:
+    httpStatus: 403
+    a0Origin: subject_number.subject_risk_state OPEN risk blocks share creation or a new admission; risk precedes replay; T-S3-03 and T-S3-04
+    surfaces: [customer, public-share]
+  SHARE_TRANSITION_CONFLICT:
+    httpStatus: 409
+    a0Origin: sharing.evidence_share_grant revoke or code-rotation transition identity or content changed; deterministic action identity resolves the first outcome; T-S3-03
+    surfaces: [customer]
+  SHARE_GENERATION_STALE:
+    httpStatus: 409
+    a0Origin: sharing.evidence_share_grant revocation or code generation changed since the request witness; stale loser rereads and never relaxes; T-S3-03 and T-S3-05
+    surfaces: [customer, public-share]
+  SHARE_REVOKED:
+    httpStatus: 410
+    a0Origin: sharing.evidence_share_grant status REVOKED is terminal; future access is denied without deleting history; T-S3-03
+    surfaces: [customer, public-share]
+  IVR_ARGUMENT_INVALID:
+    httpStatus: 400
+    a0Origin: IVR protocol parameter (callId, eventId, recordingId, protocolVersion or bound field) fails validation before any decision is frozen
+    surfaces: [ivr]
+  SESSION_IDENTITY_MISMATCH:
+    httpStatus: 409
+    a0Origin: ivr.inbound_session or frozen decision identity, access-number binding or semantic fingerprint cannot be frozen for this callId; T-S2-03 and T-S2-04
+    surfaces: [ivr]
+  CALL_UNKNOWN:
+    httpStatus: 404
+    a0Origin: ivr.call_record parent call does not exist for the trusted service identity; a placeholder call is never created; T-S2-12
+    surfaces: [ivr]
+  EVENT_ID_CONFLICT:
+    httpStatus: 409
+    a0Origin: ivr.call_event (IVR_EVENT, eventId) same identity with a different semantic fingerprint; the first outcome is absorbed; T-S2-12
+    surfaces: [ivr]
+  UPLOAD_OBSERVATION_REQUIRED:
+    httpStatus: 409
+    a0Origin: evidence.recording is still DECLARED; the upload must first be observed by the evidence or media adapter before validation; S3 recording state machine
+    surfaces: [ivr]
+  RECORDING_IDENTITY_CONFLICT:
+    httpStatus: 409
+    a0Origin: evidence.recording same recordingId with a different object, version or hash identity; first server facts are never overwritten; T-S3-01
+    surfaces: [ivr]
+  UPLOAD_EXPIRED:
+    httpStatus: 409
+    a0Origin: evidence.recording upload_expires_at was reached before an observed completion; no extension; S3 recording state machine
+    surfaces: [ivr]
+  STORAGE_UNKNOWN:
+    httpStatus: 503
+    a0Origin: object or media storage outcome is unknown or unavailable during completion validation; the service fails closed and never fabricates media facts; S3 recording state machine
+    surfaces: [ivr]
+  SHARE_TOKEN_INVALID:
+    httpStatus: 404
+    a0Origin: sharing.evidence_share_grant capability token digest is missing, invalid or retired; unified rejection without existence disclosure; T-S3-04
+    surfaces: [public-share]
+  SHARE_VERIFICATION_FAILED:
+    httpStatus: 403
+    a0Origin: extraction code, designated-mobile possession proof or organization-member verification failed; no admission is consumed and no expected secret is disclosed; T-S3-04
+    surfaces: [public-share]
+  SHARE_WRONG_TENANT:
+    httpStatus: 403
+    a0Origin: ORGANIZATION_MEMBER share recipient account, organization or current membership does not match the grant tenant; T-S3-04 and T-S3-05
+    surfaces: [public-share]
+  SHARE_LOCKED:
+    httpStatus: 409
+    a0Origin: sharing.evidence_share_grant status LOCKED blocks only new admissions; already-admitted sessions remain valid for their recorded window; T-S3-04
+    surfaces: [public-share]
+  SHARE_ADMISSION_LIMIT_REACHED:
+    httpStatus: 409
+    a0Origin: sharing.evidence_share_grant admissions_used reached max_admissions; a same-key replay resolves before the limit and never recounts; T-S3-04
+    surfaces: [public-share]
+  SHARE_SESSION_EXPIRED:
+    httpStatus: 410
+    a0Origin: admitted playback session window ended; a new admission is required and counts again; T-S3-04
+    surfaces: [public-share]
+  SHARE_EXPIRED:
+    httpStatus: 410
+    a0Origin: sharing.evidence_share_grant status EXPIRED is terminal; a valid token no longer creates an admission or credential; T-S3-03
+    surfaces: [public-share]
+  SHARE_SESSION_POLICY_UNAVAILABLE:
+    httpStatus: 503
+    a0Origin: ticket or session-policy dependency is unavailable at admission; the service fails closed without recounting or re-rolling admission; T-S3-04 and T-S3-05
+    surfaces: [public-share]
+  DEPENDENCY_UNAVAILABLE:
+    httpStatus: 503
+    a0Origin: an approved downstream dependency is unknown or unavailable; the surface fails closed and never fabricates a success
+    surfaces: [public-share, provider-callback]
+  CALLBACK_SIGNATURE_INVALID:
+    httpStatus: 401
+    a0Origin: provider callback mutual-TLS identity or signature failed verification; the payload is not processed
+    surfaces: [provider-callback]
+  PAYMENT_EVENT_CONFLICT:
+    httpStatus: 409
+    a0Origin: catalog_order.payment_event same provider event identity with a different payload fingerprint; the event is quarantined and never advances the order; T-S2-07 boundary
+    surfaces: [provider-callback]
+  CALLBACK_RETRY_LATER:
+    httpStatus: 503
+    a0Origin: provider callback processing is deferred by a temporary platform condition; the provider may retry under the same identity; no success is fabricated
+    surfaces: [provider-callback]
 paths:
   /api/v1/customer/me:
     get:
@@ -2453,6 +2569,1427 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
         default:
           $ref: '#/components/responses/Internal'
+  /api/v1/customer/outbound-call-tasks:
+    post:
+      tags: [customer]
+      operationId: createCustomerOutboundCallTask
+      summary: Create or replace the current short-lived outbound call task.
+      description: |
+        Creates or replaces the single non-terminal outbound call task for the
+        authenticated account/workspace under the bound caller. The client
+        supplies only `callerBindingId`, the normalized callee and optional
+        business metadata; the server re-reads binding ownership, requires the
+        current `service_activation.status` to be ACTIVE, rejects when the same
+        canonical caller/subject already has another ACTIVE or UNKNOWN call
+        (`OUTBOUND_CALL_IN_PROGRESS`), normalizes the callee and freezes the
+        task TTL without renewal. The `Idempotency-Key` header (1-512) is the
+        A0 task client identity; a same-key same-fingerprint replay returns the
+        original task without extending its frozen TTL. A single non-terminal
+        task per canonical caller/subject is enforced; an incompatible
+        non-terminal task or a changed action identity is
+        `OUTBOUND_TASK_CONFLICT`. Plaintext callee, other-account tasks and
+        historical callees are never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> ACTIVE account/workspace; callerBindingId ownership re-read; ACTIVE service activation; no other ACTIVE/UNKNOWN call for the canonical caller/subject; unique non-terminal task
+      x-onecall-a0-models:
+        - ivr.outbound_call_task
+        - subject_number.caller_number_binding
+        - ivr.call_record
+        - activation_consent.service_activation
+      x-onecall-a0-contracts:
+        - T-S2-02
+        - T-S2-03
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - ACTIVATION_NOT_ACTIVE
+        - OUTBOUND_CALL_IN_PROGRESS
+        - OUTBOUND_TASK_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      x-onecall-replay-order: activation-and-call-check-before-replay
+      parameters:
+        - $ref: '#/components/parameters/TaskIdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboundCallTaskCreateRequest'
+      responses:
+        '201':
+          description: First created or replaced non-terminal task with the frozen TTL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundCallTask'
+        '200':
+          description: Same-key same-fingerprint replay of the original task without TTL extension.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundCallTask'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Forbidden, or the current service activation is not ACTIVE (`ACTIVATION_NOT_ACTIVE`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          $ref: '#/components/responses/OutboundTaskConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/outbound-call-tasks/{taskId}:
+    get:
+      tags: [customer]
+      operationId: getCustomerOutboundCallTask
+      summary: Read the current outbound call task status and countdown.
+      description: |
+        Returns one outbound call task scoped to the authenticated
+        account/workspace. The server filters by task ownership and workspace
+        and never falls back to the latest task. Missing or foreign tasks are
+        the unified `NOT_FOUND`. Plaintext callee, other-workspace tasks and
+        internal claim details are never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> task owner and workspace scope re-read; no latest-task fallback
+      x-onecall-a0-models:
+        - ivr.outbound_call_task
+        - ivr.call_record
+      x-onecall-a0-contracts:
+        - T-S2-02
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Stable outbound call task identity.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        '200':
+          description: Task status and countdown projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundCallTask'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/outbound-call-tasks/{taskId}/cancellations:
+    post:
+      tags: [customer]
+      operationId: cancelCustomerOutboundCallTask
+      summary: Cancel the caller's still-PENDING outbound call task.
+      description: |
+        Cancels the authenticated caller's current-workspace task only while it
+        is still `PENDING`. The server re-reads owner, workspace and status and
+        performs a conditional update. A task that is already CLAIMED or no
+        longer PENDING is `OUTBOUND_TASK_NOT_CANCELLABLE`; an incompatible
+        concurrent cancel identity is `OUTBOUND_TASK_CONFLICT`. The
+        `Idempotency-Key` header is 1-512. Plaintext callee and other-account
+        tasks are never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> task owner/workspace/status re-read; conditional PENDING cancel only
+      x-onecall-a0-models:
+        - ivr.outbound_call_task
+      x-onecall-a0-contracts:
+        - T-S2-02
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - OUTBOUND_TASK_NOT_CANCELLABLE
+        - OUTBOUND_TASK_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: Stable outbound call task identity to cancel.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - $ref: '#/components/parameters/TaskIdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboundCallTaskCancelRequest'
+      responses:
+        '200':
+          description: First or replayed cancelled task projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboundCallTask'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/OutboundTaskConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/shares:
+    post:
+      tags: [customer]
+      operationId: createCustomerShare
+      summary: Create a share grant for SOLIDIFIED evidence with a one-time capability token.
+      description: |
+        Creates one share grant for SOLIDIFIED evidence the account may access.
+        The body carries `creationRequestId` (1-128), `evidenceId`,
+        `verificationMode`, `expiresAt`, nullable `maxAdmissions`,
+        `downloadAllowed` and optional `designatedMobile` for the
+        DESIGNATED_MOBILE mode. The server re-reads evidence access, subject
+        risk and the approved sharing policy, generates the capability token
+        and optional extraction code, freezes the content projection and
+        derives a deterministic `shareId`. The capability token and extraction
+        code are returned only on this creation response
+        (`x-onecall-return-once`). A same `creationRequestId` with a changed
+        frozen scope fingerprint is `SHARE_CREATION_CONFLICT` and does not
+        reissue the deterministic share. Missing or unreadable approved
+        sharing policy is `SHARE_ACCESS_POLICY_UNAVAILABLE`; OPEN subject risk
+        is `SHARE_RISK_BLOCKED` and precedes replay. Creator/workspace/content
+        /token/code are never client-supplied and later reads never return the
+        token or code.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> SOLIDIFIED evidence access; approved sharing policy; subject risk re-read before replay; server-generated token/code only
+      x-onecall-a0-models:
+        - sharing.evidence_share_grant
+        - sharing.share_access_event
+        - evidence.evidence_record
+      x-onecall-a0-contracts:
+        - T-S3-03
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - SHARE_CREATION_CONFLICT
+        - SHARE_ACCESS_POLICY_UNAVAILABLE
+        - SHARE_RISK_BLOCKED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-replay-order: risk-and-policy-before-replay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareCreateRequest'
+      responses:
+        '201':
+          description: First created share; capability token (and code mode extraction code) are returned once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareCreated'
+        '200':
+          description: Same creationRequestId with the unchanged frozen scope fingerprint replays the metadata-only ShareState projection (no secrets) without reissuing a new share identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Forbidden, missing approved sharing policy (`SHARE_ACCESS_POLICY_UNAVAILABLE`) or OPEN subject risk (`SHARE_RISK_BLOCKED`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Same creationRequestId identity with a changed frozen scope fingerprint (`SHARE_CREATION_CONFLICT`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+    get:
+      tags: [customer]
+      operationId: listCustomerShares
+      summary: List share metadata for the current account and workspace.
+      description: |
+        Lists share grants visible to the authenticated account/workspace with
+        the stable order `validFrom desc, shareId desc`. Capability tokens,
+        extraction codes, hashes, salts, object keys and unshared evidence are
+        never returned. Evidence ids appear only in the creator context.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession + server workspace scope; only creator-context share metadata is projected
+      x-onecall-a0-models:
+        - sharing.evidence_share_grant
+        - sharing.share_access_event
+      x-onecall-a0-contracts:
+        - T-S3-03
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-sort: 'validFrom desc, shareId desc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Share metadata page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharePage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/shares/{shareId}/revocations:
+    post:
+      tags: [customer]
+      operationId: revokeCustomerShare
+      summary: Revoke future access to one owned share grant.
+      description: |
+        Revokes future access for one share grant owned by the current
+        account/workspace. The server re-reads grant status and revocation
+        generation and performs a conditional update under the action request
+        identity. A changed transition identity or content is
+        `SHARE_TRANSITION_CONFLICT`; a stale revocation/code generation witness
+        is `SHARE_GENERATION_STALE`; a terminal REVOKED grant is `SHARE_REVOKED`
+        (410). Already-issued short-lived credentials are not recalled and the
+        contract makes no remote buffer reclamation promise. The
+        `Idempotency-Key` header is 1-128. Tokens, codes and hashes are never
+        returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> share creator/workspace; conditional generation update; terminal REVOKED is not deleted
+      x-onecall-a0-models:
+        - sharing.evidence_share_grant
+        - sharing.share_access_event
+      x-onecall-a0-contracts:
+        - T-S3-03
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - SHARE_TRANSITION_CONFLICT
+        - SHARE_GENERATION_STALE
+        - SHARE_REVOKED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          description: Deterministic share grant identity to revoke.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareRevokeRequest'
+      responses:
+        '200':
+          description: First or replayed revocation state projection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ShareAccessDenied'
+        '410':
+          $ref: '#/components/responses/ShareGone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/shares/{shareId}/code-rotations:
+    post:
+      tags: [customer]
+      operationId: rotateCustomerShareCode
+      summary: Rotate the extraction code and unlock one EXTRACTION_CODE share.
+      description: |
+        Rotates the extraction code for one EXTRACTION_CODE-mode share owned by
+        the current account/workspace and unlocks it (`LOCKED -> ACTIVE`) while
+        incrementing `codeGeneration` and `revocationGeneration`. The server
+        generates the new code; only the new code is returned once on this
+        response (`ShareCodeRotation.extractionCode`). The response never
+        contains `capabilityToken` and the old code, token, hash and salt are
+        never returned. A non-EXTRACTION_CODE mode or incompatible transition
+        identity is `SHARE_TRANSITION_CONFLICT`. The `Idempotency-Key` header
+        is 1-128.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> share creator/workspace; EXTRACTION_CODE mode only; server-generated new code; no token rebuild
+      x-onecall-a0-models:
+        - sharing.evidence_share_grant
+        - sharing.share_access_event
+      x-onecall-a0-contracts:
+        - T-S3-03
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - SHARE_TRANSITION_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      parameters:
+        - name: shareId
+          in: path
+          required: true
+          description: Deterministic share grant identity whose extraction code rotates.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareCodeRotationRequest'
+      responses:
+        '200':
+          description: First or replayed code rotation; the new extraction code is returned once and no capability token is present.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareCodeRotation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ShareAccessDenied'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/ivr/inbound/resolve:
+    post:
+      tags: [ivr]
+      operationId: resolveIvrInbound
+      summary: Resolve an inbound IVR call into one frozen decision.
+      description: |
+        Establishes or reuses the inbound session, atomically claims the unique
+        non-terminal task when applicable, creates the usage reservation and
+        freezes the authorization, then returns one `IvrDecision`. Trusted
+        line caller, canonical access number and node are server-derived, while
+        `protocolVersion` is a required client-supplied input that is
+        authenticated and fingerprinted. Normal domain results (including `REJECT_CALL_IN_PROGRESS`,
+        `REJECT`/`TASK_CONFLICT`, GUIDE_ACTIVATION/`CONSENT_REQUIRED` and
+        non-dial outcomes) are always `200 IvrDecision`. Only `IVR_ARGUMENT_INVALID`
+        (400) and identity/fingerprint/access-number conflicts that cannot
+        freeze a decision (`SESSION_IDENTITY_MISMATCH`, 409) are Problems.
+        Same `callId + INBOUND_RESOLVE` fingerprint replays the first frozen
+        decision without extending authorization. Full callee is returned only
+        inside the frozen encrypted internal task payload for
+        `DIAL_TASK_CALLEE`; account, payment and evidence state are never
+        returned and no latest-callee fallback exists.
+      security:
+        - ivrMtls: []
+          ivrSignature: []
+      x-onecall-surface: ivr
+      x-onecall-audience: ivr-service
+      x-onecall-authorization: ivrMtls + ivrSignature; trusted caller/access-number binding; atomic unique task claim, usage reservation and frozen authorization; no latest-callee fallback
+      x-onecall-a0-models:
+        - ivr.inbound_session
+        - ivr.call_record
+        - ivr.outbound_call_task
+        - ivr.ivr_decision
+        - entitlement_metering.usage_reservation
+        - activation_consent.service_activation
+        - entitlement_metering.entitlement_balance
+      x-onecall-a0-contracts:
+        - T-S2-01
+        - T-S2-03
+        - T-S2-04
+        - T-S2-11
+        - '§10.14'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IVR_ARGUMENT_INVALID
+        - SESSION_IDENTITY_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-replay-order: fingerprint-replay
+      parameters:
+        - $ref: '#/components/parameters/IvrTimestampParam'
+        - $ref: '#/components/parameters/IvrNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IvrInboundResolveRequest'
+      responses:
+        '200':
+          description: Frozen inbound decision, including every normal domain outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IvrDecision'
+        '400':
+          $ref: '#/components/responses/IvRArgumentInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/SessionIdentityMismatch'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/ivr/calls/{callId}/activation-confirmations:
+    post:
+      tags: [ivr]
+      operationId: confirmIvrActivation
+      summary: Confirm an activation prompt and re-decide the same call.
+      description: |
+        Handles the DTMF confirmation for a prior
+        `INBOUND_RESOLVE = GUIDE_ACTIVATION` on the same `callId`. In one
+        transaction it records the explicit key `1` confirmation, performs
+        activation/first-trial when allowed, re-checks task and entitlement and
+        returns a new frozen `IvrDecision` with purpose `ACTIVATION_NEXT_ACTION`.
+        Normal domain results (`GUIDE_ACTIVATION`/`CONSENT_REQUIRED`,
+        `REJECT`/`CONFIRMATION_NOT_ALLOWED`, subsequent
+        `DIAL_TASK_CALLEE`/`ENTER_CALLEE`/`GUIDE_PURCHASE`/`REJECT`) are
+        `200 IvrDecision`. Missing/stale confirmation content freezes
+        `GUIDE_ACTIVATION` + `CONSENT_REQUIRED`; a domain-forbidden confirmation
+        freezes `REJECT` + `CONFIRMATION_NOT_ALLOWED` without side effects. Only
+        identity/fingerprint conflicts are 409 Problems. The body `eventId`
+        (1-128) is the stable event identity; same fingerprint replays the first
+        frozen decision. The original resolve decision is never rewritten and
+        claim/reservation atomicity is never bypassed.
+      security:
+        - ivrMtls: []
+          ivrSignature: []
+      x-onecall-surface: ivr
+      x-onecall-audience: ivr-service
+      x-onecall-authorization: ivrMtls + ivrSignature; same callId prior GUIDE_ACTIVATION resolve only; explicit key 1; no re-resolve; no unauthorized activation
+      x-onecall-a0-models:
+        - activation_consent.consent_record
+        - activation_consent.service_activation
+        - activation_consent.service_activation_transition
+        - entitlement_metering.trial_grant
+        - ivr.ivr_decision
+        - entitlement_metering.usage_reservation
+      x-onecall-a0-contracts:
+        - T-S2-13
+        - T-S2-01
+        - T-S2-11
+        - '§10.14'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IVR_ARGUMENT_INVALID
+        - SESSION_IDENTITY_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: event-body
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          description: Stable IVR call identity of the original resolve.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IvrTimestampParam'
+        - $ref: '#/components/parameters/IvrNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IvrActivationConfirmRequest'
+      responses:
+        '200':
+          description: Frozen re-decision, including every normal domain outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IvrDecision'
+        '400':
+          $ref: '#/components/responses/IvRArgumentInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/SessionIdentityMismatch'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/ivr/calls/{callId}/outbound-authorizations:
+    post:
+      tags: [ivr]
+      operationId: authorizeIvrDirectOutbound
+      summary: Authorize a no-task direct DTMF callee and freeze the reservation.
+      description: |
+        Handles the direct-authorization path for a no-task `ENTER_CALLEE`
+        decision on the same `callId`. It confirms the server-normalized DTMF
+        callee and, when caller, activation, consent and entitlement all pass,
+        freezes one usage reservation and returns purpose `DIRECT_AUTHORIZATION`
+        with a null action (success). Non-dial outcomes (`GUIDE_PURCHASE`,
+        `REJECT`, `REJECT_SUSPENDED`, `REJECT_CALL_IN_PROGRESS`, including
+        `CONFIRMATION_NOT_ALLOWED`/`CONSENT_REQUIRED` reason codes) are normal
+        `200 IvrDecision` results with no reservation. No task is claimed and no
+        non-empty taskId is returned. Only identity/fingerprint conflicts are
+        409 Problems. The body `eventId` (1-128) is the stable event identity.
+        Authorization is never extended by replay and never falls back to a
+        task.
+      security:
+        - ivrMtls: []
+          ivrSignature: []
+      x-onecall-surface: ivr
+      x-onecall-audience: ivr-service
+      x-onecall-authorization: ivrMtls + ivrSignature; no-task ENTER_CALLEE path only; server-normalized callee; frozen reservation; no task claim
+      x-onecall-a0-models:
+        - ivr.call_record
+        - ivr.ivr_decision
+        - entitlement_metering.usage_reservation
+        - activation_consent.service_activation
+        - entitlement_metering.entitlement_balance
+      x-onecall-a0-contracts:
+        - T-S2-04
+        - T-S2-11
+        - '§10.14'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IVR_ARGUMENT_INVALID
+        - SESSION_IDENTITY_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: event-body
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          description: Stable IVR call identity of the no-task ENTER_CALLEE decision.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IvrTimestampParam'
+        - $ref: '#/components/parameters/IvrNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IvrDirectAuthorizationRequest'
+      responses:
+        '200':
+          description: Frozen direct-authorization decision, including every normal non-dial domain outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IvrDecision'
+        '400':
+          $ref: '#/components/responses/IvRArgumentInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/SessionIdentityMismatch'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/ivr/calls/{callId}/events:
+    post:
+      tags: [ivr]
+      operationId: ingestIvrCallEvent
+      summary: Ingest one IVR call event envelope and converge call facts.
+      description: |
+        Appends or converges outbound, answer, bridge, recording, hangup and
+        `OUTBOUND_NOT_STARTED` facts for a known parent call/session/leg. The
+        server validates parent existence (unknown calls never create a
+        placeholder and return `CALL_UNKNOWN`), computes the event fingerprint
+        and performs duration validation and settlement. Event identity is
+        `(IVR_EVENT, eventId)`; the same identity with a different semantic
+        fingerprint is `EVENT_ID_CONFLICT` and the first outcome is absorbed.
+        First terminal state wins; UNKNOWN line outcomes never release
+        entitlement and enter reconciliation instead. Raw payload, ciphertext,
+        full numbers and internal error details are never returned. The body
+        `eventId` (1-128) is the stable event identity.
+      security:
+        - ivrMtls: []
+          ivrSignature: []
+      x-onecall-surface: ivr
+      x-onecall-audience: ivr-service
+      x-onecall-authorization: ivrMtls + ivrSignature; known parent call/session/leg only; server fingerprint and settlement; no placeholder call
+      x-onecall-a0-models:
+        - ivr.call_event
+        - ivr.call_record
+        - ivr.call_leg
+        - entitlement_metering.usage_reservation
+        - entitlement_metering.usage_fact
+      x-onecall-a0-contracts:
+        - T-S2-12
+        - T-S2-05
+        - T-S2-06
+        - IVR_EVENT
+        - '§9.24'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IVR_ARGUMENT_INVALID
+        - CALL_UNKNOWN
+        - EVENT_ID_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: event-body
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          description: Stable parent IVR call identity.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IvrTimestampParam'
+        - $ref: '#/components/parameters/IvrNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IvrCallEventRequest'
+      responses:
+        '200':
+          description: Event receipt with APPLIED, QUARANTINED or IGNORED processing status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallEventReceipt'
+        '400':
+          $ref: '#/components/responses/IvRArgumentInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CallUnknown'
+        '409':
+          $ref: '#/components/responses/SessionIdentityMismatch'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/ivr/calls/{callId}/recordings:
+    post:
+      tags: [ivr]
+      operationId: declareIvrRecording
+      summary: Declare one recording identity and issue a short-lived upload instruction.
+      description: |
+        Registers one unique `recordingId` for a known parent call and issues a
+        single-object short-lived upload instruction. The client-declared
+        format, size, duration and hash are declaration facts only and are not
+        validated media facts. The server generates the upload expiry and
+        opaque credential; the credential is `readOnly` with required log
+        redaction and is not a return-once secret. Object key, bucket, permanent
+        URL and unverified server facts are never returned. A same recordingId
+        with a different object/version/hash identity is
+        `RECORDING_IDENTITY_CONFLICT`; an unknown parent call is `CALL_UNKNOWN`
+        and never creates a placeholder.
+      security:
+        - ivrMtls: []
+          ivrSignature: []
+      x-onecall-surface: ivr
+      x-onecall-audience: ivr-service
+      x-onecall-authorization: ivrMtls + ivrSignature; known parent call; recordingId uniqueness; declaration is not validation
+      x-onecall-a0-models:
+        - evidence.recording
+        - evidence.media_object
+      x-onecall-a0-contracts:
+        - T-S3-01
+        - '§9.27'
+        - '§9.28'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IVR_ARGUMENT_INVALID
+        - CALL_UNKNOWN
+        - RECORDING_IDENTITY_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          description: Stable parent IVR call identity.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IvrTimestampParam'
+        - $ref: '#/components/parameters/IvrNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingDeclarationRequest'
+      responses:
+        '201':
+          description: First recording declaration with a short-lived upload instruction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingDeclaration'
+        '400':
+          $ref: '#/components/responses/IvRArgumentInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CallUnknown'
+        '409':
+          $ref: '#/components/responses/RecordingConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete:
+    post:
+      tags: [ivr]
+      operationId: completeIvrRecording
+      summary: Complete one recording upload under server-observed media facts.
+      description: |
+        Notifies the platform that the declared upload finished and triggers
+        server-side object/media validation. The client does not supply hash,
+        version or bucket facts; only the recording identity and current status
+        are authoritative inputs. `DECLARED` recordings that have not yet been
+        observed by the evidence or media adapter return
+        `UPLOAD_OBSERVATION_REQUIRED`. An expired `upload_expires_at` is
+        `UPLOAD_EXPIRED` with no extension. A different object/version/hash
+        identity is `RECORDING_IDENTITY_CONFLICT` and first server facts are
+        never overwritten. When object or media storage is unknown the service
+        fails closed with `STORAGE_UNKNOWN` (503) and never fabricates media
+        facts. Success is `VALIDATED` or `QUARANTINED` with server-recomputed
+        duration/hash. Same identity with the same observed facts returns the
+        first completion. `complete` does not create or solidify an evidence
+        record; evidence solidification remains a later owner flow outside this
+        transaction. Object keys, versions, buckets, raw bytes and audio URLs
+        are never returned.
+      security:
+        - ivrMtls: []
+          ivrSignature: []
+      x-onecall-surface: ivr
+      x-onecall-audience: ivr-service
+      x-onecall-authorization: ivrMtls + ivrSignature; known parent call and recording; server-observed object/media facts only; evidence solidification is out of scope
+      x-onecall-a0-models:
+        - evidence.recording
+        - evidence.media_object
+        - evidence.evidence_record
+        - evidence.evidence_event
+        - ivr.call_record
+      x-onecall-a0-contracts:
+        - T-S3-01
+        - T-S3-02
+        - '§9.27'
+        - '§9.28'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IVR_ARGUMENT_INVALID
+        - CALL_UNKNOWN
+        - UPLOAD_OBSERVATION_REQUIRED
+        - RECORDING_IDENTITY_CONFLICT
+        - UPLOAD_EXPIRED
+        - STORAGE_UNKNOWN
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      parameters:
+        - name: callId
+          in: path
+          required: true
+          description: Stable parent IVR call identity.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: recordingId
+          in: path
+          required: true
+          description: Stable recording identity declared earlier for this call.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/IvrTimestampParam'
+        - $ref: '#/components/parameters/IvrNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordingCompletionRequest'
+      responses:
+        '200':
+          description: Server-validated or quarantined recording completion; same identity and facts replay the first outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingCompletion'
+        '400':
+          $ref: '#/components/responses/IvRArgumentInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CallUnknown'
+        '409':
+          $ref: '#/components/responses/RecordingConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: Storage or media outcome is unknown (`STORAGE_UNKNOWN`) or another dependency is unavailable (`SERVICE_UNAVAILABLE`); the service fails closed and never fabricates media facts.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/public/shares/{capabilityToken}:
+    get:
+      tags: [public-share]
+      operationId: getPublicShare
+      summary: Read public share page safety metadata without consuming admission.
+      description: |
+        Displays the safety metadata for one capability token. Page open and
+        prefetch never consume admission and never write `PAGE_OPENED`,
+        `PREFETCH_IGNORED` or any `share_access_event` (observation-free). An
+        invalid, missing or retired token is the unified `SHARE_TOKEN_INVALID`
+        (404) without existence disclosure. A valid token whose grant is
+        REVOKED or EXPIRED is `SHARE_REVOKED`/`SHARE_EXPIRED` (410). For
+        `ORGANIZATION_MEMBER` shares, a missing or non-matching
+        `customerSession` returns only `verificationMode`, `status`,
+        `expiresAt`, `downloadAllowed` and
+        `verificationChallenge{customerSessionRequired:true}` and omits
+        `content`; content is projected only after the authenticated
+        account/organization/membership matches the grant tenant. `NONE`,
+        `EXTRACTION_CODE` and `DESIGNATED_MOBILE` page behavior is unchanged.
+        shareId, evidenceId, subjectId, object keys/URLs, token/hash and
+        unshared content are never returned.
+      security:
+        - {}
+        - customerSession: []
+      x-onecall-surface: public-share
+      x-onecall-audience: public-capability
+      x-onecall-authorization: capability token digest only; observation-free GET; ORGANIZATION_MEMBER content projected only after matching authenticated tenant; no share_access_event write
+      x-onecall-a0-models:
+        - sharing.evidence_share_grant
+        - evidence.evidence_record
+      x-onecall-a0-contracts:
+        - T-S3-04
+        - SHARE_ACCESS
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - SHARE_TOKEN_INVALID
+        - SHARE_REVOKED
+        - SHARE_EXPIRED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      parameters:
+        - name: capabilityToken
+          in: path
+          required: true
+          description: Opaque public capability token; only the server-side digest is stored and compared.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+      responses:
+        '200':
+          description: Share page safety metadata; content is present only when the mode and optional matching member session allow it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicShareView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ShareTokenInvalid'
+        '410':
+          $ref: '#/components/responses/ShareGone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/public/shares/{capabilityToken}/admissions:
+    post:
+      tags: [public-share]
+      operationId: createPublicShareAdmission
+      summary: Admit one share access attempt and issue a short-lived media credential.
+      description: |
+        Performs the explicit admission for one capability token: verifies the
+        mode-specific proof, atomically counts exactly once and, after a
+        committed admission, issues the short-lived media authorization. The
+        body carries `admissionRequestId` (1-128) and the discriminated
+        `verification` union. Only `ORGANIZATION_MEMBER` requires an
+        authenticated `customerSession`; `EXTRACTION_CODE` uses a `writeOnly`
+        code that is never echoed. Failed verification is
+        `SHARE_VERIFICATION_FAILED` and consumes no admission; OPEN subject
+        risk is `SHARE_RISK_BLOCKED`; a mismatched member tenant is
+        `SHARE_WRONG_TENANT`; a LOCKED grant blocks only new admissions with
+        `SHARE_LOCKED`; reaching `maxAdmissions` is
+        `SHARE_ADMISSION_LIMIT_REACHED`; an ended session window is
+        `SHARE_SESSION_EXPIRED` (410). When the ticket or session policy is
+        unavailable after the admission is committed, the service fails closed
+        with `SHARE_SESSION_POLICY_UNAVAILABLE` or `DEPENDENCY_UNAVAILABLE`
+        (503) without recounting or re-rolling; the same `admissionRequestId`
+        reissues the ticket and never recounts. `NONE` results are
+        `NOT_REQUIRED` and do not record a verified identity. Codes, tokens,
+        hashes, phones, OTPs, object keys and unshared evidence are never
+        returned.
+      security:
+        - {}
+        - customerSession: []
+      x-onecall-surface: public-share
+      x-onecall-audience: public-capability
+      x-onecall-authorization: capability token + mode verification; atomic single count; ORGANIZATION_MEMBER requires matching customerSession; ticket failure after commit fails closed without recount
+      x-onecall-a0-models:
+        - sharing.share_admission
+        - sharing.share_access_event
+        - sharing.evidence_share_grant
+        - subject_number.subject_risk_state
+      x-onecall-a0-contracts:
+        - T-S3-04
+        - SHARE_ACCESS
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - SHARE_VERIFICATION_FAILED
+        - SHARE_RISK_BLOCKED
+        - SHARE_WRONG_TENANT
+        - SHARE_TOKEN_INVALID
+        - SHARE_REVOKED
+        - SHARE_EXPIRED
+        - SHARE_LOCKED
+        - SHARE_ADMISSION_LIMIT_REACHED
+        - SHARE_GENERATION_STALE
+        - SHARE_SESSION_EXPIRED
+        - SHARE_SESSION_POLICY_UNAVAILABLE
+        - DEPENDENCY_UNAVAILABLE
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-replay-order: verification-and-risk-before-count
+      parameters:
+        - name: capabilityToken
+          in: path
+          required: true
+          description: Opaque public capability token; only the server-side digest is stored and compared.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareAdmissionRequest'
+      responses:
+        '201':
+          description: First admitted session with a short-lived media authorization; the same admissionRequestId replays the ticket without recounting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareAdmission'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ShareAccessDenied'
+        '404':
+          $ref: '#/components/responses/ShareTokenInvalid'
+        '409':
+          $ref: '#/components/responses/ShareAccessDenied'
+        '410':
+          $ref: '#/components/responses/ShareGone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: Ticket/session policy (`SHARE_SESSION_POLICY_UNAVAILABLE`) or another dependency (`DEPENDENCY_UNAVAILABLE`) failed after a committed admission; fail closed without recounting or re-rolling; same admissionRequestId reissues the ticket.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/public/shares/{capabilityToken}/admissions/{admissionId}/media-authorizations:
+    post:
+      tags: [public-share]
+      operationId: authorizePublicShareMedia
+      summary: Issue or rebuild a short-lived media credential for an admitted session.
+      description: |
+        Issues or rebuilds short-lived playback, seek or renew media
+        credentials for one already-admitted session under the media gateway
+        trust boundary. The body carries `authorizationRequestId` (1-128) and a
+        `purpose` of `PLAYBACK`, `SEEK` or `RENEW`. The server re-reads the
+        admission witness, grant status/time/generation and risk. An `ACTIVE`
+        grant or an already-admitted `LOCKED` session may authorize;
+        `SHARE_LOCKED` is intentionally absent because LOCKED only blocks new
+        P2 admissions. OPEN subject risk is `SHARE_RISK_BLOCKED`; a mismatched
+        member tenant is `SHARE_WRONG_TENANT`; a changed revocation or code
+        generation witness is `SHARE_GENERATION_STALE`; an ended session window
+        is `SHARE_SESSION_EXPIRED` (410); unavailable ticket/session policy or
+        dependency is a 503 fail-closed. `ORGANIZATION_MEMBER` reissue is bound
+        to the already-admitted recipient witness. The returned
+        `mediaAuthorization.credential` is opaque, `readOnly`, requires log
+        redaction and is not a return-once secret; the credential is validated
+        by the media gateway. Permanent URLs, object keys, bytes, Redis ticket
+        structure and remote buffer reclamation promises are never returned.
+      security:
+        - {}
+        - customerSession: []
+      x-onecall-surface: public-share
+      x-onecall-audience: public-capability
+      x-onecall-authorization: capability token + admission witness; ACTIVE or already-admitted LOCKED only; deterministic access identity; media gateway validates credential
+      x-onecall-a0-models:
+        - sharing.share_access_event
+        - sharing.share_admission
+        - sharing.evidence_share_grant
+        - subject_number.subject_risk_state
+      x-onecall-a0-contracts:
+        - T-S3-05
+        - SHARE_ACCESS
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - SHARE_RISK_BLOCKED
+        - SHARE_WRONG_TENANT
+        - SHARE_TOKEN_INVALID
+        - SHARE_REVOKED
+        - SHARE_EXPIRED
+        - SHARE_GENERATION_STALE
+        - SHARE_SESSION_EXPIRED
+        - SHARE_SESSION_POLICY_UNAVAILABLE
+        - DEPENDENCY_UNAVAILABLE
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      parameters:
+        - name: capabilityToken
+          in: path
+          required: true
+          description: Opaque public capability token; only the server-side digest is stored and compared.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+        - name: admissionId
+          in: path
+          required: true
+          description: Already-admitted session identity for this share.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaAuthorizationRequest'
+      responses:
+        '200':
+          description: Short-lived media credential for the admitted session; same authorizationRequestId with the same purpose replays the first issued credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAuthorization'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ShareAccessDenied'
+        '404':
+          $ref: '#/components/responses/ShareTokenInvalid'
+        '409':
+          $ref: '#/components/responses/ShareAccessDenied'
+        '410':
+          $ref: '#/components/responses/ShareGone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/callbacks/payment-events:
+    post:
+      tags: [provider-callback]
+      operationId: receivePaymentProviderCallback
+      summary: Accept one verified provider payment event under provider identity.
+      description: |
+        Receives one already-signed payment event, verifies provider mutual-TLS
+        identity, signature, time window and nonce, normalizes the provider
+        event identity in the adapter layer and advances payment/order
+        state idempotently without exposing internal results. The request body
+        is the approved opaque provider payload; the OpenAPI contract does not
+        copy vendor fields and A1 only guarantees 2xx acknowledgement, Problem
+        rejection and same-event idempotency. A same provider event identity
+        with a different payload fingerprint is `PAYMENT_EVENT_CONFLICT` (409)
+        and the event is quarantined without advancing the order. Signature or
+        mTLS failure is `CALLBACK_SIGNATURE_INVALID` (401) and the payload is
+        not processed. A temporary platform deferral is `CALLBACK_RETRY_LATER`
+        (503) under the same identity with no fabricated success. Success is
+        `CallbackAcknowledgement` with `accepted: true` and a `duplicate`
+        flag; provider payload, transaction details, internal errors,
+        customer/employee identity and entitlement issuance internals are never
+        returned.
+      security:
+        - providerCallbackMtls: []
+          providerCallbackSignature: []
+      x-onecall-surface: provider-callback
+      x-onecall-audience: provider
+      x-onecall-authorization: providerCallbackMtls + providerCallbackSignature; adapter-normalized provider event identity; server verification; payload encrypted at rest by the adapter; no internal result disclosure
+      x-onecall-a0-models:
+        - catalog_order.payment_event
+        - catalog_order.payment_order
+        - catalog_order.customer_order
+        - platform.outbox_event
+      x-onecall-a0-contracts:
+        - T-S2-08
+        - '§9.18'
+        - '§10.17'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CALLBACK_SIGNATURE_INVALID
+        - PAYMENT_EVENT_CONFLICT
+        - CALLBACK_RETRY_LATER
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: provider-event
+      parameters:
+        - $ref: '#/components/parameters/ProviderCallbackTimestampParam'
+        - $ref: '#/components/parameters/ProviderCallbackNonceParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentProviderCallbackRequest'
+      responses:
+        '200':
+          description: Accepted acknowledgement; duplicate is true when the same provider event identity and payload fingerprint were already processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackAcknowledgement'
+        '401':
+          $ref: '#/components/responses/CallbackSignatureInvalid'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Same provider event identity with a different payload fingerprint (`PAYMENT_EVENT_CONFLICT`); the event is quarantined and never advances the order.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: Temporary platform deferral (`CALLBACK_RETRY_LATER`) or dependency unavailability (`SERVICE_UNAVAILABLE`); the provider may retry under the same identity and no success is fabricated.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        default:
+          $ref: '#/components/responses/Internal'
+
 components:
   securitySchemes:
     customerSession:
@@ -2517,6 +4054,51 @@ components:
         type: string
         minLength: 1
         maxLength: 475
+    TaskIdempotencyKeyParam:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Customer outbound-call-task client idempotency key (1-512). The A0 task identity is (created_by_account_id, idempotency_key); a same-key same-fingerprint replay returns the original task without extending its frozen TTL.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+    IvrTimestampParam:
+      name: X-ONECALL-TIMESTAMP
+      in: header
+      required: true
+      description: IVR request timestamp echoed for signature verification. The accepted window and clock source remain Q7/Q15 inputs and are not frozen here.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    IvrNonceParam:
+      name: X-ONECALL-NONCE
+      in: header
+      required: true
+      description: IVR request nonce for replay resistance. Nonce form, storage and replay window remain Q7/Q15/Q25 inputs and are not frozen here.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    ProviderCallbackTimestampParam:
+      name: X-ONECALL-TIMESTAMP
+      in: header
+      required: true
+      description: Provider callback request timestamp echoed for signature verification. The accepted window remains a Q6/Q15 input.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    ProviderCallbackNonceParam:
+      name: X-ONECALL-NONCE
+      in: header
+      required: true
+      description: Provider callback request nonce for replay resistance. Nonce form and replay window remain Q6/Q15 inputs.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
   responses:
     Unauthenticated:
       description: Missing or invalid customer or employee session.
@@ -2596,6 +4178,60 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    OutboundTaskConflict:
+      description: An in-progress call or an incompatible non-terminal outbound task forbids the requested task create or cancel.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    IvRArgumentInvalid:
+      description: An IVR protocol parameter failed bound validation before any decision could be frozen.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    SessionIdentityMismatch:
+      description: The frozen session, decision, access-number or fingerprint identity cannot be reconciled for this call.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CallUnknown:
+      description: The trusted IVR service referenced a parent call that does not exist; no placeholder call is created.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RecordingConflict:
+      description: Recording upload observation, identity or expiry forbids the requested completion; first server facts are never overwritten.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ShareTokenInvalid:
+      description: The capability token is missing, invalid or retired; the response does not disclose whether a share exists.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ShareAccessDenied:
+      description: Verification, risk, tenant or generation checks denied the share access request without consuming an admission.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ShareGone:
+      description: The share grant or admitted session is revoked or expired; already-issued short-lived credentials are not recalled.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CallbackSignatureInvalid:
+      description: The provider callback mutual-TLS identity or signature failed verification; the payload is not processed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
     Problem:
       type: object
@@ -2664,6 +4300,35 @@ components:
         - RATE_LIMITED
         - SERVICE_UNAVAILABLE
         - INTERNAL
+        - OUTBOUND_CALL_IN_PROGRESS
+        - OUTBOUND_TASK_CONFLICT
+        - OUTBOUND_TASK_NOT_CANCELLABLE
+        - SHARE_CREATION_CONFLICT
+        - SHARE_ACCESS_POLICY_UNAVAILABLE
+        - SHARE_RISK_BLOCKED
+        - SHARE_TRANSITION_CONFLICT
+        - SHARE_GENERATION_STALE
+        - SHARE_REVOKED
+        - IVR_ARGUMENT_INVALID
+        - SESSION_IDENTITY_MISMATCH
+        - CALL_UNKNOWN
+        - EVENT_ID_CONFLICT
+        - UPLOAD_OBSERVATION_REQUIRED
+        - RECORDING_IDENTITY_CONFLICT
+        - UPLOAD_EXPIRED
+        - STORAGE_UNKNOWN
+        - SHARE_TOKEN_INVALID
+        - SHARE_VERIFICATION_FAILED
+        - SHARE_WRONG_TENANT
+        - SHARE_LOCKED
+        - SHARE_ADMISSION_LIMIT_REACHED
+        - SHARE_SESSION_EXPIRED
+        - SHARE_EXPIRED
+        - SHARE_SESSION_POLICY_UNAVAILABLE
+        - DEPENDENCY_UNAVAILABLE
+        - CALLBACK_SIGNATURE_INVALID
+        - PAYMENT_EVENT_CONFLICT
+        - CALLBACK_RETRY_LATER
     FieldProblem:
       type: object
       additionalProperties: false
@@ -4613,3 +6278,965 @@ components:
         validDays:
           type: integer
           minimum: 1
+
+    OutboundCallTask:
+      type: object
+      additionalProperties: false
+      description: Server-derived outbound call task projection; plaintext and historical callees are never returned.
+      required: [taskId, status, maskedCaller, maskedCallee, accessNumberMasked, ttlSeconds, serverTime, expiresAt]
+      properties:
+        taskId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        status:
+          type: string
+          enum: [PENDING, CLAIMED, REPLACED, CANCELLED, EXPIRED, REJECTED, COMPLETED, FAILED]
+        maskedCaller:
+          type: string
+          minLength: 1
+          maxLength: 64
+        maskedCallee:
+          type: string
+          minLength: 1
+          maxLength: 64
+        accessNumberMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        ttlSeconds:
+          type: integer
+          minimum: 1
+        serverTime:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+    OutboundCallTaskCreateRequest:
+      type: object
+      additionalProperties: false
+      description: Create or replace the single non-terminal outbound call task; the server normalizes the callee, freezes the TTL and re-reads activation and competing-call state.
+      required: [callerBindingId, callee]
+      properties:
+        callerBindingId:
+          type: string
+          format: uuid
+        callee:
+          type: string
+          minLength: 1
+          maxLength: 128
+        businessType:
+          type: string
+          minLength: 1
+          maxLength: 64
+        clientReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+    OutboundCallTaskCancelRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional cancel of the caller's still-PENDING task; ownership, workspace and status are re-read server-side.
+      properties:
+        clientReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ShareState:
+      type: object
+      additionalProperties: false
+      description: Share grant state projection; capability tokens, extraction codes, hashes, salts and object keys are never returned.
+      required: [shareId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, revocationGeneration]
+      properties:
+        shareId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceId:
+          type: string
+          format: uuid
+          description: Present only in the creator context; never projected to recipients.
+        verificationMode:
+          type: string
+          enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, REVOKED, LOCKED]
+        validFrom:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        maxAdmissions:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        admissionsUsed:
+          type: integer
+          minimum: 0
+        downloadAllowed:
+          type: boolean
+        codeGeneration:
+          type: integer
+          minimum: 0
+        revocationGeneration:
+          type: integer
+          minimum: 0
+    ShareSummary:
+      type: object
+      additionalProperties: false
+      description: Creator-context share metadata page row; secrets and hashes are never returned.
+      required: [shareId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, revocationGeneration]
+      properties:
+        shareId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceId:
+          type: string
+          format: uuid
+        verificationMode:
+          type: string
+          enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, REVOKED, LOCKED]
+        validFrom:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        maxAdmissions:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        admissionsUsed:
+          type: integer
+          minimum: 0
+        downloadAllowed:
+          type: boolean
+        codeGeneration:
+          type: integer
+          minimum: 0
+        revocationGeneration:
+          type: integer
+          minimum: 0
+    ShareCreated:
+      type: object
+      additionalProperties: false
+      description: First share creation projection; the capability token (and code-mode extraction code) are returned only here once. validFrom is the authoritative creation timestamp; no createdAt field exists.
+      required: [shareId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, revocationGeneration, capabilityToken]
+      properties:
+        shareId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceId:
+          type: string
+          format: uuid
+          description: Present only in the creator context; never projected to recipients.
+        verificationMode:
+          type: string
+          enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, REVOKED, LOCKED]
+        validFrom:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        maxAdmissions:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        admissionsUsed:
+          type: integer
+          minimum: 0
+        downloadAllowed:
+          type: boolean
+        codeGeneration:
+          type: integer
+          minimum: 0
+        revocationGeneration:
+          type: integer
+          minimum: 0
+        capabilityToken:
+          type: string
+          minLength: 1
+          maxLength: 512
+          readOnly: true
+          x-onecall-return-once: true
+          x-onecall-log-redaction: required
+        extractionCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          readOnly: true
+          x-onecall-return-once: true
+          x-onecall-log-redaction: required
+          description: Returned only when verificationMode is EXTRACTION_CODE; never present in other modes.
+    ShareCodeRotation:
+      # C18: one operation/status contract delivered as a closed discriminated
+      # result. The wrapper is a pure oneOf + discriminator carrier with an
+      # explicit canonical mapping (ROTATED/REPLAYED), so openapi-typescript
+      # 7.8.0 emits the canonical wire literals on the branches and the
+      # generated wrapper is exactly the branch union with no duplicate
+      # property/discriminator intersection (R-01). The oneOf branches stay
+      # the closed authorities: ROTATED requires the one-time extractionCode;
+      # REPLAYED forbids it; neither branch carries a capabilityToken. The
+      # wrapper declares no properties, additionalProperties or type so the
+      # closed branches — not a duplicated envelope — own closure, and no
+      # unowned timestamp projection is exposed (R-03).
+      description: Code rotation projection; ROTATED returns the new extraction code once, REPLAYED never does, and the response never contains a capability token.
+      oneOf:
+        - $ref: '#/components/schemas/ShareCodeRotationRotated'
+        - $ref: '#/components/schemas/ShareCodeRotationReplayed'
+      discriminator:
+        propertyName: result
+        mapping:
+          ROTATED: '#/components/schemas/ShareCodeRotationRotated'
+          REPLAYED: '#/components/schemas/ShareCodeRotationReplayed'
+    ShareCodeRotationRotated:
+      type: object
+      additionalProperties: false
+      description: First code rotation; the new extraction code is returned exactly once.
+      required: [result, shareId, verificationMode, status, codeGeneration, revocationGeneration, extractionCode]
+      properties:
+        result:
+          type: string
+          const: ROTATED
+        shareId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verificationMode:
+          type: string
+          enum: [EXTRACTION_CODE]
+        status:
+          type: string
+          enum: [ACTIVE, LOCKED]
+        codeGeneration:
+          type: integer
+          minimum: 1
+        revocationGeneration:
+          type: integer
+          minimum: 0
+        extractionCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          readOnly: true
+          x-onecall-return-once: true
+          x-onecall-log-redaction: required
+    ShareCodeRotationReplayed:
+      type: object
+      additionalProperties: false
+      description: Replayed code rotation; the extraction code is never re-returned.
+      required: [result, shareId, verificationMode, status, codeGeneration, revocationGeneration]
+      properties:
+        result:
+          type: string
+          const: REPLAYED
+        shareId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verificationMode:
+          type: string
+          enum: [EXTRACTION_CODE]
+        status:
+          type: string
+          enum: [ACTIVE, LOCKED]
+        codeGeneration:
+          type: integer
+          minimum: 1
+        revocationGeneration:
+          type: integer
+          minimum: 0
+    SharePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShareSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    ShareCreateRequest:
+      type: object
+      additionalProperties: false
+      description: Create one share grant for SOLIDIFIED evidence; creator, workspace, content, token and code are never client-supplied.
+      required: [creationRequestId, evidenceId, verificationMode, expiresAt, downloadAllowed]
+      properties:
+        creationRequestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceId:
+          type: string
+          format: uuid
+        verificationMode:
+          type: string
+          enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+        expiresAt:
+          type: string
+          format: date-time
+        maxAdmissions:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        downloadAllowed:
+          type: boolean
+        designatedMobile:
+          type: string
+          minLength: 1
+          maxLength: 32
+    ShareRevokeRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional revoke witness for one owned share; the Idempotency-Key header is the action request identity.
+      properties:
+        expectedRevocationGeneration:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ShareCodeRotationRequest:
+      type: object
+      additionalProperties: false
+      description: Rotate the extraction code and unlock one EXTRACTION_CODE share; the Idempotency-Key header is the action request identity.
+      properties:
+        expectedCodeGeneration:
+          type: integer
+          minimum: 0
+    IvrDecision:
+      type: object
+      additionalProperties: false
+      description: >-
+        Frozen IVR decision snapshot shared by INBOUND_RESOLVE, ACTIVATION_NEXT_ACTION and DIRECT_AUTHORIZATION; normal domain outcomes are always 200. The five frozen domain fields are always present: the two routing snapshot fields are non-null per A0; the three reservation fields are explicitly nullable when no reservation exists.
+      required:
+        - decisionId
+        - callId
+        - purpose
+        - action
+        - callerState
+        - taskMatch
+        - reasonCode
+        - availableRecordingSeconds
+        - balanceAsOf
+        - reservationId
+        - authorizedRecordingSeconds
+        - authorizationExpiresAt
+        - decisionAt
+      properties:
+        decisionId:
+          type: string
+          format: uuid
+        callId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        purpose:
+          type: string
+          enum: [INBOUND_RESOLVE, ACTIVATION_NEXT_ACTION, DIRECT_AUTHORIZATION]
+        action:
+          type:
+            - string
+            - 'null'
+          enum:
+            - GUIDE_ACTIVATION
+            - DIAL_TASK_CALLEE
+            - ENTER_CALLEE
+            - GUIDE_PURCHASE
+            - REJECT
+            - REJECT_SUSPENDED
+            - REJECT_CALL_IN_PROGRESS
+            - null
+        callerState:
+          type: string
+          enum: [UNREGISTERED, INACTIVE, ACTIVE, SUSPENDED]
+        taskMatch:
+          type: string
+          enum: [CLAIMED, NONE, EXPIRED, REJECTED, CONFLICT]
+        reasonCode:
+          type: string
+          enum:
+            - ACTIVATION_REQUIRED
+            - CONSENT_REQUIRED
+            - CALLER_UNTRUSTED
+            - SESSION_IDENTITY_MISMATCH
+            - CALL_IN_PROGRESS
+            - CONFIRMATION_NOT_ALLOWED
+            - ACTIVATION_SUSPENDED
+            - CALLER_BINDING_REVOKED
+            - WORKSPACE_ACCESS_REVOKED
+            - TASK_ACCESS_REVOKED
+            - ORGANIZATION_INACTIVE
+            - ACCOUNT_DISABLED
+            - CALL_STATE_UNRESOLVED
+            - TASK_CONFLICT
+            - TASK_CLAIMED
+            - NO_AVAILABLE_ENTITLEMENT
+            - NO_VALID_TASK
+            - TASK_EXPIRED
+            - TASK_UNAVAILABLE
+            - DIRECT_AUTHORIZED
+            - DATA_INTEGRITY
+        availableRecordingSeconds:
+          type: integer
+          minimum: 0
+        balanceAsOf:
+          type: string
+          format: date-time
+        task:
+          type:
+            - object
+            - 'null'
+          additionalProperties: false
+          required: [taskId, businessType, calleeMasked]
+          properties:
+            taskId:
+              type: string
+              minLength: 1
+              maxLength: 64
+            businessType:
+              type: string
+              minLength: 1
+              maxLength: 64
+            calleeMasked:
+              type: string
+              minLength: 1
+              maxLength: 64
+            calleeNumber:
+              type: string
+              minLength: 1
+              maxLength: 64
+              readOnly: true
+              x-onecall-internal-payload: true
+              x-onecall-log-redaction: required
+        authorization:
+          type: object
+          additionalProperties: false
+          description: Direct-authorization internal payload present only on encrypted direct success; excluded from redacted snapshots.
+          properties:
+            calleeNumber:
+              type: string
+              minLength: 1
+              maxLength: 64
+              readOnly: true
+              x-onecall-internal-payload: true
+              x-onecall-log-redaction: required
+        reservationId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        authorizedRecordingSeconds:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        authorizationExpiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        decisionAt:
+          type: string
+          format: date-time
+    IvrInboundResolveRequest:
+      type: object
+      additionalProperties: false
+      description: Establish or reuse the inbound session identity; trusted line caller, access number and node are server-derived, while protocolVersion is a required client-supplied IVR input that is authenticated and fingerprinted, never server-derived.
+      required: [callId, purpose, protocolVersion]
+      properties:
+        callId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        purpose:
+          type: string
+          const: INBOUND_RESOLVE
+        protocolVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Client-supplied IVR protocol version; authenticated and included in the fingerprint, never server-derived.
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+    IvrActivationConfirmRequest:
+      type: object
+      additionalProperties: false
+      description: Explicit key-1 activation confirmation for a prior GUIDE_ACTIVATION resolve on the same callId; confirmation content is validated server-side.
+      required: [eventId, policyCode, policyVersion, promptVersion, contentSha256, decision]
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        policyCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        policyVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        decision:
+          type: string
+          enum: [ACCEPT]
+    IvrDirectAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      description: Direct no-task DTMF callee confirmation for an ENTER_CALLEE decision on the same callId; the server normalizes the callee and freezes one reservation. The direct-authorization evidence carries the call identity, confirmation event identity, prompt version, pressed key and final entered callee number; exact key-value negotiation stays in the Q15/Q26 owner flows.
+      required: [eventId, callee, promptVersion, confirmationKey, confirmationContent]
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        callee:
+          type: string
+          minLength: 1
+          maxLength: 128
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        confirmationKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Bounded DTMF confirmation key identity; exact key-value negotiation stays in the Q15/Q26 owner flows.
+        confirmationContent:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Bounded confirmation content echoed by the IVR prompt; exact key-value negotiation stays in the Q15/Q26 owner flows.
+    IvrCallEventRequest:
+      type: object
+      additionalProperties: false
+      description: One IVR call event envelope for a known parent call; the server computes the (IVR_EVENT, eventId) fingerprint from redacted payload members.
+      required: [eventId, eventType, occurredAt, payload]
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        eventType:
+          type: string
+          minLength: 1
+          maxLength: 64
+        legId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        sequenceNo:
+          type: integer
+          minimum: 1
+        occurredAt:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/IvrEventPayload'
+    IvrEventPayload:
+      type: object
+      # R-02: explicitly open so openapi-typescript 7.8.0 emits an
+      # unknown-valued open record instead of Record<string, never>; the
+      # named-only opaque exemption and fail-closed closure rules are
+      # unchanged.
+      additionalProperties: true
+      x-onecall-opaque: true
+      description: Opaque IVR event payload supplied by the IVR service; A1 does not freeze vendor field names, only redaction and fingerprint ownership.
+    CallEventReceipt:
+      type: object
+      additionalProperties: false
+      description: Receipt for one ingested call event; first terminal state wins and raw payload/ciphertext/full numbers are never returned.
+      required: [callId, eventId, processingStatus, receivedAt]
+      properties:
+        callId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        eventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        processingStatus:
+          type: string
+          enum: [APPLIED, QUARANTINED, IGNORED]
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        receivedAt:
+          type: string
+          format: date-time
+    RecordingDeclarationRequest:
+      type: object
+      additionalProperties: false
+      description: Declare one recording identity; declared format/size/duration/hash are declaration facts only and are never trusted as validated media facts.
+      required: [recordingId, mimeType, sizeBytes, durationSeconds, sha256]
+      properties:
+        recordingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        mimeType:
+          type: string
+          minLength: 1
+          maxLength: 64
+        sizeBytes:
+          type: integer
+          minimum: 1
+        durationSeconds:
+          type: integer
+          minimum: 1
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    RecordingDeclaration:
+      type: object
+      additionalProperties: false
+      description: First recording declaration with a short-lived single-object upload instruction; no object key, bucket or permanent URL is returned.
+      required: [recordingId, status, uploadExpiresAt, upload]
+      properties:
+        recordingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          const: DECLARED
+        uploadExpiresAt:
+          type: string
+          format: date-time
+        upload:
+          type: object
+          additionalProperties: false
+          required: [credential, expiresAt]
+          properties:
+            credential:
+              type: string
+              minLength: 1
+              maxLength: 2048
+              readOnly: true
+              x-onecall-log-redaction: required
+            expiresAt:
+              type: string
+              format: date-time
+        declaredAt:
+          type: string
+          format: date-time
+    RecordingCompletionRequest:
+      type: object
+      additionalProperties: false
+      description: Notify that the declared upload finished; hash, version and bucket facts are never client-supplied and validation is server-observed.
+      properties:
+        clientReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+    RecordingCompletion:
+      type: object
+      additionalProperties: false
+      description: Server-validated or quarantined recording completion; same identity and observed facts replay the first outcome and no media URL is returned.
+      required: [recordingId, status]
+      properties:
+        recordingId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum: [VALIDATED, QUARANTINED]
+        validatedDurationSeconds:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+        validatedSha256:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9a-f]{64}$'
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        completedAt:
+          type: string
+          format: date-time
+    PublicShareView:
+      type: object
+      additionalProperties: false
+      description: Share page safety metadata; content is omitted for an unauthenticated ORGANIZATION_MEMBER path and page open never writes share access events.
+      required: [verificationMode, status, expiresAt, downloadAllowed]
+      properties:
+        verificationMode:
+          type: string
+          enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, REVOKED, LOCKED]
+        expiresAt:
+          type: string
+          format: date-time
+        downloadAllowed:
+          type: boolean
+        content:
+          type: object
+          additionalProperties: false
+          required: [capturedAt, artifacts]
+          properties:
+            capturedAt:
+              type: string
+              format: date-time
+            validatedDurationSeconds:
+              type: integer
+              minimum: 0
+            artifacts:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [artifactRole, mimeType, sizeBytes]
+                properties:
+                  artifactRole:
+                    type: string
+                    enum: [ORIGINAL, DERIVED]
+                  mimeType:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                  sizeBytes:
+                    type: integer
+                    minimum: 0
+                  sha256:
+                    type: string
+                    pattern: '^[0-9a-f]{64}$'
+        verificationChallenge:
+          type: object
+          additionalProperties: false
+          required: [customerSessionRequired]
+          properties:
+            customerSessionRequired:
+              type: boolean
+              const: true
+    ShareAdmissionRequest:
+      type: object
+      additionalProperties: false
+      description: Explicit admission for one capability token; only ORGANIZATION_MEMBER requires an authenticated customerSession and the extraction code is write-only.
+      required: [admissionRequestId, verification]
+      properties:
+        admissionRequestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verification:
+          # P2: object-only closed discriminated union. `type: object` makes
+          # the wrapper definitively non-array and `additionalProperties:
+          # false` closes it to unbounded objects (F5-01/R6-01). The property
+          # envelope repeats only the union of branch keys so the closed
+          # wrapper cannot over-restrict a valid branch instance; the oneOf
+          # branches stay authoritative per mode, so branch-specific secrets
+          # (the writeOnly extraction `code`) remain confined to
+          # EXTRACTION_CODE and never validate under another mode. The
+          # explicit canonical discriminator mapping (NONE/EXTRACTION_CODE/
+          # DESIGNATED_MOBILE/ORGANIZATION_MEMBER) makes openapi-typescript
+          # 7.8.0 emit the wire literals on the branches instead of component
+          # names, so the generated union is inhabitable (R-01).
+          type: object
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+            code:
+              type: string
+              minLength: 1
+              maxLength: 128
+              writeOnly: true
+            verificationProofId:
+              type: string
+              minLength: 1
+              maxLength: 128
+          oneOf:
+            - $ref: '#/components/schemas/ShareVerificationNone'
+            - $ref: '#/components/schemas/ShareVerificationExtractionCode'
+            - $ref: '#/components/schemas/ShareVerificationDesignatedMobile'
+            - $ref: '#/components/schemas/ShareVerificationOrganizationMember'
+          discriminator:
+            propertyName: mode
+            mapping:
+              NONE: '#/components/schemas/ShareVerificationNone'
+              EXTRACTION_CODE: '#/components/schemas/ShareVerificationExtractionCode'
+              DESIGNATED_MOBILE: '#/components/schemas/ShareVerificationDesignatedMobile'
+              ORGANIZATION_MEMBER: '#/components/schemas/ShareVerificationOrganizationMember'
+    ShareVerificationNone:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          const: NONE
+    ShareVerificationExtractionCode:
+      type: object
+      additionalProperties: false
+      required: [mode, code]
+      properties:
+        mode:
+          type: string
+          const: EXTRACTION_CODE
+        code:
+          type: string
+          minLength: 1
+          maxLength: 128
+          writeOnly: true
+    ShareVerificationDesignatedMobile:
+      type: object
+      additionalProperties: false
+      required: [mode, verificationProofId]
+      properties:
+        mode:
+          type: string
+          const: DESIGNATED_MOBILE
+        verificationProofId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ShareVerificationOrganizationMember:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          const: ORGANIZATION_MEMBER
+    ShareAdmission:
+      type: object
+      additionalProperties: false
+      description: Admitted share session with a short-lived media authorization; NONE verifies nothing and ticket failure after commit never recounts.
+      required: [admissionId, verificationMode, verificationResult, admittedAt, sessionExpiresAt, admissionExpiresAt, mediaAuthorization]
+      properties:
+        admissionId:
+          type: string
+          format: uuid
+        verificationMode:
+          type: string
+          enum: [NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER]
+        verificationResult:
+          type: string
+          enum: [VERIFIED, NOT_REQUIRED]
+        admittedAt:
+          type: string
+          format: date-time
+        sessionExpiresAt:
+          type: string
+          format: date-time
+        admissionExpiresAt:
+          type: string
+          format: date-time
+        mediaAuthorization:
+          type: object
+          additionalProperties: false
+          required: [credential, expiresAt]
+          properties:
+            credential:
+              type: string
+              minLength: 1
+              maxLength: 2048
+              readOnly: true
+              x-onecall-log-redaction: required
+            expiresAt:
+              type: string
+              format: date-time
+    MediaAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      description: Issue or rebuild a short-lived media credential for an already-admitted session; no current credential is carried in the request.
+      required: [authorizationRequestId, purpose]
+      properties:
+        authorizationRequestId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        purpose:
+          type: string
+          enum: [PLAYBACK, SEEK, RENEW]
+    MediaAuthorization:
+      type: object
+      additionalProperties: false
+      description: Short-lived opaque media credential validated by the media gateway; not a return-once secret and never logged.
+      required: [credential, expiresAt]
+      properties:
+        credential:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          readOnly: true
+          x-onecall-log-redaction: required
+        expiresAt:
+          type: string
+          format: date-time
+    CallbackAcknowledgement:
+      type: object
+      additionalProperties: false
+      description: Provider callback acknowledgement only; internal payment, entitlement and customer/employee identity are never returned.
+      required: [accepted, duplicate]
+      properties:
+        accepted:
+          type: boolean
+          const: true
+        duplicate:
+          type: boolean
+    OpaqueProviderPayload:
+      type: object
+      # R-02: explicitly open so openapi-typescript 7.8.0 emits an
+      # unknown-valued open record instead of Record<string, never>; the
+      # named-only opaque exemption and fail-closed closure rules are
+      # unchanged.
+      additionalProperties: true
+      x-onecall-opaque: true
+      description: Approved opaque provider payment payload; A1 does not copy vendor fields, transaction details or signature material into the contract.
+    PaymentProviderCallbackRequest:
+      type: object
+      additionalProperties: false
+      description: Wrapper that admits exactly the opaque provider payload under provider mTLS plus signature verification.
+      required: [payload]
+      properties:
+        payload:
+          $ref: '#/components/schemas/OpaqueProviderPayload'
