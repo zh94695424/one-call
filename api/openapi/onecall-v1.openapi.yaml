@@ -56,7 +56,7 @@ x-onecall-problem-registry:
   NOT_FOUND:
     httpStatus: 404
     a0Origin: current visibility predicate; no substitute object
-    surfaces: [customer, operations, public-share]
+    surfaces: [customer, operations]
   VALIDATION_FAILED:
     httpStatus: 422
     a0Origin: request schema, field and enum validation
@@ -268,7 +268,7 @@ x-onecall-problem-registry:
   DEPENDENCY_UNAVAILABLE:
     httpStatus: 503
     a0Origin: an approved downstream dependency is unknown or unavailable; the surface fails closed and never fabricates a success
-    surfaces: [public-share, provider-callback]
+    surfaces: [public-share]
   CALLBACK_SIGNATURE_INVALID:
     httpStatus: 401
     a0Origin: provider callback mutual-TLS identity or signature failed verification; the payload is not processed
@@ -3420,7 +3420,7 @@ paths:
         '404':
           $ref: '#/components/responses/CallUnknown'
         '409':
-          $ref: '#/components/responses/SessionIdentityMismatch'
+          $ref: '#/components/responses/EventIdConflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
         '429':
@@ -4192,6 +4192,12 @@ components:
             $ref: '#/components/schemas/Problem'
     SessionIdentityMismatch:
       description: The frozen session, decision, access-number or fingerprint identity cannot be reconciled for this call.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    EventIdConflict:
+      description: The IVR event identity `(IVR_EVENT, eventId)` already exists with a different semantic fingerprint; the first outcome is absorbed and the event conflict is reported as `EVENT_ID_CONFLICT`.
       content:
         application/problem+json:
           schema:
@@ -5936,14 +5942,16 @@ components:
     AuditFact:
       type: object
       additionalProperties: false
-      description: Append-only audit projection with redacted snapshots.
+      description: Append-only projection of A0 `audit.audit_fact` with redacted snapshots; the actor vocabulary and conditional null semantics are A0's.
       required:
         - auditId
         - occurredAt
         - actorType
+        - actorId
         - actionCode
         - objectType
         - objectId
+        - reasonCode
         - traceId
       properties:
         auditId:
@@ -5954,30 +5962,37 @@ components:
           format: date-time
         actorType:
           type: string
-          enum: [CUSTOMER, EMPLOYEE, SYSTEM, PROVIDER]
+          enum: [ACCOUNT, EMPLOYEE, SERVICE, SYSTEM]
+          description: Exact A0 `audit_fact.actor_type` vocabulary.
         actorId:
           type:
             - string
             - 'null'
           format: uuid
+          description: A0 `audit_fact.actor_id`; null only when actorType is SYSTEM, otherwise the required actor UUID.
         actionCode:
           type: string
-          minLength: 1
-          maxLength: 64
+          minLength: 2
+          maxLength: 128
+          pattern: '^[A-Z][A-Z0-9_]{1,127}$'
+          description: Exact A0 `audit_fact.action_code` length and pattern.
         objectType:
           type: string
           minLength: 1
           maxLength: 64
         objectId:
-          type: string
-          minLength: 1
-          maxLength: 128
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: A0 `audit_fact.object_id`; null only when objectType is SYSTEM, otherwise the required object UUID.
         reasonCode:
           type:
             - string
             - 'null'
           minLength: 1
-          maxLength: 64
+          maxLength: 128
+          description: A0 `audit_fact.reason_code`; null when no reason was recorded.
         beforeSnapshot:
           oneOf:
             - $ref: '#/components/schemas/RedactedAuditSnapshot'
@@ -5989,9 +6004,12 @@ components:
             - type: 'null'
           description: Redacted resulting snapshot; never raw provider or protected values.
         traceId:
-          type: string
+          type:
+            - string
+            - 'null'
           minLength: 1
           maxLength: 128
+          description: A0 `audit_fact.trace_id`; null when no trace was recorded.
     AuditFactPage:
       type: object
       additionalProperties: false
@@ -6047,6 +6065,7 @@ components:
         - revision
         - createdAt
         - publishedAt
+        - snapshotSha256
       properties:
         catalogVersionId:
           type: string
@@ -6214,7 +6233,7 @@ components:
         - enabled
         - publishedAt
         - revision
-        - createdAt
+        - snapshotSha256
       properties:
         policyVersionId:
           type: string
@@ -6241,13 +6260,11 @@ components:
         revision:
           type: integer
           minimum: 1
-        createdAt:
-          type: string
-          format: date-time
         snapshotSha256:
           type: string
           pattern: '^[0-9a-f]{64}$'
           readOnly: true
+          description: Required A0 `trial_policy_version.snapshot_sha256`; the accepted plan's provisional createdAt is superseded because A0 has no trial-policy owner timestamp column.
     TrialPolicyDraftCreateRequest:
       type: object
       additionalProperties: false
@@ -6351,7 +6368,7 @@ components:
       type: object
       additionalProperties: false
       description: Share grant state projection; capability tokens, extraction codes, hashes, salts and object keys are never returned.
-      required: [shareId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, revocationGeneration]
+      required: [shareId, evidenceId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, codeGeneration, revocationGeneration]
       properties:
         shareId:
           type: string
@@ -6393,7 +6410,7 @@ components:
       type: object
       additionalProperties: false
       description: Creator-context share metadata page row; secrets and hashes are never returned.
-      required: [shareId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, revocationGeneration]
+      required: [shareId, evidenceId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, codeGeneration, revocationGeneration]
       properties:
         shareId:
           type: string
@@ -6434,7 +6451,7 @@ components:
       type: object
       additionalProperties: false
       description: First share creation projection; the capability token (and code-mode extraction code) are returned only here once. validFrom is the authoritative creation timestamp; no createdAt field exists.
-      required: [shareId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, revocationGeneration, capabilityToken]
+      required: [shareId, evidenceId, verificationMode, status, validFrom, expiresAt, admissionsUsed, downloadAllowed, codeGeneration, revocationGeneration, capabilityToken]
       properties:
         shareId:
           type: string

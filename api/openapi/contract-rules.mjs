@@ -37,6 +37,67 @@ function surfaceForRoute(route) {
   return owned;
 }
 const AUDIENCES = ['customer', 'employee', 'ivr-service', 'public-capability', 'provider'];
+// Aggregate fix F-04: the path namespace authoritatively pins surface identity,
+// and each surface has exactly one approved audience. The operations surface
+// additionally pins the exact required-role set per operation; non-operations
+// operations intentionally declare no role extension.
+const SURFACE_AUDIENCE = new Map([
+  ['customer', 'customer'],
+  ['operations', 'employee'],
+  ['ivr', 'ivr-service'],
+  ['public-share', 'public-capability'],
+  ['provider-callback', 'provider'],
+]);
+const OPERATION_REQUIRED_ROLES = new Map([
+  ['listOperationsSubjects', ['ADMIN', 'OPS']],
+  ['getOperationsSubject', ['ADMIN', 'OPS']],
+  ['suspendOperationsSubject', ['OPS']],
+  ['resumeOperationsSubject', ['OPS']],
+  ['listOperationsActivations', ['ADMIN', 'OPS']],
+  ['listOperationsIvrSessions', ['ADMIN', 'OPS']],
+  ['getOperationsIvrSession', ['ADMIN', 'OPS']],
+  ['listOperationsCatalogProducts', ['ADMIN', 'OPS']],
+  ['getOperationsCatalogProduct', ['ADMIN', 'OPS']],
+  ['publishOperationsCatalogVersion', ['ADMIN']],
+  ['offsaleOperationsCatalogVersion', ['ADMIN']],
+  ['listOperationsTrialPolicies', ['ADMIN', 'OPS']],
+  ['publishOperationsTrialPolicy', ['ADMIN']],
+  ['disableOperationsTrialPolicy', ['ADMIN']],
+  ['listOperationsOrders', ['ADMIN', 'OPS']],
+  ['getOperationsOrder', ['ADMIN', 'OPS']],
+  ['listOperationsAuditFacts', ['ADMIN', 'OPS']],
+  ['createOperationsCatalogVersionDraft', ['ADMIN']],
+  ['replaceOperationsCatalogVersionDraft', ['ADMIN']],
+  ['createOperationsTrialPolicyDraft', ['ADMIN']],
+  ['replaceOperationsTrialPolicyDraft', ['ADMIN']],
+]);
+// Aggregate fix F-04: the concrete approved security scheme shapes used by the
+// canonical contract. Unknown schemes or drifted shapes fail closed; no
+// alternate auth is modelled.
+const SECURITY_SCHEME_SHAPES = new Map([
+  ['customerSession', { type: 'http', scheme: 'bearer', bearerFormat: 'opaque-session' }],
+  ['employeeSession', { type: 'http', scheme: 'bearer', bearerFormat: 'opaque-session' }],
+  ['ivrMtls', { type: 'mutualTLS' }],
+  ['ivrSignature', { type: 'apiKey', in: 'header', name: 'X-ONECALL-SIGNATURE' }],
+  ['providerCallbackMtls', { type: 'mutualTLS' }],
+  ['providerCallbackSignature', { type: 'apiKey', in: 'header', name: 'X-ONECALL-CALLBACK-SIGNATURE' }],
+]);
+const SECURITY_SCHEME_ALLOWED_KEYS = new Set(['type', 'scheme', 'bearerFormat', 'in', 'name', 'description']);
+// Aggregate fix F-04: request-schema admission/applicator keywords that the
+// bounded walker intentionally does not interpret. Presence is rejected
+// fail-closed instead of partially interpreted.
+const UNOWNED_REQUEST_SCHEMA_KEYWORDS = [
+  'patternProperties',
+  'dependentSchemas',
+  'unevaluatedProperties',
+  'if',
+  'then',
+  'else',
+  'not',
+  'contains',
+  'propertyNames',
+  '$defs',
+];
 const IDEMPOTENCY_VALUES = new Set([
   'idempotency-key',
   'event-body',
@@ -248,7 +309,7 @@ function deref(root, node) {
 // owner of the request-schema $ref-sibling check, so the walker no longer
 // re-checks entry siblings and cannot double-report them). Returns `{ node }`
 // on success (node may be a boolean schema) or `{ problem }` on failure.
-function resolveRequestSchemaRef(root, schema) {
+function resolveRequestSchemaRef(root, schema, label = 'request schema') {
   let current = schema;
   const seenRefs = new Set();
   while (current && typeof current === 'object' && typeof current.$ref === 'string') {
@@ -257,14 +318,14 @@ function resolveRequestSchemaRef(root, schema) {
     // otherwise smuggle trusted facts one hop away from the entry check.
     const siblings = Object.keys(current).filter((key) => key !== '$ref');
     if (siblings.length > 0) {
-      return { problem: `request schema $ref must not carry sibling keywords: ${siblings.join(', ')}` };
+      return { problem: `${label} $ref must not carry sibling keywords: ${siblings.join(', ')}` };
     }
     const ref = current.$ref;
     if (!ref.startsWith('#/')) {
-      return { problem: `request schema $ref must resolve to a local schema, found external ref ${JSON.stringify(ref)}` };
+      return { problem: `${label} $ref must resolve to a local schema, found external ref ${JSON.stringify(ref)}` };
     }
     if (seenRefs.has(ref)) {
-      return { problem: `request schema $ref chain is cyclic at ${JSON.stringify(ref)}` };
+      return { problem: `${label} $ref chain is cyclic at ${JSON.stringify(ref)}` };
     }
     seenRefs.add(ref);
     let target = root;
@@ -274,7 +335,7 @@ function resolveRequestSchemaRef(root, schema) {
     }
     if (target === undefined || target === null
       || (typeof target !== 'object' && typeof target !== 'boolean')) {
-      return { problem: `request schema $ref does not resolve: ${JSON.stringify(ref)}` };
+      return { problem: `${label} $ref does not resolve: ${JSON.stringify(ref)}` };
     }
     current = target;
   }
@@ -579,16 +640,35 @@ function validateOperationMetadata(root) {
 function validateSecurityBySurface(root) {
   const problems = [];
   const schemes = root?.components?.securitySchemes ?? {};
-  const expectedSchemeNames = [
-    'customerSession',
-    'employeeSession',
-    'ivrMtls',
-    'ivrSignature',
-    'providerCallbackMtls',
-    'providerCallbackSignature',
-  ];
-  for (const name of expectedSchemeNames) {
-    if (!schemes[name]) problems.push(`security scheme ${name} is required`);
+  // Aggregate fix F-04: validate the concrete approved scheme definitions, not
+  // only their presence. Structural keys are pinned; unknown schemes and
+  // drifted type/location/name/scheme/bearerFormat shapes fail closed.
+  for (const [name, shape] of SECURITY_SCHEME_SHAPES) {
+    const scheme = schemes[name];
+    if (!scheme || typeof scheme !== 'object') {
+      problems.push(`security scheme ${name} is required`);
+      continue;
+    }
+    for (const [key, expected] of Object.entries(shape)) {
+      if (scheme[key] !== expected) {
+        problems.push(`security scheme ${name}.${key} must be ${JSON.stringify(expected)}`);
+      }
+    }
+    for (const key of ['type', 'scheme', 'bearerFormat', 'in', 'name']) {
+      if (!Object.prototype.hasOwnProperty.call(shape, key) && scheme[key] !== undefined) {
+        problems.push(`security scheme ${name} must not declare ${key}`);
+      }
+    }
+    for (const key of Object.keys(scheme)) {
+      if (!SECURITY_SCHEME_ALLOWED_KEYS.has(key)) {
+        problems.push(`security scheme ${name}: unapproved property ${key}`);
+      }
+    }
+  }
+  for (const name of Object.keys(schemes)) {
+    if (!SECURITY_SCHEME_SHAPES.has(name)) {
+      problems.push(`security scheme ${name} is not approved`);
+    }
   }
   eachOperation(root, (operation, route, method) => {
     const key = `${method.toUpperCase()} ${route}`;
@@ -1132,6 +1212,16 @@ function walkRequestSchema(root, schema, visitor, seen = new Set(), onProblem = 
   }
   if (seen.has(node)) return;
   seen.add(node);
+  // Aggregate fix F-04: reject request-schema admission/applicator keywords the
+  // bounded walker does not implement. Own-property presence fails closed even
+  // when the value is empty/false, so a partially interpreted keyword cannot
+  // admit properties (for example patternProperties under additionalProperties
+  // false) or alter schemas outside the traversed tree.
+  for (const keyword of UNOWNED_REQUEST_SCHEMA_KEYWORDS) {
+    if (Object.prototype.hasOwnProperty.call(node, keyword)) {
+      if (onProblem) onProblem(`request schema keyword ${keyword} is not permitted (unowned admission/applicator keyword)`);
+    }
+  }
   visitor(node);
   // F5-01 strict request-contract closure: every traversed non-boolean request
   // schema that does not carry a valid explicit type definitively excluding
@@ -2213,7 +2303,8 @@ function validateS3FixShapes(root) {
     if (!required.has('expiresAt')) {
       problems.push('OutboundCallTask.expiresAt must be required');
     }
-    if (expiresAt && Array.isArray(expiresAt.type) && expiresAt.type.includes('null')) {
+    if (expiresAt && (expiresAt.type === 'null'
+      || (Array.isArray(expiresAt.type) && expiresAt.type.includes('null')))) {
       problems.push('OutboundCallTask.expiresAt must be non-nullable');
     }
   }
@@ -2473,6 +2564,800 @@ function validateS3FixProbes(root) {
   return problems;
 }
 
+// ---------------------------------------------------------------------------
+// Aggregate deepreview fix 1 validators (F-01..F-07). Additive only; chained
+// into the enabled sensitive-fields rule so they run under redocly.yaml.
+// ---------------------------------------------------------------------------
+
+function operationResponseRefName(operation, status) {
+  const raw = operation?.responses?.[status];
+  return raw && typeof raw === 'object' && typeof raw.$ref === 'string'
+    ? raw.$ref.split('/').pop()
+    : null;
+}
+
+// Resolve a parameter object through local component refs using the existing
+// cycle-safe request-schema resolver. External, missing, sibling-carrying and
+// cyclic parameter refs fail closed; boolean targets are not valid parameters.
+function resolveParameterObject(root, parameter) {
+  if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter)) {
+    return { problem: 'parameter entry must be an object' };
+  }
+  if (typeof parameter.$ref !== 'string') return { parameter };
+  const resolved = resolveRequestSchemaRef(root, parameter, 'parameter');
+  if (resolved.problem) return resolved;
+  const target = resolved.node;
+  if (!target || typeof target !== 'object' || Array.isArray(target)) {
+    return { problem: 'parameter $ref must resolve to a parameter object' };
+  }
+  return { parameter: target };
+}
+
+// Aggregate fix 2: a read filter is not a write assertion. A top-level
+// trusted-fact name is permitted only on a GET/HEAD query parameter whose
+// exact name is bound into that operation's x-onecall-filter-digest array.
+// The nested-property walk in validateParameterTrust still runs for approved
+// filters, so trusted facts nested inside a filter schema remain rejected.
+function isApprovedReadFilterParameter(operation, method, parameter) {
+  if (method !== 'get' && method !== 'head') return false;
+  if (parameter.in !== 'query') return false;
+  const digest = operation?.['x-onecall-filter-digest'];
+  return Array.isArray(digest) && digest.some((filter) => filter === parameter.name);
+}
+
+// F-04.1: every path/query/header/cookie parameter, at operation and path-item
+// level, is fed into the trusted-fact and forbidden-secret checks. Parameter
+// names, nested object properties and every traversed subschema are covered.
+// The only parameter exception is the exact GET/HEAD query read filter bound
+// into x-onecall-filter-digest (aggregate fix 2); every other occurrence stays
+// fail-closed.
+function validateParameterTrust(root) {
+  const problems = [];
+  eachOperation(root, (operation, route, method, pathItem) => {
+    const key = `${method.toUpperCase()} ${route}`;
+    const rawParameters = [
+      ...(Array.isArray(pathItem?.parameters) ? pathItem.parameters : []),
+      ...(Array.isArray(operation?.parameters) ? operation.parameters : []),
+    ];
+    for (const raw of rawParameters) {
+      const resolved = resolveParameterObject(root, raw);
+      if (resolved.problem) {
+        problems.push(`${key}: ${resolved.problem}`);
+        continue;
+      }
+      const parameter = resolved.parameter;
+      if (typeof parameter.name !== 'string' || parameter.name.length === 0) {
+        problems.push(`${key}: parameter name is required`);
+        continue;
+      }
+      if (!['path', 'query', 'header', 'cookie'].includes(parameter.in)) {
+        problems.push(`${key}: parameter ${parameter.name} has unapproved location ${JSON.stringify(parameter.in)}`);
+      }
+      if (
+        TRUSTED_REQUEST_FACT_NAMES.has(parameter.name)
+        && !isApprovedReadFilterParameter(operation, method, parameter)
+      ) {
+        problems.push(`${key}: parameter must not accept trusted fact ${parameter.name}`);
+      }
+      if (FORBIDDEN_PROPERTY_NAMES.has(parameter.name)) {
+        problems.push(`${key}: parameter must not accept forbidden secret ${parameter.name}`);
+      }
+      if (!parameter.schema) {
+        problems.push(`${key}: parameter ${parameter.name} must declare a schema`);
+        continue;
+      }
+      walkRequestSchema(
+        root,
+        parameter.schema,
+        (node) => {
+          for (const property of Object.keys(node.properties ?? {})) {
+            if (TRUSTED_REQUEST_FACT_NAMES.has(property)) {
+              problems.push(`${key}: parameter ${parameter.name} must not accept trusted fact ${property}`);
+            }
+            if (FORBIDDEN_PROPERTY_NAMES.has(property)) {
+              problems.push(`${key}: parameter ${parameter.name} must not accept forbidden secret ${property}`);
+            }
+          }
+        },
+        new Set(),
+        (message) => problems.push(`${key}: parameter ${parameter.name}: ${message}`),
+      );
+    }
+  });
+  return problems;
+}
+
+// F-04.2: reject any Path Item carrying $ref (with or without siblings). The
+// canonical contract uses none and no Path Item merging is implemented.
+function validatePathItemRefs(root) {
+  const problems = [];
+  const paths = root?.paths && typeof root.paths === 'object' ? root.paths : {};
+  for (const [route, pathItem] of Object.entries(paths)) {
+    if (!pathItem || typeof pathItem !== 'object') continue;
+    if (Object.prototype.hasOwnProperty.call(pathItem, '$ref')) {
+      problems.push(`${route}: path item $ref is forbidden; the canonical contract declares no path-item refs and no merging is implemented`);
+    }
+  }
+  return problems;
+}
+
+function sameRoleSet(actual, expected) {
+  if (!Array.isArray(actual)) return false;
+  const observed = [...new Set(actual)].sort();
+  const wanted = [...new Set(expected)].sort();
+  return observed.length === wanted.length && observed.every((role, index) => role === wanted[index]);
+}
+
+// F-04.3: pin the surface->audience relation and the exact required-role
+// semantics already expressed by the accepted contract. Non-operations
+// operations intentionally carry no roles; this check does not broaden them.
+function validateSurfaceAudienceRoles(root) {
+  const problems = [];
+  const seenOperationsSurface = new Set();
+  eachOperation(root, (operation, route, method) => {
+    const key = `${method.toUpperCase()} ${route}`;
+    const surface = operation['x-onecall-surface'];
+    const expectedAudience = SURFACE_AUDIENCE.get(surface);
+    if (expectedAudience === undefined) {
+      problems.push(`${key}: x-onecall-surface ${JSON.stringify(surface)} has no pinned audience`);
+    } else if (operation['x-onecall-audience'] !== expectedAudience) {
+      problems.push(
+        `${key}: x-onecall-audience ${JSON.stringify(operation['x-onecall-audience'])}`
+        + ` must equal the pinned surface audience ${JSON.stringify(expectedAudience)}`,
+      );
+    }
+    const roles = operation['x-onecall-required-roles'];
+    if (surface === 'operations') {
+      const expected = OPERATION_REQUIRED_ROLES.get(operation.operationId);
+      if (!expected) {
+        problems.push(`${key}: operations operation ${JSON.stringify(operation.operationId)} has no pinned required-role contract`);
+      } else {
+        seenOperationsSurface.add(operation.operationId);
+        if (!sameRoleSet(roles, expected)) {
+          problems.push(
+            `${key}: x-onecall-required-roles ${JSON.stringify(roles)}`
+            + ` must equal the pinned ${JSON.stringify(expected)}`,
+          );
+        }
+      }
+    } else if (roles !== undefined) {
+      problems.push(`${key}: non-operations operations must not declare x-onecall-required-roles`);
+    }
+  });
+  for (const operationId of OPERATION_REQUIRED_ROLES.keys()) {
+    if (!seenOperationsSurface.has(operationId)) {
+      problems.push(`pinned operations operation ${operationId} is missing from the contract`);
+    }
+  }
+  return problems;
+}
+
+// F-03: I4 owns EVENT_ID_CONFLICT and therefore the code-specific
+// EventIdConflict 409 response; I1-I3 keep SessionIdentityMismatch.
+const I4_RESPONSE_FAMILY = new Map([
+  ['resolveIvrInbound', 'SessionIdentityMismatch'],
+  ['confirmIvrActivation', 'SessionIdentityMismatch'],
+  ['authorizeIvrDirectOutbound', 'SessionIdentityMismatch'],
+  ['ingestIvrCallEvent', 'EventIdConflict'],
+]);
+
+function validateI4ResponseFamily(root) {
+  const problems = [];
+  const responses = root?.components?.responses ?? {};
+  const eventIdConflict = responses.EventIdConflict;
+  if (!eventIdConflict) {
+    problems.push('components.responses.EventIdConflict is required for EVENT_ID_CONFLICT');
+  } else if (typeof eventIdConflict.description !== 'string'
+    || !eventIdConflict.description.includes('EVENT_ID_CONFLICT')) {
+    problems.push('EventIdConflict.description must name EVENT_ID_CONFLICT');
+  }
+  const seen = new Set();
+  eachOperation(root, (operation, route, method) => {
+    const key = `${method.toUpperCase()} ${route}`;
+    const expected = I4_RESPONSE_FAMILY.get(operation.operationId);
+    const actual = operationResponseRefName(operation, '409');
+    if (expected) {
+      seen.add(operation.operationId);
+      if (actual !== expected) {
+        problems.push(
+          `${key}: 409 response must be ${expected} for ${operation.operationId}, found ${JSON.stringify(actual)}`,
+        );
+      }
+    } else if (actual === 'EventIdConflict') {
+      problems.push(`${key}: only ingestIvrCallEvent may use the EventIdConflict 409 response`);
+    }
+  });
+  for (const operationId of I4_RESPONSE_FAMILY.keys()) {
+    if (!seen.has(operationId)) {
+      problems.push(`I4 response-family operation ${operationId} is missing from the contract`);
+    }
+  }
+  return problems;
+}
+
+// F-07: every registry (ProblemCode, surface) pair must be backed by at least
+// one operation on that surface declaring the exact code. Canonical
+// common-code handling and per-operation exact error sets are unchanged.
+function validateRegistrySurfaceBacking(root) {
+  const problems = [];
+  const entries = registry(root);
+  const claimed = new Map();
+  eachOperation(root, (operation) => {
+    const surface = operation['x-onecall-surface'];
+    for (const code of extensionArray(operation, 'x-onecall-error-codes') ?? []) {
+      if (!claimed.has(code)) claimed.set(code, new Set());
+      claimed.get(code).add(surface);
+    }
+  });
+  for (const [code, entry] of Object.entries(entries)) {
+    for (const surface of Array.isArray(entry?.surfaces) ? entry.surfaces : []) {
+      if (!claimed.get(code)?.has(surface)) {
+        problems.push(
+          `registry code ${code}: surface ${surface} is not backed by any operation declaring that code`,
+        );
+      }
+    }
+  }
+  const dependency = entries.DEPENDENCY_UNAVAILABLE;
+  if (!dependency || JSON.stringify(dependency.surfaces) !== JSON.stringify(['public-share'])) {
+    problems.push('DEPENDENCY_UNAVAILABLE registry surfaces must be exactly [public-share]');
+  }
+  return problems;
+}
+
+function isStringOrNullType(node) {
+  return Array.isArray(node?.type)
+    && node.type.length === 2
+    && node.type.includes('string')
+    && node.type.includes('null');
+}
+
+// F-01/F-02/F-05 static shape pins.
+function validateAggregateFix1Shapes(root) {
+  const problems = [];
+  const schemas = root?.components?.schemas ?? {};
+
+  // F-01: exact A0 audit_fact projection.
+  const auditFact = schemas.AuditFact;
+  if (!auditFact) {
+    problems.push('AuditFact is required');
+  } else {
+    const required = new Set(Array.isArray(auditFact.required) ? auditFact.required : []);
+    const props = auditFact.properties ?? {};
+    const expectedActorTypes = ['ACCOUNT', 'EMPLOYEE', 'SERVICE', 'SYSTEM'];
+    if (JSON.stringify(props.actorType?.enum) !== JSON.stringify(expectedActorTypes)) {
+      problems.push('AuditFact.actorType must be exactly ACCOUNT/EMPLOYEE/SERVICE/SYSTEM');
+    }
+    for (const field of ['actorId', 'objectId', 'reasonCode', 'traceId']) {
+      if (!required.has(field)) problems.push(`AuditFact.${field} must be required`);
+      if (!isStringOrNullType(props[field])) problems.push(`AuditFact.${field} must be an explicit nullable string`);
+    }
+    for (const field of ['actorId', 'objectId']) {
+      if (props[field]?.format !== 'uuid') problems.push(`AuditFact.${field} must use format uuid`);
+    }
+    const actionCode = props.actionCode;
+    if (actionCode?.type !== 'string'
+      || actionCode.minLength !== 2
+      || actionCode.maxLength !== 128
+      || actionCode.pattern !== '^[A-Z][A-Z0-9_]{1,127}$') {
+      problems.push('AuditFact.actionCode must be a 2-128 string matching ^[A-Z][A-Z0-9_]{1,127}$');
+    }
+    if (props.reasonCode && (props.reasonCode.minLength !== 1 || props.reasonCode.maxLength !== 128)) {
+      problems.push('AuditFact.reasonCode string branch must be bounded 1-128');
+    }
+    if (props.traceId && (props.traceId.minLength !== 1 || props.traceId.maxLength !== 128)) {
+      problems.push('AuditFact.traceId string branch must be bounded 1-128');
+    }
+  }
+
+  // F-02: no unowned trial-policy draft timestamp.
+  const trialDraft = schemas.TrialPolicyDraft;
+  if (trialDraft) {
+    const required = new Set(Array.isArray(trialDraft.required) ? trialDraft.required : []);
+    if ('createdAt' in (trialDraft.properties ?? {}) || required.has('createdAt')) {
+      problems.push('TrialPolicyDraft must not declare or require createdAt (A0 trial_policy_version has no owner timestamp column)');
+    }
+  }
+
+  // F-05: A0 NOT NULL snapshot/creator-context projections stay required and
+  // non-null. The share status unions are deliberately not narrowed.
+  for (const schemaName of ['CatalogVersionDraft', 'TrialPolicyDraft']) {
+    const schema = schemas[schemaName];
+    if (!schema) continue;
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const field = schema.properties?.snapshotSha256;
+    if (!required.has('snapshotSha256')) {
+      problems.push(`${schemaName}.snapshotSha256 must be required (A0 NOT NULL)`);
+    }
+    if (field?.type !== 'string' || field?.pattern !== '^[0-9a-f]{64}$') {
+      problems.push(`${schemaName}.snapshotSha256 must be a non-null sha256 string`);
+    }
+  }
+  for (const schemaName of ['ShareState', 'ShareSummary', 'ShareCreated']) {
+    const schema = schemas[schemaName];
+    if (!schema) {
+      problems.push(`${schemaName} is required`);
+      continue;
+    }
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    for (const [field, type, format] of [
+      ['evidenceId', 'string', 'uuid'],
+      ['codeGeneration', 'integer', null],
+    ]) {
+      const fieldSchema = schema.properties?.[field];
+      if (!required.has(field)) {
+        problems.push(`${schemaName}.${field} must be required (A0 NOT NULL)`);
+      }
+      if (fieldSchema?.type !== type || Array.isArray(fieldSchema?.type)) {
+        problems.push(`${schemaName}.${field} must be non-null ${type}`);
+      }
+      if (format && fieldSchema?.format !== format) {
+        problems.push(`${schemaName}.${field} must use format ${format}`);
+      }
+    }
+  }
+
+  return problems;
+}
+
+// Executable positive controls and adversarial negatives for F-01..F-07.
+function validateAggregateFix1Probes(root) {
+  const problems = [];
+
+  // Positive controls: the canonical contract must satisfy every new rule.
+  for (const [label, messages] of [
+    ['parameter trust', validateParameterTrust(root)],
+    ['path-item refs', validatePathItemRefs(root)],
+    ['surface audience/roles', validateSurfaceAudienceRoles(root)],
+    ['security scheme shapes', validateSecurityBySurface(root)],
+    ['I4 response family', validateI4ResponseFamily(root)],
+    ['registry surface backing', validateRegistrySurfaceBacking(root)],
+    ['aggregate fix shapes', validateAggregateFix1Shapes(root)],
+  ]) {
+    if (messages.length > 0) {
+      problems.push(`aggregate fix probe positive control failed (${label}): ${messages.join('; ')}`);
+    }
+  }
+  if (validateTrustedRequestFacts(root).some((message) => message.includes('is not permitted'))) {
+    problems.push('aggregate fix probe positive control failed (request-schema keywords)');
+  }
+
+  // F-04.1 negatives: trusted fact, forbidden secret, nested property, and
+  // external/unresolved/cyclic parameter refs.
+  const parameterRoot = {
+    paths: {
+      '/api/v1/operations/probe': {
+        post: {
+          operationId: 'probeParameterTrust',
+          parameters: [
+            { name: 'currency', in: 'query', schema: { type: 'string' } },
+            { name: 'objectKey', in: 'header', schema: { type: 'string' } },
+            {
+              name: 'filter',
+              in: 'query',
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: { accountId: { type: 'string' } },
+              },
+            },
+            { $ref: 'https://example.invalid/parameters.yaml#/Probe' },
+            { $ref: '#/components/parameters/Missing' },
+            { $ref: '#/components/parameters/CycleA' },
+          ],
+        },
+      },
+    },
+    components: {
+      parameters: {
+        CycleA: { $ref: '#/components/parameters/CycleB' },
+        CycleB: { $ref: '#/components/parameters/CycleA' },
+      },
+    },
+  };
+  const parameterProblems = validateParameterTrust(parameterRoot);
+  for (const [needle, label] of [
+    ['must not accept trusted fact currency', 'a trusted query parameter'],
+    ['must not accept forbidden secret objectKey', 'a forbidden-secret header parameter'],
+    ['must not accept trusted fact accountId', 'a nested trusted parameter property'],
+    ['parameter $ref must resolve to a local schema', 'an external parameter ref'],
+    ['parameter $ref does not resolve', 'an unresolved parameter ref'],
+    ['parameter $ref chain is cyclic', 'a cyclic parameter ref'],
+  ]) {
+    if (!parameterProblems.some((message) => message.includes(needle))) {
+      problems.push(`aggregate fix probe: validateParameterTrust must reject ${label}`);
+    }
+  }
+
+  // F-04.2 negative: a Path Item carrying $ref.
+  const pathItemRefRoot = {
+    paths: {
+      '/api/v1/customer/probe': {
+        $ref: '#/components/pathItems/Probe',
+        get: { operationId: 'probePathItemRef' },
+      },
+    },
+  };
+  if (!validatePathItemRefs(pathItemRefRoot).some((message) => message.includes('path item $ref is forbidden'))) {
+    problems.push('aggregate fix probe: validatePathItemRefs must reject a path-item $ref');
+  }
+
+  // F-04.3 negatives: audience drift, non-operations roles, operations role drift.
+  const audienceRoot = {
+    paths: {
+      '/api/v1/customer/probe-a': {
+        get: { operationId: 'probeAudienceDrift', 'x-onecall-surface': 'customer', 'x-onecall-audience': 'employee' },
+      },
+      '/api/v1/customer/probe-b': {
+        get: {
+          operationId: 'probeRoleDriftOnCustomer',
+          'x-onecall-surface': 'customer',
+          'x-onecall-audience': 'customer',
+          'x-onecall-required-roles': ['ADMIN'],
+        },
+      },
+      '/api/v1/operations/probe': {
+        post: {
+          operationId: 'suspendOperationsSubject',
+          'x-onecall-surface': 'operations',
+          'x-onecall-audience': 'employee',
+          'x-onecall-required-roles': ['ADMIN'],
+        },
+      },
+    },
+  };
+  const audienceProblems = validateSurfaceAudienceRoles(audienceRoot);
+  if (!audienceProblems.some((message) => message.includes('must equal the pinned surface audience'))) {
+    problems.push('aggregate fix probe: validateSurfaceAudienceRoles must reject audience drift');
+  }
+  if (!audienceProblems.some((message) => message.includes('non-operations operations must not declare x-onecall-required-roles'))) {
+    problems.push('aggregate fix probe: validateSurfaceAudienceRoles must reject roles on non-operations operations');
+  }
+  if (!audienceProblems.some((message) => message.includes('must equal the pinned ["OPS"]'))) {
+    problems.push('aggregate fix probe: validateSurfaceAudienceRoles must reject operations role drift');
+  }
+
+  // F-04.4 negatives: malformed scheme shape and unapproved scheme name.
+  const malformedSchemes = JSON.parse(JSON.stringify(root?.components?.securitySchemes ?? {}));
+  malformedSchemes.customerSession = { type: 'apiKey', in: 'query', name: 'session' };
+  malformedSchemes.unapprovedSession = { type: 'http', scheme: 'bearer' };
+  const schemeProblems = validateSecurityBySurface({ components: { securitySchemes: malformedSchemes }, paths: {} });
+  if (!schemeProblems.some((message) => message.includes('customerSession.type must be "http"'))) {
+    problems.push('aggregate fix probe: validateSecurityBySurface must reject a drifted customerSession shape');
+  }
+  if (!schemeProblems.some((message) => message.includes('security scheme unapprovedSession is not approved'))) {
+    problems.push('aggregate fix probe: validateSecurityBySurface must reject an unapproved scheme name');
+  }
+
+  // F-04.5 negatives: every unowned request-schema keyword is rejected.
+  for (const keyword of UNOWNED_REQUEST_SCHEMA_KEYWORDS) {
+    const keywordProblems = [];
+    walkRequestSchema(
+      root,
+      { type: 'string', [keyword]: false },
+      () => {},
+      new Set(),
+      (message) => keywordProblems.push(message),
+    );
+    if (!keywordProblems.some((message) => message.includes(`request schema keyword ${keyword} is not permitted`))) {
+      problems.push(`aggregate fix probe: walkRequestSchema must reject request-schema keyword ${keyword}`);
+    }
+  }
+
+  // F-03 negatives: I4 pointing at the I1-I3 component and vice versa.
+  const i4DriftRoot = {
+    paths: {
+      '/api/v1/ivr/probe': {
+        post: {
+          operationId: 'ingestIvrCallEvent',
+          responses: { '409': { $ref: '#/components/responses/SessionIdentityMismatch' } },
+        },
+      },
+    },
+  };
+  if (!validateI4ResponseFamily(i4DriftRoot).some((message) => message.includes('409 response must be EventIdConflict'))) {
+    problems.push('aggregate fix probe: validateI4ResponseFamily must reject I4 drift to SessionIdentityMismatch');
+  }
+  const i1DriftRoot = {
+    components: { responses: { EventIdConflict: { description: 'EVENT_ID_CONFLICT' } } },
+    paths: {
+      '/api/v1/ivr/probe': {
+        post: {
+          operationId: 'resolveIvrInbound',
+          responses: { '409': { $ref: '#/components/responses/EventIdConflict' } },
+        },
+      },
+    },
+  };
+  if (!validateI4ResponseFamily(i1DriftRoot).some((message) => message.includes('409 response must be SessionIdentityMismatch'))) {
+    problems.push('aggregate fix probe: validateI4ResponseFamily must reject I1 drift to EventIdConflict');
+  }
+
+  // F-07 negative: an orphaned registry surface.
+  const orphanRegistryRoot = {
+    'x-onecall-problem-registry': {
+      ORPHAN_CODE: { httpStatus: 409, surfaces: ['customer'] },
+      DEPENDENCY_UNAVAILABLE: { httpStatus: 503, surfaces: ['public-share'] },
+    },
+    paths: {
+      '/api/v1/customer/probe': {
+        get: {
+          operationId: 'probeRegistryBacking',
+          'x-onecall-surface': 'customer',
+          'x-onecall-error-codes': [],
+        },
+      },
+    },
+  };
+  if (!validateRegistrySurfaceBacking(orphanRegistryRoot).some((message) => message.includes('surface customer is not backed'))) {
+    problems.push('aggregate fix probe: validateRegistrySurfaceBacking must reject an orphaned registry surface');
+  }
+
+  // F-05 negatives: direct null and nullable-array expiresAt, plus optional or
+  // nullable A0 NOT NULL projections.
+  for (const [label, expiresAtSchema] of [
+    ['direct null', { type: 'null' }],
+    ['nullable array', { type: ['string', 'null'] }],
+  ]) {
+    const taskRoot = {
+      paths: {},
+      components: {
+        schemas: {
+          OutboundCallTask: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['expiresAt'],
+            properties: { expiresAt: expiresAtSchema },
+          },
+        },
+      },
+    };
+    if (!validateS3FixShapes(taskRoot).some((message) => message.includes('OutboundCallTask.expiresAt must be non-nullable'))) {
+      problems.push(`aggregate fix probe: OutboundCallTask.expiresAt guard must reject ${label}`);
+    }
+  }
+  const projectionDriftRoot = {
+    paths: {},
+    components: {
+      schemas: {
+        CatalogVersionDraft: {
+          type: 'object',
+          additionalProperties: false,
+          required: [],
+          properties: { snapshotSha256: { type: ['string', 'null'] } },
+        },
+        TrialPolicyDraft: {
+          type: 'object',
+          additionalProperties: false,
+          required: [],
+          properties: { snapshotSha256: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
+        },
+        ShareState: {
+          type: 'object',
+          additionalProperties: false,
+          required: [],
+          properties: { evidenceId: { type: 'string', format: 'uuid' }, codeGeneration: { type: 'integer' } },
+        },
+        ShareSummary: {
+          type: 'object',
+          additionalProperties: false,
+          required: [],
+          properties: { evidenceId: { type: 'string', format: 'uuid' }, codeGeneration: { type: 'integer' } },
+        },
+        ShareCreated: {
+          type: 'object',
+          additionalProperties: false,
+          required: [],
+          properties: { evidenceId: { type: 'string', format: 'uuid' }, codeGeneration: { type: 'integer' } },
+        },
+      },
+    },
+  };
+  const projectionProblems = validateAggregateFix1Shapes(projectionDriftRoot);
+  for (const needle of [
+    'CatalogVersionDraft.snapshotSha256 must be required',
+    'CatalogVersionDraft.snapshotSha256 must be a non-null sha256 string',
+    'ShareState.evidenceId must be required',
+    'ShareState.codeGeneration must be required',
+    'ShareSummary.evidenceId must be required',
+    'ShareCreated.codeGeneration must be required',
+  ]) {
+    if (!projectionProblems.some((message) => message.includes(needle))) {
+      problems.push(`aggregate fix probe: validateAggregateFix1Shapes must reject ${needle}`);
+    }
+  }
+
+  // F-01/F-02 negatives: actor vocabulary/nullability drift and a reintroduced
+  // trial-draft creation timestamp.
+  const auditDriftRoot = {
+    paths: {},
+    components: {
+      schemas: {
+        AuditFact: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['actorType', 'actionCode', 'objectType', 'objectId', 'traceId'],
+          properties: {
+            actorType: { type: 'string', enum: ['CUSTOMER', 'EMPLOYEE', 'SYSTEM', 'PROVIDER'] },
+            actorId: { type: 'string', format: 'uuid' },
+            actionCode: { type: 'string', minLength: 1, maxLength: 64 },
+            objectType: { type: 'string' },
+            objectId: { type: 'string' },
+            reasonCode: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
+            traceId: { type: 'string' },
+          },
+        },
+        TrialPolicyDraft: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['createdAt'],
+          properties: { createdAt: { type: 'string', format: 'date-time' } },
+        },
+      },
+    },
+  };
+  const auditProblems = validateAggregateFix1Shapes(auditDriftRoot);
+  for (const needle of [
+    'AuditFact.actorType must be exactly ACCOUNT/EMPLOYEE/SERVICE/SYSTEM',
+    'AuditFact.actorId must be required',
+    'AuditFact.objectId must be an explicit nullable string',
+    'AuditFact.actionCode must be a 2-128 string matching ^[A-Z][A-Z0-9_]{1,127}$',
+    'AuditFact.reasonCode string branch must be bounded 1-128',
+    'AuditFact.traceId must be an explicit nullable string',
+    'TrialPolicyDraft must not declare or require createdAt',
+  ]) {
+    if (!auditProblems.some((message) => message.includes(needle))) {
+      problems.push(`aggregate fix probe: validateAggregateFix1Shapes must reject ${needle}`);
+    }
+  }
+
+  return problems;
+}
+
+// Aggregate fix 2 probes: prove the exact read-filter predicate admits one
+// approved binding and that every adjacent shape remains fail-closed.
+function validateAggregateFix2Probes(root) {
+  const problems = [];
+
+  // Positive control: the canonical contract (including the O15
+  // listOperationsOrders paymentStatus query filter) must pass.
+  if (validateParameterTrust(root).length > 0) {
+    problems.push('aggregate fix-2 probe positive control failed: canonical read filters must be accepted');
+  }
+
+  const approvedRoot = {
+    paths: {
+      '/api/v1/operations/probe-read-filter': {
+        get: {
+          operationId: 'probeReadFilterGet',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            { name: 'paymentStatus', in: 'query', schema: { type: 'string' } },
+          ],
+        },
+        head: {
+          operationId: 'probeReadFilterHead',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            { name: 'paymentStatus', in: 'query', schema: { type: 'string' } },
+          ],
+        },
+      },
+    },
+  };
+  const approvedProblems = validateParameterTrust(approvedRoot);
+  if (approvedProblems.length > 0) {
+    problems.push(`aggregate fix-2 probe: GET/HEAD digest-bound read filter must pass, got ${approvedProblems.join('; ')}`);
+  }
+
+  const negativeRoot = {
+    paths: {
+      '/api/v1/operations/probe-write': {
+        post: {
+          operationId: 'probeTrustedFactWrite',
+          parameters: [
+            { name: 'paymentStatus', in: 'query', schema: { type: 'string' } },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-bound-write': {
+        post: {
+          operationId: 'probeDigestBoundWrite',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            { name: 'paymentStatus', in: 'query', schema: { type: 'string' } },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-path/{paymentStatus}': {
+        get: {
+          operationId: 'probeTrustedFactPath',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            { name: 'paymentStatus', in: 'path', required: true, schema: { type: 'string' } },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-header': {
+        get: {
+          operationId: 'probeTrustedFactHeader',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            { name: 'paymentStatus', in: 'header', schema: { type: 'string' } },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-cookie': {
+        get: {
+          operationId: 'probeTrustedFactCookie',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            { name: 'paymentStatus', in: 'cookie', schema: { type: 'string' } },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-unbound': {
+        get: {
+          operationId: 'probeUnboundReadFilter',
+          parameters: [
+            { name: 'paymentStatus', in: 'query', schema: { type: 'string' } },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-nested': {
+        get: {
+          operationId: 'probeNestedTrustedFact',
+          'x-onecall-filter-digest': ['paymentStatus'],
+          parameters: [
+            {
+              name: 'paymentStatus',
+              in: 'query',
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: { paymentStatus: { type: 'string' } },
+              },
+            },
+          ],
+        },
+      },
+      '/api/v1/operations/probe-secret': {
+        get: {
+          operationId: 'probeSecretReadFilter',
+          'x-onecall-filter-digest': ['objectKey'],
+          parameters: [
+            { name: 'objectKey', in: 'query', schema: { type: 'string' } },
+          ],
+        },
+        post: {
+          operationId: 'probeSecretWrite',
+          parameters: [
+            { name: 'objectKey', in: 'header', schema: { type: 'string' } },
+          ],
+        },
+      },
+    },
+  };
+  const negativeProblems = validateParameterTrust(negativeRoot);
+  for (const [needle, label] of [
+    ['POST /api/v1/operations/probe-write: parameter must not accept trusted fact paymentStatus', 'a trusted fact on a write method'],
+    ['POST /api/v1/operations/probe-bound-write: parameter must not accept trusted fact paymentStatus', 'a digest-bound trusted fact on a write method'],
+    ['GET /api/v1/operations/probe-path/{paymentStatus}: parameter must not accept trusted fact paymentStatus', 'a trusted fact in a path parameter'],
+    ['GET /api/v1/operations/probe-header: parameter must not accept trusted fact paymentStatus', 'a trusted fact in a header parameter'],
+    ['GET /api/v1/operations/probe-cookie: parameter must not accept trusted fact paymentStatus', 'a trusted fact in a cookie parameter'],
+    ['GET /api/v1/operations/probe-unbound: parameter must not accept trusted fact paymentStatus', 'an unbound trusted query parameter'],
+    ['GET /api/v1/operations/probe-nested: parameter paymentStatus must not accept trusted fact paymentStatus', 'a nested trusted property inside an approved read filter'],
+    ['GET /api/v1/operations/probe-secret: parameter must not accept forbidden secret objectKey', 'a forbidden secret in a digest-bound read filter'],
+    ['POST /api/v1/operations/probe-secret: parameter must not accept forbidden secret objectKey', 'a forbidden secret on a write method'],
+  ]) {
+    if (!negativeProblems.some((message) => message.includes(needle))) {
+      problems.push(`aggregate fix-2 probe: validateParameterTrust must reject ${label}`);
+    }
+  }
+
+  return problems;
+}
+
 function makeRule(validator) {
   return function onecallRule() {
     return {
@@ -2507,6 +3392,16 @@ export default function onecallContractRules() {
           ...validateS2FixShapes(root),
           ...validateS3FixShapes(root),
           ...validateS3FixProbes(root),
+          // Aggregate deepreview fix 1 (F-01..F-07).
+          ...validateParameterTrust(root),
+          ...validatePathItemRefs(root),
+          ...validateSurfaceAudienceRoles(root),
+          ...validateI4ResponseFamily(root),
+          ...validateRegistrySurfaceBacking(root),
+          ...validateAggregateFix1Shapes(root),
+          ...validateAggregateFix1Probes(root),
+          // Aggregate fix 2: read-filter parameter trust boundary.
+          ...validateAggregateFix2Probes(root),
         ]),
         'server-relative': makeRule(validateServerRelative),
         'versioned-paths': makeRule(validateVersionedPaths),

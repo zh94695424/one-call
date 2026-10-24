@@ -127,7 +127,7 @@
 | `disableOperationsTrialPolicy` | `ADMIN`；enabled→false 幂等；`expectedRevision`；历史 grant 快照不可改写 | state-conditional | T-S2-14；`uq_trial_policy_enabled`；§7.3 |
 | `listOperationsOrders` | 运营订单只读；digest `subjectId+paymentStatus`；稳定 `createdAt desc, orderId desc` | 只读 cursor | §7.3 |
 | `getOperationsOrder` | 运营订单详情 + issuance 投影 | 只读 | T-S2-07；§7.3 |
-| `listOperationsAuditFacts` | 追加审计只读；稳定 `occurredAt desc, auditId desc`；`beforeSnapshot`/`afterSnapshot` 为闭合可复用 nullable `RedactedAuditSnapshot`（仅可选 `status`/`revision`/`reasonCode`，`additionalProperties: false`，`minProperties: 1`；无 maps/标识符/PII/payload/provider 字段） | 只读 cursor | §7.3；`audit.audit_fact` |
+| `listOperationsAuditFacts` | 追加审计只读；稳定 `occurredAt desc, auditId desc`；`beforeSnapshot`/`afterSnapshot` 为闭合可复用 nullable `RedactedAuditSnapshot`（仅可选 `status`/`revision`/`reasonCode`，`additionalProperties: false`，`minProperties: 1`；无 maps/标识符/PII/payload/provider 字段）。A0 精确投影：`actorType` 恰为 `ACCOUNT/EMPLOYEE/SERVICE/SYSTEM`；`actorId` 必填 nullable UUID，仅 `SYSTEM` 可为 null；`objectId` 必填 nullable UUID，仅 `objectType = SYSTEM` 可为 null；`actionCode` 必填 2-128 且匹配 `^[A-Z][A-Z0-9_]{1,127}$`；`reasonCode` 必填 nullable 1-128；`traceId` 必填 nullable 1-128 | 只读 cursor | §7.3；`audit.audit_fact` |
 | `createOperationsCatalogVersionDraft` | `ADMIN`；自然键 `(productId, versionNo)` + canonical 投影；201/200/409 `CATALOG_DRAFT_CONFLICT`；收益行与 channels 创建后 append-only；无 `Idempotency-Key` | state-conditional | `uq_catalog_version_no`；`ck_catalog_version_published_shape`；§7.3 |
 | `replaceOperationsCatalogVersionDraft` | `ADMIN`；仅 DRAFT/never-published 可变商业内容；`expectedRevision` + 投影；现有渠道 version token 仅服务端重生成且非公共输入/输出（无 channel-token 字段或 mutation endpoint）；stale → `CATALOG_DRAFT_STALE_VIEW`；不可变键/收益行/channels 变更 → `CATALOG_DRAFT_CONFLICT` | state-conditional | `uq_catalog_version_no`；`ck_catalog_version_published_shape`；§7.3 |
 | `replaceOperationsTrialPolicyDraft` | `ADMIN`；仅 never-published；`expectedRevision` + 投影；stale → `TRIAL_POLICY_DRAFT_STALE_VIEW`；campaign/version 不可变；不写 publisher/publishedAt/enabled；不接受 `priceCents`/`currency` | state-conditional | `uq_trial_policy_campaign_version`；`ck_trial_policy_revision`；§7.3；**`R-A0-O20-PUBLISHER`** |
@@ -162,6 +162,12 @@
 - 替换：`expectedRevision` 匹配且当前投影等于请求投影的重放 → 200 当前 DRAFT（不再写）；stale → `*_DRAFT_STALE_VIEW`；非 DRAFT/不可变内容 → `*_DRAFT_CONFLICT`。
 - O18-O21 一律 `state-conditional`；不得声明 `Idempotency-Key`；不得映射 `platform.idempotency_record`；不得引用 `platform.idempotency_begin`/`platform.idempotency_record`；未批准 scope `CATALOG_DRAFT`/`TRIAL_POLICY_DRAFT` 必须被拒绝。
 
+### 3.5 时间戳与 NOT NULL 投影所有权（aggregate fix 1）
+
+- `TrialPolicyDraft.createdAt` 已从契约移除，且不从 audit fact 或其他事件派生：accepted plan §5.6 的 provisional `createdAt` 被 superseded，因为 A0 `entitlement_metering.trial_policy_version` 没有 owner 时间列（A0 §4.29 只有 `published_at`）。
+- `RecordingDeclaration.declaredAt` 与 `RecordingCompletion.completedAt` 的 wire 字段保持不变；精确映射为 `declaredAt <- evidence.recording.created_at`、`completedAt <- evidence.recording.validated_at`（A0 §4.40），不新增或推导其他时间戳。
+- `CatalogVersionDraft.snapshotSha256`、`TrialPolicyDraft.snapshotSha256`、`ShareState`/`ShareSummary`/`ShareCreated` 的 `evidenceId` 与 `codeGeneration` 为 A0 NOT NULL 事实，因此在公共响应投影中一律必填且非 null；分享状态 union 不因本修正收窄。
+
 ## 4. Problem 基座与精确错误码
 
 所有错误使用 RFC 9457 `application/problem+json`。`Problem.code` 是唯一机器分支依据；`Problem.status` 必须与 HTTP status 一致，`Problem.traceId` 为服务端 trace。累计 registry 恰好 59 个 code（S1/S2 30 + S3 29）：
@@ -170,8 +176,8 @@
 | --- | ---: | --- | --- |
 | `UNAUTHENTICATED` | 401 | 缺失/失效客户或员工会话；不区分用户是否存在 | 五面 |
 | `FORBIDDEN` | 403 | 会话有效但角色/资源/访问谓词不允许 | 五面 |
-| `NOT_FOUND` | 404 | 资源不存在或当前身份不可见；不返回替代对象 | customer/operations/public-share |
-| `VALIDATION_FAILED` | 422 | schema/字段/枚举/长度错误；`errors[]` 定位 | customer/operations/ivr/provider-callback |
+| `NOT_FOUND` | 404 | 资源不存在或当前身份不可见；不返回替代对象 | customer/operations |
+| `VALIDATION_FAILED` | 422 | schema/字段/枚举/长度错误；`errors[]` 定位 | customer/operations/ivr/public-share/provider-callback |
 | `CURSOR_INVALID` | 400 | cursor 不可解析、被篡改或跨面使用 | customer/operations |
 | `CURSOR_FILTER_MISMATCH` | 400 | 过滤条件变化后复用旧 cursor | customer/operations |
 | `CLAIM_RISK_BLOCKED` | 409 | `subject_risk_state` OPEN 风险先于 replay；不返回历史成功 | customer |

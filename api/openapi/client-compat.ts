@@ -275,6 +275,23 @@ type ForbiddenAuditFactKey = Extract<
 >;
 type AssertAuditFactSensitiveFieldsAbsent = Expect<Equal<ForbiddenAuditFactKey, never>>;
 
+// Aggregate fix F-01: AuditFact is an exact A0 audit.audit_fact projection.
+// Required nullable fields are indexed without `| undefined`, so each equality
+// proves both requiredness and nullability; the enum equality pins vocabulary.
+type AuditFact = components['schemas']['AuditFact'];
+type AssertAuditFactActorType =
+  Expect<Equal<AuditFact['actorType'], 'ACCOUNT' | 'EMPLOYEE' | 'SERVICE' | 'SYSTEM'>>;
+type AssertAuditFactActorIdRequiredNullable =
+  Expect<Equal<AuditFact['actorId'], string | null>>;
+type AssertAuditFactObjectIdRequiredNullable =
+  Expect<Equal<AuditFact['objectId'], string | null>>;
+type AssertAuditFactReasonCodeRequiredNullable =
+  Expect<Equal<AuditFact['reasonCode'], string | null>>;
+type AssertAuditFactTraceIdRequiredNullable =
+  Expect<Equal<AuditFact['traceId'], string | null>>;
+type AssertAuditFactActionCodeString =
+  Expect<Equal<AuditFact['actionCode'], string>>;
+
 type AssertClaimVerificationMethod =
   Expect<Equal<components['schemas']['ClaimRequest']['verificationMethod'], 'SMS' | 'WECHAT_PHONE' | 'CALLER_CHALLENGE' | 'MANUAL_REVIEW'>>;
 
@@ -471,23 +488,18 @@ const shareVerificationComponentNameLiteral: ShareAdmissionVerification = {
   mode: 'ShareVerificationNone',
 };
 
-// S3: PublicShareView.content / verificationChallenge stay optional.
-type AssertPublicShareViewContentOptional =
+// S3 / aggregate fix F-06: PublicShareView.content and verificationChallenge
+// are declared but optional. The indexed optionality assertions are real
+// checks; a `Required<T>` key-membership comparison would be tautologically
+// true for any declared property and is intentionally not used.
+type AssertPublicShareViewContentKey =
   Expect<Equal<'content' extends keyof components['schemas']['PublicShareView'] ? true : false, true>>;
-type AssertPublicShareViewContentNotRequired =
-  Expect<
-    Equal<
-      'content' extends Required<components['schemas']['PublicShareView']> ? true : false,
-      false
-    >
-  >;
+type AssertPublicShareViewContentOptional =
+  Expect<Equal<undefined extends components['schemas']['PublicShareView']['content'] ? true : false, true>>;
+type AssertPublicShareViewChallengeKey =
+  Expect<Equal<'verificationChallenge' extends keyof components['schemas']['PublicShareView'] ? true : false, true>>;
 type AssertPublicShareViewChallengeOptional =
-  Expect<
-    Equal<
-      'verificationChallenge' extends Required<components['schemas']['PublicShareView']> ? true : false,
-      false
-    >
-  >;
+  Expect<Equal<undefined extends components['schemas']['PublicShareView']['verificationChallenge'] ? true : false, true>>;
 
 // S3: media/upload credentials are readable, never client-submitted.
 type ForbiddenMediaAuthorizationRequestKey = Extract<
@@ -665,6 +677,30 @@ type AssertTrialDraftPublishedNull =
 
 type AssertTrialDraftCampaign =
   Expect<Equal<components['schemas']['TrialPolicyDraft']['campaignKey'], 'FIRST-TRIAL'>>;
+
+// Aggregate fix F-02: the accepted plan's provisional TrialPolicyDraft.createdAt
+// is superseded because A0 trial_policy_version has no owner timestamp column.
+type AssertTrialDraftNoCreatedAt =
+  Expect<Equal<'createdAt' extends keyof components['schemas']['TrialPolicyDraft'] ? true : false, false>>;
+
+// Aggregate fix F-05: A0 NOT NULL projections stay required and non-null.
+// Equality to the bare scalar (no `| null`, no `| undefined`) pins both.
+type AssertCatalogDraftSnapshotRequired =
+  Expect<Equal<components['schemas']['CatalogVersionDraft']['snapshotSha256'], string>>;
+type AssertTrialDraftSnapshotRequired =
+  Expect<Equal<components['schemas']['TrialPolicyDraft']['snapshotSha256'], string>>;
+type AssertShareStateEvidenceIdRequired =
+  Expect<Equal<components['schemas']['ShareState']['evidenceId'], string>>;
+type AssertShareStateCodeGenerationRequired =
+  Expect<Equal<components['schemas']['ShareState']['codeGeneration'], number>>;
+type AssertShareSummaryEvidenceIdRequired =
+  Expect<Equal<components['schemas']['ShareSummary']['evidenceId'], string>>;
+type AssertShareSummaryCodeGenerationRequired =
+  Expect<Equal<components['schemas']['ShareSummary']['codeGeneration'], number>>;
+type AssertShareCreatedEvidenceIdRequired =
+  Expect<Equal<components['schemas']['ShareCreated']['evidenceId'], string>>;
+type AssertShareCreatedCodeGenerationRequired =
+  Expect<Equal<components['schemas']['ShareCreated']['codeGeneration'], number>>;
 
 type AssertCatalogVersionSaleStatus =
   Expect<
@@ -977,6 +1013,12 @@ export type {
   AssertCatalogDraftReplaceImmutableAbsent,
   AssertOrderSensitiveFieldsAbsent,
   AssertAuditFactSensitiveFieldsAbsent,
+  AssertAuditFactActorType,
+  AssertAuditFactActorIdRequiredNullable,
+  AssertAuditFactObjectIdRequiredNullable,
+  AssertAuditFactReasonCodeRequiredNullable,
+  AssertAuditFactTraceIdRequiredNullable,
+  AssertAuditFactActionCodeString,
   AssertClaimVerificationMethod,
   AssertActivationDecision,
   AssertActivationStatus,
@@ -1028,8 +1070,9 @@ export type {
   AssertShareVerificationExtractionCodeModeLiteral,
   AssertShareVerificationDesignatedMobileModeLiteral,
   AssertShareVerificationOrganizationMemberModeLiteral,
+  AssertPublicShareViewContentKey,
   AssertPublicShareViewContentOptional,
-  AssertPublicShareViewContentNotRequired,
+  AssertPublicShareViewChallengeKey,
   AssertPublicShareViewChallengeOptional,
   AssertMediaAuthorizationRequestNoCredential,
   AssertShareAdmissionRequestNoCredential,
@@ -1059,6 +1102,15 @@ export type {
   AssertTrialDraftEnabledFalse,
   AssertTrialDraftPublishedNull,
   AssertTrialDraftCampaign,
+  AssertTrialDraftNoCreatedAt,
+  AssertCatalogDraftSnapshotRequired,
+  AssertTrialDraftSnapshotRequired,
+  AssertShareStateEvidenceIdRequired,
+  AssertShareStateCodeGenerationRequired,
+  AssertShareSummaryEvidenceIdRequired,
+  AssertShareSummaryCodeGenerationRequired,
+  AssertShareCreatedEvidenceIdRequired,
+  AssertShareCreatedCodeGenerationRequired,
   AssertCatalogVersionSaleStatus,
   AssertOrderCreateDecision,
   AssertCatalogVersionPublicationRequiredIdentity,
