@@ -4,7 +4,7 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/a1-production-openapi-surfaces-spec`
+> Branch: `codex/a2-production-ivr-protocol-spec`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
@@ -26,6 +26,85 @@ The architecture design defines the authoritative coarse order:
 Before production implementation, section 18 of the design source requires code-ready specifications in this order: data model and initial schema, OpenAPI surfaces, IVR protocol, security design, capacity/deployment sizing, and the production acceptance matrix. These are delivered as bounded work units rather than one oversized implementation phase.
 
 ## Current work unit
+
+- ID: `A2-production-ivr-protocol-spec`
+- Type: architecture-sensitive protocol specification deliverable.
+- Status: active.
+- Base: merged `origin/main` commit `754b7dfc53c277e79c5d63e24d578a93fa557cda` (PR #2 / A1).
+- Current gate / next entry point: `accepted plan commit`. Fresh MiMo 2.6 Flash re-review concluded `pass`; F-1 and the accepted fail-closed clarification are both `已修复`, with zero new findings and prototype regression checks passing. Create the protected local accepted-plan checkpoint from exactly the A2 plan/fix/review/controller paths, then enter S1 implementation.
+- Design source: `docs/12-technology-stack-and-system-architecture.md` sections 8 and 18, interpreted with `docs/13-ivr-call-task-and-inbound-design.md`, the accepted A0 schema specification `docs/14-production-data-model-and-flyway-schema-spec.md`, the accepted A1 API contract `api/openapi/onecall-v1.openapi.yaml`, and `docs/15-production-openapi-surface-spec.md`.
+- Motivation and direct evidence: A1 deliberately leaves the detailed IVR session, event, retry, recovery and media protocol to A2/Q15/Q26/Q28. The accepted API surface exposes resolve, activation confirmation, outbound authorization, call event, recording declaration and recording completion operations, while the existing IVR design already fixes one nonterminal task per normalized caller, a configured-and-frozen 30-second default task TTL, atomic claim/reservation/frozen action, task-path automatic B-leg dialing, direct-path DTMF flow and IVR ownership of telephony/media facts. A2 must close the deterministic wire and recovery contract before runtime implementation.
+
+### A2 binding goal contract
+
+- Goal: produce a code-generation-ready, versioned IVR protocol specification that tells the existing self-built IVR and ONECALL backend exactly how to coordinate from inbound session creation through unified action execution, activation re-decision, B-leg recovery, bridge/recording events, heartbeat, terminal settlement and recording media upload.
+- Success signal: every protocol message has a stable identity, owner and state precondition; initial `resolve` and post-activation re-decision share one action-selection contract; normal, duplicate, delayed, reordered, conflicting and lost-response paths are explicit; an IVR B-leg operation is exactly-once from the IVR perspective; terminal, recording and media states map exactly to A0 and A1; unknown outcomes fail closed and remain recoverable without redial or double charging; protocol compatibility, stable errors and deterministic static validation or executable fixtures are defined.
+- Scope boundary: protocol specification and deterministic static validation/fixtures only. The work unit may add the canonical IVR protocol specification, bounded machine-readable fixtures or validators, Gateflow artifacts and controller updates. A1 schemas may be refined only if an unavoidable contradiction is proven and separately reviewed; additive protocol detail should otherwise map to the accepted A1 surface.
+- Non-goals: no Java/runtime service implementation, IVR media-engine rewrite, SIP/provider-specific telephony design, Tencent Cloud resources, actual credentials, production numeric security values, UI/prototype changes, payment/order flows, PBX/extensions/seat PIN, operator-system integration, capacity/deployment sizing or production acceptance matrix.
+- No over-design: specify only the lifecycle, sequencing, identity, idempotency, recovery, compatibility and error rules required by the approved IVR behavior. Keep security key hierarchy, numeric replay windows, duration tolerances, authorization windows and provider details as typed deferred inputs instead of inventing Q7/Q8/Q10/Q18/Q25/Q27 values.
+- Blocking open questions: none for planning. Q15/Q26/Q28 protocol shapes and recovery semantics are the work unit's target; unresolved numeric, provider and policy values remain named deferred inputs and cannot be guessed by the plan.
+
+### A2 project constraints
+
+- The self-built IVR already owns inbound answering, outbound B-leg dialing, bridging, recording, timed hangup, call facts and media upload. The ONECALL backend owns activation, outbound tasks, entitlement, reservation/settlement and evidence state; operator systems do not participate.
+- One normalized caller may have only one nonterminal outbound task. Task creation replaces the prior pending task; default expiry is 30 seconds, server-configured and frozen on that task. Resolve atomically claims the task, reserves entitlement and returns the frozen action. The IVR executes that action and must not independently recompute routing or select a different callee.
+- The task path automatically dials the frozen callee after one successful inbound claim; it has no callee confirmation in the voice call. The no-task direct path may collect and confirm a callee through DTMF under its separate authorization flow.
+- The same `callId` roots the inbound session, task claim, B-leg operation, legs, bridge, quota reservation, terminal facts, recording, media object and evidence chain. Stable event/operation identities must distinguish exact replay from semantic conflict.
+- Initial resolve and activation confirmation must converge on one shared action-selection result shape and invariant set. Activation confirmation cannot silently create a separate routing policy or bypass the original call/session boundary.
+- Lost backend responses, delayed/reordered callbacks and IVR restart/recovery must not cause a second B-leg dial, a second reservation/settlement or contradictory terminal/media facts. Unknown telephony outcomes fail closed until authoritative reconciliation.
+- A0 persistence ownership and state machines and A1 paths/schemas/errors remain authoritative. The protocol must not expose COS object keys, permanent media URLs, credentials, raw security material or provider internals.
+- Existing HTML prototypes, `shared/onecall-business.js`, modified QA screenshots and untracked `docs/reviews/plan-review-20261021-205118.md` are outside A2 and must remain untouched and unstaged.
+
+### A2 slice principle
+
+Implementation slices must be behaviorally verifiable and minimize Gateflow review cost. Group protocol work by coherent end-to-end behavior and failure recovery, not mechanically by files, message types or IVR/backend ownership. Prefer no more than three implementation slices; a plan proposing more must prove why they cannot be safely combined without weakening validation or mixing incompatible state transitions.
+
+### A2 gate record
+
+| Gate | Status | Artifact / evidence | Decision |
+| --- | --- | --- | --- |
+| preflight | passed | branch `codex/a2-production-ivr-protocol-spec` at merged A1 commit `754b7dfc`; existing modified QA screenshots plus untracked historical review classified outside scope | proceed on dedicated A2 branch and preserve every unrelated dirty path |
+| goal confirmation | passed | user explicitly replied `确认` on 2026-10-25 after the controller stated the A2 goal, success signals, scope, non-goals, direct evidence, dispatch protocol and lack of blocking questions | binding scope contract established; proceed to `plan` without inventing deferred numeric/provider policy |
+| plan | author-complete; controller checks passed | `docs/gateflow/a2-production-ivr-protocol-spec-plan.md`, SHA-256 `B9569EFFD19A07499096FBAD7C3854436FECD47B30FBEF51996A093840453351`, 86880 bytes / 877 lines; Claude Code / `ds` task `a2-ivr-plan-ds-20261025-01` exited 0 with valid `success`, `is_error=false`, `stop_reason=end_turn`, non-empty result and empty stderr | three behavior slices cover frozen authorization, exactly-once call execution/recovery and recording/media truth; no new A1 endpoint/error or A0 table/state; proceed to independent adversarial plan review |
+| plan review | passed-with-risks; finding adjudicated | `docs/reviews/plan-review-20261024-224656.md`; Claude Code / `mimo26flash` task `a2-ivr-planreview-mimo26flash-20261025-01` exited 0 with valid structured success and empty stderr | prototype alignment passed; accept F-1 and the resolve-never-committed negative clarification for one bounded plan fix; all other residuals remain classified; no implementation starts |
+| fix | author-complete; controller checks passed | revised plan SHA-256 `502CC27ADCD5F767DBA7CCFC5B130161415F82DFAFC8F49384C917C5C9E6A128`, 102417 bytes / 981 lines; `docs/gateflow/a2-production-ivr-protocol-spec-plan-fix-1.md` SHA-256 `EE9F07458E5A790C36AA80596BECDF73074DEE73834F21158C2E6DE707E0469D`, 127 lines; Claude Code / `ds` task `a2-ivr-planfix1-ds-20261025-01` exited 0 with valid structured success and empty stderr | exact stage projections and cumulative fixture counts `6/17/25` are aligned; proceed to fresh independent re-review |
+| re-review | passed; controller accepted | `docs/reviews/plan-review-20261024-230327.md`; Claude Code / `mimo26flash` task `a2-ivr-plan-rereview1-mimo26flash-20261025-01` exited 0 with valid structured success and empty stderr | F-1 and resolve-never-committed clarification are `已修复`; exact `6/17/25`, `0/3/3`, stage projection and prototype regression checks pass; zero new finding; proceed to accepted plan commit |
+| accepted plan commit | pending | stage exactly the revised plan, fix artifact, initial review, accepted re-review and this controller document; run staged-scope and whitespace checks | create `gateflow: accept plan for A2-production-ivr-protocol-spec`; exclude screenshots and historical untracked review |
+
+#### A2 plan gate return and review entry
+
+- Runner evidence: run `/tmp/sub-agents.a2-ivr-plan.k560EF`; `exit-code.txt` is 0, `result.json` is valid with `subtype=success`, `is_error=false`, `stop_reason=end_turn` and a non-empty completion report, and `stderr.log` is empty. No retry or provider switch occurred.
+- Agent write scope is exactly the new plan artifact. Pre-existing screenshots and `docs/reviews/plan-review-20261021-205118.md` were not changed by the Agent; the controller document is controller-owned. The temporary dispatch prompt is removed before review.
+- The plan selects `docs/16-production-ivr-protocol-spec.md`, `protocol/ivr/v1/ivr-protocol-v1.json`, deterministic fixtures and a zero-third-party-dependency validator. It retains all six accepted A1 IVR operations, all A0 persistence/state ownership and the three-slice limit.
+- Controller prototype-flow comparison passed at plan level: task-backed calls auto-dial the frozen callee with no voice callee confirmation; no-task calls use the separate DTMF path; key 1 activation can create one trial for an unclaimed/unverified IVR subject; purchase remains guidance to Mini Program/Web with no IVR order/payment; operator systems are not protocol participants. The independent reviewer must verify these are not contradicted anywhere in the proposed wire/state/fixture design.
+- Classified plan residuals are not hidden: A0's task ID presentation mismatch, declaration replay projection and unwired `ABANDONED` session state remain non-blocking specification boundaries; runtime SIP/CDR, PostgreSQL concurrency, COS observation, evidence handoff and security/provider numeric inputs retain later owners/destinations.
+
+#### A2 independent plan review adjudication and fix entry
+
+- Runner evidence: run `/tmp/sub-agents.a2-ivr-planreview.Zg9NCM`; outer and recorded exits are 0, `result.json` has `subtype=success`, `is_error=false`, `stop_reason=end_turn` and a non-empty completion report, and `stderr.log` is empty. The task added exactly `docs/reviews/plan-review-20261024-224656.md`; it did not modify the plan or any existing repository file.
+- Review conclusion is `pass-with-risks`. It independently confirms all mandatory prototype behavior: task-backed calls auto-dial the frozen callee without callee confirmation; only the no-task path collects/confirms DTMF; key 1 may activate and grant one trial without login/real-name completion; IVR only guides purchase to Mini Program/Web; operator/PBX integration remains excluded.
+- F-1 `accepted`: the plan currently requires exact comparison of all three document marker blocks and reports `event_types=11` at S1, while S1 calls the marker blocks partial and S2 owns the 11 event payloads. The fix must define exact stage ownership: S1 may register event identities/names and validate the S1-approved projection, while S2 must add/freeze payload/state semantics and promote the event block to its exact full form; the validator must reject premature future-slice fields and missing current-stage fields. The fix must state exact per-stage model/doc/fixture expectations and counts without moving S2 protocol design into S1.
+- Review open question 2 `accepted` as a bounded negative fixture clarification: when resolve never committed, there is no backend call/reservation, so a later `OUTBOUND_NOT_STARTED` event returns `404 CALL_UNKNOWN`, becomes a permanent outbox failure and cannot be represented as release. This does not change the existing fail-closed protocol; add the explicit scenario/assertion and adjust exact stage fixture IDs/counts consistently.
+- Open question 1 (confirm/direct unknown call maps to A1-forced 409) is `deferred-with-owner`: IVR/Backend observability and possible later A1 refinement; A2 must not invent a new error. The reviewer tooling-access note is controller-observed rather than a product finding: the controller read the complete Planreview skill and embedded its mandatory lenses in the task, so no plan scope change is required.
+- All other review residuals remain classified with the plan's owners/destinations: task ID presentation, heartbeat volume/retention, declaration replay, session abandonment, upload observation, evidence handoff, static validator co-authorship, caller correlation, line/CDR runtime recovery and deferred Q-values. None authorizes an A0/A1/prototype/runtime change in this fix.
+
+#### A2 plan fix 1 return and re-review entry
+
+- Runner evidence: run `/tmp/sub-agents.a2-ivr-planfix1.gVu8hL`; outer and recorded exits are 0, valid JSON reports `subtype=success`, `is_error=false`, `stop_reason=end_turn` with a non-empty result, and stderr is empty. No retry or provider switch occurred.
+- Agent write scope is exactly the revised plan and new `docs/gateflow/a2-production-ivr-protocol-spec-plan-fix-1.md`. Controller-owned state, review artifacts, accepted A0/A1 sources and every prototype/screenshot path remain untouched by the Agent.
+- F-1 author claim: S1 freezes 11 event identities with the explicit `DEFERRED_S2` sentinel and forbids payload/state/terminal fields; S2 replaces that sentinel projection with the exact four-column full-frozen event map and digest; S3 must recompute the same digest and cannot change the registry. Stage validation rejects missing current-stage fields, premature future-stage fields, partial/skipped maps, stale sentinels and missing/extra fixture IDs.
+- Accepted clarification author claim: new negative fixture `s2-11-resolve-never-committed-not-started` distinguishes no backend commit from committed response loss and asserts `404 CALL_UNKNOWN`, no placeholder/release/usage and permanent local outbox failure. Cumulative fixtures are now S1/S2/S3 `6/17/25`, with S2/S3 cumulative negative count 3.
+- Controller checks independently confirm both file hashes above, 3 slices, fixture IDs/count references and fixed output examples `fixtures=6/17/25`, no whitespace/conflict-marker error, and no change to the mandatory prototype flow. Author-complete is not acceptance; a fresh MiMo re-review must decide the fix and regression status.
+
+#### A2 plan re-review 1 acceptance
+
+- Runner evidence: run `/tmp/sub-agents.a2-ivr-plan-rereview1.uGKrJH`; outer and recorded exits are 0, valid JSON reports `subtype=success`, `is_error=false`, `stop_reason=end_turn` with a non-empty result, and stderr is empty. The reviewer added exactly `docs/reviews/plan-review-20261024-230327.md` and changed no existing file.
+- Final review conclusion is `pass`. F-1 is `已修复`; the accepted resolve-never-committed clarification is `已修复`; there are zero new findings at any severity and no blocking question.
+- Independent consistency checks confirm S1/S2/S3 cumulative fixture sets `6/17/25`, slice counts `6+11+8`, cumulative marked negatives `0/3/3`, exact 12 message / 11 event / 22 identity rows, S1 `DEFERRED_S2` projection, S2 in-place full freeze and S3 digest equality. The `s2-11` path maps to A1's existing event `404 CALL_UNKNOWN` and A0 T-S2-12 no-placeholder behavior.
+- Prototype regression verdict is pass: task auto-dial/no callee confirmation, no-task DTMF only, key-1 unregistered trial, Mini Program/Web purchase guidance, no operator/PBX integration, exactly-once B-leg, occupied UNKNOWN, settlement and media/evidence separation all remain intact.
+- Residual risks remain classified with owners/destinations and do not block the documentation plan: runtime/CDR/database/cloud proof, task ID presentation, heartbeat volume, declaration replay, session abandonment, upload/evidence integration, validator co-authorship, caller correlation and deferred Q-values.
+
+## Completed work unit: A1 production OpenAPI surfaces
 
 - ID: `A1-production-openapi-surfaces-spec`
 - Type: architecture-sensitive deliverable.
