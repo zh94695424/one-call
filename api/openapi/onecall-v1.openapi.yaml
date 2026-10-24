@@ -1,0 +1,2185 @@
+openapi: 3.1.0
+info:
+  title: ONECALL production API surfaces (v1)
+  version: 1.0.0
+  license:
+    name: Proprietary
+  contact:
+    name: ONECALL API governance
+  description: |
+    Canonical OpenAPI 3.1 contract for the five approved ONECALL first-release
+    trust surfaces. This document is a static contract only: it defines no
+    running service, database, authentication provider, payment initiation,
+    IVR runtime, object storage or Redis behavior. All operation paths are
+    fully versioned under /api/v1; the single top-level server is the relative
+    deployment root `/`.
+servers:
+  - url: /
+    description: Deployment root only. Every path below carries its own /api/v1 prefix.
+tags:
+  - name: customer
+    description: Authenticated customer identity, business numbers, claims, activation and evidence metadata.
+    x-onecall-surface: customer
+  - name: operations
+    description: Fixed ADMIN/OPS employee read and activation-control surface; metadata access never grants recording playback.
+    x-onecall-surface: operations
+  - name: ivr
+    description: Self-built IVR service actions and event envelopes (later slices).
+    x-onecall-surface: ivr
+  - name: public-share
+    description: Public recording-share capability surface (later slices).
+    x-onecall-surface: public-share
+  - name: provider-callback
+    description: Authenticated payment-provider callback surface (later slice).
+    x-onecall-surface: provider-callback
+x-onecall-contract:
+  contractVersion: 1.0.0
+  surfaces:
+    - customer
+    - operations
+    - ivr
+    - public-share
+    - provider-callback
+  a0Baseline: docs/14-production-data-model-and-flyway-schema-spec.md
+  problemRegistry: x-onecall-problem-registry
+  runtime: not-implemented
+  notes: S1 freezes exactly 14 human-identity, resource-ownership and activation operations.
+x-onecall-problem-registry:
+  UNAUTHENTICATED:
+    httpStatus: 401
+    a0Origin: session boundary (Q1/Q19); no user-existence disclosure
+    surfaces: [customer, operations, ivr, public-share, provider-callback]
+  FORBIDDEN:
+    httpStatus: 403
+    a0Origin: server-derived authorization predicate
+    surfaces: [customer, operations, ivr, public-share, provider-callback]
+  NOT_FOUND:
+    httpStatus: 404
+    a0Origin: current visibility predicate; no substitute object
+    surfaces: [customer, operations, public-share]
+  VALIDATION_FAILED:
+    httpStatus: 422
+    a0Origin: request schema, field and enum validation
+    surfaces: [customer, operations, ivr, provider-callback]
+  CURSOR_INVALID:
+    httpStatus: 400
+    a0Origin: cursor contract; opaque cursor cannot be parsed, is tampered or crosses surfaces
+    surfaces: [customer, operations]
+  CURSOR_FILTER_MISMATCH:
+    httpStatus: 400
+    a0Origin: cursor contract; normalized filter digest changed
+    surfaces: [customer, operations]
+  CLAIM_RISK_BLOCKED:
+    httpStatus: 409
+    a0Origin: subject_number.subject_risk_state OPEN risk; T-S1-06 risk precedes replay
+    surfaces: [customer]
+  CLAIM_REPLAY_CONFLICT:
+    httpStatus: 409
+    a0Origin: subject_number.subject_claim request_id replay identity mismatch; T-S1-06
+    surfaces: [customer]
+  CLAIM_CONTEXT_CONFLICT:
+    httpStatus: 409
+    a0Origin: subject_number.subject_claim same-account duplicate context mismatch; T-S1-06
+    surfaces: [customer]
+  ACTIVATION_STATE_CONFLICT:
+    httpStatus: 409
+    a0Origin: activation_consent.service_activation transition/revision mismatch; T-S2-09
+    surfaces: [operations]
+  CONSENT_REQUIRED:
+    httpStatus: 409
+    a0Origin: activation_consent.consent_record current prompt/policy missing, stale or invalid; T-S2-13
+    surfaces: [customer]
+  ACTIVATION_CONSENT_DECLINED:
+    httpStatus: 409
+    a0Origin: activation_consent.consent_record explicit DECLINE committed typed refusal; no accepted consent/activation/trial; same-event replay returns the same refusal; T-S2-13
+    surfaces: [customer]
+  RATE_LIMITED:
+    httpStatus: 429
+    a0Origin: platform rate or quota rejection; no numeric rate, window or retry policy is frozen in S1
+    surfaces: [customer, operations, ivr, public-share, provider-callback]
+  SERVICE_UNAVAILABLE:
+    httpStatus: 503
+    a0Origin: dependency, capacity or maintenance unavailability; no vendor or retry-after semantics are frozen in S1
+    surfaces: [customer, operations, ivr, public-share, provider-callback]
+  INTERNAL:
+    httpStatus: 500
+    a0Origin: server failure; safe generic message only
+    surfaces: [customer, operations, ivr, public-share, provider-callback]
+paths:
+  /api/v1/customer/me:
+    get:
+      tags: [customer]
+      operationId: getCustomerMe
+      summary: Read the current customer context.
+      description: |
+        Resolves the current customer account and usable workspaces from the
+        authenticated customer session. The client supplies no account,
+        organization, workspace or role claim. Only ACTIVE accounts and ACTIVE
+        memberships under ACTIVE organizations are projected. No provider
+        subject, HMAC, identity document or full number is returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> ACTIVE customer_account; workspaces re-read from ACTIVE memberships under ACTIVE organizations; client-supplied account, workspace and role are ignored
+      x-onecall-a0-models:
+        - customer_iam.customer_account
+        - organization_access.organization
+        - organization_access.organization_membership
+      x-onecall-a0-contracts:
+        - T-S1-04
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      responses:
+        '200':
+          description: Current customer context.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerContext'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/business-numbers:
+    get:
+      tags: [customer]
+      operationId: listCustomerBusinessNumbers
+      summary: List accessible business numbers.
+      description: |
+        Lists masked business numbers and their binding, subject, activation and
+        real-name projections for the current session and server-derived
+        workspace scope. Only bindings the current account may access are
+        returned. The stable order is `subject.createdAt desc, bindingId asc`.
+        Full numbers, HMAC values, ciphertext and ownership inferences are never
+        returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession + server workspace scope; only currently accessible bindings are projected
+      x-onecall-a0-models:
+        - subject_number.business_subject
+        - subject_number.caller_number_binding
+        - activation_consent.service_activation
+      x-onecall-a0-contracts:
+        - '§7.1'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-sort: 'subject.createdAt desc, bindingId asc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Accessible business numbers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessNumberPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/subjects/{subjectId}:
+    get:
+      tags: [customer]
+      operationId: getCustomerSubject
+      summary: Read an accessible subject summary.
+      description: |
+        Returns the current activation status, trial summary, current consent
+        requirements, claim state and evidence/order counts for a subject the
+        current account may access. Activation, claim, risk and trial facts are
+        re-read server-side. Risk internals, evidence bytes, full numbers and
+        other subjects are never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> server subject owner/claim/risk/workspace access; current policy and prompt are server-derived
+      x-onecall-a0-models:
+        - subject_number.business_subject
+        - activation_consent.service_activation
+        - activation_consent.consent_record
+        - entitlement_metering.trial_grant
+        - entitlement_metering.entitlement_balance
+        - subject_number.subject_claim
+      x-onecall-a0-contracts:
+        - '§7.1'
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          description: Stable business subject identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Accessible subject summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerSubjectDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/subject-claims:
+    post:
+      tags: [customer]
+      operationId: createCustomerSubjectClaim
+      summary: Append a verified personal subject claim.
+      description: |
+        Appends one verified personal claim for the authenticated account. The
+        `Idempotency-Key` header is the A0 `subject_claim.request_id` (1-128).
+        Open risk state is evaluated before replay, so a historically accepted
+        claim is never disclosed as a successful replay while current risk is
+        OPEN. A replay with changed subject, binding, method or verification
+        proof is a conflict; a same-account duplicate with changed context is a
+        context conflict. Enterprise ownership is out of S1 scope. The request
+        never carries account, owner, role, raw number, HMAC, ciphertext or
+        verification proof content.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> ACTIVE account; binding/subject/risk/owner predicates re-read under locks; accepted owner is set only from null
+      x-onecall-a0-models:
+        - subject_number.subject_claim
+        - subject_number.business_subject
+        - subject_number.caller_number_binding
+        - subject_number.subject_risk_state
+      x-onecall-a0-contracts:
+        - T-S1-06
+        - '§7.1'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CLAIM_RISK_BLOCKED
+        - CLAIM_REPLAY_CONFLICT
+        - CLAIM_CONTEXT_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      x-onecall-replay-order: risk-before-replay
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
+      responses:
+        '200':
+          description: Accepted or first stored claim outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Risk-blocked, replay-conflict or context-conflict claim outcome.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/subjects/{subjectId}/activations:
+    post:
+      tags: [customer]
+      operationId: createCustomerSubjectActivation
+      summary: Record explicit activation consent and freeze the activation/trial result.
+      description: |
+        Records one explicit ACCEPT or DECLINE decision for the current subject
+        activation policy and prompt. An ACCEPT freezes the activation and
+        first-trial result. The body `activationEventId` (1-128) is the stable
+        idempotency identity; the same event and semantic fingerprint returns
+        the first frozen result and never reissues a trial. A DECLINE is a
+        committed typed refusal carried by `409 ACTIVATION_CONSENT_DECLINED`:
+        it appends the refusal, creates no accepted consent, activation or
+        trial, and replaying the same `activationEventId` returns the same
+        refusal. The `200 ActivationResult` schema is ACCEPT-only success and
+        there is no DECLINE 200 schema. Missing, stale or invalid policy,
+        prompt or content is refused with `409 CONSENT_REQUIRED`. The client
+        cannot supply account, workspace, role, subject ownership, policy
+        outcome or trial outcome.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> current subject access and ACTIVE account/workspace; current policy/prompt/content re-read; accepted consent is the only activation source
+      x-onecall-a0-models:
+        - activation_consent.consent_record
+        - activation_consent.service_activation
+        - activation_consent.service_activation_transition
+        - entitlement_metering.trial_grant
+        - entitlement_metering.entitlement_grant
+        - entitlement_metering.entitlement_balance
+      x-onecall-a0-contracts:
+        - T-S2-13
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CONSENT_REQUIRED
+        - ACTIVATION_CONSENT_DECLINED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: event-body
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          description: Stable business subject identity.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivationRequest'
+      responses:
+        '200':
+          description: Frozen activation and first-trial result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationResult'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Current consent is required, stale or invalid (`CONSENT_REQUIRED`), or the submitted decision is an explicit DECLINE (`ACTIVATION_CONSENT_DECLINED`): a committed typed refusal with no accepted consent, activation or trial, where the same `activationEventId` replays the same refusal.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/evidence:
+    get:
+      tags: [customer]
+      operationId: listCustomerEvidence
+      summary: List accessible evidence metadata.
+      description: |
+        Lists safe metadata for evidence belonging to subjects the current
+        account may access. No media bytes, object key, URL, bucket, version,
+        full number or share secret is returned. The stable order is
+        `createdAt desc, evidenceId desc`.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> server subject/workspace access; only safe metadata is projected
+      x-onecall-a0-models:
+        - evidence.evidence_record
+        - evidence.evidence_artifact
+        - evidence.recording
+      x-onecall-a0-contracts:
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-sort: 'createdAt desc, evidenceId desc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Accessible evidence metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidencePage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/evidence/{evidenceId}:
+    get:
+      tags: [customer]
+      operationId: getCustomerEvidence
+      summary: Read one accessible evidence record.
+      description: |
+        Returns safe metadata and validated artifact facts for one accessible
+        evidence record. Media is never rendered and no object identity, bucket,
+        version, URL, bytes or share secret is returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> server subject/workspace access; current evidence visibility and status re-read
+      x-onecall-a0-models:
+        - evidence.evidence_record
+        - evidence.evidence_artifact
+        - evidence.recording
+        - evidence.media_object
+      x-onecall-a0-contracts:
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      parameters:
+        - name: evidenceId
+          in: path
+          required: true
+          description: Internal evidence identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Accessible evidence metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/subjects:
+    get:
+      tags: [operations]
+      operationId: listOperationsSubjects
+      summary: List masked operations subjects.
+      description: |
+        Lists masked subject metadata for fixed ADMIN/OPS employees. Only the
+        structured filters `subjectId`, `source`, `claimStatus`,
+        `activationStatus`, `realNameStatus` and `riskState` are accepted; full
+        number search and free-text search are intentionally absent. The stable
+        order is `createdAt desc, subjectId desc`, and the opaque cursor is bound
+        to the normalized structured-filter digest. Operations metadata access
+        never grants recording playback.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in fixed ADMIN|OPS; server-derived resource visibility; metadata only; no recording playback
+      x-onecall-a0-models:
+        - subject_number.business_subject
+        - subject_number.caller_number_binding
+        - activation_consent.service_activation
+        - subject_number.subject_claim
+        - subject_number.subject_risk_state
+      x-onecall-a0-contracts:
+        - '§7.1'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'createdAt desc, subjectId desc'
+      x-onecall-filter-digest:
+        - subjectId
+        - source
+        - claimStatus
+        - activationStatus
+        - realNameStatus
+        - riskState
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: subjectId
+          in: query
+          required: false
+          description: Exact stable subject identity filter.
+          schema:
+            type: string
+            format: uuid
+        - name: source
+          in: query
+          required: false
+          description: Subject creation source filter.
+          schema:
+            type: string
+            enum: [IVR, MINIAPP, WEB, OPERATIONS]
+        - name: claimStatus
+          in: query
+          required: false
+          description: Latest claim status filter.
+          schema:
+            type: string
+            enum: [ACCEPTED, REJECTED, CONFLICT]
+        - name: activationStatus
+          in: query
+          required: false
+          description: Current activation status filter.
+          schema:
+            type: string
+            enum: [INACTIVE, ACTIVE, SUSPENDED]
+        - name: realNameStatus
+          in: query
+          required: false
+          description: Subject real-name status filter.
+          schema:
+            type: string
+            enum: [UNVERIFIED, VERIFIED]
+        - name: riskState
+          in: query
+          required: false
+          description: Derived subject risk-state filter.
+          schema:
+            type: string
+            enum: [OPEN, CLEARED]
+      responses:
+        '200':
+          description: Masked operations subjects.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectPage'
+        '400':
+          description: The cursor is invalid or its filter digest does not match the current structured filters.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/subjects/{subjectId}:
+    get:
+      tags: [operations]
+      operationId: getOperationsSubject
+      summary: Read one masked operations subject.
+      description: |
+        Returns a read-only masked subject detail: bindings, claims, risk state,
+        activation, trial, evidence count and order count. Fixed ADMIN/OPS
+        employees may read. No raw recording, playback credential, full number
+        or other subject detail is returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in fixed ADMIN|OPS; server-derived resource visibility; metadata only; no recording playback
+      x-onecall-a0-models:
+        - subject_number.business_subject
+        - subject_number.caller_number_binding
+        - subject_number.subject_claim
+        - subject_number.subject_risk_state
+        - activation_consent.service_activation
+        - entitlement_metering.trial_grant
+        - entitlement_metering.entitlement_balance
+      x-onecall-a0-contracts:
+        - '§7.1'
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          description: Stable business subject identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Masked subject detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationsSubjectDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/subjects/{subjectId}/suspensions:
+    post:
+      tags: [operations]
+      operationId: suspendOperationsSubject
+      summary: Suspend internal service for one subject.
+      description: |
+        Appends exactly one OPERATIONS `ACTIVE -> SUSPENDED` transition for the
+        subject's current activation. Only fixed OPS employees may call it. The
+        `Idempotency-Key` header is the A0 operation action event identity
+        (1-128). A concurrent or non-matching current state/revision returns
+        `ACTIVATION_STATE_CONFLICT`; history is preserved, no trial is reissued
+        and no customer or IVR caller may suspend. An audit fact is appended.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == OPS; subject activation state/revision re-read under lifecycle lock; only ACTIVE -> SUSPENDED; no recording playback
+      x-onecall-a0-models:
+        - activation_consent.service_activation
+        - activation_consent.service_activation_transition
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - T-S2-09
+        - T-S1-03
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - ACTIVATION_STATE_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      x-onecall-required-roles: [OPS]
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          description: Stable business subject identity.
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivationTransitionRequest'
+      responses:
+        '200':
+          description: First or replayed suspension transition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationTransition'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ActivationStateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/subjects/{subjectId}/resumptions:
+    post:
+      tags: [operations]
+      operationId: resumeOperationsSubject
+      summary: Resume internal service for one subject.
+      description: |
+        Appends exactly one OPERATIONS `SUSPENDED -> ACTIVE` transition for the
+        subject's current activation. Only fixed OPS employees may call it. The
+        `Idempotency-Key` header is the A0 operation action event identity
+        (1-128). Resume never reissues or supplements a trial. A concurrent or
+        non-matching current state/revision returns `ACTIVATION_STATE_CONFLICT`.
+        An audit fact is appended.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == OPS; subject activation state/revision re-read under lifecycle lock; only SUSPENDED -> ACTIVE; no trial reissue; no recording playback
+      x-onecall-a0-models:
+        - activation_consent.service_activation
+        - activation_consent.service_activation_transition
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - T-S2-09
+        - T-S1-03
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - ACTIVATION_STATE_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      x-onecall-required-roles: [OPS]
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          description: Stable business subject identity.
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivationTransitionRequest'
+      responses:
+        '200':
+          description: First or replayed resumption transition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationTransition'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ActivationStateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/activations:
+    get:
+      tags: [operations]
+      operationId: listOperationsActivations
+      summary: List activation and consent transitions.
+      description: |
+        Read-only activation, consent and trial association list for fixed
+        ADMIN/OPS employees. The stable order is `occurredAt desc, transitionId
+        desc`. No identity documents, raw recordings, playback credentials or
+        full numbers are returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in fixed ADMIN|OPS; server-derived resource visibility; metadata only; no recording playback
+      x-onecall-a0-models:
+        - activation_consent.service_activation
+        - activation_consent.service_activation_transition
+        - activation_consent.consent_record
+        - entitlement_metering.trial_grant
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'occurredAt desc, transitionId desc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Activation transition list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/ivr-sessions:
+    get:
+      tags: [operations]
+      operationId: listOperationsIvrSessions
+      summary: List IVR session metadata.
+      description: |
+        Lists safe IVR session and call metadata for fixed ADMIN/OPS employees,
+        filterable by exact `subjectId`, `callId`, `taskId` and session `status`.
+        The stable order is `createdAt desc, sessionId desc`; the cursor is bound
+        to the normalized filter digest. Raw event payloads, ciphertext, full
+        caller/callee numbers, recording media and playback credentials are
+        never returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in fixed ADMIN|OPS; server-derived resource visibility; metadata only; no recording playback
+      x-onecall-a0-models:
+        - ivr.inbound_session
+        - ivr.call_record
+        - ivr.outbound_call_task
+        - ivr.ivr_decision
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'createdAt desc, sessionId desc'
+      x-onecall-filter-digest:
+        - subjectId
+        - callId
+        - taskId
+        - status
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: subjectId
+          in: query
+          required: false
+          description: Exact subject identity filter.
+          schema:
+            type: string
+            format: uuid
+        - name: callId
+          in: query
+          required: false
+          description: Exact IVR call identity filter.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: taskId
+          in: query
+          required: false
+          description: Exact outbound task identity filter.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: status
+          in: query
+          required: false
+          description: Inbound session status filter.
+          schema:
+            type: string
+            enum: [RECEIVED, CONFIRMED, ABANDONED, REJECTED]
+      responses:
+        '200':
+          description: IVR session metadata list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IvrSessionPage'
+        '400':
+          description: The cursor is invalid or its filter digest does not match the current structured filters.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/ivr-sessions/{sessionId}:
+    get:
+      tags: [operations]
+      operationId: getOperationsIvrSession
+      summary: Read one IVR session chain.
+      description: |
+        Returns one session's safe version, key-press decision, call, leg, event
+        receipt and evidence metadata chain for fixed ADMIN/OPS employees.
+        Read-only. Raw payloads and ciphertext, full numbers, object keys, media
+        bytes and playback credentials are never returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in fixed ADMIN|OPS; server-derived resource visibility; metadata only; no recording playback
+      x-onecall-a0-models:
+        - ivr.inbound_session
+        - ivr.call_record
+        - ivr.call_leg
+        - ivr.call_event
+        - ivr.ivr_decision
+        - evidence.evidence_record
+      x-onecall-a0-contracts:
+        - '§7.3'
+        - '§7.4'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Inbound IVR session identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Safe IVR session chain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IvrSessionDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+components:
+  securitySchemes:
+    customerSession:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session
+      description: Opaque customer session; issuance, WeChat/OTP login, refresh and revocation remain Q1/Q19 inputs.
+    employeeSession:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session
+      description: Independent employee audience session with fixed ADMIN/OPS roles; authentication source and MFA remain Q1.
+    ivrMtls:
+      type: mutualTLS
+      description: IVR service identity via mutual TLS. Certificate issuance, pinning and rotation remain Q7/Q15.
+    ivrSignature:
+      type: apiKey
+      in: header
+      name: X-ONECALL-SIGNATURE
+      description: IVR request signature used together with mTLS. Algorithm, replay window and nonce form remain Q7/Q15/Q25.
+    providerCallbackMtls:
+      type: mutualTLS
+      description: Payment provider callback service identity via mutual TLS. Certificate mapping remains Q6/Q15.
+    providerCallbackSignature:
+      type: apiKey
+      in: header
+      name: X-ONECALL-CALLBACK-SIGNATURE
+      description: Provider callback signature used together with mTLS. Vendor payload and signature algorithm remain Q6/Q15.
+  parameters:
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque server-issued cursor bound to the stable sort and normalized filter digest. Offset cursors are not accepted.
+      schema:
+        $ref: '#/components/schemas/Cursor'
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: V1 API-governance page size default and maximum; a deployment may clamp further.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IdempotencyKeyParam:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Stable operation action identity supplied by the caller; never truncated.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  responses:
+    Unauthenticated:
+      description: Missing or invalid customer or employee session.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: The authenticated identity is not allowed for the current access, role or resource.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: The resource does not exist or is not visible to the current identity.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: The request failed schema, field, enum or length validation.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CursorInvalid:
+      description: The cursor cannot be parsed, was tampered with or crosses a surface.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ActivationStateConflict:
+      description: The current activation state or revision does not permit the requested OPERATIONS transition.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: The platform rate or quota rejected the request; no numeric rate, window or retry policy is frozen in this contract.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ServiceUnavailable:
+      description: A dependency, capacity or maintenance condition makes the service unavailable; no vendor or retry-after semantics are frozen in this contract.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Internal:
+      description: Safe generic server failure with a stable trace identity.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Problem:
+      type: object
+      additionalProperties: false
+      description: RFC 9457 problem detail extended with a stable business code and trace identity.
+      required: [type, title, status, code, traceId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          maxLength: 2000
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          $ref: '#/components/schemas/ProblemCode'
+        traceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldProblem'
+    ProblemCode:
+      type: string
+      description: Stable machine-readable business error code; the only machine branching key.
+      enum:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - CLAIM_RISK_BLOCKED
+        - CLAIM_REPLAY_CONFLICT
+        - CLAIM_CONTEXT_CONFLICT
+        - ACTIVATION_STATE_CONFLICT
+        - CONSENT_REQUIRED
+        - ACTIVATION_CONSENT_DECLINED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+    FieldProblem:
+      type: object
+      additionalProperties: false
+      description: Field-level validation problem; pointers identify the request location without echoing values.
+      required: [pointer, code, message]
+      properties:
+        pointer:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        message:
+          type: string
+          minLength: 1
+          maxLength: 512
+    Cursor:
+      type: string
+      description: Opaque server-issued cursor; never an offset, SQL key or raw ID.
+      minLength: 1
+      maxLength: 512
+    PageInfo:
+      type: object
+      additionalProperties: false
+      description: Shared page-boundary convention; every *Page schema exposes these two fields together with items.
+      required: [nextCursor, hasMore]
+      properties:
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    CustomerAccountSummary:
+      type: object
+      additionalProperties: false
+      required: [accountId, status]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+    WorkspaceSummary:
+      type: object
+      additionalProperties: false
+      required: [workspaceType, status]
+      properties:
+        workspaceType:
+          type: string
+          enum: [PERSONAL, ORGANIZATION]
+        organizationId:
+          type: string
+          format: uuid
+        organizationDisplayName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        role:
+          type: string
+          enum: [ADMINISTRATOR, MEMBER, EVIDENCE_MANAGER, AUDITOR]
+        status:
+          type: string
+          enum: [ACTIVE]
+    CustomerContext:
+      type: object
+      additionalProperties: false
+      required: [account, workspaces, channel]
+      properties:
+        account:
+          $ref: '#/components/schemas/CustomerAccountSummary'
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceSummary'
+        channel:
+          type: string
+          enum: [MINIAPP, WEB]
+    BusinessNumber:
+      type: object
+      additionalProperties: false
+      required: [bindingId, subjectId, numberMasked, numberType, bindingStatus, activationStatus, realNameStatus]
+      properties:
+        bindingId:
+          type: string
+          format: uuid
+        subjectId:
+          type: string
+          format: uuid
+        numberMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        numberType:
+          type: string
+          enum: [MOBILE, LANDLINE]
+        bindingStatus:
+          type: string
+          enum: [ACTIVE, DISABLED, RETIRED]
+        activationStatus:
+          type: string
+          description: Server-derived activation projection for the bound subject; response-only and never client-writable.
+          readOnly: true
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        realNameStatus:
+          type: string
+          enum: [UNVERIFIED, VERIFIED]
+    BusinessNumberPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessNumber'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    TrialSummary:
+      type: object
+      additionalProperties: false
+      required: [grantedSeconds, remainingSeconds, expiresAt, status]
+      properties:
+        grantedSeconds:
+          type: integer
+          minimum: 0
+        remainingSeconds:
+          type: integer
+          minimum: 0
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [GRANTED, EXHAUSTED, EXPIRED]
+    ConsentRequirements:
+      type: object
+      additionalProperties: false
+      description: Current policy, prompt and content identity that an explicit consent must match.
+      required: [policyCode, policyVersion, promptVersion, contentSha256]
+      properties:
+        policyCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        policyVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    CustomerSubjectDetail:
+      type: object
+      additionalProperties: false
+      required: [subjectId, activationStatus, evidenceCount, orderCount]
+      properties:
+        subjectId:
+          type: string
+          format: uuid
+        numberMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        activationStatus:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        trial:
+          $ref: '#/components/schemas/TrialSummary'
+        consentRequirements:
+          $ref: '#/components/schemas/ConsentRequirements'
+        evidenceCount:
+          type: integer
+          minimum: 0
+        orderCount:
+          type: integer
+          minimum: 0
+    ClaimRequest:
+      type: object
+      additionalProperties: false
+      description: Verified personal claim inputs. Account, owner, role, raw number, HMAC and verification ciphertext are server-derived and never accepted.
+      required: [subjectId, bindingId, verificationMethod, verificationProofId]
+      properties:
+        subjectId:
+          type: string
+          format: uuid
+        bindingId:
+          type: string
+          format: uuid
+        verificationMethod:
+          type: string
+          enum: [SMS, WECHAT_PHONE, CALLER_CHALLENGE, MANUAL_REVIEW]
+        verificationProofId:
+          type: string
+          description: Opaque server-validated verification-attempt reference; never a code, OTP, number or ciphertext.
+          minLength: 1
+          maxLength: 128
+    ClaimResult:
+      type: object
+      additionalProperties: false
+      required: [claimId, status, subjectId]
+      properties:
+        claimId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACCEPTED, REJECTED, CONFLICT]
+        subjectId:
+          type: string
+          format: uuid
+        acceptedAt:
+          type: string
+          format: date-time
+    ActivationRequest:
+      type: object
+      additionalProperties: false
+      description: Explicit activation consent decision bound to the current policy, prompt and content identity.
+      required: [activationEventId, decision, policyCode, policyVersion, promptVersion, contentSha256]
+      properties:
+        activationEventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        decision:
+          type: string
+          enum: [ACCEPT, DECLINE]
+        policyCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        policyVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    ActivationTrial:
+      type: object
+      additionalProperties: false
+      required: [grantedSeconds, expiresAt]
+      properties:
+        grantedSeconds:
+          type: integer
+          minimum: 1
+        expiresAt:
+          type: string
+          format: date-time
+    ActivationResult:
+      type: object
+      additionalProperties: false
+      required: [activationStatus, activationRevision, transitionId, consentId, trialOutcome, trial]
+      properties:
+        activationStatus:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        activationRevision:
+          type: integer
+          minimum: 1
+        transitionId:
+          type: string
+          format: uuid
+          description: The newly appended transition or the current latest transition anchor for an already-active replay.
+        consentId:
+          type: string
+          format: uuid
+        trialOutcome:
+          type: string
+          enum: [GRANTED, REPLAY, ALREADY_GRANTED]
+        trial:
+          $ref: '#/components/schemas/ActivationTrial'
+    EvidenceArtifact:
+      type: object
+      additionalProperties: false
+      required: [artifactRole]
+      properties:
+        artifactRole:
+          type: string
+          enum: [ORIGINAL, DERIVED]
+        mimeType:
+          type: string
+          minLength: 1
+          maxLength: 128
+        sizeBytes:
+          type: integer
+          minimum: 0
+        validatedDurationSeconds:
+          type: integer
+          minimum: 1
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    EvidenceSummary:
+      type: object
+      additionalProperties: false
+      required: [evidenceId, subjectId, status, sourceType, capturedAt, consentVersion, createdAt]
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        subjectId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, SOLIDIFIED, QUARANTINED, FAILED]
+        sourceType:
+          type: string
+          enum: [CALL_RECORDING]
+        capturedAt:
+          type: string
+          format: date-time
+        consentVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        createdAt:
+          type: string
+          format: date-time
+        artifactRoles:
+          type: array
+          items:
+            type: string
+            enum: [ORIGINAL, DERIVED]
+    EvidencePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    EvidenceDetail:
+      type: object
+      additionalProperties: false
+      required: [evidenceId, subjectId, status, sourceType, capturedAt, consentVersion, artifacts]
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        subjectId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, SOLIDIFIED, QUARANTINED, FAILED]
+        sourceType:
+          type: string
+          enum: [CALL_RECORDING]
+        capturedAt:
+          type: string
+          format: date-time
+        consentVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        solidifiedAt:
+          type: string
+          format: date-time
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceArtifact'
+    SubjectSummary:
+      type: object
+      additionalProperties: false
+      required: [subjectId, source, activationStatus, realNameStatus, riskState, createdAt]
+      properties:
+        subjectId:
+          type: string
+          format: uuid
+        maskedNumber:
+          type: string
+          minLength: 1
+          maxLength: 64
+        source:
+          type: string
+          enum: [IVR, MINIAPP, WEB, OPERATIONS]
+        claimStatus:
+          type: string
+          enum: [ACCEPTED, REJECTED, CONFLICT]
+        activationStatus:
+          type: string
+          description: Projected INACTIVE when no activation row exists yet.
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        realNameStatus:
+          type: string
+          enum: [UNVERIFIED, VERIFIED]
+        riskState:
+          type: string
+          description: OPEN when any binding risk state is OPEN; otherwise CLEARED.
+          enum: [OPEN, CLEARED]
+        createdAt:
+          type: string
+          format: date-time
+    SubjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubjectSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    BindingSummary:
+      type: object
+      additionalProperties: false
+      required: [bindingId, numberMasked, numberType, bindingStatus]
+      properties:
+        bindingId:
+          type: string
+          format: uuid
+        numberMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        numberType:
+          type: string
+          enum: [MOBILE, LANDLINE]
+        bindingStatus:
+          type: string
+          enum: [ACTIVE, DISABLED, RETIRED]
+        verifiedAt:
+          type: string
+          format: date-time
+    ClaimSummary:
+      type: object
+      additionalProperties: false
+      required: [claimId, status, verificationMethod, riskCheckedAt]
+      properties:
+        claimId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACCEPTED, REJECTED, CONFLICT]
+        verificationMethod:
+          type: string
+          enum: [SMS, WECHAT_PHONE, CALLER_CHALLENGE, MANUAL_REVIEW]
+        riskCheckedAt:
+          type: string
+          format: date-time
+        verifiedAt:
+          type: string
+          format: date-time
+    ActivationState:
+      type: object
+      additionalProperties: false
+      required: [status, revision]
+      properties:
+        status:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        revision:
+          type: integer
+          minimum: 1
+    OperationsSubjectDetail:
+      type: object
+      additionalProperties: false
+      required: [subjectId, source, realNameStatus, riskState, bindings, claims, evidenceCount, orderCount, createdAt]
+      properties:
+        subjectId:
+          type: string
+          format: uuid
+        maskedNumber:
+          type: string
+          minLength: 1
+          maxLength: 64
+        source:
+          type: string
+          enum: [IVR, MINIAPP, WEB, OPERATIONS]
+        realNameStatus:
+          type: string
+          enum: [UNVERIFIED, VERIFIED]
+        riskState:
+          type: string
+          description: OPEN when any binding risk state is OPEN; otherwise CLEARED.
+          enum: [OPEN, CLEARED]
+        activation:
+          $ref: '#/components/schemas/ActivationState'
+        trial:
+          $ref: '#/components/schemas/TrialSummary'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/BindingSummary'
+        claims:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimSummary'
+        evidenceCount:
+          type: integer
+          minimum: 0
+        orderCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+    ActivationTransitionRequest:
+      type: object
+      additionalProperties: false
+      description: Fixed employee OPERATIONS transition request; the employee identity and source action domain are server-derived.
+      required: [reasonCode, expectedActivationRevision]
+      properties:
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        expectedActivationRevision:
+          type: integer
+          minimum: 1
+    ActivationTransition:
+      type: object
+      additionalProperties: false
+      required: [transitionId, statusEventId, fromStatus, toStatus, fromRevision, toRevision, sourceChannel, sourceActionDomain, reasonCode, occurredAt]
+      properties:
+        transitionId:
+          type: string
+          format: uuid
+        statusEventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fromStatus:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        toStatus:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        fromRevision:
+          type: integer
+          minimum: 0
+        toRevision:
+          type: integer
+          minimum: 1
+        sourceChannel:
+          type: string
+          enum: [IVR, MINIAPP, WEB, OPERATIONS]
+        sourceActionDomain:
+          type: string
+          enum: [ACTIVATION, IVR_CONFIRM, OPERATIONS]
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        occurredAt:
+          type: string
+          format: date-time
+    ActivationSummary:
+      type: object
+      additionalProperties: false
+      required: [transitionId, subjectId, statusEventId, fromStatus, toStatus, fromRevision, toRevision, sourceChannel, sourceActionDomain, reasonCode, occurredAt]
+      properties:
+        transitionId:
+          type: string
+          format: uuid
+        subjectId:
+          type: string
+          format: uuid
+        statusEventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fromStatus:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        toStatus:
+          type: string
+          enum: [INACTIVE, ACTIVE, SUSPENDED]
+        fromRevision:
+          type: integer
+          minimum: 0
+        toRevision:
+          type: integer
+          minimum: 1
+        sourceChannel:
+          type: string
+          enum: [IVR, MINIAPP, WEB, OPERATIONS]
+        sourceActionDomain:
+          type: string
+          enum: [ACTIVATION, IVR_CONFIRM, OPERATIONS]
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        occurredAt:
+          type: string
+          format: date-time
+    ActivationPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivationSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    IvrSessionSummary:
+      type: object
+      additionalProperties: false
+      description: Safe IVR session metadata; no caller/callee full number, payload or playback credential.
+      required: [sessionId, callId, status, nodeId, protocolVersion, promptVersion, accessNumberMasked, createdAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        callId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        subjectId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [RECEIVED, CONFIRMED, ABANDONED, REJECTED]
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        protocolVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        guidanceStatus:
+          type: string
+          enum: [ACTIVATION_REQUIRED, CONSENT_REQUIRED]
+        callerMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        accessNumberMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        createdAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+    IvrSessionPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IvrSessionSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    IvrDecisionSummary:
+      type: object
+      additionalProperties: false
+      description: Redacted frozen decision metadata; full callee numbers and encrypted response payloads are excluded.
+      required: [decisionId, purpose, action, reasonCode, decidedAt]
+      properties:
+        decisionId:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          enum: [INBOUND_RESOLVE, ACTIVATION_NEXT_ACTION, DIRECT_AUTHORIZATION]
+        action:
+          type:
+            - string
+            - 'null'
+          enum:
+            - GUIDE_ACTIVATION
+            - DIAL_TASK_CALLEE
+            - ENTER_CALLEE
+            - GUIDE_PURCHASE
+            - REJECT
+            - REJECT_SUSPENDED
+            - REJECT_CALL_IN_PROGRESS
+            - null
+        reasonCode:
+          type: string
+          enum:
+            - ACTIVATION_REQUIRED
+            - CONSENT_REQUIRED
+            - CALLER_UNTRUSTED
+            - SESSION_IDENTITY_MISMATCH
+            - CALL_IN_PROGRESS
+            - CONFIRMATION_NOT_ALLOWED
+            - ACTIVATION_SUSPENDED
+            - CALLER_BINDING_REVOKED
+            - WORKSPACE_ACCESS_REVOKED
+            - TASK_ACCESS_REVOKED
+            - ORGANIZATION_INACTIVE
+            - ACCOUNT_DISABLED
+            - CALL_STATE_UNRESOLVED
+            - TASK_CONFLICT
+            - TASK_CLAIMED
+            - NO_AVAILABLE_ENTITLEMENT
+            - NO_VALID_TASK
+            - TASK_EXPIRED
+            - TASK_UNAVAILABLE
+            - DIRECT_AUTHORIZED
+            - DATA_INTEGRITY
+        reservationId:
+          type: string
+          format: uuid
+        decidedAt:
+          type: string
+          format: date-time
+    IvrCallSummary:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, ENDED, FAILED, UNKNOWN, REJECTED]
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        authoritativeSeconds:
+          type: integer
+          minimum: 0
+    IvrLegSummary:
+      type: object
+      additionalProperties: false
+      required: [legId, legType, direction, state, startedAt]
+      properties:
+        legId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        legType:
+          type: string
+          enum: [CALLER, CALLEE]
+        direction:
+          type: string
+          enum: [INBOUND, OUTBOUND]
+        state:
+          type: string
+          enum: [RINGING, ANSWERED, ENDED, FAILED]
+        startedAt:
+          type: string
+          format: date-time
+        answeredAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        endReason:
+          type: string
+          minLength: 1
+          maxLength: 64
+    IvrCallEventSummary:
+      type: object
+      additionalProperties: false
+      description: Safe call-event receipt metadata; raw payload and ciphertext are excluded.
+      required: [eventId, eventType, occurredAt, processingStatus]
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        eventType:
+          type: string
+          minLength: 1
+          maxLength: 64
+        sequenceNo:
+          type: integer
+          minimum: 1
+        occurredAt:
+          type: string
+          format: date-time
+        processingStatus:
+          type: string
+          enum: [RECEIVED, APPLIED, IGNORED, QUARANTINED]
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+    IvrEvidenceSummary:
+      type: object
+      additionalProperties: false
+      required: [evidenceId, status, artifactRoles]
+      properties:
+        evidenceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, SOLIDIFIED, QUARANTINED, FAILED]
+        artifactRoles:
+          type: array
+          items:
+            type: string
+            enum: [ORIGINAL, DERIVED]
+    IvrSessionDetail:
+      type: object
+      additionalProperties: false
+      required: [sessionId, callId, status, nodeId, protocolVersion, promptVersion, accessNumberMasked, createdAt, call, decisions, legs, callEvents, evidence]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        callId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        subjectId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [RECEIVED, CONFIRMED, ABANDONED, REJECTED]
+        nodeId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        protocolVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        guidanceStatus:
+          type: string
+          enum: [ACTIVATION_REQUIRED, CONSENT_REQUIRED]
+        callerMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        accessNumberMasked:
+          type: string
+          minLength: 1
+          maxLength: 64
+        createdAt:
+          type: string
+          format: date-time
+        confirmedAt:
+          type: string
+          format: date-time
+        call:
+          $ref: '#/components/schemas/IvrCallSummary'
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/IvrDecisionSummary'
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/IvrLegSummary'
+        callEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/IvrCallEventSummary'
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/IvrEvidenceSummary'
