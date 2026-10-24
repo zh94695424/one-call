@@ -1,0 +1,26 @@
+{
+  "name": "onecall-openapi-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static OpenAPI 3.1 contract and validation harness for the ONECALL five trust surfaces.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "redocly lint onecall-v1.openapi.yaml --config redocly.yaml",
+    "bundle": "node -e \"require('node:fs').mkdirSync('../../tmp/openapi-client',{recursive:true})\" && redocly bundle onecall-v1.openapi.yaml --config redocly.yaml -o ../../tmp/openapi-client/onecall-v1.bundle.json --ext json",
+    "generate": "node -e \"require('node:fs').mkdirSync('../../tmp/openapi-client',{recursive:true})\" && openapi-typescript onecall-v1.openapi.yaml -o ../../tmp/openapi-client/onecall-v1.d.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.client-compat.json",
+    "doc-map": "node check-doc-map.mjs ../../tmp/openapi-client/onecall-v1.bundle.json ../../docs/15-production-openapi-surface-spec.md --source onecall-v1.openapi.yaml",
+    "check": "npm run lint && npm run bundle && npm run generate && npm run typecheck && npm run doc-map",
+    "check:s1": "npm run check && node check-doc-map.mjs ../../tmp/openapi-client/onecall-v1.bundle.json ../../docs/15-production-openapi-surface-spec.md --stage s1 --source onecall-v1.openapi.yaml",
+    "check:s2": "npm run check && node check-doc-map.mjs ../../tmp/openapi-client/onecall-v1.bundle.json ../../docs/15-production-openapi-surface-spec.md --stage s2 --source onecall-v1.openapi.yaml",
+    "check:s3": "npm run check && node check-doc-map.mjs ../../tmp/openapi-client/onecall-v1.bundle.json ../../docs/15-production-openapi-surface-spec.md --stage s3 --source onecall-v1.openapi.yaml"
+  },
+  "devDependencies": {
+    "@redocly/cli": "1.34.3",
+    "openapi-typescript": "7.8.0",
+    "typescript": "5.8.3"
+  }
+}
