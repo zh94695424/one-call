@@ -43,7 +43,7 @@ x-onecall-contract:
   a0Baseline: docs/14-production-data-model-and-flyway-schema-spec.md
   problemRegistry: x-onecall-problem-registry
   runtime: not-implemented
-  notes: S1 freezes exactly 14 human-identity, resource-ownership and activation operations.
+  notes: S2 freezes the cumulative 32 customer and operations operations (S1 14 + S2 18); ivr, public-share and provider-callback remain base-only.
 x-onecall-problem-registry:
   UNAUTHENTICATED:
     httpStatus: 401
@@ -93,6 +93,66 @@ x-onecall-problem-registry:
     httpStatus: 409
     a0Origin: activation_consent.consent_record explicit DECLINE committed typed refusal; no accepted consent/activation/trial; same-event replay returns the same refusal; T-S2-13
     surfaces: [customer]
+  PURCHASE_CONSENT_REQUIRED:
+    httpStatus: 409
+    a0Origin: activation_consent.consent_record missing or invalid current PURCHASE consent; no accepted purchase consent or order; T-S2-07
+    surfaces: [customer]
+  PURCHASE_CONSENT_STALE:
+    httpStatus: 409
+    a0Origin: activation_consent.consent_record current PURCHASE prompt/policy expired or content mismatch; T-S2-07
+    surfaces: [customer]
+  PURCHASE_CONSENT_DECLINED:
+    httpStatus: 409
+    a0Origin: activation_consent.consent_record explicit PURCHASE DECLINE; no accepted purchase consent or order; T-S2-07
+    surfaces: [customer]
+  REAL_NAME_REQUIRED:
+    httpStatus: 422
+    a0Origin: customer_iam.identity_profile ordinary-client real-name prerequisite before order creation; T-S2-07
+    surfaces: [customer]
+  ACTIVATION_NOT_ACTIVE:
+    httpStatus: 403
+    a0Origin: activation_consent.service_activation.status is not ACTIVE for the purchasing subject; T-S2-07
+    surfaces: [customer]
+  ORDER_UNKNOWN_PAYMENT_PENDING:
+    httpStatus: 409
+    a0Origin: catalog_order.customer_order same subject/offer has an UNKNOWN payment order that must be queried first; §7.3
+    surfaces: [customer]
+  IDEMPOTENCY_CONFLICT:
+    httpStatus: 409
+    a0Origin: platform.idempotency_record PURCHASE scope same key with changed purchase semantic fingerprint; T-S2-07
+    surfaces: [customer]
+  CATALOG_DRAFT_CONFLICT:
+    httpStatus: 409
+    a0Origin: catalog_order.catalog_version (product_id, version_no) natural-key collision, non-DRAFT state, changed content projection or immutable-constraint rejection
+    surfaces: [operations]
+  CATALOG_DRAFT_STALE_VIEW:
+    httpStatus: 409
+    a0Origin: catalog_order.catalog_version replace expectedRevision mismatch without proof the update was applied; conditional revision
+    surfaces: [operations]
+  TRIAL_POLICY_DRAFT_CONFLICT:
+    httpStatus: 409
+    a0Origin: entitlement_metering.trial_policy_version (campaign_key, version_no) natural-key collision, non never-published state or changed content projection
+    surfaces: [operations]
+  TRIAL_POLICY_DRAFT_STALE_VIEW:
+    httpStatus: 409
+    a0Origin: entitlement_metering.trial_policy_version replace expectedRevision mismatch without proof the update was applied; conditional revision
+    surfaces: [operations]
+  CATALOG_PUBLICATION_CONFLICT:
+    httpStatus: 409
+    a0Origin: catalog_order.catalog_version concurrent or unexpected current active version under the owner publication lock; T-S2-14
+    surfaces: [operations]
+  PUBLICATION_STALE_VIEW:
+    httpStatus: 409
+    a0Origin: catalog_order.catalog_version expected active version/revision no longer matches; loser rereads current state and does not retry; T-S2-14
+    surfaces: [operations]
+  TRIAL_POLICY_PUBLICATION_CONFLICT:
+    httpStatus: 409
+    a0Origin: entitlement_metering.trial_policy_version concurrent or unexpected enabled published version; T-S2-14
+    surfaces: [operations]
+  TRIAL_POLICY_STALE_VIEW:
+    httpStatus: 409
+    a0Origin: entitlement_metering.trial_policy_version expected enabled version/revision no longer matches; T-S2-14
+    surfaces: [operations]
   RATE_LIMITED:
     httpStatus: 429
     a0Origin: platform rate or quota rejection; no numeric rate, window or retry policy is frozen in S1
@@ -427,6 +487,308 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/catalog/offers:
+    get:
+      tags: [customer]
+      operationId: listCustomerCatalogOffers
+      summary: List visible in-sale catalog offers.
+      description: |
+        Lists ACTIVE catalog versions, channel offers, benefit lines and
+        version tokens visible to the current customer channel. The stable
+        order is `productCode asc, versionNo desc, catalogOfferId asc`. The
+        cursor binds the normalized `channel`, `audience` and `offerType`
+        filter digest and cannot be reused across filter changes. Prices and
+        benefit quantities are the approved server-stored values only. Draft
+        or offsale versions, unapproved prices and unauthorized channels are
+        never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession + server channel/audience scope; only ACTIVE catalog versions and channel offers are projected
+      x-onecall-a0-models:
+        - catalog_order.catalog_product
+        - catalog_order.catalog_version
+        - catalog_order.catalog_offer
+        - catalog_order.catalog_benefit_line
+      x-onecall-a0-contracts:
+        - '§7.3'
+        - uq_catalog_version_active
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-sort: 'productCode asc, versionNo desc, catalogOfferId asc'
+      x-onecall-filter-digest:
+        - channel
+        - audience
+        - offerType
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: channel
+          in: query
+          required: false
+          description: Server-authorized sales channel filter.
+          schema:
+            type: string
+            enum: [MINIAPP, WEB]
+        - name: audience
+          in: query
+          required: false
+          description: Catalog audience filter.
+          schema:
+            type: string
+            enum: [PERSONAL, ENTERPRISE]
+        - name: offerType
+          in: query
+          required: false
+          description: Offer type filter.
+          schema:
+            type: string
+            enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+      responses:
+        '200':
+          description: Visible in-sale catalog offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogOfferPage'
+        '400':
+          description: Cursor is invalid or the normalized filter digest changed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/orders:
+    post:
+      tags: [customer]
+      operationId: createCustomerOrder
+      summary: Create a server-priced customer order snapshot.
+      description: |
+        Creates one personal or enterprise payable order from the current
+        ACTIVE catalog offer. The client must supply an explicit purchase
+        consent decision fixed to `ACCEPT` together with the current
+        `policyCode`, `policyVersion`, `promptVersion` and `contentSha256`;
+        `DECLINE` is not order creation. The server derives the workspace,
+        real-name prerequisite, ACTIVE service activation, purchase consent
+        event identity, amount, currency, snapshot, version token and payment
+        state. The `Idempotency-Key` header is 1-475 characters and becomes
+        the A0 `PURCHASE` client key; the purchase consent event identity is
+        derived server-side from the authenticated account and that key and
+        is never client-supplied. A second checkout while a same
+        subject/offer order is UNKNOWN is rejected until the original order
+        is queried. Missing, stale or declined current purchase consent
+        creates no order. The request never carries price, amount, payment
+        success or entitlement outcome.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> ACTIVE account; subject access and ACTIVE service activation re-read under locks; ordinary-client real-name required; server amount only
+      x-onecall-a0-models:
+        - catalog_order.catalog_product
+        - catalog_order.catalog_version
+        - catalog_order.catalog_offer
+        - catalog_order.catalog_benefit_line
+        - catalog_order.customer_order
+        - catalog_order.payment_order
+        - activation_consent.consent_record
+        - activation_consent.service_activation
+        - customer_iam.identity_profile
+      x-onecall-a0-contracts:
+        - T-S2-07
+        - '§7.3'
+        - ck_catalog_version_published_shape
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - IDEMPOTENCY_CONFLICT
+        - ORDER_UNKNOWN_PAYMENT_PENDING
+        - PURCHASE_CONSENT_REQUIRED
+        - PURCHASE_CONSENT_STALE
+        - PURCHASE_CONSENT_DECLINED
+        - ACTIVATION_NOT_ACTIVE
+        - REAL_NAME_REQUIRED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: idempotency-key
+      x-onecall-replay-order: risk-and-activation-before-replay
+      parameters:
+        - $ref: '#/components/parameters/OrderIdempotencyKeyParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+      responses:
+        '201':
+          description: First created order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '200':
+          description: Same-key replay of the first completed order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Idempotency, unknown-payment or purchase-consent conflict.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+    get:
+      tags: [customer]
+      operationId: listCustomerOrders
+      summary: List customer orders with payment projections.
+      description: |
+        Lists orders visible to the current account and server-derived
+        workspace scope with payment status and computed issuance projection.
+        The stable order is `createdAt desc, orderId desc`. Provider payloads,
+        other-account orders and entitlement internals are never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession + server workspace scope; only orders owned by the current account/space are projected
+      x-onecall-a0-models:
+        - catalog_order.customer_order
+        - catalog_order.payment_order
+        - entitlement_metering.entitlement_issuance
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-sort: 'createdAt desc, orderId desc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Customer orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/customer/orders/{orderId}:
+    get:
+      tags: [customer]
+      operationId: getCustomerOrder
+      summary: Read one customer order and its frozen snapshot.
+      description: |
+        Returns one order the current account may access with the frozen
+        commerce snapshot projection, payment status and computed issuance
+        projection. The order is never recomputed from the current catalog.
+        Provider payload, other-account orders and client-mutable price or
+        status fields are never returned.
+      security:
+        - customerSession: []
+      x-onecall-surface: customer
+      x-onecall-audience: customer
+      x-onecall-authorization: customerSession -> server order owner/workspace access; frozen snapshot re-read without current-catalog recomputation
+      x-onecall-a0-models:
+        - catalog_order.customer_order
+        - catalog_order.payment_order
+        - activation_consent.consent_record
+      x-onecall-a0-contracts:
+        - '§7.3'
+        - T-S2-07
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: Stable order identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationFailed'
         '429':
@@ -1097,6 +1459,1000 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
         default:
           $ref: '#/components/responses/Internal'
+  /api/v1/operations/catalog/products:
+    get:
+      tags: [operations]
+      operationId: listOperationsCatalogProducts
+      summary: List catalog products with version states.
+      description: |
+        Read-only catalog product list for fixed ADMIN/OPS employees with
+        a bounded per-product versions projection (catalogVersionId,
+        versionNo, saleStatus, offerType, audience only). The stable order
+        is `productCode asc, productId asc`. No unapproved price, benefit,
+        payment, snapshot or DEMO value and no internal SQL is returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in ADMIN|OPS; read-only catalog projection; no draft write and no recording playback
+      x-onecall-a0-models:
+        - catalog_order.catalog_product
+        - catalog_order.catalog_version
+        - catalog_order.catalog_offer
+        - catalog_order.catalog_benefit_line
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'productCode asc, productId asc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Catalog products.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogProductPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/catalog/products/{productId}:
+    get:
+      tags: [operations]
+      operationId: getOperationsCatalogProduct
+      summary: Read one catalog product's version history.
+      description: |
+        Returns version history, in-sale state, draft candidates and benefit
+        lines for one immutable product identity. This operation is read-only;
+        draft writes are only O18/O19.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in ADMIN|OPS; read-only product/version/offer/benefit projection
+      x-onecall-a0-models:
+        - catalog_order.catalog_product
+        - catalog_order.catalog_version
+        - catalog_order.catalog_offer
+        - catalog_order.catalog_benefit_line
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          description: Stable catalog product identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Catalog product detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogProductDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/catalog/versions/{versionId}/publications:
+    post:
+      tags: [operations]
+      operationId: publishOperationsCatalogVersion
+      summary: Publish a DRAFT catalog version and retire the previous ACTIVE.
+      description: |
+        Publishes one never-published DRAFT catalog version under the owner
+        publication serialization. The caller supplies the expected current
+        active version (nullable) and expected revision. A stale expectation
+        returns `CATALOG_PUBLICATION_CONFLICT`/`PUBLICATION_STALE_VIEW` with no
+        change; the loser rereads current state and does not select another
+        version. On success the previous ACTIVE version is retired to OFFSALE
+        first, then the candidate becomes ACTIVE. Published content and
+        benefit lines are never rewritten and no independent offer withdrawal
+        is provided. State-conditional only; no Idempotency-Key.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; owner publication lock; expected active version/revision re-read; no independent offer withdrawal
+      x-onecall-a0-models:
+        - catalog_order.catalog_version
+        - audit.audit_fact
+        - platform.outbox_event
+      x-onecall-a0-contracts:
+        - T-S2-14
+        - uq_catalog_version_active
+        - uq_catalog_version_no
+        - ck_catalog_version_published_shape
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CATALOG_PUBLICATION_CONFLICT
+        - PUBLICATION_STALE_VIEW
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          description: Catalog version identity to publish.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogVersionPublicationRequest'
+      responses:
+        '200':
+          description: Current catalog version state after publication or an already-ACTIVE idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVersionState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/CatalogPublicationConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/catalog/versions/{versionId}/offsales:
+    post:
+      tags: [operations]
+      operationId: offsaleOperationsCatalogVersion
+      summary: Take an ACTIVE catalog version off sale.
+      description: |
+        Transitions one ACTIVE catalog version to OFFSALE under the owner
+        publication lock, stopping new orders only. An already-OFFSALE version
+        is an idempotent current-state replay. The caller supplies
+        `expectedRevision`; a stale revision returns
+        `CATALOG_PUBLICATION_CONFLICT`/`PUBLICATION_STALE_VIEW`. Frozen orders,
+        consent, grants and issuance rows are never rewritten and no
+        independent `catalog_offer` withdrawal is provided. State-conditional
+        only; no Idempotency-Key.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; expected revision conditional update; no historical order rewrite; no offer withdrawal
+      x-onecall-a0-models:
+        - catalog_order.catalog_version
+        - audit.audit_fact
+        - platform.outbox_event
+      x-onecall-a0-contracts:
+        - T-S2-14
+        - uq_catalog_version_active
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CATALOG_PUBLICATION_CONFLICT
+        - PUBLICATION_STALE_VIEW
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          description: Catalog version identity to take off sale.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogVersionOffsaleRequest'
+      responses:
+        '200':
+          description: Current catalog version state after offsale or an already-OFFSALE idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVersionState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/CatalogPublicationConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/trial-policies:
+    get:
+      tags: [operations]
+      operationId: listOperationsTrialPolicies
+      summary: List trial policy versions and enabled state.
+      description: |
+        Read-only first-trial policy version list for fixed ADMIN/OPS
+        employees with enabled and published projections. The stable order is
+        `versionNo desc, policyVersionId desc`. No default granted seconds or
+        valid days are invented and no historical trial is rewritten.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in ADMIN|OPS; read-only trial-policy projection; no trial rewrite
+      x-onecall-a0-models:
+        - entitlement_metering.trial_policy_version
+      x-onecall-a0-contracts:
+        - '§7.3'
+        - uq_trial_policy_campaign_version
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'versionNo desc, policyVersionId desc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Trial policy versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialPolicyPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+    post:
+      tags: [operations]
+      operationId: createOperationsTrialPolicyDraft
+      summary: Create a never-published first-trial policy draft candidate.
+      description: |
+        Creates one DRAFT/never-published first-trial policy candidate under
+        the natural unique key `(FIRST-TRIAL, versionNo)` and the canonical
+        persisted content projection. A first insert returns 201; the same
+        natural identity with the same projection returns the existing DRAFT
+        with 200; a changed projection or non-draft state is
+        `TRIAL_POLICY_DRAFT_CONFLICT`. The request never carries enabled,
+        publishedAt or publisher identity. `Idempotency-Key` is not accepted
+        and no platform idempotency scope is used. Runtime draft insertion
+        remains blocked by the A0 precondition `R-A0-O20-PUBLISHER`
+        (`entitlement_metering.trial_policy_version.published_by_employee_id`
+        is a NOT NULL actual-publisher fact with no defined draft-create
+        value); this operation freezes only the public static contract.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; natural unique campaign/version create; no client enabled/publishedAt/publisher; R-A0-O20-PUBLISHER runtime prerequisite preserved
+      x-onecall-a0-models:
+        - entitlement_metering.trial_policy_version
+        - operations_iam.employee_account
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - uq_trial_policy_campaign_version
+        - uq_trial_policy_enabled
+        - ck_trial_policy_campaign
+        - ck_trial_policy_version_no
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - TRIAL_POLICY_DRAFT_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      x-onecall-r-a0-o20-publisher: R-A0-O20-PUBLISHER
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialPolicyDraftCreateRequest'
+      responses:
+        '201':
+          description: First never-published draft candidate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialPolicyDraft'
+        '200':
+          description: Same natural identity and content projection replays the existing DRAFT.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialPolicyDraft'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/TrialPolicyDraftConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/trial-policies/{policyVersionId}/publications:
+    post:
+      tags: [operations]
+      operationId: publishOperationsTrialPolicy
+      summary: Publish a never-published trial policy version.
+      description: |
+        Publishes one never-published first-trial policy under the trial-policy
+        owner serialization. The caller supplies the expected enabled version
+        (nullable) and expected revision. The previous enabled published
+        version is disabled first, then the candidate is published with the
+        actual authenticated publisher fact. A stale expectation returns
+        `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW` with no
+        change. Existing grants keep their frozen policy snapshot and no trial
+        is reissued. State-conditional only; no Idempotency-Key.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; trial-policy owner lock; expected enabled version/revision; no trial reissue; no publisher spoofing
+      x-onecall-a0-models:
+        - entitlement_metering.trial_policy_version
+        - audit.audit_fact
+        - platform.outbox_event
+      x-onecall-a0-contracts:
+        - T-S2-14
+        - uq_trial_policy_campaign_version
+        - uq_trial_policy_enabled
+        - ck_trial_policy_revision
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - TRIAL_POLICY_PUBLICATION_CONFLICT
+        - TRIAL_POLICY_STALE_VIEW
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      parameters:
+        - name: policyVersionId
+          in: path
+          required: true
+          description: Trial policy version identity to publish.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialPolicyPublicationRequest'
+      responses:
+        '200':
+          description: Current trial policy state after publication or an already-enabled published idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialPolicyState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TrialPolicyPublicationConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/trial-policies/{policyVersionId}/disables:
+    post:
+      tags: [operations]
+      operationId: disableOperationsTrialPolicy
+      summary: Disable an enabled published trial policy version.
+      description: |
+        Sets one enabled published first-trial policy to disabled under the
+        trial-policy owner lock. The caller supplies `expectedRevision`; an
+        already-disabled version is an idempotent current-state replay. A
+        stale revision returns
+        `TRIAL_POLICY_PUBLICATION_CONFLICT`/`TRIAL_POLICY_STALE_VIEW`.
+        Published content, snapshots and historical grants are never
+        rewritten. State-conditional only; no Idempotency-Key.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; expected revision conditional disable; no historical grant rewrite
+      x-onecall-a0-models:
+        - entitlement_metering.trial_policy_version
+        - audit.audit_fact
+        - platform.outbox_event
+      x-onecall-a0-contracts:
+        - T-S2-14
+        - uq_trial_policy_enabled
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - TRIAL_POLICY_PUBLICATION_CONFLICT
+        - TRIAL_POLICY_STALE_VIEW
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      parameters:
+        - name: policyVersionId
+          in: path
+          required: true
+          description: Trial policy version identity to disable.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialPolicyDisableRequest'
+      responses:
+        '200':
+          description: Current trial policy state after disable or an already-disabled idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialPolicyState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TrialPolicyPublicationConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/orders:
+    get:
+      tags: [operations]
+      operationId: listOperationsOrders
+      summary: List orders with payment and issuance projections.
+      description: |
+        Read-only order list for fixed ADMIN/OPS employees with structured
+        `subjectId` and `paymentStatus` filters, payment status and computed
+        issuance projection. The stable order is `createdAt desc, orderId
+        desc`. Manual payment marking, refund and invoice actions are not
+        provided and provider payloads are never returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in ADMIN|OPS; read-only order/payment/issuance projection; no manual payment, refund or invoice
+      x-onecall-a0-models:
+        - catalog_order.customer_order
+        - catalog_order.payment_order
+        - entitlement_metering.entitlement_issuance
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'createdAt desc, orderId desc'
+      x-onecall-filter-digest:
+        - subjectId
+        - paymentStatus
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: subjectId
+          in: query
+          required: false
+          description: Structured subject filter.
+          schema:
+            type: string
+            format: uuid
+        - name: paymentStatus
+          in: query
+          required: false
+          description: Structured payment status filter.
+          schema:
+            type: string
+            enum: [UNPAID, UNKNOWN, PAID, CLOSED]
+      responses:
+        '200':
+          description: Operations order summaries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/orders/{orderId}:
+    get:
+      tags: [operations]
+      operationId: getOperationsOrder
+      summary: Read one order frozen snapshot and projections.
+      description: |
+        Returns one order with frozen commerce snapshot projection, payment
+        status and computed issuance projection. The order is read-only:
+        provider payload, client-mutable status and refund or invoice flows
+        are not provided.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in ADMIN|OPS; read-only order detail; no refund or invoice
+      x-onecall-a0-models:
+        - catalog_order.customer_order
+        - catalog_order.payment_order
+        - entitlement_metering.entitlement_issuance
+      x-onecall-a0-contracts:
+        - '§7.3'
+        - T-S2-07
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          description: Stable order identity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/audit:
+    get:
+      tags: [operations]
+      operationId: listOperationsAuditFacts
+      summary: List append-only audit facts.
+      description: |
+        Read-only append-only audit fact stream for fixed ADMIN/OPS
+        employees. The stable order is `occurredAt desc, auditId desc`.
+        Snapshots are already redacted; unredacted snapshots, credentials and
+        raw recordings are never returned.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role in ADMIN|OPS; read-only redacted audit projection
+      x-onecall-a0-models:
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - VALIDATION_FAILED
+        - CURSOR_INVALID
+        - CURSOR_FILTER_MISMATCH
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: not-applicable
+      x-onecall-required-roles: [ADMIN, OPS]
+      x-onecall-sort: 'occurredAt desc, auditId desc'
+      parameters:
+        - $ref: '#/components/parameters/CursorParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Audit facts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditFactPage'
+        '400':
+          $ref: '#/components/responses/CursorInvalid'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/catalog/versions:
+    post:
+      tags: [operations]
+      operationId: createOperationsCatalogVersionDraft
+      summary: Create a DRAFT catalog version candidate for an existing product.
+      description: |
+        Creates one DRAFT catalog version candidate for an already existing
+        immutable product under the natural unique key `(productId,
+        versionNo)` and the canonical persisted content projection. The
+        product must already exist; no product-create endpoint is provided. A
+        first insert returns 201; the same natural identity with the same
+        projection returns the existing DRAFT with 200; a changed projection,
+        duplicate version or non-DRAFT state is `CATALOG_DRAFT_CONFLICT`.
+        Benefit lines and the channel set are supplied once at creation and
+        are append-only with the version. The request never carries status,
+        publishedAt or a client price fact for a published version.
+        State-conditional only; no Idempotency-Key and no platform
+        idempotency scope.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; product must already exist; natural unique create; append-only benefit lines and channels; no status/publishedAt input
+      x-onecall-a0-models:
+        - catalog_order.catalog_product
+        - catalog_order.catalog_version
+        - catalog_order.catalog_offer
+        - catalog_order.catalog_benefit_line
+        - operations_iam.employee_account
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - uq_catalog_version_no
+        - ck_catalog_version_published_shape
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CATALOG_DRAFT_CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogVersionDraftCreateRequest'
+      responses:
+        '201':
+          description: First DRAFT catalog version candidate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVersionDraft'
+        '200':
+          description: Same natural identity and content projection replays the existing DRAFT.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVersionDraft'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/CatalogDraftConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/catalog/versions/{versionId}/draft:
+    put:
+      tags: [operations]
+      operationId: replaceOperationsCatalogVersionDraft
+      summary: Replace mutable content of a DRAFT catalog version candidate.
+      description: |
+        Replaces the mutable commercial content of one never-published DRAFT
+        catalog version under `expectedRevision` and the canonical
+        requested/current content projection. Benefit lines and the channel
+        set are immutable (A0 append-only with the version) and are not
+        rewritten. Channel version tokens for the existing channel set are
+        regenerated server-side only and are never public input or output;
+        no channel-token field or mutation endpoint is exposed. An applied
+        update increments revision and returns 200; a
+        retry whose current revision and projection prove the update was
+        applied returns the current DRAFT without another write; a stale
+        revision is `CATALOG_DRAFT_STALE_VIEW`; a published/non-DRAFT version
+        or immutable-content change is `CATALOG_DRAFT_CONFLICT`. The request
+        never carries status, publishedAt or a product/version identity
+        change. State-conditional only; no Idempotency-Key.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; only DRAFT/never-published mutable commercial content; expectedRevision conditional update; benefit lines and channels immutable
+      x-onecall-a0-models:
+        - catalog_order.catalog_product
+        - catalog_order.catalog_version
+        - catalog_order.catalog_offer
+        - catalog_order.catalog_benefit_line
+        - operations_iam.employee_account
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - uq_catalog_version_no
+        - ck_catalog_version_published_shape
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - CATALOG_DRAFT_CONFLICT
+        - CATALOG_DRAFT_STALE_VIEW
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          description: Catalog version identity to replace.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogVersionDraftReplaceRequest'
+      responses:
+        '200':
+          description: Applied replace or an already-applied replay of the current DRAFT.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVersionDraft'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/CatalogDraftConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /api/v1/operations/trial-policies/{policyVersionId}/draft:
+    put:
+      tags: [operations]
+      operationId: replaceOperationsTrialPolicyDraft
+      summary: Replace mutable content of a DRAFT trial policy candidate.
+      description: |
+        Replaces the mutable content of one never-published first-trial policy
+        candidate under `expectedRevision` and the canonical
+        requested/current content projection. `campaignKey` and `versionNo`
+        are immutable; enabled, publishedAt and publisher identity are never
+        client-written. An applied update increments revision and returns 200;
+        a retry whose current revision and projection prove the update was
+        applied returns the current DRAFT without another write; a stale
+        revision is `TRIAL_POLICY_DRAFT_STALE_VIEW`; a published policy or
+        immutable-key change is `TRIAL_POLICY_DRAFT_CONFLICT`. No default
+        granted seconds or valid days are invented. State-conditional only;
+        no Idempotency-Key. Runtime draft writes remain subject to the A0
+        precondition `R-A0-O20-PUBLISHER`.
+      security:
+        - employeeSession: []
+      x-onecall-surface: operations
+      x-onecall-audience: employee
+      x-onecall-authorization: employeeSession.role == ADMIN; only DRAFT/never-published mutable content; expectedRevision conditional update; campaign key and versionNo immutable; R-A0-O20-PUBLISHER runtime prerequisite preserved
+      x-onecall-a0-models:
+        - entitlement_metering.trial_policy_version
+        - operations_iam.employee_account
+        - audit.audit_fact
+      x-onecall-a0-contracts:
+        - uq_trial_policy_campaign_version
+        - ck_trial_policy_revision
+        - '§7.3'
+      x-onecall-error-codes:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - TRIAL_POLICY_DRAFT_CONFLICT
+        - TRIAL_POLICY_DRAFT_STALE_VIEW
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL
+      x-onecall-idempotency: state-conditional
+      x-onecall-required-roles: [ADMIN]
+      x-onecall-r-a0-o20-publisher: R-A0-O20-PUBLISHER
+      parameters:
+        - name: policyVersionId
+          in: path
+          required: true
+          description: Trial policy version identity to replace.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrialPolicyDraftReplaceRequest'
+      responses:
+        '200':
+          description: Applied replace or an already-applied replay of the current DRAFT.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialPolicyDraft'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TrialPolicyDraftConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        default:
+          $ref: '#/components/responses/Internal'
 components:
   securitySchemes:
     customerSession:
@@ -1152,6 +2508,15 @@ components:
         type: string
         minLength: 1
         maxLength: 128
+    OrderIdempotencyKeyParam:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Customer-order client idempotency key (1-475). The A0 PURCHASE platform key is account_id||':'||this key (1-512); truncation is rejected.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 475
   responses:
     Unauthenticated:
       description: Missing or invalid customer or employee session.
@@ -1185,6 +2550,30 @@ components:
             $ref: '#/components/schemas/Problem'
     ActivationStateConflict:
       description: The current activation state or revision does not permit the requested OPERATIONS transition.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CatalogPublicationConflict:
+      description: The current catalog active version or revision does not permit the requested publication or offsale transition.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TrialPolicyPublicationConflict:
+      description: The current enabled trial policy version or revision does not permit the requested publication or disable transition.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CatalogDraftConflict:
+      description: The DRAFT catalog candidate natural identity, state or content projection forbids the requested create or replace.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TrialPolicyDraftConflict:
+      description: The DRAFT trial policy candidate natural identity, state or content projection forbids the requested create or replace.
       content:
         application/problem+json:
           schema:
@@ -1257,6 +2646,21 @@ components:
         - ACTIVATION_STATE_CONFLICT
         - CONSENT_REQUIRED
         - ACTIVATION_CONSENT_DECLINED
+        - PURCHASE_CONSENT_REQUIRED
+        - PURCHASE_CONSENT_STALE
+        - PURCHASE_CONSENT_DECLINED
+        - REAL_NAME_REQUIRED
+        - ACTIVATION_NOT_ACTIVE
+        - ORDER_UNKNOWN_PAYMENT_PENDING
+        - IDEMPOTENCY_CONFLICT
+        - CATALOG_DRAFT_CONFLICT
+        - CATALOG_DRAFT_STALE_VIEW
+        - TRIAL_POLICY_DRAFT_CONFLICT
+        - TRIAL_POLICY_DRAFT_STALE_VIEW
+        - CATALOG_PUBLICATION_CONFLICT
+        - PUBLICATION_STALE_VIEW
+        - TRIAL_POLICY_PUBLICATION_CONFLICT
+        - TRIAL_POLICY_STALE_VIEW
         - RATE_LIMITED
         - SERVICE_UNAVAILABLE
         - INTERNAL
@@ -2183,3 +3587,1029 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/IvrEvidenceSummary'
+    Money:
+      type: object
+      additionalProperties: false
+      description: Integer Chinese yuan cents frozen to literal CNY on the public v1 surface; no floating point.
+      required: [amountCents, currency]
+      properties:
+        amountCents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          enum: [CNY]
+    CatalogBenefitLine:
+      type: object
+      additionalProperties: false
+      required: [entitlementType, quantity, validityDays, grantIntervalMonths]
+      properties:
+        entitlementType:
+          type: string
+          enum: [RECORDING_SECONDS, AI_SECONDS, EVIDENCE_COUNT, STORAGE_BYTES]
+        quantity:
+          type: integer
+          minimum: 1
+        validityDays:
+          type: integer
+          minimum: 1
+        grantIntervalMonths:
+          type: integer
+          minimum: 0
+    CatalogOffer:
+      type: object
+      additionalProperties: false
+      description: Server-approved ACTIVE channel offer projection; prices and benefits are stored values only.
+      required:
+        - productCode
+        - catalogVersionId
+        - catalogOfferId
+        - channel
+        - versionNo
+        - offerType
+        - audience
+        - priceCents
+        - currency
+        - billingCycle
+        - installments
+        - benefitLines
+        - versionToken
+      properties:
+        productCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+        catalogVersionId:
+          type: string
+          format: uuid
+        catalogOfferId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [MINIAPP, WEB]
+        versionNo:
+          type: integer
+          minimum: 1
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+        priceCents:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          description: Null only for QUOTE offers.
+        currency:
+          type: string
+          enum: [CNY]
+        billingCycle:
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUAL, ONCE, QUOTE]
+        installments:
+          type: integer
+          minimum: 1
+        benefitLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogBenefitLine'
+        versionToken:
+          type: string
+          minLength: 1
+          maxLength: 128
+          readOnly: true
+    CatalogOfferPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogOffer'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    OrderCreateRequest:
+      type: object
+      additionalProperties: false
+      description: Explicit purchase consent decision (ACCEPT only) bound to the current policy/prompt/content identity; amount, activation and payment facts remain server-derived and the purchase consent event ID is derived from the authenticated account plus Idempotency-Key.
+      required: [subjectId, catalogOfferId, channel, decision, policyCode, policyVersion, promptVersion, contentSha256]
+      properties:
+        subjectId:
+          type: string
+          format: uuid
+        catalogOfferId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [MINIAPP, WEB]
+        decision:
+          type: string
+          enum: [ACCEPT]
+        policyCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        policyVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        promptVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        expectedVersionToken:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional optimistic check against the ACTIVE offer version token.
+    OrderSnapshotProjection:
+      type: object
+      additionalProperties: false
+      description: Frozen commerce snapshot projection; historical and immutable after order creation.
+      required: [schemaVersion, catalogVersionId, catalogOfferId, channel, versionToken, productCode, offerType, audience, amountCents, currency, billingCycle, installments, benefitLines, snapshotSha256]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        catalogVersionId:
+          type: string
+          format: uuid
+        catalogOfferId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [MINIAPP, WEB]
+        versionToken:
+          type: string
+          minLength: 1
+          maxLength: 128
+        productCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+        amountCents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          enum: [CNY]
+        billingCycle:
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUAL, ONCE, QUOTE]
+        installments:
+          type: integer
+          minimum: 1
+        benefitLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogBenefitLine'
+        snapshotSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+    Order:
+      type: object
+      additionalProperties: false
+      description: Server-priced order with payment-only status and computed issuance projection.
+      required:
+        - orderId
+        - orderNo
+        - subjectId
+        - channel
+        - catalogVersionId
+        - catalogOfferId
+        - amountCents
+        - currency
+        - paymentStatus
+        - issuanceStatus
+        - createdAt
+        - snapshotSha256
+        - snapshot
+        - purchaseConsentId
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        orderNo:
+          type: string
+          minLength: 1
+          maxLength: 64
+        subjectId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [MINIAPP, WEB]
+        catalogVersionId:
+          type: string
+          format: uuid
+        catalogOfferId:
+          type: string
+          format: uuid
+        amountCents:
+          type: integer
+          minimum: 0
+          readOnly: true
+        currency:
+          type: string
+          enum: [CNY]
+        paymentStatus:
+          type: string
+          enum: [UNPAID, UNKNOWN, PAID, CLOSED]
+          readOnly: true
+        issuanceStatus:
+          type: string
+          enum: [NONE, PENDING, ISSUED, FAILED, MIXED]
+          readOnly: true
+          description: Computed projection over entitlement_issuance rows; never stored on the order.
+        createdAt:
+          type: string
+          format: date-time
+        paidAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        closedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        snapshotSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        snapshot:
+          $ref: '#/components/schemas/OrderSnapshotProjection'
+        purchaseConsentId:
+          type: string
+          format: uuid
+          description: Server-derived purchase consent identity.
+    OrderSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - orderId
+        - orderNo
+        - subjectId
+        - channel
+        - catalogVersionId
+        - catalogOfferId
+        - amountCents
+        - currency
+        - paymentStatus
+        - issuanceStatus
+        - createdAt
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        orderNo:
+          type: string
+          minLength: 1
+          maxLength: 64
+        subjectId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [MINIAPP, WEB]
+        catalogVersionId:
+          type: string
+          format: uuid
+        catalogOfferId:
+          type: string
+          format: uuid
+        amountCents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          enum: [CNY]
+        paymentStatus:
+          type: string
+          enum: [UNPAID, UNKNOWN, PAID, CLOSED]
+        issuanceStatus:
+          type: string
+          enum: [NONE, PENDING, ISSUED, FAILED, MIXED]
+        createdAt:
+          type: string
+          format: date-time
+    OrderPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    CatalogProductVersionSummary:
+      type: object
+      additionalProperties: false
+      description: Bounded catalog product version projection for O8 list summaries; no benefits, payments, snapshots or full draft content.
+      required: [catalogVersionId, versionNo, saleStatus, offerType, audience]
+      properties:
+        catalogVersionId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        saleStatus:
+          type: string
+          enum: [DRAFT, ACTIVE, OFFSALE]
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+    CatalogProductSummary:
+      type: object
+      additionalProperties: false
+      required: [productId, productCode, productFamily, versions]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        productCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+        productFamily:
+          type: string
+          minLength: 1
+          maxLength: 64
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogProductVersionSummary'
+    CatalogProductPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogProductSummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    CatalogVersionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - catalogVersionId
+        - versionNo
+        - saleStatus
+        - offerType
+        - audience
+        - priceCents
+        - currency
+        - billingCycle
+        - installments
+        - benefitLines
+        - revision
+      properties:
+        catalogVersionId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        saleStatus:
+          type: string
+          enum: [DRAFT, ACTIVE, OFFSALE]
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+        priceCents:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        currency:
+          type: string
+          enum: [CNY]
+        billingCycle:
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUAL, ONCE, QUOTE]
+        installments:
+          type: integer
+          minimum: 1
+        benefitLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogBenefitLine'
+        publishedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+    CatalogProductDetail:
+      type: object
+      additionalProperties: false
+      required: [productId, productCode, productFamily, versions]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        productCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+        productFamily:
+          type: string
+          minLength: 1
+          maxLength: 64
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogVersionSummary'
+    CatalogVersionState:
+      type: object
+      additionalProperties: false
+      description: Publication lifecycle state returned by O10/O11.
+      required:
+        - catalogVersionId
+        - productId
+        - versionNo
+        - saleStatus
+        - revision
+        - publishedAt
+        - currentActiveVersionId
+      properties:
+        catalogVersionId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        saleStatus:
+          type: string
+          enum: [DRAFT, ACTIVE, OFFSALE]
+        revision:
+          type: integer
+          minimum: 1
+        publishedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        currentActiveVersionId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: Current ACTIVE version for the product, or null when none.
+    CatalogVersionPublicationRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional publish input; expected active version is required and nullable for "no active".
+      required: [expectedActiveVersionId, expectedRevision]
+      properties:
+        expectedActiveVersionId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        expectedRevision:
+          type: integer
+          minimum: 1
+    CatalogVersionOffsaleRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional offsale input under the publication lock.
+      required: [expectedRevision]
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+    TrialPolicySummary:
+      type: object
+      additionalProperties: false
+      required:
+        - policyVersionId
+        - campaignKey
+        - versionNo
+        - grantedSeconds
+        - validDays
+        - enabled
+        - revision
+      properties:
+        policyVersionId:
+          type: string
+          format: uuid
+        campaignKey:
+          type: string
+          enum: [FIRST-TRIAL]
+        versionNo:
+          type: integer
+          minimum: 1
+        grantedSeconds:
+          type: integer
+          minimum: 1
+        validDays:
+          type: integer
+          minimum: 1
+        enabled:
+          type: boolean
+        publishedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
+    TrialPolicyPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrialPolicySummary'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    TrialPolicyState:
+      type: object
+      additionalProperties: false
+      description: Publication lifecycle state returned by O13/O14; publisher identity is never projected.
+      required:
+        - policyVersionId
+        - campaignKey
+        - versionNo
+        - grantedSeconds
+        - validDays
+        - enabled
+        - revision
+        - publishedAt
+        - currentEnabledPolicyVersionId
+      properties:
+        policyVersionId:
+          type: string
+          format: uuid
+        campaignKey:
+          type: string
+          enum: [FIRST-TRIAL]
+        versionNo:
+          type: integer
+          minimum: 1
+        grantedSeconds:
+          type: integer
+          minimum: 1
+        validDays:
+          type: integer
+          minimum: 1
+        enabled:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 1
+        publishedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        currentEnabledPolicyVersionId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: Currently enabled published FIRST-TRIAL version, or null when none.
+    TrialPolicyPublicationRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional publish input; expected enabled version is required and nullable for "none enabled".
+      required: [expectedEnabledPolicyVersionId, expectedRevision]
+      properties:
+        expectedEnabledPolicyVersionId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        expectedRevision:
+          type: integer
+          minimum: 1
+    TrialPolicyDisableRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional disable input under the trial-policy owner lock.
+      required: [expectedRevision]
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+    RedactedAuditSnapshot:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Closed redacted audit snapshot projection; only bounded status/revision/reasonCode are admitted and never maps, identifiers, PII, payloads or provider fields.
+      properties:
+        status:
+          type: string
+          minLength: 1
+          maxLength: 64
+        revision:
+          type: integer
+          minimum: 0
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+    AuditFact:
+      type: object
+      additionalProperties: false
+      description: Append-only audit projection with redacted snapshots.
+      required:
+        - auditId
+        - occurredAt
+        - actorType
+        - actionCode
+        - objectType
+        - objectId
+        - traceId
+      properties:
+        auditId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        actorType:
+          type: string
+          enum: [CUSTOMER, EMPLOYEE, SYSTEM, PROVIDER]
+        actorId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        actionCode:
+          type: string
+          minLength: 1
+          maxLength: 64
+        objectType:
+          type: string
+          minLength: 1
+          maxLength: 64
+        objectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reasonCode:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 64
+        beforeSnapshot:
+          oneOf:
+            - $ref: '#/components/schemas/RedactedAuditSnapshot'
+            - type: 'null'
+          description: Redacted historical snapshot; never raw provider or protected values.
+        afterSnapshot:
+          oneOf:
+            - $ref: '#/components/schemas/RedactedAuditSnapshot'
+            - type: 'null'
+          description: Redacted resulting snapshot; never raw provider or protected values.
+        traceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AuditFactPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditFact'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+        hasMore:
+          type: boolean
+    CatalogVersionDraftBenefitLineInput:
+      type: object
+      additionalProperties: false
+      required: [entitlementType, quantity, validityDays, grantIntervalMonths]
+      properties:
+        entitlementType:
+          type: string
+          enum: [RECORDING_SECONDS, AI_SECONDS, EVIDENCE_COUNT, STORAGE_BYTES]
+        quantity:
+          type: integer
+          minimum: 1
+        validityDays:
+          type: integer
+          minimum: 1
+        grantIntervalMonths:
+          type: integer
+          minimum: 0
+    CatalogVersionDraft:
+      type: object
+      additionalProperties: false
+      description: Never-published DRAFT catalog version candidate; publishedAt is always null.
+      required:
+        - catalogVersionId
+        - productId
+        - versionNo
+        - saleStatus
+        - offerType
+        - audience
+        - priceCents
+        - currency
+        - billingCycle
+        - installments
+        - grantIntervalMonths
+        - benefitLines
+        - channels
+        - revision
+        - createdAt
+        - publishedAt
+      properties:
+        catalogVersionId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        saleStatus:
+          type: string
+          enum: [DRAFT]
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+        priceCents:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        currency:
+          type: string
+          enum: [CNY]
+        billingCycle:
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUAL, ONCE, QUOTE]
+        installments:
+          type: integer
+          minimum: 1
+        grantIntervalMonths:
+          type: integer
+          minimum: 0
+        benefitLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogBenefitLine'
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [MINIAPP, WEB]
+        revision:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: 'null'
+          description: Always null until O10 publication.
+        snapshotSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          readOnly: true
+    CatalogVersionDraftCreateRequest:
+      type: object
+      additionalProperties: false
+      description: Natural-key DRAFT create under (productId, versionNo); no status/publishedAt input.
+      required:
+        - productId
+        - versionNo
+        - offerType
+        - audience
+        - priceCents
+        - currency
+        - billingCycle
+        - installments
+        - grantIntervalMonths
+        - benefitLines
+        - channels
+      properties:
+        productId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          minimum: 1
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+        priceCents:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          description: Draft commercial content only; null only for QUOTE.
+        currency:
+          type: string
+          enum: [CNY]
+        billingCycle:
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUAL, ONCE, QUOTE]
+        installments:
+          type: integer
+          minimum: 1
+        grantIntervalMonths:
+          type: integer
+          minimum: 0
+        benefitLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogVersionDraftBenefitLineInput'
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [MINIAPP, WEB]
+    CatalogVersionDraftReplaceRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional replace of mutable DRAFT commercial content; benefit lines and channels are immutable.
+      required:
+        - expectedRevision
+        - offerType
+        - audience
+        - priceCents
+        - currency
+        - billingCycle
+        - installments
+        - grantIntervalMonths
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+        offerType:
+          type: string
+          enum: [SUBSCRIPTION, ONE_TIME, ADD_ON, QUOTE]
+        audience:
+          type: string
+          enum: [PERSONAL, ENTERPRISE]
+        priceCents:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        currency:
+          type: string
+          enum: [CNY]
+        billingCycle:
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUAL, ONCE, QUOTE]
+        installments:
+          type: integer
+          minimum: 1
+        grantIntervalMonths:
+          type: integer
+          minimum: 0
+    TrialPolicyDraft:
+      type: object
+      additionalProperties: false
+      description: Never-published FIRST-TRIAL policy candidate; enabled is always the boolean false and publishedAt is always null. Publisher identity is never projected.
+      required:
+        - policyVersionId
+        - campaignKey
+        - versionNo
+        - grantedSeconds
+        - validDays
+        - enabled
+        - publishedAt
+        - revision
+        - createdAt
+      properties:
+        policyVersionId:
+          type: string
+          format: uuid
+        campaignKey:
+          type: string
+          enum: [FIRST-TRIAL]
+        versionNo:
+          type: integer
+          minimum: 1
+        grantedSeconds:
+          type: integer
+          minimum: 1
+        validDays:
+          type: integer
+          minimum: 1
+        enabled:
+          type: boolean
+          const: false
+          description: Always false until O13 publication; never nullable and never client-written.
+        publishedAt:
+          type: 'null'
+          description: Always null until O13 publication.
+        revision:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        snapshotSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          readOnly: true
+    TrialPolicyDraftCreateRequest:
+      type: object
+      additionalProperties: false
+      description: Natural-key DRAFT create under (FIRST-TRIAL, versionNo); no enabled/publishedAt/publisher input and no default quota.
+      required: [versionNo, grantedSeconds, validDays]
+      properties:
+        versionNo:
+          type: integer
+          minimum: 1
+        grantedSeconds:
+          type: integer
+          minimum: 1
+        validDays:
+          type: integer
+          minimum: 1
+    TrialPolicyDraftReplaceRequest:
+      type: object
+      additionalProperties: false
+      description: Conditional replace of never-published trial policy content; campaign/version identity immutable.
+      required: [expectedRevision, grantedSeconds, validDays]
+      properties:
+        expectedRevision:
+          type: integer
+          minimum: 1
+        grantedSeconds:
+          type: integer
+          minimum: 1
+        validDays:
+          type: integer
+          minimum: 1

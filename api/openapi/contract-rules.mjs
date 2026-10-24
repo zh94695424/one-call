@@ -75,6 +75,20 @@ const DRAFT_OPERATION_IDS = new Set([
   'createOperationsTrialPolicyDraft',
   'replaceOperationsTrialPolicyDraft',
 ]);
+// Only O18/O19 catalog draft create/replace may carry client draft commercial
+// priceCents and currency. O20/O21 trial drafts reject both (F-05 / docs/15 §6).
+const DRAFT_COMMERCIAL_OPERATION_IDS = new Set([
+  'createOperationsCatalogVersionDraft',
+  'replaceOperationsCatalogVersionDraft',
+]);
+// Approved open-object exceptions for the response-side closure walker. These
+// are the only component schemas allowed to leave additionalProperties open
+// (provider opaque payloads / IVR event payloads, plan §4.11-§4.12). Any schema
+// may also opt in via the explicit x-onecall-opaque: true annotation.
+const OPAQUE_CLOSURE_EXCEPTION_SCHEMAS = new Set([
+  'OpaqueProviderPayload',
+  'IvrEventPayload',
+]);
 const IVR_DECISION_OPERATION_IDS = new Set([
   'resolveIvrInbound',
   'confirmIvrActivation',
@@ -116,11 +130,35 @@ const TRUSTED_REQUEST_FACT_NAMES = new Set([
   'priceCents',
   'amount',
   'amountCents',
+  'currency',
+  'paidAt',
+  'snapshotSha256',
+  'versionToken',
+  'purchaseConsentId',
+  'purchaseConsentEventId',
+  'issuanceStatus',
   'paymentSuccess',
   'paymentStatus',
   'trialOutcome',
   'trialResult',
   'entitlementStatus',
+  'createdByAccountId',
+  'evidenceSolidified',
+  'evidenceStatus',
+  'recordingOwner',
+  'taskClaimed',
+  'reservationId',
+  'authorizedRecordingSeconds',
+  'authorizationExpiresAt',
+  'shareAdmissionCount',
+  'shareStatus',
+  'objectKey',
+  'bucket',
+  'objectVersionId',
+  'capabilityTokenHash',
+  'codeHash',
+  'codeSalt',
+  'cryptoKeyRef',
 ]);
 
 function readA0() {
@@ -361,8 +399,60 @@ function validateVersionedPaths(root) {
   return problems;
 }
 
-function validateOperationMetadata(root) {
+// Full-document fail-closed scan for unknown x-onecall-*scope* extension
+// keys. The controller-accepted clarification is not operation-only: any
+// extension key matching x-onecall-*scope* case-insensitively is rejected
+// anywhere in the OpenAPI object graph (root, components collections and
+// schemas, path and operation objects, request/response and nested schema
+// objects). This subsumes the former operation-only scan and preserves its
+// operation-level message format. Ordinary schema property names such as a
+// business `scope` property and approved extension keys without `scope` (for
+// example x-onecall-idempotency) remain allowed. Invented scope values stay
+// covered by the idempotency/domain checks; O18-O21 keep state-conditional
+// behavior with no Idempotency-Key and no platform.idempotency_record.
+const SCOPE_EXTENSION_KEY = /^x-onecall-.*scope/i;
+
+function formatScopeExtensionLocation(segments) {
+  if (segments.length === 0) return 'document root';
+  // Operation objects keep the historical `METHOD /route` message form.
+  if (segments.length === 3 && segments[0] === 'paths' && METHODS.includes(segments[2])) {
+    return `${String(segments[2]).toUpperCase()} ${segments[1]}`;
+  }
+  let location = '';
+  for (const segment of segments) {
+    if (typeof segment === 'string' && segment.startsWith('[')) {
+      location += segment;
+    } else {
+      location = location === '' ? String(segment) : `${location}.${segment}`;
+    }
+  }
+  return location;
+}
+
+function validateNoScopeExtensions(root) {
   const problems = [];
+  const seen = new Set();
+  const walk = (node, segments) => {
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      node.forEach((child, index) => walk(child, [...segments, `[${index}]`]));
+      return;
+    }
+    const location = formatScopeExtensionLocation(segments);
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof key === 'string' && SCOPE_EXTENSION_KEY.test(key)) {
+        problems.push(`${location}: unapproved x-onecall scope extension ${key}`);
+      }
+      walk(value, [...segments, key]);
+    }
+  };
+  walk(root, []);
+  return problems;
+}
+
+function validateOperationMetadata(root) {
+  const problems = validateNoScopeExtensions(root);
   const catalog = new Set(catalogNames());
   if (catalog.size !== 44) {
     problems.push(`docs/14 catalog must contain exactly 44 unique qualified names, found ${catalog.size}`);
@@ -449,6 +539,9 @@ function validateOperationMetadata(root) {
         problems.push(`${key}: x-onecall-required-roles must be a non-empty subset of ADMIN/OPS`);
       }
     }
+    // Unknown x-onecall-*scope* extension keys are rejected for every
+    // operation by validateNoScopeExtensions above (full-document scan);
+    // no scope extension is approved on this surface.
   });
   return problems;
 }
@@ -611,6 +704,49 @@ function validateProblemComplete(root) {
     createCustomerSubjectClaim: ['CLAIM_RISK_BLOCKED', 'CLAIM_REPLAY_CONFLICT', 'CLAIM_CONTEXT_CONFLICT'],
     suspendOperationsSubject: ['NOT_FOUND', 'ACTIVATION_STATE_CONFLICT'],
     resumeOperationsSubject: ['NOT_FOUND', 'ACTIVATION_STATE_CONFLICT'],
+    // S2: after excluding COMMON_PROBLEM_CODES, each listed operation's
+    // x-onecall-error-codes set must equal exactly these domain codes.
+    createCustomerOrder: [
+      'IDEMPOTENCY_CONFLICT',
+      'ORDER_UNKNOWN_PAYMENT_PENDING',
+      'PURCHASE_CONSENT_REQUIRED',
+      'PURCHASE_CONSENT_STALE',
+      'PURCHASE_CONSENT_DECLINED',
+      'ACTIVATION_NOT_ACTIVE',
+      'REAL_NAME_REQUIRED',
+    ],
+    publishOperationsCatalogVersion: [
+      'NOT_FOUND',
+      'CATALOG_PUBLICATION_CONFLICT',
+      'PUBLICATION_STALE_VIEW',
+    ],
+    offsaleOperationsCatalogVersion: [
+      'NOT_FOUND',
+      'CATALOG_PUBLICATION_CONFLICT',
+      'PUBLICATION_STALE_VIEW',
+    ],
+    publishOperationsTrialPolicy: [
+      'NOT_FOUND',
+      'TRIAL_POLICY_PUBLICATION_CONFLICT',
+      'TRIAL_POLICY_STALE_VIEW',
+    ],
+    disableOperationsTrialPolicy: [
+      'NOT_FOUND',
+      'TRIAL_POLICY_PUBLICATION_CONFLICT',
+      'TRIAL_POLICY_STALE_VIEW',
+    ],
+    createOperationsCatalogVersionDraft: ['NOT_FOUND', 'CATALOG_DRAFT_CONFLICT'],
+    replaceOperationsCatalogVersionDraft: [
+      'NOT_FOUND',
+      'CATALOG_DRAFT_CONFLICT',
+      'CATALOG_DRAFT_STALE_VIEW',
+    ],
+    createOperationsTrialPolicyDraft: ['TRIAL_POLICY_DRAFT_CONFLICT'],
+    replaceOperationsTrialPolicyDraft: [
+      'NOT_FOUND',
+      'TRIAL_POLICY_DRAFT_CONFLICT',
+      'TRIAL_POLICY_DRAFT_STALE_VIEW',
+    ],
   };
   eachOperation(root, (operation) => {
     const expected = exactDomainSets[operation.operationId];
@@ -694,6 +830,30 @@ function validateCursorListings(root) {
       const freeText = parameters.filter((parameter) => ['q', 'search', 'keyword', 'phone', 'number', 'fullNumber'].includes(parameter.name));
       if (freeText.length > 0) {
         problems.push('listOperationsSubjects: full-number and free-text search are forbidden');
+      }
+    }
+    // S2 stable sort / filter-digest contracts (plan §4.8).
+    const s2Sorts = new Map([
+      ['listCustomerCatalogOffers', 'productCode asc, versionNo desc, catalogOfferId asc'],
+      ['listCustomerOrders', 'createdAt desc, orderId desc'],
+      ['listOperationsCatalogProducts', 'productCode asc, productId asc'],
+      ['listOperationsTrialPolicies', 'versionNo desc, policyVersionId desc'],
+      ['listOperationsOrders', 'createdAt desc, orderId desc'],
+      ['listOperationsAuditFacts', 'occurredAt desc, auditId desc'],
+    ]);
+    const expectedSort = s2Sorts.get(operation.operationId);
+    if (expectedSort && operation['x-onecall-sort'] !== expectedSort) {
+      problems.push(`${operation.operationId}: sort must be exactly ${expectedSort}`);
+    }
+    const s2Digests = new Map([
+      ['listCustomerCatalogOffers', ['channel', 'audience', 'offerType']],
+      ['listOperationsOrders', ['subjectId', 'paymentStatus']],
+    ]);
+    const expectedDigest = s2Digests.get(operation.operationId);
+    if (expectedDigest) {
+      const digest = operation['x-onecall-filter-digest'];
+      if (!Array.isArray(digest) || JSON.stringify(digest) !== JSON.stringify(expectedDigest)) {
+        problems.push(`${operation.operationId}: filter digest must bind ${expectedDigest.join(',')}`);
       }
     }
   });
@@ -959,8 +1119,18 @@ function validateSensitiveFields(root) {
   const schemas = root?.components?.schemas ?? {};
   for (const [name, schema] of Object.entries(schemas)) {
     walkSchema(schema, (node) => {
-      if (node.type === 'object' && node.properties && node.additionalProperties !== false) {
-        problems.push(`${name}: object schemas must set additionalProperties false`);
+      // F-04 closure: any type array admitting 'object' is object-admitting
+      // and must set additionalProperties false. Only the approved opaque
+      // provider/IVR exceptions (by schema name or x-onecall-opaque: true)
+      // may remain open.
+      const admitsObject = node.type === 'object'
+        || (Array.isArray(node.type) && node.type.includes('object'));
+      if (admitsObject && node.additionalProperties !== false) {
+        const opaqueException = OPAQUE_CLOSURE_EXCEPTION_SCHEMAS.has(name)
+          || node['x-onecall-opaque'] === true;
+        if (!opaqueException) {
+          problems.push(`${name}: object schemas must set additionalProperties false`);
+        }
       }
       for (const property of Object.keys(node.properties ?? {})) {
         if (FORBIDDEN_PROPERTY_NAMES.has(property)) {
@@ -1022,6 +1192,11 @@ function validateTrustedRequestFacts(root) {
       problems.push(`${key}: requestBody must resolve to a request body object`);
       return;
     }
+    // Only O18/O19 catalog draft create/replace may carry client draft
+    // commercial priceCents and currency (plan §4.7/§5 O18/O19, docs/15 §6).
+    // O20/O21 trial drafts and every other request reject both. Every other
+    // trusted fact name stays banned on every request body.
+    const draftCommercialAllowed = DRAFT_COMMERCIAL_OPERATION_IDS.has(operation.operationId);
     const content = body.content;
     if (!content || typeof content !== 'object' || Object.keys(content).length === 0) {
       problems.push(`${key}: request body must declare a non-empty content map`);
@@ -1046,9 +1221,9 @@ function validateTrustedRequestFacts(root) {
         schema,
         (node) => {
           for (const property of Object.keys(node.properties ?? {})) {
-            if (TRUSTED_REQUEST_FACT_NAMES.has(property)) {
-              problems.push(`${key}: request must not accept trusted fact ${property}`);
-            }
+            if (!TRUSTED_REQUEST_FACT_NAMES.has(property)) continue;
+            if (draftCommercialAllowed && (property === 'priceCents' || property === 'currency')) continue;
+            problems.push(`${key}: request must not accept trusted fact ${property}`);
           }
         },
         new Set(),
@@ -1138,14 +1313,334 @@ function validateShareSemantics(root) {
   return problems;
 }
 
+// Natural-key / expectedRevision / content-projection shape for the four
+// approved DRAFT candidate operations (plan §4.7/§5 O18-O21). Additive only:
+// never weakens the existing state-conditional check.
+const DRAFT_CREATE_REQUIRED_PROPERTIES = new Map([
+  ['createOperationsCatalogVersionDraft', [
+    'productId',
+    'versionNo',
+    'offerType',
+    'audience',
+    'priceCents',
+    'currency',
+    'billingCycle',
+    'installments',
+    'grantIntervalMonths',
+    'benefitLines',
+    'channels',
+  ]],
+  ['createOperationsTrialPolicyDraft', ['versionNo', 'grantedSeconds', 'validDays']],
+]);
+const DRAFT_REPLACE_REQUIRED_PROPERTIES = new Map([
+  ['replaceOperationsCatalogVersionDraft', [
+    'expectedRevision',
+    'offerType',
+    'audience',
+    'priceCents',
+    'currency',
+    'billingCycle',
+    'installments',
+    'grantIntervalMonths',
+  ]],
+  ['replaceOperationsTrialPolicyDraft', ['expectedRevision', 'grantedSeconds', 'validDays']],
+]);
+const DRAFT_CREATE_FORBIDDEN_PROPERTIES = new Set([
+  'status',
+  'publishedAt',
+  'publishedByEmployeeId',
+  'enabled',
+  'saleStatus',
+]);
+const DRAFT_REPLACE_FORBIDDEN_PROPERTIES = new Set([
+  'status',
+  'publishedAt',
+  'publishedByEmployeeId',
+  'enabled',
+  'saleStatus',
+  'productId',
+  'versionNo',
+  'campaignKey',
+  'benefitLines',
+  'channels',
+]);
+
 function validateDraftCandidates(root) {
   const problems = [];
   eachOperation(root, (operation) => {
-    if (!DRAFT_OPERATION_IDS.has(operation.operationId)) return;
+    const id = operation.operationId;
+    if (!DRAFT_OPERATION_IDS.has(id)) return;
     if (operation['x-onecall-idempotency'] !== 'state-conditional') {
-      problems.push(`${operation.operationId}: DRAFT candidates must be state-conditional`);
+      problems.push(`${id}: DRAFT candidates must be state-conditional`);
+    }
+    if (Array.isArray(operation.parameters)
+      && operation.parameters.some((parameter) => {
+        const resolved = typeof parameter?.$ref === 'string' ? null : parameter;
+        return resolved?.in === 'header' && resolved?.name === 'Idempotency-Key'
+          || (typeof parameter?.$ref === 'string' && parameter.$ref.endsWith('/IdempotencyKeyParam'));
+      })) {
+      problems.push(`${id}: DRAFT candidates must not declare Idempotency-Key`);
+    }
+    const schema = requestSchema(root, operation);
+    if (!schema || typeof schema !== 'object') {
+      problems.push(`${id}: DRAFT candidate request body must resolve to a component schema`);
+      return;
+    }
+    const properties = schema.properties ?? {};
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const isCreate = id === 'createOperationsCatalogVersionDraft'
+      || id === 'createOperationsTrialPolicyDraft';
+    const expectedRequired = isCreate
+      ? DRAFT_CREATE_REQUIRED_PROPERTIES.get(id)
+      : DRAFT_REPLACE_REQUIRED_PROPERTIES.get(id);
+    const forbidden = isCreate
+      ? DRAFT_CREATE_FORBIDDEN_PROPERTIES
+      : DRAFT_REPLACE_FORBIDDEN_PROPERTIES;
+    for (const name of expectedRequired ?? []) {
+      if (!required.has(name) || properties[name] === undefined) {
+        problems.push(`${id}: DRAFT request must require ${name}`);
+      }
+    }
+    if (!isCreate && properties.expectedRevision?.minimum !== 1) {
+      problems.push(`${id}: expectedRevision must be an integer >= 1`);
+    }
+    for (const name of forbidden) {
+      if (properties[name] !== undefined) {
+        problems.push(`${id}: request must not carry ${name}`);
+      }
+    }
+    if (id === 'createOperationsTrialPolicyDraft'
+      && properties.campaignKey !== undefined) {
+      problems.push(`${id}: campaignKey is server-fixed FIRST-TRIAL and must not be client-written`);
     }
   });
+  return problems;
+}
+
+// S2 fix-shape assertions for controller-accepted findings F-01..F-06 plus the
+// CNY freeze, full-document scope fail-closed and fix-2 draft-token removal
+// clarifications. Additive only: never weakens existing rules.
+function validateS2FixShapes(root) {
+  const problems = [];
+  const schemas = root?.components?.schemas ?? {};
+
+  // F-01: OrderCreateRequest requires explicit ACCEPT consent fields; the
+  // purchase consent event ID stays server-derived and must not be requestable.
+  const orderCreate = schemas.OrderCreateRequest;
+  if (!orderCreate) {
+    problems.push('OrderCreateRequest is required');
+  } else {
+    const required = new Set(Array.isArray(orderCreate.required) ? orderCreate.required : []);
+    const properties = orderCreate.properties ?? {};
+    for (const field of ['subjectId', 'catalogOfferId', 'channel', 'decision', 'policyCode', 'policyVersion', 'promptVersion', 'contentSha256']) {
+      if (!required.has(field) || properties[field] === undefined) {
+        problems.push(`OrderCreateRequest: must require ${field}`);
+      }
+    }
+    if (properties.decision?.enum?.length !== 1 || properties.decision?.enum?.[0] !== 'ACCEPT') {
+      problems.push('OrderCreateRequest.decision must be fixed to enum [ACCEPT] only');
+    }
+    if (properties.purchaseConsentEventId !== undefined || properties.purchaseConsentId !== undefined) {
+      problems.push('OrderCreateRequest must not accept purchaseConsentEventId/purchaseConsentId');
+    }
+    for (const field of ['policyCode', 'policyVersion', 'promptVersion']) {
+      if (properties[field]?.minLength !== 1 || properties[field]?.maxLength !== 64) {
+        problems.push(`OrderCreateRequest.${field} must be bounded 1-64 characters`);
+      }
+    }
+    if (properties.contentSha256?.pattern !== '^[0-9a-f]{64}$') {
+      problems.push('OrderCreateRequest.contentSha256 must match ^[0-9a-f]{64}$');
+    }
+  }
+
+  // F-02: TrialPolicyDraft.enabled is a required boolean fixed to false;
+  // publishedAt stays required null.
+  const trialDraft = schemas.TrialPolicyDraft;
+  if (!trialDraft) {
+    problems.push('TrialPolicyDraft is required');
+  } else {
+    const required = new Set(Array.isArray(trialDraft.required) ? trialDraft.required : []);
+    const enabled = trialDraft.properties?.enabled;
+    if (!required.has('enabled')) problems.push('TrialPolicyDraft: enabled must be required');
+    if (enabled?.type !== 'boolean' || enabled?.const !== false) {
+      problems.push('TrialPolicyDraft.enabled must be a boolean fixed to const false');
+    }
+    if (!required.has('publishedAt') || trialDraft.properties?.publishedAt?.type !== 'null') {
+      problems.push('TrialPolicyDraft.publishedAt must remain required type null');
+    }
+  }
+
+  // F-03: publish/offsale/disable request shapes require the correct nullable
+  // expected identity plus expectedRevision.
+  const publishOffsaleShapes = [
+    ['CatalogVersionPublicationRequest', 'expectedActiveVersionId'],
+    ['CatalogVersionOffsaleRequest', null],
+    ['TrialPolicyPublicationRequest', 'expectedEnabledPolicyVersionId'],
+    ['TrialPolicyDisableRequest', null],
+  ];
+  for (const [schemaName, identityField] of publishOffsaleShapes) {
+    const schema = schemas[schemaName];
+    if (!schema) {
+      problems.push(`${schemaName} is required`);
+      continue;
+    }
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const properties = schema.properties ?? {};
+    if (identityField) {
+      if (!required.has(identityField) || properties[identityField] === undefined) {
+        problems.push(`${schemaName}: must require ${identityField}`);
+      } else {
+        const field = properties[identityField];
+        const nullable = field?.type === 'null'
+          || (Array.isArray(field?.type) && field.type.includes('null') && field.type.includes('string'));
+        if (!nullable) {
+          problems.push(`${schemaName}.${identityField} must be nullable (explicit null for none)`);
+        }
+      }
+    } else if (required.has('expectedActiveVersionId') || required.has('expectedEnabledPolicyVersionId')) {
+      problems.push(`${schemaName}: must not require an unexpected expected identity field`);
+    }
+    if (!required.has('expectedRevision') || properties.expectedRevision?.minimum !== 1) {
+      problems.push(`${schemaName}: must require expectedRevision integer >= 1`);
+    }
+  }
+
+  // F-04: closed reusable RedactedAuditSnapshot with only bounded
+  // status/revision/reasonCode; AuditFact snapshots ref it (nullable).
+  const snapshot = schemas.RedactedAuditSnapshot;
+  if (!snapshot) {
+    problems.push('RedactedAuditSnapshot is required');
+  } else {
+    if (snapshot.type !== 'object' || snapshot.additionalProperties !== false) {
+      problems.push('RedactedAuditSnapshot must be a closed object');
+    }
+    if (snapshot.minProperties !== 1) {
+      problems.push('RedactedAuditSnapshot must set minProperties 1');
+    }
+    const keys = new Set(Object.keys(snapshot.properties ?? {}));
+    for (const field of ['status', 'revision', 'reasonCode']) {
+      if (!keys.has(field)) problems.push(`RedactedAuditSnapshot: must declare ${field}`);
+    }
+    for (const key of keys) {
+      if (!['status', 'revision', 'reasonCode'].includes(key)) {
+        problems.push(`RedactedAuditSnapshot: unexpected property ${key}`);
+      }
+    }
+    for (const field of ['status', 'reasonCode']) {
+      const node = snapshot.properties?.[field];
+      if (node?.type !== 'string' || node?.minLength !== 1 || node?.maxLength !== 64) {
+        problems.push(`RedactedAuditSnapshot.${field} must be a bounded string (1-64)`);
+      }
+    }
+    const revision = snapshot.properties?.revision;
+    if (revision?.type !== 'integer' || revision?.minimum !== 0) {
+      problems.push('RedactedAuditSnapshot.revision must be a nonnegative integer');
+    }
+    if (Array.isArray(snapshot.required) && snapshot.required.length > 0) {
+      problems.push('RedactedAuditSnapshot properties must all be optional');
+    }
+  }
+  const auditFact = schemas.AuditFact;
+  if (!auditFact) {
+    problems.push('AuditFact is required');
+  } else {
+    for (const field of ['beforeSnapshot', 'afterSnapshot']) {
+      const node = auditFact.properties?.[field];
+      const refs = Array.isArray(node?.oneOf)
+        ? node.oneOf.map((entry) => entry?.$ref ?? null)
+        : [];
+      if (!refs.includes('#/components/schemas/RedactedAuditSnapshot')) {
+        problems.push(`AuditFact.${field} must $ref RedactedAuditSnapshot`);
+      }
+      const nullBranch = Array.isArray(node?.oneOf)
+        ? node.oneOf.some((entry) => entry?.type === 'null')
+        : false;
+      if (!nullBranch) {
+        problems.push(`AuditFact.${field} must admit an explicit null branch`);
+      }
+      if (node?.additionalProperties === true) {
+        problems.push(`AuditFact.${field} must not set additionalProperties true`);
+      }
+    }
+  }
+
+  // F-06: CatalogProductSummary requires a bounded versions projection.
+  const productSummary = schemas.CatalogProductSummary;
+  const versionSummary = schemas.CatalogProductVersionSummary;
+  if (!versionSummary) {
+    problems.push('CatalogProductVersionSummary is required');
+  } else {
+    if (versionSummary.type !== 'object' || versionSummary.additionalProperties !== false) {
+      problems.push('CatalogProductVersionSummary must be a closed object');
+    }
+    const required = new Set(Array.isArray(versionSummary.required) ? versionSummary.required : []);
+    const keys = new Set(Object.keys(versionSummary.properties ?? {}));
+    const expectedKeys = ['catalogVersionId', 'versionNo', 'saleStatus', 'offerType', 'audience'];
+    for (const field of expectedKeys) {
+      if (!required.has(field) || !keys.has(field)) {
+        problems.push(`CatalogProductVersionSummary: must require ${field}`);
+      }
+    }
+    for (const key of keys) {
+      if (!expectedKeys.includes(key)) {
+        problems.push(`CatalogProductVersionSummary: unexpected property ${key}`);
+      }
+    }
+  }
+  if (!productSummary) {
+    problems.push('CatalogProductSummary is required');
+  } else {
+    const required = new Set(Array.isArray(productSummary.required) ? productSummary.required : []);
+    const versions = productSummary.properties?.versions;
+    if (!required.has('versions') || versions?.type !== 'array') {
+      problems.push('CatalogProductSummary: must require a versions array');
+    } else if (versions?.items?.$ref !== '#/components/schemas/CatalogProductVersionSummary') {
+      problems.push('CatalogProductSummary.versions items must $ref CatalogProductVersionSummary');
+    }
+  }
+
+  // S2 fix 2: the ambiguous singular CatalogVersionDraft.versionToken is
+  // removed from the public schema (no A0 version-level owner and no channel
+  // association; O19 channel tokens are regenerated server-side and never
+  // public input/output). The required CatalogOffer.versionToken stays
+  // because C9 offer selection needs it.
+  const catalogDraft = schemas.CatalogVersionDraft;
+  if (!catalogDraft) {
+    problems.push('CatalogVersionDraft is required');
+  } else {
+    if ((catalogDraft.properties ?? {}).versionToken !== undefined) {
+      problems.push('CatalogVersionDraft must not declare versionToken');
+    }
+    const draftRequired = new Set(Array.isArray(catalogDraft.required) ? catalogDraft.required : []);
+    if (draftRequired.has('versionToken')) {
+      problems.push('CatalogVersionDraft must not require versionToken');
+    }
+  }
+  const catalogOffer = schemas.CatalogOffer;
+  if (!catalogOffer) {
+    problems.push('CatalogOffer is required');
+  } else {
+    const offerToken = (catalogOffer.properties ?? {}).versionToken;
+    if (offerToken?.type !== 'string' || offerToken?.minLength !== 1 || offerToken?.maxLength !== 128) {
+      problems.push('CatalogOffer.versionToken must remain a bounded string (1-128)');
+    }
+    const offerRequired = new Set(Array.isArray(catalogOffer.required) ? catalogOffer.required : []);
+    if (!offerRequired.has('versionToken')) {
+      problems.push('CatalogOffer must keep required versionToken for C9 offer selection');
+    }
+  }
+
+  // Currency freeze: every public v1 monetary currency property is literal CNY.
+  for (const [name, schema] of Object.entries(schemas)) {
+    walkSchema(schema, (node) => {
+      const currency = node.properties?.currency;
+      if (!currency || currency.type !== 'string') return;
+      if (!Array.isArray(currency.enum) || currency.enum.length !== 1 || currency.enum[0] !== 'CNY') {
+        problems.push(`${name}.currency must freeze to literal enum [CNY]`);
+      }
+    });
+  }
+
   return problems;
 }
 
@@ -1180,6 +1675,7 @@ export default function onecallContractRules() {
         'sensitive-fields': makeRule((root) => [
           ...validateSensitiveFields(root),
           ...validateTrustedRequestFacts(root),
+          ...validateS2FixShapes(root),
         ]),
         'server-relative': makeRule(validateServerRelative),
         'versioned-paths': makeRule(validateVersionedPaths),
@@ -1189,6 +1685,8 @@ export default function onecallContractRules() {
         'ivr-decision-status': makeRule(validateIvrDecisionStatus),
         'share-semantics': makeRule(validateShareSemantics),
         'draft-candidates': makeRule(validateDraftCandidates),
+        's2-fix-shapes': makeRule(validateS2FixShapes),
+        'scope-extensions': makeRule(validateNoScopeExtensions),
       },
     },
   };
