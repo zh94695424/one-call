@@ -7,7 +7,7 @@
 - Status: active.
 - Base: `origin/main` at `754b7dfc53c277e79c5d63e24d578a93fa557cda`.
 - Branch: `codex/ivr-prototype-sync` in an isolated managed worktree.
-- Current gate / next entry point: `push`; accepted deepreview commit and Draft PR readiness checks passed.
+- Current gate / next entry point: `PR review`; Draft PR #3 is open against `main`.
 - Dispatch protocol: `sub-agents`; DeepSeek authors implementation, fresh MiMo 2.6 Flash reviews.
 
 ## Binding goal confirmation
@@ -49,6 +49,8 @@
 | re-review | passed | `docs/reviews/code-review-20261025-122653.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-aggregate-rereview-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no findings; AR-01 and AR-02 verified closed | accepted deepreview commit |
 | accepted deepreview commit | passed | `2cc0230`, `gateflow: accept IVR prototype deepreview fixes`; bounded fixes, regenerated copies, review artifacts and one updated workflow screenshot | ready-to-open-draft-PR |
 | ready-to-open-draft-PR | passed | fetched `origin/main` remains `754b7df`; merge-base is `754b7df`; GitHub auth valid; no existing PR for `codex/ivr-prototype-sync`; full branch diff check will be clean after this bookkeeping correction | push |
+| push | passed | pushed `codex/ivr-prototype-sync` to `origin` and set upstream | create draft PR |
+| create draft PR | passed | PR #3, `https://github.com/zh94695424/one-call/pull/3`; title `Sync IVR call-task flow across prototypes`; base `main`; head `codex/ivr-prototype-sync`; Draft/Open; no CI checks reported at creation | PR review |
 
 ## Residual risks
 
@@ -78,6 +80,13 @@
 - GitHub CLI authentication is active for `zh94695424` with repository access.
 - Required artifacts, tests, generated files and workflow-owned visual evidence are present. Remaining risks have owners: Backend/IVR integration owns production concurrency/telephony/persistence/cloud proof; Product/Legal owns final consent and recording wording.
 - Readiness decision: pass; push the branch, then create a Draft PR against `main`.
+
+## Draft PR
+
+- URL: `https://github.com/zh94695424/one-call/pull/3`.
+- State: Open Draft; base `main`; head `codex/ivr-prototype-sync`.
+- Body records prototype scope, task/no-task behavior, 47/47 tests, three surface runners, cross-channel/build/diff checks and residual production owners.
+- Checks at creation: none reported by GitHub.
 
 ## Plan return notes
 
