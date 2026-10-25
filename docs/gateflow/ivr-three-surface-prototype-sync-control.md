@@ -7,7 +7,7 @@
 - Status: active.
 - Base: `origin/main` at `754b7dfc53c277e79c5d63e24d578a93fa557cda`.
 - Branch: `codex/ivr-prototype-sync` in an isolated managed worktree.
-- Current gate / next entry point: `accepted slice commit` after the fifth bounded fix and independent re-review passed.
+- Current gate / next entry point: `aggregate deepreview`; accepted slice commit `42409af` exists, but the fresh MiMo 2.6 Flash aggregate reviewer did not start because the runner rejected its root permission mode before model execution.
 - Dispatch protocol: `sub-agents`; DeepSeek authors implementation, fresh MiMo 2.6 Flash reviews.
 
 ## Binding goal confirmation
@@ -43,6 +43,8 @@
 | implementation | author-complete; controller validation failed | `docs/gateflow/ivr-three-surface-prototype-sync-implementation.md`; DeepSeek task `ivr-prototype-sync-impl-ds-20261025-01`, exit 0, structured success, empty stderr; controller syntax/unit checks | fix two test defects, regenerate, rerun full validation before code review |
 | fix | passed (fifth bounded return) | DeepSeek task `ivr-prototype-sync-fix5-ds-20261025-01`, exit 0, structured success, empty stderr; implementation artifact `Controller validation fix 5`; controller observed call-task 15/15, aggregate 46/46, all three surface runners, cross-channel, build equality, syntax and diff checks pass; Web 1440/1024/720 and cross-channel 1280 inspected clean | independent re-review of CF-09/CF-10 |
 | re-review | passed | `docs/reviews/code-review-20261025-112537.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-rereview5-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no findings; CF-09 and CF-10 verified closed | accepted slice commit |
+| accepted slice commit | passed | `42409af`, `gateflow: accept IVR prototype sync slice`; 50 implementation, QA, documentation, review and workflow-owned screenshot files; pre-commit syntax, 46/46 shared tests, generated equality and diff checks passed | aggregate deepreview |
+| aggregate deepreview | blocked before model execution | MiMo 2.6 Flash dispatch `ivr-prototype-sync-deepreview-mimo26flash-20261025-01` and its single retry both exited 1 with empty JSON and stderr `--dangerously-skip-permissions cannot be used with root/sudo privileges`; run dirs `/tmp/sub-agents.ivr-prototype-deepreview.KCdG5V` and `/tmp/sub-agents.ivr-prototype-deepreview.mN6SBr` | repair runner permission-mode configuration, then start a fresh compliant aggregate reviewer |
 
 ## Residual risks
 
