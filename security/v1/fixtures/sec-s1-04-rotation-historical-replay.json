@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s1-04-rotation-historical-replay",
+  "slice": "s1",
+  "negative": false,
+  "description": "K02, K05 and K13 rotation keeps historical decrypt and dual-read lookup working, new writes use the active version, frozen decision replay returns the same payload, and no reservation or settlement side effect is created.",
+  "materials": [
+    { "keyId": "K02", "keyRef": "TEST_ONLY_K02_V1", "keyLabel": "TEST_ONLY_K02_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K05", "keyRef": "TEST_ONLY_K05_V1", "keyLabel": "TEST_ONLY_K05_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K06", "keyRef": "TEST_ONLY_K06_V1", "keyLabel": "TEST_ONLY_K06_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K13", "keyRef": "TEST_ONLY_K13_V1", "keyLabel": "TEST_ONLY_K13_HMAC_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "encrypt-d01-first",
+      "action": "encrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "plaintext": "TEST_ONLY_PROVIDER_SUBJECT_ROTATION_0001",
+      "nonceHex": "000102030405060708090a0b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PROVIDER_SUBJECT:D01", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "encrypt-d04-first",
+      "action": "encrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_ROTATION_0001",
+      "nonceHex": "101112131415161718191a1b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PHONE_NUMBER:D04", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "encrypt-decision-first",
+      "action": "encrypt",
+      "keyId": "K06",
+      "keyRef": "TEST_ONLY_K06_V1",
+      "purpose": "IVR_DECISION",
+      "dataClass": "D08",
+      "plaintext": "TEST_ONLY_IVR_DECISION_PAYLOAD_0001",
+      "nonceHex": "202122232425262728292a2b",
+      "expected": { "status": "OK", "aad": "onecall:v1:IVR_DECISION:D08", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "rotate-k02",
+      "action": "rotate",
+      "keyId": "K02",
+      "fromKeyRef": "TEST_ONLY_K02_V1",
+      "toKeyRef": "TEST_ONLY_K02_V2",
+      "newKeyLabel": "TEST_ONLY_K02_DEK_V2",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "fromState": "DECRYPT_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE", "retentionApproved": true }
+    },
+    {
+      "id": "decrypt-d01-historical",
+      "action": "decrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "envelopeFromStep": "encrypt-d01-first",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "DECRYPT_ONLY", "rowsWritten": 0 }
+    },
+    {
+      "id": "encrypt-d01-new",
+      "action": "encrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V2",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "plaintext": "TEST_ONLY_PROVIDER_SUBJECT_ROTATION_0002",
+      "nonceHex": "303132333435363738393a3b",
+      "expected": { "status": "OK", "envelopeVersion": "v1", "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "keyRef": "TEST_ONLY_K02_V2", "rowsWritten": 1 }
+    },
+    {
+      "id": "rotate-k05",
+      "action": "rotate",
+      "keyId": "K05",
+      "fromKeyRef": "TEST_ONLY_K05_V1",
+      "toKeyRef": "TEST_ONLY_K05_V2",
+      "newKeyLabel": "TEST_ONLY_K05_DEK_V2",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "fromState": "DECRYPT_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE", "retentionApproved": true }
+    },
+    {
+      "id": "decrypt-d04-historical",
+      "action": "decrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D04",
+      "envelopeFromStep": "encrypt-d04-first",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "DECRYPT_ONLY", "rowsWritten": 0 }
+    },
+    {
+      "id": "encrypt-d04-new",
+      "action": "encrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V2",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_ROTATION_0002",
+      "nonceHex": "404142434445464748494a4b",
+      "expected": { "status": "OK", "envelopeVersion": "v1", "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "keyRef": "TEST_ONLY_K05_V2", "rowsWritten": 1 }
+    },
+    {
+      "id": "lookup-phone-old",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_ROTATION_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "rotate-k13",
+      "action": "rotate",
+      "keyId": "K13",
+      "fromKeyRef": "TEST_ONLY_K13_V1",
+      "toKeyRef": "TEST_ONLY_K13_V2",
+      "newKeyLabel": "TEST_ONLY_K13_HMAC_V2",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "fromState": "LOOKUP_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE", "retentionApproved": true }
+    },
+    {
+      "id": "lookup-phone-historical",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_ROTATION_0001",
+      "storedHmacStep": "lookup-phone-old",
+      "expected": { "status": "OK", "matched": true, "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "LOOKUP_ONLY" }
+    },
+    {
+      "id": "lookup-phone-active",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V2",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_ROTATION_0001",
+      "differsFromStep": "lookup-phone-old",
+      "expected": { "status": "OK", "differs": true, "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "replay-decision-first",
+      "action": "request",
+      "kind": "a2-decision-replay",
+      "envelopeFromStep": "encrypt-decision-first",
+      "attemptedSideEffects": ["reservation", "settlement"],
+      "expected": { "status": "OK", "kind": "a2-decision-replay", "payloadEqualsStored": true, "reservationsCreated": 0, "settlementsCreated": 0, "callsCreated": 0, "eventsCreated": 0, "deniedSideEffects": 2 }
+    },
+    {
+      "id": "persist-decision-rewrite",
+      "action": "persist",
+      "dataClass": "D08",
+      "appendOnly": true,
+      "attempt": "rewrite",
+      "expected": { "status": "DENIED", "reason": "APPEND_ONLY_VIOLATION", "rowsWritten": 0, "a0Mutations": 0, "dataClass": "D08", "appendOnly": true }
+    }
+  ]
+}

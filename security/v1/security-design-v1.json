@@ -1,0 +1,915 @@
+{
+  "modelVersion": "1.0.0",
+  "specVersion": "1.0.0",
+  "upstream": {
+    "a0": {
+      "path": "docs/14-production-data-model-and-flyway-schema-spec.md",
+      "tables": 44,
+      "sensitiveRows": 28,
+      "envelopeRegex": "^v1\\.[A-Za-z0-9._:/-]+\\..+$",
+      "hmacRegex": "^[0-9a-f]{64}$"
+    },
+    "a1": {
+      "path": "api/openapi/onecall-v1.openapi.yaml",
+      "operations": 49,
+      "securitySchemes": 6,
+      "audiences": [
+        "customer",
+        "employee",
+        "ivr-service",
+        "public-capability",
+        "provider"
+      ]
+    },
+    "a2": {
+      "path": "protocol/ivr/v1/ivr-protocol-v1.json",
+      "messages": 12,
+      "eventTypes": 11,
+      "identities": 22,
+      "invariants": 15,
+      "eventRegistrySha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9"
+    },
+    "designSource": "docs/12-technology-stack-and-system-architecture.md"
+  },
+  "envelopeProfile": {
+    "version": "v1",
+    "textShape": "v1.<key_ref>.<base64url(nonce || authenticated_ciphertext_and_tag)>",
+    "regex": "^v1\\.[A-Za-z0-9._:/-]+\\..+$",
+    "keyRefPattern": "^[A-Za-z0-9._:/-]+$",
+    "keyRefParse": "first segment is the literal v1; last dot separates the base64url body; the middle key_ref is opaque and may contain dots",
+    "bodyPattern": "^[A-Za-z0-9_-]+$",
+    "bodyEncoding": "base64url without padding",
+    "aead": "AES-256-GCM",
+    "nonceBytes": 12,
+    "tagBytes": 16,
+    "minimumPlaintextBytes": 1,
+    "aadTemplate": "onecall:v1:<purposeId>:<dataClassId>",
+    "aadEncoding": "UTF-8 ASCII",
+    "productionNonceSource": "CSPRNG per encryption; never reused",
+    "fixtureNoncePolicy": "fixed TEST_ONLY nonces are deterministic evaluator inputs only",
+    "unknownKeyRef": "fail closed; no plaintext or scan fallback",
+    "authIdentityVersionRule": "customer_iam.auth_identity.key_version equals the integer version encoded by that row key_ref"
+  },
+  "hmacProfile": {
+    "algorithm": "HMAC-SHA-256",
+    "keyBits": 256,
+    "representation": "lowercase hexadecimal",
+    "hexPattern": "^[0-9a-f]{64}$",
+    "input": "UTF-8 bytes of the canonical normalized value",
+    "usage": [
+      "equality",
+      "uniqueness",
+      "indexed lookup"
+    ],
+    "forbiddenUsage": [
+      "encryption",
+      "signing",
+      "session",
+      "public identifier",
+      "logging",
+      "audit output"
+    ],
+    "saltOrTruncation": "none",
+    "accessNumberHmac": "same approved phone-number key and contract; ephemeral fingerprint input only"
+  },
+  "keyStates": [
+    {
+      "state": "ACTIVE",
+      "allowedOperations": ["encrypt", "decrypt", "lookup", "sign", "verify"],
+      "description": "New writes, decryption, lookup and signing use the active version."
+    },
+    {
+      "state": "DECRYPT_ONLY",
+      "allowedOperations": ["decrypt"],
+      "description": "Historical encryption key version retained for decryption only."
+    },
+    {
+      "state": "LOOKUP_ONLY",
+      "allowedOperations": ["lookup"],
+      "description": "Historical HMAC key version retained for equality lookup only."
+    },
+    {
+      "state": "VERIFY_ONLY",
+      "allowedOperations": ["verify"],
+      "description": "Historical signature key retained for verification overlap only."
+    },
+    {
+      "state": "DISABLED",
+      "allowedOperations": [],
+      "description": "Emergency disable; authorized recovery is the only path back."
+    },
+    {
+      "state": "DESTROYED",
+      "allowedOperations": [],
+      "description": "Irrecoverable; every read fails closed."
+    }
+  ],
+  "rotationPolicy": {
+    "sequence": ["ACTIVE", "DECRYPT_ONLY|LOOKUP_ONLY|VERIFY_ONLY", "DISABLED", "DESTROYED"],
+    "newWritesUse": "ACTIVE",
+    "oldVersion": "DECRYPT_ONLY for encryption, LOOKUP_ONLY for HMAC and VERIFY_ONLY for signing",
+    "mutableRows": "lazy idempotent re-encrypt or reindex only where A0 permits UPDATE",
+    "appendOnlyFrozenRows": "never rewrite; retain the old key version until retention ends",
+    "hmacDualRead": "active plus historical keys referenced by retained rows; equality queries only",
+    "signatureOverlap": "active plus verify-only overlap; unknown keyId is rejected without default fallback",
+    "retentionGate": "retire requires the approved retention input; otherwise the old version stays decrypt-only or lookup-only",
+    "auditEvent": "SECURITY_KEY_ROTATE",
+    "reencryptSelection": "envelope key_ref selects the historical version; no global key swap",
+    "failClosed": true
+  },
+  "recoveryPolicy": {
+    "disabled": "authorized KMS or Secret Manager re-enable only; no application bypass",
+    "pendingDeletion": "cancel or restore only when CV-1 or CV-2 proves the capability; otherwise unrecoverable",
+    "destroyed": "unrecoverable; every read fails closed and the incident process owns the outcome",
+    "secretVersionUnavailable": "fail closed; no plaintext environment, file or image fallback",
+    "backupRebuild": "no plaintext rebuild of a destroyed key or protected value",
+    "auditEvent": "SECURITY_KEY_RECOVER",
+    "failClosed": true
+  },
+  "replayCompatibility": {
+    "transportNonce": "regenerated on every retry and never part of domain identity",
+    "domainIdentity": "callId, eventId, recordingId and decisionId are unchanged across retries",
+    "historicalDecrypt": "the envelope key_ref selects the historical key version",
+    "hmacLookup": "active plus retained historical keys; equality only, never a plaintext scan",
+    "a2DecisionReplay": "the same envelope decrypts the same immutable payload and redacted snapshot",
+    "a2SideEffects": "no second call, reservation, settlement or event identity",
+    "appendOnly": "frozen rows are never rewritten for rotation",
+    "rotationWireImpact": "none on A1 wire, A2 semantic identity, response_sha256 or request_fingerprint inputs"
+  },
+  "keyClasses": [
+    {
+      "keyId": "K01",
+      "keyClass": "KMS_CMK_DATA",
+      "custodyStorage": "Tencent KMS (region CV-1)",
+      "purpose": "root KEK for DEK",
+      "purposeId": "ROOT_KEK",
+      "algorithm": "KMS symmetric CMK",
+      "dataClasses": "K02-K09",
+      "rotation": "CMK version rotation CV-1",
+      "recovery": "re-enable/restore CV-1",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "Security/Infrastructure",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K02",
+      "keyClass": "DEK_PROVIDER_SUBJECT",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "provider subject AEAD",
+      "purposeId": "PROVIDER_SUBJECT",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D01",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "customer_iam",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K03",
+      "keyClass": "DEK_IDENTITY_PROFILE",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "legal name/id number AEAD",
+      "purposeId": "IDENTITY_PROFILE",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D02",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "customer_iam",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K04",
+      "keyClass": "DEK_VERIFICATION_REF",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "verification ref AEAD",
+      "purposeId": "VERIFICATION_REF",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D02/D05",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "customer_iam/subject_number",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K05",
+      "keyClass": "DEK_PHONE_NUMBER",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "caller/callee/number AEAD",
+      "purposeId": "PHONE_NUMBER",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D04/D06/D07/D09",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "subject_number/ivr",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K06",
+      "keyClass": "DEK_IVR_DECISION",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "frozen decision payload AEAD",
+      "purposeId": "IVR_DECISION",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D08",
+      "rotation": "new writes; append-only old versions decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "ivr",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K07",
+      "keyClass": "DEK_CALL_EVENT",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "call event payload AEAD",
+      "purposeId": "CALL_EVENT",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D10",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "ivr",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K08",
+      "keyClass": "DEK_PROVIDER_PAYLOAD",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "provider payload AEAD",
+      "purposeId": "PROVIDER_PAYLOAD",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D11",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "catalog_order",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K09",
+      "keyClass": "DEK_INTERNAL_PAYLOAD",
+      "custodyStorage": "KMS-wrapped Secret Manager version + memory",
+      "purpose": "audit/outbox/idempotency encrypted snapshot",
+      "purposeId": "INTERNAL_PAYLOAD",
+      "algorithm": "AES-256-GCM/12/16/AAD",
+      "dataClasses": "D27/D28",
+      "rotation": "new version; old decrypt-only",
+      "recovery": "SM version + KMS",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "platform/operations-audit",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K10",
+      "keyClass": "COS_CMK_MEDIA",
+      "custodyStorage": "Tencent KMS + COS SSE-KMS",
+      "purpose": "media object at rest",
+      "purposeId": "MEDIA_OBJECT",
+      "algorithm": "COS SSE-KMS CV-4",
+      "dataClasses": "D19",
+      "rotation": "COS/KMS rotation CV-4",
+      "recovery": "COS/KMS CV-4",
+      "allowedStates": ["ACTIVE", "DECRYPT_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "evidence",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K11",
+      "keyClass": "HMAC_PROVIDER_SUBJECT",
+      "custodyStorage": "Secret Manager",
+      "purpose": "provider subject lookup",
+      "purposeId": "PROVIDER_SUBJECT_LOOKUP",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "D01",
+      "rotation": "dual-read; old lookup-only",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "LOOKUP_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "customer_iam",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K12",
+      "keyClass": "HMAC_ID_NUMBER",
+      "custodyStorage": "Secret Manager",
+      "purpose": "id number lookup",
+      "purposeId": "ID_NUMBER_LOOKUP",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "D02",
+      "rotation": "dual-read; old lookup-only",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "LOOKUP_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "customer_iam",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K13",
+      "keyClass": "HMAC_PHONE_NUMBER",
+      "custodyStorage": "Secret Manager",
+      "purpose": "caller/binding/access number lookup",
+      "purposeId": "PHONE_NUMBER_LOOKUP",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "D04/D06/D07/D09;accessNumberHmac",
+      "rotation": "dual-read; old lookup-only",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "LOOKUP_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "subject_number/ivr",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K14",
+      "keyClass": "HMAC_EMPLOYEE_LOGIN",
+      "custodyStorage": "Secret Manager",
+      "purpose": "employee login lookup",
+      "purposeId": "EMPLOYEE_LOGIN_LOOKUP",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "D03",
+      "rotation": "dual-read; old lookup-only",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "LOOKUP_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "operations_iam",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K15",
+      "keyClass": "HMAC_EMPLOYEE_AUTH_SUBJECT",
+      "custodyStorage": "Secret Manager",
+      "purpose": "employee auth subject lookup",
+      "purposeId": "EMPLOYEE_AUTH_SUBJECT_LOOKUP",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "D03",
+      "rotation": "dual-read; old lookup-only",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "LOOKUP_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "operations_iam",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K16",
+      "keyClass": "HMAC_SHARE_DESIGNATED_MOBILE",
+      "custodyStorage": "Secret Manager",
+      "purpose": "designated mobile proof",
+      "purposeId": "SHARE_DESIGNATED_MOBILE",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "D24",
+      "rotation": "new grant uses new version; old snapshot retains its version",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "LOOKUP_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "sharing",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K17",
+      "keyClass": "IVR_REQUEST_SIGNING",
+      "custodyStorage": "Secret Manager",
+      "purpose": "IVR request HMAC",
+      "purposeId": "IVR_REQUEST_SIGNATURE",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "C04",
+      "rotation": "active + verify-only overlap",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "VERIFY_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "IVR/Backend",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K18",
+      "keyClass": "PROVIDER_CALLBACK_VERIFICATION",
+      "custodyStorage": "Secret Manager/cert store",
+      "purpose": "provider signature verify",
+      "purposeId": "PROVIDER_CALLBACK_VERIFICATION",
+      "algorithm": "vendor profile Q6",
+      "dataClasses": "C06",
+      "rotation": "provider rotation Q6",
+      "recovery": "provider/SM",
+      "allowedStates": ["ACTIVE", "VERIFY_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "Payments/Backend",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K19",
+      "keyClass": "MEDIA_UPLOAD_SIGNING",
+      "custodyStorage": "Secret Manager/COS signing material",
+      "purpose": "upload credential issuance",
+      "purposeId": "MEDIA_UPLOAD",
+      "algorithm": "COS profile CV-4",
+      "dataClasses": "C09",
+      "rotation": "overlap until uploadExpiresAt",
+      "recovery": "SM/COS",
+      "allowedStates": ["ACTIVE", "VERIFY_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "Security/Backend/Evidence",
+      "failClosedStatus": 503
+    },
+    {
+      "keyId": "K20",
+      "keyClass": "MEDIA_PLAYBACK_SIGNING",
+      "custodyStorage": "Secret Manager",
+      "purpose": "playback token signing",
+      "purposeId": "MEDIA_PLAYBACK",
+      "algorithm": "HMAC-SHA-256/256-bit",
+      "dataClasses": "C10",
+      "rotation": "overlap until max TTL + Q22",
+      "recovery": "SM version",
+      "allowedStates": ["ACTIVE", "VERIFY_ONLY", "DISABLED", "DESTROYED"],
+      "owner": "Security/Sharing",
+      "failClosedStatus": 503
+    }
+  ],
+  "dataClasses": [
+    {
+      "dataClass": "D01",
+      "a0Inventory": "`customer_iam.auth_identity.provider_subject_ciphertext` / `provider_subject_hmac`",
+      "representation": "AEAD+HMAC",
+      "keyClass": "K02/K11",
+      "owner": "customer_iam",
+      "projection": "never returned; HMAC is not a public key",
+      "auditAccess": "service access redacted; employee read SECURITY_SENSITIVE_READ",
+      "rotationReplay": "old key_ref decryptable; HMAC dual-read/rebuild"
+    },
+    {
+      "dataClass": "D02",
+      "a0Inventory": "`customer_iam.identity_profile.legal_name_ciphertext` / `id_number_ciphertext` / `id_number_hmac` / `verification_ref_ciphertext`",
+      "representation": "AEAD+HMAC",
+      "keyClass": "K03/K12/K04",
+      "owner": "customer_iam",
+      "projection": "never returned plaintext; status or masked value only",
+      "auditAccess": "same as D01",
+      "rotationReplay": "mutable row may re-encrypt; HMAC rebuild"
+    },
+    {
+      "dataClass": "D03",
+      "a0Inventory": "`operations_iam.employee_account.login_name_hmac` / `auth_subject_hmac`",
+      "representation": "HMAC+mask",
+      "keyClass": "K14/K15",
+      "owner": "operations_iam",
+      "projection": "masked login only",
+      "auditAccess": "employee auth access; HMAC never returned",
+      "rotationReplay": "dual-read/rebuild"
+    },
+    {
+      "dataClass": "D04",
+      "a0Inventory": "`subject_number.caller_number_binding.number_ciphertext` / `number_hmac` / `number_masked`",
+      "representation": "AEAD+HMAC+mask",
+      "keyClass": "K05/K13",
+      "owner": "subject_number",
+      "projection": "masked number only",
+      "auditAccess": "service access redacted",
+      "rotationReplay": "mutable re-encrypt/rebuild"
+    },
+    {
+      "dataClass": "D05",
+      "a0Inventory": "`subject_number.subject_claim.verification_ref_ciphertext`",
+      "representation": "AEAD",
+      "keyClass": "K04",
+      "owner": "subject_number",
+      "projection": "never returned",
+      "auditAccess": "claim/audit redacted",
+      "rotationReplay": "append-only; old key retained"
+    },
+    {
+      "dataClass": "D06",
+      "a0Inventory": "`ivr.outbound_call_task.caller_number_hmac` / `callee_ciphertext` / `callee_masked`",
+      "representation": "AEAD+HMAC+mask",
+      "keyClass": "K05/K13",
+      "owner": "ivr",
+      "projection": "masked callee; plaintext only in IVR internal decision payload",
+      "auditAccess": "service access redacted",
+      "rotationReplay": "mutable task re-encrypt"
+    },
+    {
+      "dataClass": "D07",
+      "a0Inventory": "`ivr.inbound_session.caller_ciphertext` / `caller_number_hmac` / `caller_masked` / `access_number_masked`",
+      "representation": "AEAD+HMAC+mask",
+      "keyClass": "K05/K13",
+      "owner": "ivr",
+      "projection": "masked only",
+      "auditAccess": "service access redacted",
+      "rotationReplay": "mutable session re-encrypt"
+    },
+    {
+      "dataClass": "D08",
+      "a0Inventory": "`ivr.ivr_decision.response_snapshot` / `response_payload_ciphertext`",
+      "representation": "AEAD+redacted JSON",
+      "keyClass": "K06",
+      "owner": "ivr",
+      "projection": "redacted snapshot only; replay decrypts the same payload",
+      "auditAccess": "employee/support read audited",
+      "rotationReplay": "append-only; old key retained"
+    },
+    {
+      "dataClass": "D09",
+      "a0Inventory": "`ivr.call_record.caller_ciphertext` / `caller_masked` / `callee_ciphertext` / `callee_masked` / `access_number_masked`",
+      "representation": "AEAD+HMAC+mask",
+      "keyClass": "K05/K13",
+      "owner": "ivr",
+      "projection": "masked only",
+      "auditAccess": "service access redacted",
+      "rotationReplay": "immutable party guard; never rewrite"
+    },
+    {
+      "dataClass": "D10",
+      "a0Inventory": "`ivr.call_event.payload_ciphertext` / `payload_redacted`",
+      "representation": "AEAD+redacted JSON",
+      "keyClass": "K07",
+      "owner": "ivr",
+      "projection": "receipt/redacted only",
+      "auditAccess": "service access redacted",
+      "rotationReplay": "append-only; never rewrite"
+    },
+    {
+      "dataClass": "D11",
+      "a0Inventory": "`catalog_order.payment_event.payload_ciphertext`",
+      "representation": "AEAD",
+      "keyClass": "K08",
+      "owner": "catalog_order",
+      "projection": "never returned or logged",
+      "auditAccess": "restricted read + audit",
+      "rotationReplay": "append-only"
+    },
+    {
+      "dataClass": "D12",
+      "a0Inventory": "`catalog_order.payment_order.merchant_order_no` / `provider_transaction_id`; `payment_event.provider_event_id` / `transaction_id`",
+      "representation": "internal ID",
+      "keyClass": "-",
+      "owner": "catalog_order",
+      "projection": "not a public key; restricted audit",
+      "auditAccess": "restricted access",
+      "rotationReplay": "provider-scoped; never public"
+    },
+    {
+      "dataClass": "D13",
+      "a0Inventory": "`catalog_order.catalog_version.snapshot` / `snapshot_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "catalog_order",
+      "projection": "commercial fact; no protected value",
+      "auditAccess": "publication audit",
+      "rotationReplay": "immutable on publish"
+    },
+    {
+      "dataClass": "D14",
+      "a0Inventory": "`catalog_order.customer_order.snapshot` / `snapshot_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "catalog_order",
+      "projection": "frozen commercial fact",
+      "auditAccess": "order access",
+      "rotationReplay": "immutable"
+    },
+    {
+      "dataClass": "D15",
+      "a0Inventory": "`entitlement_metering.trial_policy_version.snapshot` / `snapshot_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "entitlement_metering",
+      "projection": "policy facts only",
+      "auditAccess": "publication audit",
+      "rotationReplay": "immutable version"
+    },
+    {
+      "dataClass": "D16",
+      "a0Inventory": "`entitlement_metering.entitlement_grant.snapshot` / `snapshot_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "entitlement_metering",
+      "projection": "historical grant facts",
+      "auditAccess": "access/audit",
+      "rotationReplay": "immutable"
+    },
+    {
+      "dataClass": "D17",
+      "a0Inventory": "`entitlement_metering.usage_fact.snapshot` / `snapshot_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "entitlement_metering",
+      "projection": "usage metadata",
+      "auditAccess": "settlement audit",
+      "rotationReplay": "append-only"
+    },
+    {
+      "dataClass": "D18",
+      "a0Inventory": "`activation_consent.consent_record.snapshot` / `snapshot_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "activation_consent",
+      "projection": "no protected value",
+      "auditAccess": "consent audit",
+      "rotationReplay": "append-only"
+    },
+    {
+      "dataClass": "D19",
+      "a0Inventory": "`evidence.media_object.bucket` / `object_key` / `object_version_id` / `crypto_key_ref`",
+      "representation": "COS internal ref + hash",
+      "keyClass": "K10/CV-4",
+      "owner": "evidence",
+      "projection": "never returns key/bucket/version/URL",
+      "auditAccess": "media credential/object audit",
+      "rotationReplay": "COS versioning; old CMK version decryptable"
+    },
+    {
+      "dataClass": "D20",
+      "a0Inventory": "`evidence.recording.declared_sha256` / `validated_sha256`",
+      "representation": "hash only",
+      "keyClass": "-",
+      "owner": "evidence",
+      "projection": "hash prefix only if approved",
+      "auditAccess": "recording audit",
+      "rotationReplay": "immutable validation facts"
+    },
+    {
+      "dataClass": "D21",
+      "a0Inventory": "`evidence.evidence_record.identity_at_capture` / `consent_version` / `snapshot`",
+      "representation": "reference + redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "evidence",
+      "projection": "no raw PII/object key/URL",
+      "auditAccess": "evidence audit",
+      "rotationReplay": "immutable capture"
+    },
+    {
+      "dataClass": "D22",
+      "a0Inventory": "`evidence.evidence_event.payload_redacted` / `payload_sha256`",
+      "representation": "redacted JSON+hash",
+      "keyClass": "-",
+      "owner": "evidence",
+      "projection": "no media bytes/raw parties",
+      "auditAccess": "append-only audit",
+      "rotationReplay": "immutable"
+    },
+    {
+      "dataClass": "D23",
+      "a0Inventory": "`sharing.evidence_share_grant.capability_token_hash` / `code_hash` / `code_salt`",
+      "representation": "token digest + KDF salt",
+      "keyClass": "C07/C08",
+      "owner": "sharing",
+      "projection": "plaintext return-once only; never re-displayed",
+      "auditAccess": "share create/rotate/revoke audit",
+      "rotationReplay": "capability token not rebuildable; code generation rotation"
+    },
+    {
+      "dataClass": "D24",
+      "a0Inventory": "`sharing.evidence_share_grant.content_snapshot` / `content_sha256`",
+      "representation": "redacted JSON+hash+HMAC",
+      "keyClass": "K16",
+      "owner": "sharing",
+      "projection": "no object key/URL/raw phone/unshared evidence",
+      "auditAccess": "share transition audit",
+      "rotationReplay": "immutable snapshot; old HMAC version until grant/retention"
+    },
+    {
+      "dataClass": "D25",
+      "a0Inventory": "`sharing.share_admission.admission_key`",
+      "representation": "opaque derived key",
+      "keyClass": "-",
+      "owner": "sharing",
+      "projection": "never returned",
+      "auditAccess": "admission access event",
+      "rotationReplay": "deterministic by shareGrantId+admissionRequestId"
+    },
+    {
+      "dataClass": "D26",
+      "a0Inventory": "`sharing.share_access_event.risk_digest` / `payload_redacted`",
+      "representation": "hash + redacted JSON",
+      "keyClass": "-",
+      "owner": "sharing",
+      "projection": "no raw IP/phone/code/token/full URL",
+      "auditAccess": "SHARE_ACCESS event",
+      "rotationReplay": "append-only"
+    },
+    {
+      "dataClass": "D27",
+      "a0Inventory": "`audit.audit_fact.before_snapshot` / `after_snapshot`",
+      "representation": "redacted JSON or AEAD",
+      "keyClass": "K09 when encrypted",
+      "owner": "operations-audit",
+      "projection": "closed redacted projection only",
+      "auditAccess": "audit read access event",
+      "rotationReplay": "append-only; never rewrite"
+    },
+    {
+      "dataClass": "D28",
+      "a0Inventory": "`platform.outbox_event.payload_redacted` / `payload_ciphertext` / `platform.idempotency_record.result_snapshot`",
+      "representation": "redacted JSON or AEAD",
+      "keyClass": "K09 when encrypted",
+      "owner": "platform",
+      "projection": "consumers only authorized fields",
+      "auditAccess": "dispatch access redacted",
+      "rotationReplay": "immutable payload"
+    }
+  ],
+  "deferredInputs": [
+    {
+      "inputId": "Q1",
+      "input": "Employee authentication source, MFA policy and credential rotation",
+      "valueKind": "IDENTITY_PROVIDER/POLICY",
+      "a3Treatment": "Freeze independent employee domain/audience/fixed roles only; no MFA/IdP implementation",
+      "owner": "Security/Backend",
+      "destination": "Security design and operations IAM implementation"
+    },
+    {
+      "inputId": "Q3",
+      "input": "Legal retention, erasure rights, backup deletion and audit retention",
+      "valueKind": "LEGAL_RETENTION",
+      "a3Treatment": "Freeze rotation/recovery must satisfy retention first; no retention period selection",
+      "owner": "Legal/Security",
+      "destination": "Retention and deletion policy; production launch review"
+    },
+    {
+      "inputId": "Q6",
+      "input": "WeChat payment merchant/app identifiers, payload fields and callback retention",
+      "valueKind": "VENDOR_POLICY",
+      "a3Treatment": "Freeze adapter verification order/idempotency/fail-closed only; no vendor field/algorithm",
+      "owner": "Payments/Backend",
+      "destination": "Payment adapter and OpenAPI/security design"
+    },
+    {
+      "inputId": "Q7",
+      "input": "SIP line/access number, callee display, recording format/size, buffer and time synchronization",
+      "valueKind": "VENDOR_POLICY/NUMERIC",
+      "a3Treatment": "Freeze mTLS/signature interface and fail-closed only; no line/format/certificate values",
+      "owner": "Telephony/IVR",
+      "destination": "IVR protocol and line integration"
+    },
+    {
+      "inputId": "Q8",
+      "input": "Authorized-versus-reported duration tolerance and IVR SLO/timeouts",
+      "valueKind": "NUMERIC",
+      "a3Treatment": "Do not define tolerance/SLO/timeout",
+      "owner": "IVR/Backend/QA",
+      "destination": "IVR protocol and capacity/acceptance work"
+    },
+    {
+      "inputId": "Q10",
+      "input": "Recording notice/consent wording and prompt-version lifecycle",
+      "valueKind": "POLICY",
+      "a3Treatment": "Pass prompt/policy reference only",
+      "owner": "Product/Legal",
+      "destination": "Consent policy and IVR prompt approval"
+    },
+    {
+      "inputId": "Q11",
+      "input": "COS object-lock/WORM capability, storage class and media retention",
+      "valueKind": "CLOUD_CAPABILITY/LEGAL",
+      "a3Treatment": "Fix private bucket/SSE-KMS/versioning requirements; no WORM/region claim",
+      "owner": "Infrastructure/Security",
+      "destination": "Storage/security/capacity work"
+    },
+    {
+      "inputId": "Q12",
+      "input": "Share-code KDF parameters, admission limits, expiry defaults and rate-limit thresholds",
+      "valueKind": "NUMERIC/POLICY",
+      "a3Treatment": "Freeze salt/generation/KDF interface only; no parameters",
+      "owner": "Security/Product",
+      "destination": "Security design and sharing policy"
+    },
+    {
+      "inputId": "Q13",
+      "input": "Audit/Outbox retention, DLQ thresholds and replay operations",
+      "valueKind": "NUMERIC/POLICY",
+      "a3Treatment": "Freeze audit/access classification only; no retention selection",
+      "owner": "Operations/Backend",
+      "destination": "Operations runbook and observability design"
+    },
+    {
+      "inputId": "Q14",
+      "input": "Subject real-name verification provider, evidence and re-verification policy",
+      "valueKind": "VENDOR_POLICY",
+      "a3Treatment": "Project status only; no document field/provider",
+      "owner": "Security/Product",
+      "destination": "Verification adapter and identity design"
+    },
+    {
+      "inputId": "Q17",
+      "input": "Flyway role provisioning, schema ownership transfer and least-privilege grant execution",
+      "valueKind": "PLATFORM",
+      "a3Treatment": "Freeze logical service/DB privilege boundary only",
+      "owner": "Platform/Database",
+      "destination": "Deployment/security design and production readiness"
+    },
+    {
+      "inputId": "Q18",
+      "input": "Production configuration key/approval for the configurable pending-task TTL, config versioning/audit and scheduler cadence",
+      "valueKind": "CONFIG/NUMERIC",
+      "a3Treatment": "Use the frozen 30s default; no configuration key definition",
+      "owner": "Product/Backend",
+      "destination": "IVR protocol and operations configuration"
+    },
+    {
+      "inputId": "Q19",
+      "input": "WeChat appid/openid/unionid mapping and multi-app identity association",
+      "valueKind": "IDENTITY_PROVIDER",
+      "a3Treatment": "Freeze customer domain/audience only; no login/merge definition",
+      "owner": "Identity/Backend",
+      "destination": "Authentication design and security review"
+    },
+    {
+      "inputId": "Q22",
+      "input": "Redis playback-ticket TTL, clock-skew allowance and revocation propagation window",
+      "valueKind": "NUMERIC",
+      "a3Treatment": "Freeze credential fail-closed/TTL upper-bound semantics; no values",
+      "owner": "Security/Sharing",
+      "destination": "Security design and sharing policy"
+    },
+    {
+      "inputId": "Q23",
+      "input": "Function/role provisioning order and whether the deployment role can create SECURITY DEFINER functions",
+      "valueKind": "PLATFORM",
+      "a3Treatment": "Freeze role/ownership contract only; no deployment identity selection",
+      "owner": "Platform/Database/Security",
+      "destination": "Deployment/security design and production readiness"
+    },
+    {
+      "inputId": "Q25",
+      "input": "Exact `authorizationExpiresAt` window, clock-skew allowance and configurable value",
+      "valueKind": "NUMERIC",
+      "a3Treatment": "Freeze timestamp/nonce verification order; no window selection",
+      "owner": "IVR/Entitlement/Backend",
+      "destination": "IVR protocol, configuration and capacity/acceptance work"
+    },
+    {
+      "inputId": "Q27",
+      "input": "Exact organization role(s) that hold the task-create/claim-revalidation permission",
+      "valueKind": "ROLE_MATRIX",
+      "a3Treatment": "Keep A0/A1 lifecycle/access checks; no role matrix expansion",
+      "owner": "Organization-access/Security",
+      "destination": "Authorization design and S2 policy tests"
+    },
+    {
+      "inputId": "Q28",
+      "input": "Durable IVR-local B-leg operation key, persistence protocol and lost-response recovery",
+      "valueKind": "PLATFORM",
+      "a3Treatment": "Read existing local A2 recovery only; no new protocol",
+      "owner": "Telephony/IVR",
+      "destination": "IVR protocol and line integration; no business schema expansion"
+    },
+    {
+      "inputId": "CV-1",
+      "input": "KMS region/edition symmetric CMK, envelope/wrap, rotation/disable/recover/pending-delete",
+      "valueKind": "CLOUD_CAPABILITY",
+      "a3Treatment": "Logical K01-K09 profile frozen; capability to verify",
+      "owner": "Infrastructure/Security",
+      "destination": "Q2 closure + COS/KMS validation"
+    },
+    {
+      "inputId": "CV-2",
+      "input": "Secret Manager region/edition versioning/rotation/dual-version",
+      "valueKind": "CLOUD_CAPABILITY",
+      "a3Treatment": "Logical custody frozen; capability to verify",
+      "owner": "Infrastructure/Security",
+      "destination": "Q2 closure + deployment security"
+    },
+    {
+      "inputId": "CV-3",
+      "input": "CAM role/policy least privilege and workspace isolation",
+      "valueKind": "CLOUD_CAPABILITY",
+      "a3Treatment": "Six service identities frozen; provisioning to verify",
+      "owner": "Infrastructure/Security",
+      "destination": "Q17/Q23 deployment"
+    },
+    {
+      "inputId": "CV-4",
+      "input": "COS private bucket/SSE-KMS/versioning/presign (method/object/expiry/size)/private endpoint/object lock",
+      "valueKind": "CLOUD_CAPABILITY",
+      "a3Treatment": "Private bucket requirements fixed; upload primary shape is COS presigned PUT gated on this verification; otherwise fail closed and stop; region/SKU/WORM to verify",
+      "owner": "Infrastructure/Security",
+      "destination": "Q11 storage/capacity"
+    },
+    {
+      "inputId": "CV-5",
+      "input": "CloudAudit/log service operation evidence and retention",
+      "valueKind": "CLOUD_CAPABILITY",
+      "a3Treatment": "PostgreSQL audit is the source of truth; provider logs supplementary",
+      "owner": "Infrastructure/Security/Observability",
+      "destination": "Q13 observability"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "INV-A3-01",
+      "statement": "Every protected datum has exactly one dataClass, owner, representation, key/HMAC class and audit/access coverage; no unregistered sensitive field exists."
+    },
+    {
+      "id": "INV-A3-02",
+      "statement": "Encryption and HMAC keys are strictly separated; no key crosses purpose; cross-purpose decrypt or lookup must fail."
+    },
+    {
+      "id": "INV-A3-03",
+      "statement": "Envelope shape, key_ref parsing and AEAD/AAD are fixed; unknown/malformed/retired key_ref, wrong purpose or decryption failure must fail closed with no plaintext fallback."
+    },
+    {
+      "id": "INV-A3-04",
+      "statement": "HMAC is lowercase 64-hex under an independent key; it is used only for equality, uniqueness and indexed lookup and is never returned, logged or public."
+    },
+    {
+      "id": "INV-A3-05",
+      "statement": "Every key and credential has an owner, custody, state, rotation and recovery path; secret material never enters a database, code, image or log."
+    },
+    {
+      "id": "INV-A3-06",
+      "statement": "Rotation never rewrites append-only or frozen rows; historical keys are retained until retention; A2 replay returns the same payload/decision without re-selection or a second reservation."
+    }
+  ]
+}
