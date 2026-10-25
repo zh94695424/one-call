@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "id": "s1-02-direct-path-normal",
+  "slice": "s1",
+  "description": "No-task resolve returns ENTER_CALLEE, then the direct DTMF path confirms the callee and freezes one reservation with a null action and no task.",
+  "steps": [
+    {
+      "id": "resolve-enter",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s1-02",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000002",
+        "subjectId": "20000000-0000-5000-8000-000000000002",
+        "nodeId": "node-s1-02",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "22222222-2222-5222-8222-222222222222",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "task": null,
+        "entitlement": {
+          "availableRecordingSeconds": 300,
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:00Z"
+        },
+        "activation": {
+          "state": "ACTIVE",
+          "consentRequired": false,
+          "trialEligible": false,
+          "resultState": "ACTIVE"
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "decisionId": "22222222-2222-5222-8222-222222222222",
+          "callId": "call-s1-02",
+          "purpose": "INBOUND_RESOLVE",
+          "action": "ENTER_CALLEE",
+          "callerState": "ACTIVE",
+          "taskMatch": "NONE",
+          "reasonCode": "NO_VALID_TASK",
+          "availableRecordingSeconds": 300,
+          "balanceAsOf": "2026-10-25T10:00:00Z",
+          "task": null,
+          "reservationId": null,
+          "authorizedRecordingSeconds": null,
+          "authorizationExpiresAt": null,
+          "decisionAt": "2026-10-25T10:00:00Z"
+        },
+        "persisted": {
+          "call": {
+            "exists": true,
+            "status": "ACTIVE",
+            "protocolVersion": "1.0",
+            "sessionStatus": "RECEIVED",
+            "task": null,
+            "reservation": null,
+            "decisions": [
+              {
+                "purpose": "INBOUND_RESOLVE",
+                "action": "ENTER_CALLEE",
+                "reasonCode": "NO_VALID_TASK"
+              }
+            ],
+            "trialGrants": 0,
+            "activationConfirmations": 0,
+            "behavior": {
+              "taskAutoDialFrozenCallee": false,
+              "calleeConfirmationRequired": true,
+              "directDtmfRequired": true,
+              "purchaseGuidanceOnly": false,
+              "activationKeyOneRequired": false
+            }
+          }
+        },
+        "counts": {
+          "callsCreated": 1,
+          "sessionsCreated": 1,
+          "tasksClaimed": 0,
+          "reservationsCreated": 0,
+          "decisionsFrozen": 1,
+          "trialsGranted": 0,
+          "activationConfirmations": 0,
+          "directConfirmations": 0,
+          "loginAccountsCreated": 0,
+          "realNameProfilesCreated": 0,
+          "purchaseOrdersCreated": 0,
+          "operatorIntegrations": 0
+        }
+      }
+    },
+    {
+      "id": "direct-success",
+      "action": "request",
+      "operation": "authorizeIvrDirectOutbound",
+      "body": {
+        "eventId": "evt-s1-02-direct",
+        "callee": "13900139000",
+        "promptVersion": "prompt-direct-v1",
+        "confirmationKey": "1",
+        "confirmationContent": "direct-confirm-1"
+      },
+      "server": {
+        "callId": "call-s1-02",
+        "callerState": "ACTIVE",
+        "decisionId": "44444444-4444-5444-8444-444444444444",
+        "decisionAt": "2026-10-25T10:00:20Z",
+        "balanceAsOf": "2026-10-25T10:00:20Z",
+        "enteredCalleeHmac": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "task": null,
+        "reservationId": "55555555-5555-5555-8555-555555555555",
+        "entitlement": {
+          "availableRecordingSeconds": 300,
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:20Z"
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "decisionId": "44444444-4444-5444-8444-444444444444",
+          "callId": "call-s1-02",
+          "purpose": "DIRECT_AUTHORIZATION",
+          "action": null,
+          "callerState": "ACTIVE",
+          "taskMatch": "NONE",
+          "reasonCode": "DIRECT_AUTHORIZED",
+          "availableRecordingSeconds": 300,
+          "balanceAsOf": "2026-10-25T10:00:20Z",
+          "task": null,
+          "reservationId": "55555555-5555-5555-8555-555555555555",
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:20Z",
+          "decisionAt": "2026-10-25T10:00:20Z",
+          "authorization": {
+            "calleeNumber": "13900139000"
+          }
+        },
+        "persisted": {
+          "call": {
+            "exists": true,
+            "status": "ACTIVE",
+            "protocolVersion": "1.0",
+            "sessionStatus": "RECEIVED",
+            "task": null,
+            "reservation": {
+              "reservationId": "55555555-5555-5555-8555-555555555555",
+              "status": "HELD"
+            },
+            "decisions": [
+              {
+                "purpose": "INBOUND_RESOLVE",
+                "action": "ENTER_CALLEE",
+                "reasonCode": "NO_VALID_TASK"
+              },
+              {
+                "purpose": "DIRECT_AUTHORIZATION",
+                "action": null,
+                "reasonCode": "DIRECT_AUTHORIZED"
+              }
+            ],
+            "trialGrants": 0,
+            "activationConfirmations": 0,
+            "behavior": {
+              "taskAutoDialFrozenCallee": true,
+              "calleeConfirmationRequired": false,
+              "directDtmfRequired": false,
+              "purchaseGuidanceOnly": false,
+              "activationKeyOneRequired": false
+            }
+          }
+        },
+        "counts": {
+          "callsCreated": 1,
+          "sessionsCreated": 1,
+          "tasksClaimed": 0,
+          "reservationsCreated": 1,
+          "decisionsFrozen": 2,
+          "trialsGranted": 0,
+          "activationConfirmations": 0,
+          "directConfirmations": 1,
+          "loginAccountsCreated": 0,
+          "realNameProfilesCreated": 0,
+          "purchaseOrdersCreated": 0,
+          "operatorIntegrations": 0
+        }
+      }
+    }
+  ]
+}

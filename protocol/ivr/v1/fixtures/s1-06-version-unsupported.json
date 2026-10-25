@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "s1-06-version-unsupported",
+  "slice": "s1",
+  "description": "Unsupported 2.0 and malformed protocol versions fail with 400 IVR_ARGUMENT_INVALID before any session, call, task or reservation exists.",
+  "steps": [
+    {
+      "id": "unsupported-major",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s1-06-unsupported",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "2.0"
+      },
+      "server": {},
+      "expected": {
+        "status": 400,
+        "code": "IVR_ARGUMENT_INVALID",
+        "persisted": {
+          "call": null
+        },
+        "counts": {
+          "callsCreated": 0,
+          "sessionsCreated": 0,
+          "tasksClaimed": 0,
+          "reservationsCreated": 0,
+          "decisionsFrozen": 0,
+          "trialsGranted": 0,
+          "activationConfirmations": 0,
+          "directConfirmations": 0,
+          "loginAccountsCreated": 0,
+          "realNameProfilesCreated": 0,
+          "purchaseOrdersCreated": 0,
+          "operatorIntegrations": 0
+        }
+      }
+    },
+    {
+      "id": "malformed-version",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s1-06-malformed",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1"
+      },
+      "server": {},
+      "expected": {
+        "status": 400,
+        "code": "IVR_ARGUMENT_INVALID",
+        "persisted": {
+          "call": null
+        },
+        "counts": {
+          "callsCreated": 0,
+          "sessionsCreated": 0,
+          "tasksClaimed": 0,
+          "reservationsCreated": 0,
+          "decisionsFrozen": 0,
+          "trialsGranted": 0,
+          "activationConfirmations": 0,
+          "directConfirmations": 0,
+          "loginAccountsCreated": 0,
+          "realNameProfilesCreated": 0,
+          "purchaseOrdersCreated": 0,
+          "operatorIntegrations": 0
+        }
+      }
+    }
+  ]
+}
