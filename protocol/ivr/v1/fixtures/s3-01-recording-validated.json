@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "id": "s3-01-recording-validated",
+  "slice": "s3",
+  "description": "A known call declares one recording, the server observes the uploaded object, and completion validates the server-recomputed facts without exposing object storage identity or accepting client-established storage facts.",
+  "steps": [
+    {
+      "id": "resolve",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s3-01",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000301",
+        "subjectId": "20000000-0000-5000-8000-000000000301",
+        "nodeId": "node-s3-01",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "11111111-1111-5111-8111-111111111301",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "entitlement": {
+          "availableRecordingSeconds": 0
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "callId": "call-s3-01",
+          "action": "GUIDE_PURCHASE",
+          "reasonCode": "NO_AVAILABLE_ENTITLEMENT"
+        },
+        "persisted": {
+          "call": {
+            "exists": true,
+            "status": "ACTIVE"
+          },
+          "recordings": [],
+          "recordingConflictOutbox": []
+        },
+        "counts": {
+          "callsCreated": 1,
+          "decisionsFrozen": 1,
+          "recordingsCreated": 0
+        }
+      }
+    },
+    {
+      "id": "declare",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-01",
+        "recordingId": "rec-s3-01",
+        "mimeType": "audio/wav",
+        "sizeBytes": 20480,
+        "durationSeconds": 120,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "server": {
+        "now": "2026-10-25T10:00:00Z",
+        "uploadExpiresAt": "2026-10-25T10:10:00Z"
+      },
+      "expected": {
+        "status": 201,
+        "response": {
+          "recordingId": "rec-s3-01",
+          "status": "DECLARED",
+          "uploadExpiresAt": "2026-10-25T10:10:00Z",
+          "upload": {
+            "expiresAt": "2026-10-25T10:10:00Z"
+          },
+          "declaredAt": "2026-10-25T10:00:00Z"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-01",
+              "status": "DECLARED",
+              "revision": 1,
+              "declared": {
+                "mimeType": "audio/wav",
+                "sizeBytes": 20480,
+                "durationSeconds": 120,
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              "uploadExpiresAt": "2026-10-25T10:10:00Z",
+              "mediaObject": null,
+              "validated": null,
+              "evidenceCreated": false,
+              "evidenceSolidified": false
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingDeclarations": 1,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 1
+        }
+      }
+    },
+    {
+      "id": "complete-client-storage-fact-rejected",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-01",
+        "recordingId": "rec-s3-01",
+        "clientReference": "ref-s3-01",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "server": {
+        "now": "2026-10-25T10:03:00Z"
+      },
+      "expected": {
+        "status": 422,
+        "code": "VALIDATION_FAILED",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-01",
+              "status": "DECLARED",
+              "revision": 1,
+              "mediaObject": null,
+              "validated": null
+            }
+          ]
+        },
+        "counts": {
+          "uploadObservations": 0,
+          "mediaObjectsCreated": 0,
+          "recordingValidations": 0
+        }
+      }
+    },
+    {
+      "id": "upload-observed",
+      "action": "local",
+      "operation": "recording.observeUpload",
+      "body": {
+        "callId": "call-s3-01",
+        "recordingId": "rec-s3-01",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-01-1",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "sizeBytes": 20480,
+          "mimeType": "audio/wav",
+          "durationSeconds": 120
+        },
+        "now": "2026-10-25T10:02:00Z"
+      },
+      "expected": {
+        "status": 200,
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-01",
+              "status": "UPLOADED",
+              "revision": 2,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-01-1",
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "sizeBytes": 20480,
+                "mimeType": "audio/wav",
+                "durationSeconds": 120
+              },
+              "validated": null
+            }
+          ]
+        },
+        "counts": {
+          "uploadObservations": 1,
+          "mediaObjectsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "complete",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-01",
+        "recordingId": "rec-s3-01",
+        "clientReference": "ref-s3-01"
+      },
+      "server": {
+        "now": "2026-10-25T10:03:00Z"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "recordingId": "rec-s3-01",
+          "status": "VALIDATED",
+          "validatedDurationSeconds": 120,
+          "validatedSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "completedAt": "2026-10-25T10:03:00Z"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-01",
+              "status": "VALIDATED",
+              "revision": 3,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-01-1",
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "sizeBytes": 20480,
+                "mimeType": "audio/wav",
+                "durationSeconds": 120
+              },
+              "validated": {
+                "durationSeconds": 120,
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              "evidenceCreated": false,
+              "evidenceSolidified": false
+            }
+          ],
+          "recordingConflictOutbox": []
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "mediaObjectsCreated": 1,
+          "recordingValidations": 1,
+          "recordingQuarantines": 0,
+          "recordingConflictFacts": 0,
+          "evidenceRecordsCreated": 0,
+          "evidenceSolidified": 0
+        }
+      }
+    }
+  ]
+}

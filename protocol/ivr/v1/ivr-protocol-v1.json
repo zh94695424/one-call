@@ -1881,5 +1881,198 @@
       "retryableTransport": true
     },
     "recordingClassification": "deferred to S3"
+  },
+  "recordingLifecycle": {
+    "states": [
+      "DECLARED",
+      "UPLOADED",
+      "VALIDATED",
+      "QUARANTINED"
+    ],
+    "transitions": [
+      {
+        "from": null,
+        "to": "DECLARED",
+        "trigger": "first declaration for a known parent call",
+        "guard": "unique recordingId; declaration facts only"
+      },
+      {
+        "from": "DECLARED",
+        "to": "UPLOADED",
+        "trigger": "server-local upload observation",
+        "guard": "one immutable media object; replay requires identical observation identity and facts"
+      },
+      {
+        "from": "UPLOADED",
+        "to": "VALIDATED",
+        "trigger": "completion with matching server-observed facts",
+        "guard": "observed hash, size, MIME and duration match the declaration; server facts win"
+      },
+      {
+        "from": "UPLOADED",
+        "to": "QUARANTINED",
+        "trigger": "completion with different or mismatched server-observed facts",
+        "guard": "quarantine once; first media facts are preserved"
+      },
+      {
+        "from": "DECLARED",
+        "to": "QUARANTINED",
+        "trigger": "completion or upload observation at or after uploadExpiresAt",
+        "guard": "no successful media or evidence fact"
+      }
+    ],
+    "declaration": {
+      "requestFields": [
+        "recordingId",
+        "mimeType",
+        "sizeBytes",
+        "durationSeconds",
+        "sha256"
+      ],
+      "responseFields": [
+        "recordingId",
+        "status",
+        "uploadExpiresAt",
+        "upload.credential",
+        "upload.expiresAt",
+        "declaredAt"
+      ],
+      "status": "DECLARED",
+      "replay": "same recordingId with identical declaration facts while DECLARED returns the first 201 snapshot with no second recording, credential or expiry renewal",
+      "conflict": "changed declaration facts or any re-declare after UPLOADED, VALIDATED or QUARANTINED returns 409 RECORDING_IDENTITY_CONFLICT",
+      "clientReference": "not accepted by declaration and never part of declaration identity"
+    },
+    "uploadObservation": {
+      "owner": "IVR-local/server-observed; not a public IVR endpoint",
+      "fields": [
+        "objectIdentityDigest",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "durationSeconds"
+      ],
+      "replay": "same observation identity and facts returns the first UPLOADED result without a second media object, including replays at or after uploadExpiresAt",
+      "conflict": "changed observation identity or facts fails closed with RECORDING_IDENTITY_CONFLICT and mutates nothing, including after uploadExpiresAt",
+      "expiry": "a first observation while DECLARED at or after uploadExpiresAt is refused and quarantines once with UPLOAD_EXPIRED; an already UPLOADED row resolves immutable replay or conflict first",
+      "redaction": "raw object key, bucket, object version and credential material never leave the observation boundary"
+    },
+    "completion": {
+      "requestFields": [
+        "clientReference"
+      ],
+      "serverObservedFields": [
+        "objectIdentityDigest",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "durationSeconds"
+      ],
+      "clientStorageFactsForbidden": [
+        "bucket",
+        "objectKey",
+        "objectVersionId",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "durationSeconds"
+      ],
+      "order": [
+        "known call and recording",
+        "terminal replay or conflict",
+        "upload expiry for a still-DECLARED recording",
+        "upload observation",
+        "storage unknown",
+        "validation"
+      ],
+      "expired": "409 UPLOAD_EXPIRED; only a still-DECLARED recording is QUARANTINED; an already UPLOADED recording is not expired by completion time; no successful media fact for the DECLARED row",
+      "observationRequired": "a DECLARED recording returns 409 UPLOAD_OBSERVATION_REQUIRED with no mutation; the same identity retry may converge after observation",
+      "storageUnknown": "503 STORAGE_UNKNOWN with no media fact, terminal mutation or revision change; the same identity retry may converge",
+      "validated": "200 VALIDATED with server-recomputed duration and hash only",
+      "quarantined": "200 QUARANTINED for a pre-terminal differing or mismatched observation without overwriting the first media facts",
+      "replay": "same recordingId and identical server-observed facts returns the first VALIDATED or QUARANTINED result without a second recording or media object",
+      "conflict": "different server-observed facts after VALIDATED or QUARANTINED returns 409 RECORDING_IDENTITY_CONFLICT with unchanged status, revision and facts"
+    },
+    "conflictOutbox": {
+      "eventDomain": "EVIDENCE",
+      "aggregateType": "RECORDING",
+      "eventType": "RECORDING_CONFLICT",
+      "dedupeKey": "recording-conflict:<conflictDigest>",
+      "count": "exactly one deduplicated redacted fact per identical conflict payload",
+      "payloadFields": [
+        "recordingId",
+        "originalStatus",
+        "conflictDigest",
+        "presentedSha256",
+        "presentedSizeBytes",
+        "presentedMime",
+        "presentedDuration",
+        "reasonCode"
+      ],
+      "redaction": "object version and key material is hashed and never stored or logged"
+    },
+    "outbox": {
+      "identity": "(callId,recordingId); immutable payload; retries never mint a new identity",
+      "terminalAbsorption": "ACKED and PERMANENT_FAILURE are absorbing for one (callId,recordingId) entry; later responses, response loss or post-terminal conflicts never change a terminal entry or increment another terminal counter",
+      "declaration": {
+        "ackedHttp": [
+          201
+        ],
+        "permanentCodes": [
+          "RECORDING_IDENTITY_CONFLICT",
+          "IVR_ARGUMENT_INVALID",
+          "VALIDATION_FAILED",
+          "CALL_UNKNOWN"
+        ],
+        "retryableCodes": [
+          "RATE_LIMITED",
+          "SERVICE_UNAVAILABLE",
+          "INTERNAL"
+        ]
+      },
+      "completion": {
+        "ackedHttp": [
+          200
+        ],
+        "permanentCodes": [
+          "UPLOAD_EXPIRED",
+          "RECORDING_IDENTITY_CONFLICT",
+          "IVR_ARGUMENT_INVALID",
+          "VALIDATION_FAILED",
+          "CALL_UNKNOWN"
+        ],
+        "retryableCodes": [
+          "UPLOAD_OBSERVATION_REQUIRED",
+          "STORAGE_UNKNOWN",
+          "RATE_LIMITED",
+          "SERVICE_UNAVAILABLE",
+          "INTERNAL"
+        ]
+      }
+    },
+    "evidenceBoundary": "recording completion never creates or solidifies evidence; evidence creation identity and policy remain with the evidence owner"
+  },
+  "mediaEvidenceBoundary": {
+    "owner": "evidence",
+    "prerequisite": "recording.status is VALIDATED",
+    "handoffFields": [
+      "callId",
+      "recordingId",
+      "recordingStatus",
+      "validatedDurationSeconds",
+      "validatedSha256",
+      "mediaObjectDigest"
+    ],
+    "completionCreatesEvidence": false,
+    "completionSolidifiesEvidence": false,
+    "downstreamOwnerFlow": "evidence owner creates the evidence record, creation event and original artifact from its own validated source facts",
+    "wire": "no IVR evidence endpoint; the A2 boundary is typed and handoff-ready only",
+    "redaction": "no object key, bucket, version, permanent URL, credential, media bytes or raw party identifier crosses the boundary",
+    "evidenceStatusValues": [
+      "PENDING",
+      "SOLIDIFIED",
+      "QUARANTINED",
+      "FAILED"
+    ],
+    "residual": "R-A2-EVIDENCE-HANDOFF"
   }
 }

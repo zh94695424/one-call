@@ -229,6 +229,87 @@ const EXPECTED_EVENT_OUTBOX = {
   recordingClassification: 'deferred to S3'
 };
 
+const EXPECTED_RECORDING_LIFECYCLE = {
+  states: ['DECLARED', 'UPLOADED', 'VALIDATED', 'QUARANTINED'],
+  transitions: [
+    { from: null, to: 'DECLARED', trigger: 'first declaration for a known parent call', guard: 'unique recordingId; declaration facts only' },
+    { from: 'DECLARED', to: 'UPLOADED', trigger: 'server-local upload observation', guard: 'one immutable media object; replay requires identical observation identity and facts' },
+    { from: 'UPLOADED', to: 'VALIDATED', trigger: 'completion with matching server-observed facts', guard: 'observed hash, size, MIME and duration match the declaration; server facts win' },
+    { from: 'UPLOADED', to: 'QUARANTINED', trigger: 'completion with different or mismatched server-observed facts', guard: 'quarantine once; first media facts are preserved' },
+    { from: 'DECLARED', to: 'QUARANTINED', trigger: 'completion or upload observation at or after uploadExpiresAt', guard: 'no successful media or evidence fact' }
+  ],
+  declaration: {
+    requestFields: ['recordingId', 'mimeType', 'sizeBytes', 'durationSeconds', 'sha256'],
+    responseFields: ['recordingId', 'status', 'uploadExpiresAt', 'upload.credential', 'upload.expiresAt', 'declaredAt'],
+    status: 'DECLARED',
+    replay: 'same recordingId with identical declaration facts while DECLARED returns the first 201 snapshot with no second recording, credential or expiry renewal',
+    conflict: 'changed declaration facts or any re-declare after UPLOADED, VALIDATED or QUARANTINED returns 409 RECORDING_IDENTITY_CONFLICT',
+    clientReference: 'not accepted by declaration and never part of declaration identity'
+  },
+  uploadObservation: {
+    owner: 'IVR-local/server-observed; not a public IVR endpoint',
+    fields: ['objectIdentityDigest', 'sha256', 'sizeBytes', 'mimeType', 'durationSeconds'],
+    replay: 'same observation identity and facts returns the first UPLOADED result without a second media object, including replays at or after uploadExpiresAt',
+    conflict: 'changed observation identity or facts fails closed with RECORDING_IDENTITY_CONFLICT and mutates nothing, including after uploadExpiresAt',
+    expiry: 'a first observation while DECLARED at or after uploadExpiresAt is refused and quarantines once with UPLOAD_EXPIRED; an already UPLOADED row resolves immutable replay or conflict first',
+    redaction: 'raw object key, bucket, object version and credential material never leave the observation boundary'
+  },
+  completion: {
+    requestFields: ['clientReference'],
+    serverObservedFields: ['objectIdentityDigest', 'sha256', 'sizeBytes', 'mimeType', 'durationSeconds'],
+    clientStorageFactsForbidden: ['bucket', 'objectKey', 'objectVersionId', 'sha256', 'sizeBytes', 'mimeType', 'durationSeconds'],
+    order: ['known call and recording', 'terminal replay or conflict', 'upload expiry for a still-DECLARED recording', 'upload observation', 'storage unknown', 'validation'],
+    expired: '409 UPLOAD_EXPIRED; only a still-DECLARED recording is QUARANTINED; an already UPLOADED recording is not expired by completion time; no successful media fact for the DECLARED row',
+    observationRequired: 'a DECLARED recording returns 409 UPLOAD_OBSERVATION_REQUIRED with no mutation; the same identity retry may converge after observation',
+    storageUnknown: '503 STORAGE_UNKNOWN with no media fact, terminal mutation or revision change; the same identity retry may converge',
+    validated: '200 VALIDATED with server-recomputed duration and hash only',
+    quarantined: '200 QUARANTINED for a pre-terminal differing or mismatched observation without overwriting the first media facts',
+    replay: 'same recordingId and identical server-observed facts returns the first VALIDATED or QUARANTINED result without a second recording or media object',
+    conflict: 'different server-observed facts after VALIDATED or QUARANTINED returns 409 RECORDING_IDENTITY_CONFLICT with unchanged status, revision and facts'
+  },
+  conflictOutbox: {
+    eventDomain: 'EVIDENCE',
+    aggregateType: 'RECORDING',
+    eventType: 'RECORDING_CONFLICT',
+    dedupeKey: 'recording-conflict:<conflictDigest>',
+    count: 'exactly one deduplicated redacted fact per identical conflict payload',
+    payloadFields: ['recordingId', 'originalStatus', 'conflictDigest', 'presentedSha256', 'presentedSizeBytes', 'presentedMime', 'presentedDuration', 'reasonCode'],
+    redaction: 'object version and key material is hashed and never stored or logged'
+  },
+  outbox: {
+    identity: '(callId,recordingId); immutable payload; retries never mint a new identity',
+    terminalAbsorption: 'ACKED and PERMANENT_FAILURE are absorbing for one (callId,recordingId) entry; later responses, response loss or post-terminal conflicts never change a terminal entry or increment another terminal counter',
+    declaration: {
+      ackedHttp: [201],
+      permanentCodes: ['RECORDING_IDENTITY_CONFLICT', 'IVR_ARGUMENT_INVALID', 'VALIDATION_FAILED', 'CALL_UNKNOWN'],
+      retryableCodes: ['RATE_LIMITED', 'SERVICE_UNAVAILABLE', 'INTERNAL']
+    },
+    completion: {
+      ackedHttp: [200],
+      permanentCodes: ['UPLOAD_EXPIRED', 'RECORDING_IDENTITY_CONFLICT', 'IVR_ARGUMENT_INVALID', 'VALIDATION_FAILED', 'CALL_UNKNOWN'],
+      retryableCodes: ['UPLOAD_OBSERVATION_REQUIRED', 'STORAGE_UNKNOWN', 'RATE_LIMITED', 'SERVICE_UNAVAILABLE', 'INTERNAL']
+    }
+  },
+  evidenceBoundary: 'recording completion never creates or solidifies evidence; evidence creation identity and policy remain with the evidence owner'
+};
+
+const EXPECTED_MEDIA_EVIDENCE_BOUNDARY = {
+  owner: 'evidence',
+  prerequisite: 'recording.status is VALIDATED',
+  handoffFields: ['callId', 'recordingId', 'recordingStatus', 'validatedDurationSeconds', 'validatedSha256', 'mediaObjectDigest'],
+  completionCreatesEvidence: false,
+  completionSolidifiesEvidence: false,
+  downstreamOwnerFlow: 'evidence owner creates the evidence record, creation event and original artifact from its own validated source facts',
+  wire: 'no IVR evidence endpoint; the A2 boundary is typed and handoff-ready only',
+  redaction: 'no object key, bucket, version, permanent URL, credential, media bytes or raw party identifier crosses the boundary',
+  evidenceStatusValues: ['PENDING', 'SOLIDIFIED', 'QUARANTINED', 'FAILED'],
+  residual: 'R-A2-EVIDENCE-HANDOFF'
+};
+
+const RECORDING_OBSERVATION_FIELDS = ['objectIdentityDigest', 'sha256', 'sizeBytes', 'mimeType', 'durationSeconds'];
+const RECORDING_DECLARATION_FIELDS = ['recordingId', 'mimeType', 'sizeBytes', 'durationSeconds', 'sha256'];
+const RECORDING_FORBIDDEN_RESPONSE_FIELDS = new Set(['bucket', 'objectKey', 'objectVersionId', 'objectVersion', 'storageProvider', 'cryptoKeyRef', 'permanentUrl', 'url']);
+
 const EXPECTED_IDENTITIES = [
   ['callId', 'IVR gateway', 'globally unique across nodes; 1-128; immutable; one callId per inbound call', 'created on first inbound; every later message requires the existing call', 'same callId and fingerprint replays; changed caller/access/node is a stable conflict', 'ivr.inbound_session.call_id; ivr.call_record.call_id; resolve path'],
   ['sessionId', 'backend', 'UUID; one per callId; immutable', 'created or reused by resolve', 'derived from callId; no client input', 'ivr.inbound_session.id'],
@@ -809,6 +890,44 @@ function validateS2Registries(model, counters, issues) {
   }
 }
 
+function validateS3Registries(model, a0Checks, counters, issues) {
+  checkExact('model.recordingLifecycle', model.recordingLifecycle, EXPECTED_RECORDING_LIFECYCLE, counters, issues);
+  checkExact('model.mediaEvidenceBoundary', model.mediaEvidenceBoundary, EXPECTED_MEDIA_EVIDENCE_BOUNDARY, counters, issues);
+
+  const lifecycle = model.recordingLifecycle;
+  if (lifecycle && typeof lifecycle === 'object' && !Array.isArray(lifecycle)) {
+    if (!Array.isArray(lifecycle.states) || !setEqual(lifecycle.states, EXPECTED_RECORDING_LIFECYCLE.states)) {
+      counters.stage_field_missing += 1;
+      issues.push('model.recordingLifecycle.states does not exactly match the four approved recording states');
+    }
+    if (a0Checks.has('ck_recording_status') && !setEqual(lifecycle.states || [], a0Checks.get('ck_recording_status'))) {
+      counters.a0_status_drift += 1;
+      issues.push('model.recordingLifecycle.states does not equal A0 ck_recording_status');
+    }
+    const actualPairs = Array.isArray(lifecycle.transitions)
+      ? lifecycle.transitions.map((transition) => [transition?.from ?? null, transition?.to ?? null])
+      : [];
+    const expectedPairs = EXPECTED_RECORDING_LIFECYCLE.transitions.map((transition) => [transition.from, transition.to]);
+    if (!deepEqual(sortedTransitionPairs(actualPairs), sortedTransitionPairs(expectedPairs))) {
+      counters.stage_field_missing += 1;
+      issues.push('model.recordingLifecycle.transitions does not exactly match the approved recording edges');
+    }
+    for (const [index, transition] of (Array.isArray(lifecycle.transitions) ? lifecycle.transitions : []).entries()) {
+      requireExactKeys(transition, ['from', 'to', 'trigger', 'guard'], `model.recordingLifecycle.transitions[${index}]`, counters, issues);
+    }
+  }
+  if (model.mediaEvidenceBoundary && typeof model.mediaEvidenceBoundary === 'object') {
+    if (model.mediaEvidenceBoundary.completionCreatesEvidence !== false) {
+      counters.stage_field_missing += 1;
+      issues.push('model.mediaEvidenceBoundary.completionCreatesEvidence must be false');
+    }
+    if (model.mediaEvidenceBoundary.completionSolidifiesEvidence !== false) {
+      counters.stage_field_missing += 1;
+      issues.push('model.mediaEvidenceBoundary.completionSolidifiesEvidence must be false');
+    }
+  }
+}
+
 function subsetEqual(expected, actual) {
   if (expected === null || typeof expected !== 'object') {
     return expected === actual;
@@ -1063,6 +1182,9 @@ class ProtocolMachine {
     this.eventReceipts = new Map();
     this.outbox = new Map();
     this.sequenceIndex = new Map();
+    this.recordings = new Map();
+    this.recordingOutbox = new Map();
+    this.recordingConflicts = new Map();
     this.activeDelivery = {};
     this.counts = {
       callsCreated: 0,
@@ -1098,7 +1220,23 @@ class ProtocolMachine {
       outboxEntries: 0,
       outboxAcked: 0,
       outboxPermanent: 0,
-      outboxRetried: 0
+      outboxRetried: 0,
+      recordingsCreated: 0,
+      recordingDeclarations: 0,
+      recordingDeclarationReplays: 0,
+      uploadObservations: 0,
+      uploadObservationReplays: 0,
+      mediaObjectsCreated: 0,
+      recordingValidations: 0,
+      recordingQuarantines: 0,
+      recordingCompletionReplays: 0,
+      recordingConflictFacts: 0,
+      recordingOutboxEntries: 0,
+      recordingOutboxAcked: 0,
+      recordingOutboxPermanent: 0,
+      recordingOutboxRetried: 0,
+      evidenceRecordsCreated: 0,
+      evidenceSolidified: 0
     };
   }
 
@@ -1156,8 +1294,40 @@ class ProtocolMachine {
         dispatchMarker: call.bleg.dispatchMarker,
         terminalEventId: call.bleg.terminalEventId
       } : null,
-      outbox
+      outbox,
+      recordings: this.projectRecordings(callId),
+      recordingOutbox: [...this.recordingOutbox.values()]
+        .filter((entry) => entry.callId === callId)
+        .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))
+        .map((entry) => ({ kind: entry.kind, recordingId: entry.recordingId, status: entry.status })),
+      recordingConflictOutbox: [...this.recordingConflicts.values()].filter((fact) => fact.callId === callId).map((fact) => ({
+        outboxId: fact.outboxId,
+        dedupeKey: fact.dedupeKey,
+        eventDomain: 'EVIDENCE',
+        aggregateType: 'RECORDING',
+        eventType: 'RECORDING_CONFLICT',
+        payload: fact.payload
+      }))
     };
+  }
+
+  projectRecordings(callId) {
+    return [...this.recordings.values()]
+      .filter((recording) => recording.callId === callId)
+      .sort((left, right) => (left.recordingId < right.recordingId ? -1 : left.recordingId > right.recordingId ? 1 : 0))
+      .map((recording) => ({
+        recordingId: recording.recordingId,
+        status: recording.status,
+        revision: recording.revision,
+        declared: { ...recording.declared },
+        uploadExpiresAt: recording.uploadExpiresAt,
+        mediaObject: recording.mediaObject ? { ...recording.mediaObject } : null,
+        validated: recording.validated ? { ...recording.validated } : null,
+        terminalFacts: recording.terminalFacts ? { ...recording.terminalFacts } : null,
+        completedAt: recording.terminalResponse?.completedAt ?? null,
+        evidenceCreated: false,
+        evidenceSolidified: false
+      }));
   }
 
   eventFingerprint(callId, body) {
@@ -1823,6 +1993,371 @@ class ProtocolMachine {
     return { status: 'APPLIED' };
   }
 
+  touchRecordingOutbox(kind, callId, recordingId) {
+    const key = `${kind}:${callId}:${recordingId}`;
+    let entry = this.recordingOutbox.get(key);
+    if (!entry) {
+      entry = { key, kind, callId, recordingId, status: 'PENDING' };
+      this.recordingOutbox.set(key, entry);
+      this.executionCounts.recordingOutboxEntries += 1;
+    } else {
+      this.executionCounts.recordingOutboxRetried += 1;
+    }
+    return entry;
+  }
+
+  finishRecordingOutbox(entry, httpStatus, code) {
+    if (entry.status === 'ACKED' || entry.status === 'PERMANENT_FAILURE') {
+      return;
+    }
+    if (this.activeDelivery?.responseLost === true) {
+      entry.status = 'SENT';
+      return;
+    }
+    const definition = EXPECTED_RECORDING_LIFECYCLE.outbox[entry.kind];
+    if (definition.ackedHttp.includes(httpStatus)) {
+      if (entry.status !== 'ACKED') {
+        entry.status = 'ACKED';
+        this.executionCounts.recordingOutboxAcked += 1;
+      }
+      return;
+    }
+    if (definition.permanentCodes.includes(code) || ([400, 404, 422].includes(httpStatus) && !definition.retryableCodes.includes(code))) {
+      if (entry.status !== 'PERMANENT_FAILURE') {
+        entry.status = 'PERMANENT_FAILURE';
+        this.executionCounts.recordingOutboxPermanent += 1;
+      }
+      return;
+    }
+    entry.status = 'SENT';
+  }
+
+  normalizeObservation(observed) {
+    if (observed === null || typeof observed !== 'object' || Array.isArray(observed)) {
+      return 'observation must be an object';
+    }
+    const keys = Object.keys(observed);
+    if (keys.length !== RECORDING_OBSERVATION_FIELDS.length || RECORDING_OBSERVATION_FIELDS.some((key) => !keys.includes(key))) {
+      return 'observation fields must be exactly the server-observed storage/media facts';
+    }
+    if (typeof observed.objectIdentityDigest !== 'string' || observed.objectIdentityDigest.length < 1 || observed.objectIdentityDigest.length > 256) {
+      return 'objectIdentityDigest must be a 1-256 string';
+    }
+    if (typeof observed.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(observed.sha256)) {
+      return 'sha256 must be a lowercase SHA-256';
+    }
+    if (!Number.isInteger(observed.sizeBytes) || observed.sizeBytes < 1) {
+      return 'sizeBytes must be a positive integer';
+    }
+    if (typeof observed.mimeType !== 'string' || observed.mimeType.length < 1 || observed.mimeType.length > 255) {
+      return 'mimeType must be a 1-255 string';
+    }
+    if (!Number.isInteger(observed.durationSeconds) || observed.durationSeconds < 1) {
+      return 'durationSeconds must be a positive integer';
+    }
+    return null;
+  }
+
+  observationOf(recording) {
+    if (!recording.mediaObject) {
+      return null;
+    }
+    return {
+      objectIdentityDigest: recording.mediaObject.objectIdentityDigest,
+      sha256: recording.mediaObject.sha256,
+      sizeBytes: recording.mediaObject.sizeBytes,
+      mimeType: recording.mediaObject.mimeType,
+      durationSeconds: recording.mediaObject.durationSeconds
+    };
+  }
+
+  completionObservation(recording, server) {
+    if (server.observed !== undefined) {
+      if (this.normalizeObservation(server.observed)) {
+        throw new Error('server.observed must be a complete server-observed fact set');
+      }
+      return {
+        objectIdentityDigest: server.observed.objectIdentityDigest,
+        sha256: server.observed.sha256,
+        sizeBytes: server.observed.sizeBytes,
+        mimeType: server.observed.mimeType,
+        durationSeconds: server.observed.durationSeconds
+      };
+    }
+    if (recording.terminalPresentation) {
+      return { ...recording.terminalPresentation };
+    }
+    return this.observationOf(recording);
+  }
+
+  quarantineRecording(recording, now, reasonCode, presented = null) {
+    recording.status = 'QUARANTINED';
+    recording.revision += 1;
+    recording.validatedAt = now;
+    recording.terminalOutcome = { status: 'QUARANTINED', code: reasonCode };
+    if (presented) {
+      recording.terminalFacts = { ...presented };
+      recording.terminalPresentation = { ...presented };
+    }
+    recording.terminalResponse = {
+      recordingId: recording.recordingId,
+      status: 'QUARANTINED',
+      reasonCode,
+      completedAt: now
+    };
+    this.executionCounts.recordingQuarantines += 1;
+  }
+
+  appendRecordingConflict(callId, recording, presented, reasonCode) {
+    const conflictInput = {
+      recordingId: recording.recordingId,
+      originalStatus: recording.status,
+      originalValidatedSha256: recording.validated?.sha256 ?? null,
+      presentedObjectVersionDigest: presented.objectIdentityDigest,
+      presentedSha256: presented.sha256,
+      presentedSizeBytes: presented.sizeBytes,
+      presentedMime: presented.mimeType,
+      presentedDuration: presented.durationSeconds,
+      reasonCode
+    };
+    const conflictDigest = sha256(canonicalJson(conflictInput));
+    const dedupeKey = `recording-conflict:${conflictDigest}`;
+    let fact = this.recordingConflicts.get(dedupeKey);
+    if (!fact) {
+      fact = {
+        callId,
+        outboxId: `outbox-recording-conflict:${conflictDigest.slice(0, 32)}`,
+        dedupeKey,
+        payload: {
+          recordingId: recording.recordingId,
+          originalStatus: recording.status,
+          conflictDigest,
+          presentedSha256: presented.sha256,
+          presentedSizeBytes: presented.sizeBytes,
+          presentedMime: presented.mimeType,
+          presentedDuration: presented.durationSeconds,
+          reasonCode
+        }
+      };
+      this.recordingConflicts.set(dedupeKey, fact);
+      this.executionCounts.recordingConflictFacts += 1;
+    }
+    return fact;
+  }
+
+  handleDeclare(callId, body, server) {
+    const allowed = ['callId', ...RECORDING_DECLARATION_FIELDS];
+    if (Object.keys(body).some((key) => !allowed.includes(key))) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (typeof body.recordingId !== 'string' || body.recordingId.length < 1 || body.recordingId.length > 128 || body.recordingId.trim() === '') {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (typeof body.mimeType !== 'string' || body.mimeType.length < 1 || body.mimeType.length > 64 || body.mimeType.trim() === '') {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (!Number.isInteger(body.sizeBytes) || body.sizeBytes < 1) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (!Number.isInteger(body.durationSeconds) || body.durationSeconds < 1) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (typeof body.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(body.sha256)) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (!this.calls.has(callId)) {
+      return { status: 404, problem: { code: 'CALL_UNKNOWN' } };
+    }
+    const outboxEntry = this.touchRecordingOutbox('declaration', callId, body.recordingId);
+    const declaration = {
+      mimeType: body.mimeType,
+      sizeBytes: body.sizeBytes,
+      durationSeconds: body.durationSeconds,
+      sha256: body.sha256
+    };
+    const existing = this.recordings.get(body.recordingId);
+    if (existing) {
+      if (existing.callId === callId && existing.status === 'DECLARED' && deepEqual(existing.declared, declaration)) {
+        this.executionCounts.recordingDeclarationReplays += 1;
+        this.finishRecordingOutbox(outboxEntry, 201, null);
+        return { status: 201, response: existing.declarationResponse };
+      }
+      this.finishRecordingOutbox(outboxEntry, 409, 'RECORDING_IDENTITY_CONFLICT');
+      return { status: 409, problem: { code: 'RECORDING_IDENTITY_CONFLICT' } };
+    }
+    const now = server.now;
+    const uploadExpiresAt = server.uploadExpiresAt;
+    if (typeof now !== 'string' || typeof uploadExpiresAt !== 'string' || !(now < uploadExpiresAt)) {
+      throw new Error('declaration server context must provide now before uploadExpiresAt');
+    }
+    const credential = `upload-credential:${sha256(`ivr-upload:${body.recordingId}:${uploadExpiresAt}`).slice(0, 32)}`;
+    const declarationResponse = {
+      recordingId: body.recordingId,
+      status: 'DECLARED',
+      uploadExpiresAt,
+      upload: { credential, expiresAt: uploadExpiresAt },
+      declaredAt: now
+    };
+    this.recordings.set(body.recordingId, {
+      callId,
+      recordingId: body.recordingId,
+      status: 'DECLARED',
+      declared: declaration,
+      declarationFingerprint: sha256(canonicalJson({ callId, recordingId: body.recordingId, ...declaration })),
+      declaredAt: now,
+      uploadExpiresAt,
+      upload: { credential, expiresAt: uploadExpiresAt },
+      revision: 1,
+      mediaObject: null,
+      observationFingerprint: null,
+      validated: null,
+      validatedAt: null,
+      terminalFacts: null,
+      terminalPresentation: null,
+      terminalOutcome: null,
+      terminalResponse: null,
+      declarationResponse
+    });
+    this.executionCounts.recordingsCreated += 1;
+    this.executionCounts.recordingDeclarations += 1;
+    this.finishRecordingOutbox(outboxEntry, 201, null);
+    return { status: 201, response: declarationResponse };
+  }
+
+  handleObserveUpload(callId, body) {
+    const recording = this.recordings.get(body.recordingId);
+    if (!this.calls.has(callId) || !recording || recording.callId !== callId) {
+      return { status: 409, code: 'CALL_UNKNOWN' };
+    }
+    const observed = body.observed;
+    const observationError = this.normalizeObservation(observed);
+    if (observationError) {
+      return { status: 400, code: 'IVR_ARGUMENT_INVALID' };
+    }
+    const normalized = {
+      objectIdentityDigest: observed.objectIdentityDigest,
+      sha256: observed.sha256,
+      sizeBytes: observed.sizeBytes,
+      mimeType: observed.mimeType,
+      durationSeconds: observed.durationSeconds
+    };
+    const fingerprint = sha256(canonicalJson(normalized));
+    if (recording.status === 'VALIDATED' || recording.status === 'QUARANTINED') {
+      if (recording.observationFingerprint === fingerprint) {
+        this.executionCounts.uploadObservationReplays += 1;
+        return { status: 200, response: { recordingId: recording.recordingId, status: 'UPLOADED' } };
+      }
+      return { status: 409, code: 'RECORDING_IDENTITY_CONFLICT' };
+    }
+    if (recording.status === 'UPLOADED' || recording.observationFingerprint !== null) {
+      if (recording.observationFingerprint === fingerprint) {
+        this.executionCounts.uploadObservationReplays += 1;
+        return { status: 200, response: { recordingId: recording.recordingId, status: 'UPLOADED' } };
+      }
+      return { status: 409, code: 'RECORDING_IDENTITY_CONFLICT' };
+    }
+    if (typeof body.now !== 'string') {
+      throw new Error('upload observation requires a fixed now');
+    }
+    if (body.now >= recording.uploadExpiresAt) {
+      this.quarantineRecording(recording, body.now, 'UPLOAD_EXPIRED');
+      return { status: 409, code: 'UPLOAD_EXPIRED' };
+    }
+    recording.mediaObject = normalized;
+    recording.observationFingerprint = fingerprint;
+    recording.status = 'UPLOADED';
+    recording.revision += 1;
+    this.executionCounts.uploadObservations += 1;
+    this.executionCounts.mediaObjectsCreated += 1;
+    return { status: 200, response: { recordingId: recording.recordingId, status: 'UPLOADED' } };
+  }
+
+  handleComplete(callId, recordingId, body, server) {
+    const allowed = ['callId', 'recordingId', 'clientReference'];
+    if (Object.keys(body).some((key) => !allowed.includes(key))) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (body.clientReference !== undefined && (typeof body.clientReference !== 'string' || body.clientReference.length < 1 || body.clientReference.length > 128)) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (typeof recordingId !== 'string' || recordingId.length < 1 || recordingId.length > 128) {
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (!this.calls.has(callId)) {
+      return { status: 404, problem: { code: 'CALL_UNKNOWN' } };
+    }
+    const recording = this.recordings.get(recordingId);
+    if (!recording || recording.callId !== callId) {
+      return { status: 404, problem: { code: 'CALL_UNKNOWN' } };
+    }
+    const outboxEntry = this.touchRecordingOutbox('completion', callId, recordingId);
+    const now = server.now;
+    if (typeof now !== 'string') {
+      throw new Error('completion requires a fixed now');
+    }
+    if (recording.status === 'VALIDATED' || recording.status === 'QUARANTINED') {
+      if (recording.terminalOutcome?.code === 'UPLOAD_EXPIRED' && recording.terminalFacts === null) {
+        this.finishRecordingOutbox(outboxEntry, 409, 'UPLOAD_EXPIRED');
+        return { status: 409, problem: { code: 'UPLOAD_EXPIRED' } };
+      }
+      const presented = this.completionObservation(recording, server);
+      if (recording.terminalFacts && presented && deepEqual(recording.terminalFacts, presented)) {
+        this.executionCounts.recordingCompletionReplays += 1;
+        this.finishRecordingOutbox(outboxEntry, 200, null);
+        return { status: 200, response: recording.terminalResponse };
+      }
+      if (presented) {
+        this.appendRecordingConflict(callId, recording, presented, 'RECORDING_IDENTITY_CONFLICT');
+      }
+      this.finishRecordingOutbox(outboxEntry, 409, 'RECORDING_IDENTITY_CONFLICT');
+      return { status: 409, problem: { code: 'RECORDING_IDENTITY_CONFLICT' } };
+    }
+    if (recording.status === 'DECLARED' && now >= recording.uploadExpiresAt) {
+      this.quarantineRecording(recording, now, 'UPLOAD_EXPIRED');
+      this.finishRecordingOutbox(outboxEntry, 409, 'UPLOAD_EXPIRED');
+      return { status: 409, problem: { code: 'UPLOAD_EXPIRED' } };
+    }
+    if (recording.status === 'DECLARED') {
+      this.finishRecordingOutbox(outboxEntry, 409, 'UPLOAD_OBSERVATION_REQUIRED');
+      return { status: 409, problem: { code: 'UPLOAD_OBSERVATION_REQUIRED' } };
+    }
+    if (server.storageUnknown === true) {
+      this.finishRecordingOutbox(outboxEntry, 503, 'STORAGE_UNKNOWN');
+      return { status: 503, problem: { code: 'STORAGE_UNKNOWN' } };
+    }
+    const presented = this.completionObservation(recording, server);
+    if (!presented) {
+      throw new Error('completion requires a server observation');
+    }
+    if (!deepEqual(presented, this.observationOf(recording))) {
+      this.quarantineRecording(recording, now, 'RECORDING_IDENTITY_CONFLICT', presented);
+      this.finishRecordingOutbox(outboxEntry, 200, null);
+      return { status: 200, response: recording.terminalResponse };
+    }
+    if (!deepEqual({ mimeType: presented.mimeType, sizeBytes: presented.sizeBytes, durationSeconds: presented.durationSeconds, sha256: presented.sha256 }, recording.declared)) {
+      this.quarantineRecording(recording, now, 'MEDIA_VALIDATION_FAILED', presented);
+      this.finishRecordingOutbox(outboxEntry, 200, null);
+      return { status: 200, response: recording.terminalResponse };
+    }
+    recording.status = 'VALIDATED';
+    recording.revision += 1;
+    recording.validatedAt = now;
+    recording.validated = { durationSeconds: presented.durationSeconds, sha256: presented.sha256 };
+    recording.terminalFacts = { ...presented };
+    recording.terminalPresentation = { ...presented };
+    recording.terminalOutcome = { status: 'VALIDATED', code: null };
+    recording.terminalResponse = {
+      recordingId: recording.recordingId,
+      status: 'VALIDATED',
+      validatedDurationSeconds: presented.durationSeconds,
+      validatedSha256: presented.sha256,
+      completedAt: now
+    };
+    this.executionCounts.recordingValidations += 1;
+    this.finishRecordingOutbox(outboxEntry, 200, null);
+    return { status: 200, response: recording.terminalResponse };
+  }
+
   localBlegPrepare(callId) {
     const call = this.calls.get(callId);
     if (!call) {
@@ -1969,6 +2504,8 @@ class ProtocolMachine {
       result = this.localBlegReconcile(callId, body);
     } else if (operation === 'bleg.expire') {
       result = this.localBlegExpire(callId, body);
+    } else if (operation === 'recording.observeUpload') {
+      result = this.handleObserveUpload(callId, body);
     } else if (operation === 'ivr.restart') {
       result = { status: 200 };
     } else {
@@ -1985,6 +2522,24 @@ class ProtocolMachine {
   }
 
   assertExecutionInvariants() {
+    if (this.executionCounts.evidenceRecordsCreated !== 0 || this.executionCounts.evidenceSolidified !== 0) {
+      throw new Error('recording completion must not create or solidify evidence');
+    }
+    const allowedRecordingStates = new Set(EXPECTED_RECORDING_LIFECYCLE.states);
+    for (const recording of this.recordings.values()) {
+      if (!allowedRecordingStates.has(recording.status)) {
+        throw new Error(`unexpected recording status ${recording.status}`);
+      }
+      if (!Number.isInteger(recording.revision) || recording.revision < 1) {
+        throw new Error('recording revision must be a positive integer');
+      }
+      if (recording.status === 'VALIDATED' && (!recording.validated || !recording.mediaObject)) {
+        throw new Error('VALIDATED recording must keep one media object and validated facts');
+      }
+      if (recording.status === 'QUARANTINED' && recording.validated !== null) {
+        throw new Error('QUARANTINED recording must not carry successful validated facts');
+      }
+    }
     for (const call of this.calls.values()) {
       if (call.bleg && call.bleg.lineAttemptCount !== 0 && call.bleg.lineAttemptCount !== 1) {
         throw new Error('lineAttemptCount must be 0 or 1');
@@ -2485,8 +3040,12 @@ class ProtocolMachine {
         return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
       }
       result = this.handleEvent(callId, body, server);
+    } else if (operation === 'declareIvrRecording') {
+      result = this.handleDeclare(callId, body, server);
+    } else if (operation === 'completeIvrRecording') {
+      result = this.handleComplete(callId, body.recordingId, body, server);
     } else {
-      throw new Error(`operation ${operation} is not an S2 fixture operation`);
+      throw new Error(`operation ${operation} is not a fixture operation`);
     }
     this.assertInvariants();
     this.assertExecutionInvariants();
@@ -2563,6 +3122,9 @@ function validateFixture(fixture, expectedSlice, counters, issues) {
   }
   if (fixture.slice === 's2') {
     return validateS2Fixture(fixture, counters, issues);
+  }
+  if (fixture.slice === 's3') {
+    return validateS3Fixture(fixture, counters, issues);
   }
   const machine = new ProtocolMachine();
   const records = new Map();
@@ -2826,6 +3388,243 @@ function validateS2Fixture(fixture, counters, issues) {
         throw new Error('non-200 or non-request step must not assert a response');
       }
       const persisted = machine.projectExecution(targetCallId);
+      if (!subsetEqual(step.expected.persisted, persisted)) {
+        throw new Error('persisted projection assertion mismatch');
+      }
+      const counts = machine.executionCountSnapshot();
+      if (!subsetEqual(step.expected.counts, counts)) {
+        throw new Error('fact counter assertion mismatch');
+      }
+      records.set(step.id, { response: result.response });
+    } catch (error) {
+      fixtureOk = false;
+      issues.push(`${stepLabel}: ${error.message}`);
+    }
+  }
+  if (fixtureOk) {
+    counters.passed += 1;
+  } else {
+    counters.failed += 1;
+  }
+  return fixtureOk;
+}
+
+function assertNoForbiddenMediaFields(value, location = 'response') {
+  if (value === null || typeof value !== 'object') {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      assertNoForbiddenMediaFields(item, `${location}[${index}]`);
+    }
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (RECORDING_FORBIDDEN_RESPONSE_FIELDS.has(key)) {
+      throw new Error(`${location} exposes forbidden media field ${key}`);
+    }
+    assertNoForbiddenMediaFields(child, `${location}.${key}`);
+  }
+}
+
+function validateDeclarationShape(response) {
+  if (response === null || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('recording declaration must be an object');
+  }
+  for (const key of ['recordingId', 'status', 'uploadExpiresAt', 'upload']) {
+    if (!Object.prototype.hasOwnProperty.call(response, key)) {
+      throw new Error(`recording declaration missing ${key}`);
+    }
+  }
+  if (response.status !== 'DECLARED') {
+    throw new Error('recording declaration status must be DECLARED');
+  }
+  if (typeof response.uploadExpiresAt !== 'string') {
+    throw new Error('recording declaration uploadExpiresAt must be a string');
+  }
+  if (response.upload === null || typeof response.upload !== 'object' || Array.isArray(response.upload)) {
+    throw new Error('recording declaration upload must be an object');
+  }
+  if (typeof response.upload.credential !== 'string' || response.upload.credential.length < 1 || response.upload.credential.length > 2048) {
+    throw new Error('recording declaration upload.credential must be a 1-2048 string');
+  }
+  if (typeof response.upload.expiresAt !== 'string' || response.upload.expiresAt !== response.uploadExpiresAt) {
+    throw new Error('recording declaration upload.expiresAt must equal uploadExpiresAt');
+  }
+  assertNoForbiddenMediaFields(response);
+}
+
+function validateCompletionShape(response) {
+  if (response === null || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('recording completion must be an object');
+  }
+  for (const key of ['recordingId', 'status']) {
+    if (!Object.prototype.hasOwnProperty.call(response, key)) {
+      throw new Error(`recording completion missing ${key}`);
+    }
+  }
+  if (!['VALIDATED', 'QUARANTINED'].includes(response.status)) {
+    throw new Error(`unexpected recording completion status ${response.status}`);
+  }
+  if (response.status === 'VALIDATED') {
+    if (!Number.isInteger(response.validatedDurationSeconds) || response.validatedDurationSeconds < 1) {
+      throw new Error('validated completion requires a positive validatedDurationSeconds');
+    }
+    if (typeof response.validatedSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(response.validatedSha256)) {
+      throw new Error('validated completion requires validatedSha256');
+    }
+  }
+  if (typeof response.completedAt !== 'string') {
+    throw new Error('recording completion requires completedAt');
+  }
+  assertNoForbiddenMediaFields(response);
+}
+
+function validateS3Fixture(fixture, counters, issues) {
+  const fixtureLabel = fixture.id;
+  const machine = new ProtocolMachine();
+  const records = new Map();
+  const requestOperations = new Set(['resolveIvrInbound', 'confirmIvrActivation', 'authorizeIvrDirectOutbound', 'ingestIvrCallEvent', 'declareIvrRecording', 'completeIvrRecording']);
+  const localOperations = new Set(['bleg.prepare', 'bleg.dispatch', 'bleg.reconcile', 'bleg.expire', 'recording.observeUpload', 'ivr.restart']);
+  let fixtureOk = true;
+  for (const [index, step] of fixture.steps.entries()) {
+    const stepLabel = `${fixtureLabel}#${index + 1}`;
+    try {
+      if (step === null || typeof step !== 'object' || Array.isArray(step)) {
+        throw new Error('step is not an object');
+      }
+      if (typeof step.id !== 'string' || step.id.length === 0 || records.has(step.id)) {
+        throw new Error('step id must be unique and non-empty');
+      }
+      const action = step.action;
+      if (!['request', 'local', 'lineOutcome', 'restart', 'assert'].includes(action)) {
+        throw new Error(`unsupported step action ${action}`);
+      }
+      const expectedKeys = ['status', 'response', 'code', 'responseEqualsStep', 'persisted', 'counts'];
+      if (step.expected === null || typeof step.expected !== 'object' || Array.isArray(step.expected)) {
+        throw new Error('expected must be an object');
+      }
+      for (const key of Object.keys(step.expected)) {
+        if (!expectedKeys.includes(key)) {
+          throw new Error(`unknown expected key ${key}`);
+        }
+      }
+      if (typeof step.expected.status !== 'number' || !step.expected.persisted || !step.expected.counts) {
+        throw new Error('expected must include status, persisted and counts');
+      }
+      const allowedKeys = action === 'request' && step.delivery !== undefined
+        ? ['id', 'action', 'operation', 'body', 'server', 'expected', 'delivery']
+        : action === 'request'
+          ? ['id', 'action', 'operation', 'body', 'server', 'expected']
+          : action === 'local'
+            ? ['id', 'action', 'operation', 'body', 'expected']
+            : ['id', 'action', 'body', 'expected'];
+      if (!deepEqual(Object.keys(step).sort(), [...allowedKeys].sort())) {
+        throw new Error(`step keys must be ${allowedKeys.join(',')}`);
+      }
+      if (step.body === null || typeof step.body !== 'object' || Array.isArray(step.body)) {
+        throw new Error('body must be an object');
+      }
+      const targetCallId = step.body.callId || step.server?.callId;
+      if (!targetCallId) {
+        throw new Error('step must identify the target call through body.callId');
+      }
+      let result;
+      if (action === 'request') {
+        if (!requestOperations.has(step.operation)) {
+          throw new Error(`unknown request operation ${step.operation}`);
+        }
+        if (step.server === null || typeof step.server !== 'object' || Array.isArray(step.server)) {
+          throw new Error('server context must be an object');
+        }
+        const bodyRequirements = {
+          resolveIvrInbound: ['callId', 'purpose', 'protocolVersion'],
+          confirmIvrActivation: ['eventId', 'policyCode', 'policyVersion', 'promptVersion', 'contentSha256', 'decision'],
+          authorizeIvrDirectOutbound: ['eventId', 'callee', 'promptVersion', 'confirmationKey', 'confirmationContent'],
+          ingestIvrCallEvent: ['eventId', 'eventType', 'occurredAt', 'payload'],
+          declareIvrRecording: ['callId', 'recordingId', 'mimeType', 'sizeBytes', 'durationSeconds', 'sha256'],
+          completeIvrRecording: ['callId', 'recordingId']
+        };
+        for (const key of bodyRequirements[step.operation]) {
+          if (!(key in step.body)) {
+            throw new Error(`body is missing ${key}`);
+          }
+        }
+        let delivery = {};
+        if (step.delivery !== undefined) {
+          if (step.delivery === null || typeof step.delivery !== 'object' || Array.isArray(step.delivery)) {
+            throw new Error('delivery must be an object');
+          }
+          for (const key of Object.keys(step.delivery)) {
+            if (!['responseLost', 'commitFailure'].includes(key)) {
+              throw new Error(`unknown delivery key ${key}`);
+            }
+            if (typeof step.delivery[key] !== 'boolean') {
+              throw new Error(`delivery.${key} must be boolean`);
+            }
+          }
+          delivery = step.delivery;
+        }
+        result = machine.handle(step.operation, targetCallId, step.body, step.server, delivery);
+      } else if (action === 'local') {
+        if (!localOperations.has(step.operation)) {
+          throw new Error(`unknown local operation ${step.operation}`);
+        }
+        if (step.operation === 'recording.observeUpload') {
+          for (const key of ['callId', 'recordingId', 'observed', 'now']) {
+            if (!(key in step.body)) {
+              throw new Error(`observation body is missing ${key}`);
+            }
+          }
+        }
+        result = machine.handleLocal(step.operation, targetCallId, step.body);
+      } else if (action === 'lineOutcome') {
+        result = machine.handleLineOutcome(targetCallId, step.body);
+      } else {
+        result = { status: 200 };
+      }
+      if (result.status !== step.expected.status) {
+        throw new Error(`status ${result.status} != expected ${step.expected.status}`);
+      }
+      const actualCode = result.problem?.code ?? result.code;
+      if (step.expected.code !== undefined) {
+        if (actualCode !== step.expected.code) {
+          throw new Error(`code ${actualCode} != expected ${step.expected.code}`);
+        }
+      } else if (actualCode !== undefined) {
+        throw new Error(`unexpected code ${actualCode}`);
+      }
+      if (action === 'request' && (result.status === 200 || result.status === 201)) {
+        if (step.operation === 'declareIvrRecording') {
+          validateDeclarationShape(result.response);
+        } else if (step.operation === 'completeIvrRecording') {
+          validateCompletionShape(result.response);
+        } else if (step.operation === 'ingestIvrCallEvent') {
+          validateReceiptShape(result.response);
+        } else {
+          const purpose = step.operation === 'resolveIvrInbound' ? 'INBOUND_RESOLVE' : step.operation === 'confirmIvrActivation' ? 'ACTIVATION_NEXT_ACTION' : 'DIRECT_AUTHORIZATION';
+          validateDecisionShape(result.response, purpose);
+        }
+        if (step.expected.responseEqualsStep !== undefined) {
+          const prior = records.get(step.expected.responseEqualsStep);
+          if (!prior || !prior.response) {
+            throw new Error(`responseEqualsStep ${step.expected.responseEqualsStep} has no prior response`);
+          }
+          if (!deepEqual(result.response, prior.response)) {
+            throw new Error('replayed response does not equal the first frozen response');
+          }
+        } else if (step.expected.response !== undefined) {
+          if (!subsetEqual(step.expected.response, result.response)) {
+            throw new Error('response subset mismatch');
+          }
+        } else {
+          throw new Error('successful request step must assert a response or responseEqualsStep');
+        }
+      } else if (step.expected.response !== undefined || step.expected.responseEqualsStep !== undefined) {
+        throw new Error('non-success or non-request step must not assert a response');
+      }
+      const persisted = machine.projectExecution(targetCallId);
+      assertNoForbiddenMediaFields(persisted, 'persisted');
       if (!subsetEqual(step.expected.persisted, persisted)) {
         throw new Error('persisted projection assertion mismatch');
       }
@@ -3182,6 +3981,9 @@ function main() {
   const a0Checks = parseA0Checks(a0Doc);
   const a0Columns = parseA0Columns(a0Doc);
   const a0DecisionFields = parseA0DecisionFields(a0Doc);
+  if (args.stage === 's3') {
+    validateS3Registries(model, a0Checks, counters, issues);
+  }
   for (const checkName of A0_ALL_CHECKS) {
     if (!a0Checks.has(checkName)) {
       if (A0_STATUS_CHECKS.includes(checkName)) {
@@ -3428,6 +4230,35 @@ function main() {
     tokens.add('eventRegistry');
     tokens.add('frozenAt');
     tokens.add(sha256(canonicalJson(model.eventTypes)));
+  }
+  if (args.stage === 's3') {
+    tokens.add('recordingLifecycle');
+    tokens.add('mediaEvidenceBoundary');
+    for (const state of model.recordingLifecycle?.states || []) {
+      tokens.add(state);
+    }
+    for (const key of ['eventDomain', 'aggregateType', 'eventType', 'dedupeKey']) {
+      const value = model.recordingLifecycle?.conflictOutbox?.[key];
+      if (typeof value === 'string' && !value.includes('<')) {
+        tokens.add(value);
+      }
+    }
+    tokens.add('recording-conflict:');
+    for (const field of model.mediaEvidenceBoundary?.handoffFields || []) {
+      tokens.add(field);
+    }
+    for (const value of model.mediaEvidenceBoundary?.evidenceStatusValues || []) {
+      tokens.add(value);
+    }
+    for (const value of model.recordingLifecycle?.outbox?.declaration?.permanentCodes || []) {
+      tokens.add(value);
+    }
+    for (const value of model.recordingLifecycle?.outbox?.completion?.permanentCodes || []) {
+      tokens.add(value);
+    }
+    for (const value of model.recordingLifecycle?.outbox?.completion?.retryableCodes || []) {
+      tokens.add(value);
+    }
   }
   for (const token of [...tokens].sort()) {
     if (!doc.includes(token)) {

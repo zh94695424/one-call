@@ -2,7 +2,7 @@
 
 > Work unit: `A2-production-ivr-protocol-spec`
 >
-> Slice: S1 (`authorization truth`) and S2 (`execution truth`)
+> Slice: S1 (`authorization truth`), S2 (`execution truth`) and S3 (`media truth`)
 >
 > Protocol version: `1.0`
 >
@@ -10,17 +10,17 @@
 >
 > Deterministic validator: `protocol/ivr/validate.mjs`
 >
-> Authority: A1 remains authoritative for paths, operations, envelopes, request/response schemas and Problem codes. A0 remains authoritative for tables, columns, states, named CHECKs, identities, transactions and idempotency. This document is authoritative for the S1 authorization semantics and the S2 execution semantics described below and does not restate A1 or A0 wire/schema definitions.
+> Authority: A1 remains authoritative for paths, operations, envelopes, request/response schemas and Problem codes. A0 remains authoritative for tables, columns, states, named CHECKs, identities, transactions and idempotency. This document is authoritative for the S1 authorization semantics, the S2 execution semantics and the S3 recording/media semantics described below and does not restate A1 or A0 wire/schema definitions.
 
-## Status and S2 boundary
+## Status and S3 boundary
 
 S1 freezes authorization truth: the unified `IvrDecision` action-selection contract, the 12-message identity registry, the 22-row identity matrix, protocol version compatibility, decision replay/conflict, A1 error mapping and the S1-approved state transitions.
 
 S2 freezes execution truth on top of S1 without changing A0, A1, the user-facing routing rules or any S1 action/replay/version rule. It promotes the S1 identity-only event block into the full four-column frozen event map, and adds the event envelope, 11 closed payloads, nine `endReason` values, ten quarantine/ignore reasons, the backend execution state machines, the IVR-local B-leg exactly-once operation, the IVR event outbox, heartbeat behavior, terminal/UNKNOWN/reconciliation convergence and reservation settlement/release/reconciling rules. The self-built IVR remains the owner of telephony and media facts; the backend remains the owner of task, entitlement and business state.
 
-S3 remains absent and is not authorized by this document: recording declaration, upload observation, completion, media object lifecycle, evidence creation or solidification and post-terminal media conflict behavior are S3 scope. S2 only carries recording start/end communication facts inside the existing event surface.
+S3 freezes media truth on top of S1 and S2 without changing the 12 messages, the 11 full-frozen event rows, the event registry digest `c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9`, the 22 identities, the 15 invariant IDs, any accepted A0/A1 contract or the user-facing routing rules. It adds the recording declaration replay boundary, the server-local upload observation, completion validation/quarantine, upload expiry, storage-unknown retry, post-terminal conflict facts, stable recording outbox classification and the typed media-to-evidence handoff boundary. `complete` never creates or solidifies an `evidence_record`, `evidence_event` or artifact.
 
-The event block below is full-frozen at S2. The S1 `DEFERRED_S2` sentinel form is replaced in place; both forms must never coexist. Any statement that a deferred S2 area is still deferred is a protocol error.
+The event block below is full-frozen at S2. The S1 `DEFERRED_S2` sentinel form is replaced in place; both forms must never coexist. Any statement that a deferred S2 area is still deferred is a protocol error. S3 reads the same event registry and may not change it.
 
 The user-visible rules preserved by this slice are:
 
@@ -77,7 +77,7 @@ The purpose chains are:
 
 ## 3. S1 preconditions and state transitions
 
-Only the following transitions are frozen by S1. S2 adds the call, leg, terminal, reconciliation and reservation terminal machines in §6.9; recording media lifecycle remains S3. The S1 precondition IDs are `task-claim`, `session-confirm`, `decision-freeze`, `reservation-held` and `direct-authorization`.
+Only the following transitions are frozen by S1. S2 adds the call, leg, terminal, reconciliation and reservation terminal machines in §6.9; S3 adds the recording media lifecycle in §7. The S1 precondition IDs are `task-claim`, `session-confirm`, `decision-freeze`, `reservation-held` and `direct-authorization`.
 
 | Aggregate | S1 transition | Trigger | Guard |
 | --- | --- | --- | --- |
@@ -126,7 +126,7 @@ Full decision fields (A0 §10.14 projection):
 | Lost response | Original identity | Retry the same identity and payload. Do not mint a new call or decision identity. |
 | Unsupported version | Resolve body | `400 IVR_ARGUMENT_INVALID` before any side effect. |
 
-S1 does not define event replay, heartbeat replay, terminal absorption, B-leg recovery or settlement; S2 owns those in §6. Recording media replay remains S3.
+S1 does not define event replay, heartbeat replay, terminal absorption, B-leg recovery or settlement; S2 owns those in §6. Recording media replay and completion are owned by S3 in §7.
 
 The exact A1 error mapping is:
 
@@ -321,7 +321,7 @@ Evaluator-only counter semantics: `lineAttempts` and the per-operation `lineAtte
 | `ACKED` | A 2xx terminal receipt (`APPLIED`, `IGNORED` or `QUARANTINED`) was observed |
 | `PERMANENT_FAILURE` | Identity, argument or terminal conflict; alert, never rewrite into a new identity |
 
-Retransmission uses the identical `eventId` and payload. A call-event 2xx (including `QUARANTINED`) is terminal for the outbox. `EVENT_ID_CONFLICT`, `SESSION_IDENTITY_MISMATCH`, `CALL_UNKNOWN`, `IVR_ARGUMENT_INVALID` and `VALIDATION_FAILED` are permanent. `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `INTERNAL`, 5xx and network failures are retryable. No retransmission changes identity or redials. Recording declaration and completion outbox classification belongs to S3 and is not implemented here.
+Retransmission uses the identical `eventId` and payload. A call-event 2xx (including `QUARANTINED`) is terminal for the outbox. `EVENT_ID_CONFLICT`, `SESSION_IDENTITY_MISMATCH`, `CALL_UNKNOWN`, `IVR_ARGUMENT_INVALID` and `VALIDATION_FAILED` are permanent. `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `INTERNAL`, 5xx and network failures are retryable. No retransmission changes identity or redials. Recording declaration and completion outbox classification is S3-owned and is frozen in §7.5; the call-event classification above is unchanged.
 
 ### 6.7 Terminal, UNKNOWN and reconciliation
 
@@ -371,7 +371,89 @@ The model `stateMachines` freezes the S2 backend transitions for `outbound_call_
 
 The model `blegOperation` and `eventOutbox` freeze the local phase machine, recovery rules and outbox states described in §6.5 and §6.6. These are IVR-local; they do not create A0 tables or columns.
 
-## 7. Identity, ownership, precondition and replay matrix
+## 7. S3 recording media lifecycle and evidence boundary
+
+S3 uses only the four recording messages already present in the message registry and the same six A1 IVR operations. It adds no endpoint, Problem code, A0 table, A0 column, A0 state or event type. The machine sections `recordingLifecycle` and `mediaEvidenceBoundary` are the S3 projection of the rules below. The recording state values are exactly `DECLARED`, `UPLOADED`, `VALIDATED` and `QUARANTINED`, matching A0 `ck_recording_status`.
+
+| Stage | Wire | A0/A1 mapping | Rule |
+| --- | --- | --- | --- |
+| declare | `POST /api/v1/ivr/calls/{callId}/recordings`; `RecordingDeclarationRequest` | `evidence.recording` in `DECLARED`; `declared_format`=`mimeType`, `declared_size`=`sizeBytes`, `declared_duration`=`durationSeconds`, `declared_sha256`=`sha256`, `created_at`=`declaredAt`, `upload_expires_at`=`uploadExpiresAt`=`upload.expiresAt` | Declaration facts are not media facts. The response is only the accepted `RecordingDeclaration`; no object key, bucket, object version, permanent URL or raw credential is exposed. |
+| upload observation | IVR-local/server-observed; not a public IVR endpoint | `evidence.media_object` plus `evidence.recording` `DECLARED` to `UPLOADED` | Records one immutable media object with exactly the server-observed `objectIdentityDigest`, `sha256`, `sizeBytes`, `mimeType` and `durationSeconds`. |
+| complete | `POST /api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete`; `RecordingCompletionRequest` | `evidence.recording` `UPLOADED` to `VALIDATED`/`QUARANTINED`, or `DECLARED` to `QUARANTINED` on expiry | Client input never establishes object key, bucket, object version, hash, size, MIME or duration. `clientReference` is only a correlation hint and is excluded from identity, fingerprint and A0 persistence. |
+| evidence handoff | No IVR wire | Evidence owner flow creates `evidence_record`, `evidence_event` and artifacts downstream | `complete` exposes only a typed handoff-ready boundary. It never creates or solidifies evidence. |
+
+### 7.1 Recording state machine
+
+| From | To | Trigger | Guard |
+| --- | --- | --- | --- |
+| new | `DECLARED` | First declaration for a known parent call | Unique `recordingId`; declaration facts only |
+| `DECLARED` | `UPLOADED` | Server-local upload observation | One immutable media object; replay requires identical observation identity and facts |
+| `UPLOADED` | `VALIDATED` | Completion with matching server-observed facts | Observed hash, size, MIME and duration match the declaration; server facts win |
+| `UPLOADED` | `QUARANTINED` | Completion with different or mismatched server-observed facts | Quarantine once; the first media facts are preserved |
+| `DECLARED` | `QUARANTINED` | Completion or upload observation at or after `uploadExpiresAt` | No successful media or evidence fact |
+
+`VALIDATED` and `QUARANTINED` are terminal for the recording row. No other state or transition is added.
+
+### 7.2 Declaration identity and replay
+
+- A declaration creates exactly one `evidence.recording` keyed by `recordingId`; the state starts `DECLARED` with revision 1.
+- Same `recordingId` with identical declaration facts while still `DECLARED` returns the first `201` snapshot byte-for-byte. It creates no second recording, credential or media object, and does not renew `uploadExpiresAt`.
+- Changed declaration facts return `409 RECORDING_IDENTITY_CONFLICT` and mutate nothing.
+- Re-declaration after `UPLOADED`, `VALIDATED` or `QUARANTINED` returns `409 RECORDING_IDENTITY_CONFLICT`, even with identical facts; the IVR must use the persisted declaration and credential and call complete.
+- The upload credential is response-only. It is redacted from logs, model projections and artifacts, is never reissued or extended, and replay returns the identical first snapshot. It is not a renewable secret.
+- Declaration replays and lost responses reuse the same `(callId,recordingId)` outbox identity. Restart replays the same recording identity and never creates a second recording.
+
+### 7.3 Upload observation
+
+- Upload occurs outside the public IVR API. The evaluator/server-local observation records the exact object identity digest and server facts; it is not a new endpoint and does not call COS or a media engine.
+- Same observation identity and facts replay the first `UPLOADED` result idempotently and create no second media object.
+- A changed observation identity or fact set fails closed with `RECORDING_IDENTITY_CONFLICT` and mutates nothing.
+- A first observation while `DECLARED` at or after `uploadExpiresAt` is refused, quarantines the row once with `UPLOAD_EXPIRED` and creates no successful media or evidence fact. Once the first observation is accepted, an identical replay returns the first `UPLOADED` result and a changed observation returns `409 RECORDING_IDENTITY_CONFLICT` even after `uploadExpiresAt`; neither is treated as expiry.
+- Raw object key, bucket, object version and credential material never leave the observation boundary; only the opaque `objectIdentityDigest` is modeled.
+
+### 7.4 Completion, validation and quarantine
+
+Completion order is: resolve the known call and recording; replay or refuse an existing terminal outcome; enforce upload expiry for a still-`DECLARED` recording; require upload observation; fail closed on storage unknown; validate server facts.
+
+- `DECLARED` completion before observation returns `409 UPLOAD_OBSERVATION_REQUIRED` with no media object, recording transition, revision change or evidence fact. Retrying the same identity after observation may converge to `VALIDATED`.
+- A still-`DECLARED` row at or after `uploadExpiresAt` returns `409 UPLOAD_EXPIRED`, becomes `QUARANTINED` once with `validated_at` set, and produces no successful media fact. An already terminal row is never updated; a repeat returns the first expiry result. An `UPLOADED` row is not quarantined merely because completion arrives at or after `uploadExpiresAt`; its immutable observation was accepted before the deadline, so completion continues through storage-unknown and server-fact validation.
+- `503 STORAGE_UNKNOWN` means the storage or media outcome is unknown: no media fact, no terminal mutation and no revision change. The same identity retry may converge.
+- Same `recordingId` and identical server-observed facts replay the first `VALIDATED` or `QUARANTINED` result without a second recording or media object.
+- While `UPLOADED`, a different object identity or a server-fact mismatch with the declaration quarantines once. The first media object and first server facts are never overwritten; the response is `200` with `status=QUARANTINED` and a redacted `reasonCode`.
+- A meaningful completion returns `200` with `status=VALIDATED`, the server-recomputed `validatedDurationSeconds` and `validatedSha256`, and `completedAt`. No object key, bucket, version, URL or media bytes are returned.
+- `clientReference` is never used for identity, fingerprint or A0 persistence.
+
+### 7.5 Post-terminal conflict fact and recording outbox
+
+After `VALIDATED` or `QUARANTINED`, a callback presenting different server-observed facts returns `409 RECORDING_IDENTITY_CONFLICT`, changes no status, revision or validation fact, and appends exactly one deduplicated redacted Outbox conflict fact.
+
+| Conflict fact property | Value |
+| --- | --- |
+| Event domain | `EVIDENCE` |
+| Aggregate type | `RECORDING` |
+| Event type | `RECORDING_CONFLICT` |
+| Dedupe key | `recording-conflict:<conflictDigest>` |
+| Redacted payload fields | `recordingId`, `originalStatus`, `conflictDigest`, `presentedSha256`, `presentedSizeBytes`, `presentedMime`, `presentedDuration`, `reasonCode` |
+
+Object version and key material is hashed into `conflictDigest` and never stored or logged. The same conflicting payload returns the existing Outbox identity and appends no second fact; a changed conflicting payload has a different digest and appends one distinct fact. The post-terminal conflict path never overwrites the original media object, validation facts or revision.
+
+Recording outbox classification:
+
+- Declaration: `201` is terminal; `RECORDING_IDENTITY_CONFLICT`, `IVR_ARGUMENT_INVALID`, `VALIDATION_FAILED` and `CALL_UNKNOWN` are permanent; `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `INTERNAL`, 5xx and network failures are retryable.
+- Completion: `200` is terminal; `UPLOAD_EXPIRED`, `RECORDING_IDENTITY_CONFLICT`, `IVR_ARGUMENT_INVALID`, `VALIDATION_FAILED` and `CALL_UNKNOWN` are permanent; `UPLOAD_OBSERVATION_REQUIRED`, `STORAGE_UNKNOWN`, `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `INTERNAL`, 5xx and network failures are retryable.
+- The identity is `(callId,recordingId)` with an immutable payload. Retransmission never mints a new identity, never renews expiry and never creates a second recording, media object or validation fact.
+- `ACKED` and `PERMANENT_FAILURE` are absorbing for one `(callId,recordingId)` recording outbox entry. A later response, a lost-response simulation or a post-terminal conflict never changes a terminal entry and never increments another terminal counter.
+
+### 7.6 Media-to-evidence handoff boundary
+
+- The handoff owner is `evidence`; the prerequisite is `recording.status = VALIDATED`.
+- The typed handoff-ready fields are `callId`, `recordingId`, `recordingStatus`, `validatedDurationSeconds`, `validatedSha256` and `mediaObjectDigest`.
+- `complete` sets `completionCreatesEvidence=false` and `completionSolidifiesEvidence=false`. The downstream owner flow creates the evidence record, creation event and original artifact from its own validated source facts.
+- There is no IVR evidence endpoint. The A2 boundary is typed and handoff-ready only; evidence identity and creation policy remain `R-A2-EVIDENCE-HANDOFF` with the evidence owner.
+- Evidence status values remain A0 `PENDING`, `SOLIDIFIED`, `QUARANTINED` and `FAILED`.
+- No object key, bucket, version, permanent URL, credential, media bytes or raw party identifier crosses the boundary.
+
+## 8. Identity, ownership, precondition and replay matrix
 
 | identity | owner | uniqueness | precondition | replay/conflict | A0/A1 mapping |
 | --- | --- | --- | --- | --- | --- |
@@ -429,7 +511,7 @@ Machine-readable identity projection (the accepted four-column form):
 
 The identity matrix freezes wire identity, not S2/S3 behavior. Rows for terminal, media and evidence facts exist because the v1 surface has those identities; their state and payload semantics are deferred.
 
-## 8. Invariants
+## 9. Invariants
 
 S1 registers the 15 cross-cutting invariant IDs. S2 and S3 may add prose and execution semantics, but must not add or rename an invariant ID.
 
@@ -471,19 +553,40 @@ S2 execution meaning for the same 15 IDs (no ID is added or renamed):
 | INV-A2-14 | `UNKNOWN` occupies the call and reservation; no redial, second reservation or settlement occurs. |
 | INV-A2-15 | S2 carries no declaration or completion execution; the invariant remains the S3 boundary. |
 
-## 9. Deterministic S2 validation and fixtures
+S3 execution meaning for the same 15 IDs (no ID is added or renamed):
 
-`protocol/ivr/validate.mjs --stage s2` performs five independent checks:
+| ID | S3 execution meaning |
+| --- | --- |
+| INV-A2-01 | Recording operations require the existing `callId`; a missing call is `404 CALL_UNKNOWN` with no placeholder. |
+| INV-A2-02 | Completion never changes routing, decisions or the B-leg. |
+| INV-A2-03 | Upload observation and completion never dial or redial. |
+| INV-A2-04 | Declaration/completion never reserve, settle or produce usage facts. |
+| INV-A2-05 | A recording terminal result is absorbed; a conflicting post-terminal callback is refused without rewriting the first result. |
+| INV-A2-06 | Recording media never rewrites a decision. |
+| INV-A2-07 | Completion does not change task linkage or terminal state. |
+| INV-A2-08 | Recording replay uses `(callId,recordingId)` plus server-observed facts; changed content conflicts. |
+| INV-A2-09 | Declared facts never overwrite server-observed facts; completion never solidifies evidence. |
+| INV-A2-10 | Recording operations do not confirm callees or claim tasks. |
+| INV-A2-11 | Recording operations do not release or authorize reservations. |
+| INV-A2-12 | No protocol output, log, outbox or fixture exposes object key, bucket, version, URL, credential material or media bytes. |
+| INV-A2-13 | Recording operations interpret under the version frozen at resolve. |
+| INV-A2-14 | Storage unknown and upload expiry fail closed without fabricating media facts. |
+| INV-A2-15 | Declaration and completion retries reuse `recordingId` and never create a second recording or media object. |
 
-1. The machine model uses the exact S2 top-level sections; a missing S2 section or a premature S1/S3 form fails. `payloadState` is forbidden anywhere.
-2. The document marker blocks match the model row-for-row and column-for-column. The event block is exactly `eventType,envelopeLegId,payloadFields,normalProcessingOutcome` with 11 rows; `{}` in the document normalizes to the model's empty payload array.
-3. The S2 registries are exact: `eventEnvelope` (six envelope fields, 11 closed payloads and payload rules), nine `endReasons`, ten `quarantineReasons`, six backend state machines plus `terminalMapping`, the B-leg fields/phases/transitions/recovery rules and the four outbox states with their call-event classification.
+## 10. Deterministic S3 validation and fixtures
+
+`protocol/ivr/validate.mjs --stage s3` performs six independent checks:
+
+1. The machine model uses the exact S3 top-level sections; a missing S2/S3 section or a premature S1 form fails. `payloadState` is forbidden anywhere. S3 requires `recordingLifecycle` and `mediaEvidenceBoundary`; stage S2 rejects both sections and the eight S3 fixture IDs as premature.
+2. The document marker blocks match the model row-for-row and column-for-column. The event block is exactly `eventType,envelopeLegId,payloadFields,normalProcessingOutcome` with 11 rows; `{}` in the document normalizes to the model's empty payload array. The S3 tree must recompute the unchanged event registry digest.
+3. The S2 registries remain exact: `eventEnvelope` (six envelope fields, 11 closed payloads and payload rules), nine `endReasons`, ten `quarantineReasons`, six backend state machines plus `terminalMapping`, the B-leg fields/phases/transitions/recovery rules and the four outbox states with their call-event classification.
 4. `eventRegistry` has exactly `frozenAt=s2` and the canonical SHA-256 of the 11 `eventTypes` entries. A digest change fails. The A1 bundle still has 49 operations, six IVR operations and the exact schema/Problem sets; `IvrEventPayload` remains opaque.
-5. A0 still has 44 catalog tables, the exact named CHECK registries and every referenced column. The cumulative fixture set is exactly 17 IDs (six S1 plus 11 S2).
+5. The S3 registries are exact: the four recording states with the five approved edges, declaration replay/conflict, upload observation, completion order and outcomes, the conflict Outbox identity/payload, recording outbox classification and the typed media evidence boundary. `complete` must never create or solidify evidence.
+6. A0 still has 44 catalog tables, the exact named CHECK registries and every referenced column. The cumulative fixture set is exactly 25 IDs (six S1, 11 S2 and eight S3).
 
-The validator evaluates fixtures with a deterministic in-memory `ProtocolMachine`. For S2 it computes action selection, event identity/replay/conflict, leg/bridge/recording facts, terminal absorption, UNKNOWN occupancy, reconciliation, reservation settlement/release/reconciling, task terminal state, the IVR-local B-leg phase machine and the event outbox. It never reads a fixture's `expected` block to decide a result. The machine has no database, network, clock, random source, SIP/CDR, provider or telephony dependency. Fixture times, identities and line outcomes are fixed inputs. The machine is a fixture evaluator, not a backend, IVR runtime or production acceptance matrix.
+The validator evaluates fixtures with a deterministic in-memory `ProtocolMachine`. For S2 it computes action selection, event identity/replay/conflict, leg/bridge/recording facts, terminal absorption, UNKNOWN occupancy, reconciliation, reservation settlement/release/reconciling, task terminal state, the IVR-local B-leg phase machine and the event outbox. For S3 it also computes declaration creation/replay/conflict, the server-observed upload object, completion before observation, upload expiry quarantine, storage-unknown retry, validation/quarantine, completion replay, post-terminal conflict dedupe and the evidence boundary counters. It never reads a fixture's `expected` block to decide a result. The machine has no database, network, clock, random source, SIP/CDR, provider, COS or telephony dependency. Fixture times, identities, observations and line outcomes are fixed inputs. The machine is a fixture evaluator, not a backend, IVR runtime, media adapter or production acceptance matrix.
 
-The S2 fixtures (cumulative 17) are:
+The S2 fixtures (cumulative 17, unchanged) are:
 
 | Fixture | Scenario | Assertions |
 | --- | --- | --- |
@@ -499,26 +602,39 @@ The S2 fixtures (cumulative 17) are:
 | `s2-10-terminal-contradiction-quarantine` (negative) | Second terminal with different seconds; `CALL_TERMINATED` after `UNKNOWN` | `QUARANTINED`/`CONTRADICTORY_FACT` and `QUARANTINED`/`USE_RECONCILIATION_EVENT`; no reopen, second settlement or release |
 | `s2-11-resolve-never-committed-not-started` (negative) | Resolve never commits; local B-leg/line attempt absent; later `OUTBOUND_NOT_STARTED` | `404 CALL_UNKNOWN`; no call/task/reservation placeholder; no release or usage; outbox `PERMANENT_FAILURE` |
 
-Expected successful stage-s2 output:
+The S3 fixtures (eight, cumulative 25, no new marked negative) are:
+
+| Fixture | Scenario | Assertions |
+| --- | --- | --- |
+| `s3-01-recording-validated` | Declare, server-local upload observation, complete | `VALIDATED`; one recording and one media object; server duration/hash; no object key, bucket or version exposed; client-supplied storage facts rejected |
+| `s3-02-declaration-replay` | Declaration response loss, then same identity retry | same first `201` snapshot; no new recording; no credential reissue; `uploadExpiresAt` not renewed; outbox `SENT` to `ACKED` |
+| `s3-03-upload-observation-required` | Complete before observation, then observe and retry the same identity | first `409 UPLOAD_OBSERVATION_REQUIRED` with no mutation; retry converges to `VALIDATED` |
+| `s3-04-upload-expired-quarantine` | First observation at `uploadExpiresAt`, then complete after expiry and repeat | `409 UPLOAD_EXPIRED`; still-`DECLARED` recording `QUARANTINED` once; no successful media fact; completion repeats the first expiry result and the outbox does not re-quarantine |
+| `s3-05-storage-unknown-retry` | Complete with an unknown storage result, then retry after expiry | `503 STORAGE_UNKNOWN` with no media fact or terminal mutation; the same identity retry converges to `VALIDATED` even when completion is at or after `uploadExpiresAt`, because the observation was accepted before expiry |
+| `s3-06-recording-identity-conflict` | Changed declaration facts; observation replay, re-declare and changed observation after expiry; pre-terminal changed observation at completion | replay returns the first `UPLOADED` result with one media object; re-declare and changed observation are `409 RECORDING_IDENTITY_CONFLICT` without mutation; pre-terminal differing completion quarantines once without overwriting the first media object; declaration and completion outboxes stay `ACKED` |
+| `s3-07-post-terminal-conflict-fact` | Conflicting completion after `VALIDATED`, repeated with the same payload, then a second distinct payload and a response-loss replay | `409 RECORDING_IDENTITY_CONFLICT`; status/revision/validated facts unchanged; all eight redacted payload fields asserted; identical payload deduped, distinct payload adds exactly one fact; completion outbox stays `ACKED` and `recordingOutboxPermanent` stays zero |
+| `s3-08-end-to-end-task-media` | Task resolve, one B-leg, terminal/settlement, declare, observe, complete, handoff | cumulative call/task/reservation counts correct; recording `VALIDATED`; evidence record/solidification counters remain 0 |
+
+Expected successful stage-s3 output:
 
 ```text
-stage=s2 messages=12 event_types=11 event_map_form=full-frozen identities=22 fixtures=17 passed=17 failed=0 negative=3 slice_fixtures=6+11
+stage=s3 messages=12 event_types=11 event_map_form=full-frozen identities=22 fixtures=25 passed=25 failed=0 negative=3 slice_fixtures=6+11+8
 a1_operations=49 ivr_operations=6 a1_drift=0
 a0_tables=44 a0_status_drift=0 a0_registry_drift=0 a0_column_drift=0
 doc_missing=0 doc_extra=0 doc_duplicate=0 doc_invalid=0 token_missing=0
 stage_field_missing=0 stage_field_premature=0 fixture_id_missing=0 fixture_id_extra=0
 invariants=15
 event_registry_frozen=s2 event_registry_sha256=c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9
-PASS protocol-validation (s2)
+PASS protocol-validation (s3)
 ```
 
-Running the stage-s1 validator against an S2 tree must fail: the S1 projection requires exactly `eventType,payloadState` with `DEFERRED_S2` and forbids the S2 sections and nested event columns. A stage-s1 pass on an S2 model would be a false claim.
+Running stage S1 or S2 against the S3 tree must fail only for premature S2/S3 sections, event columns or fixture IDs. The S1 projection requires exactly `eventType,payloadState` with `DEFERRED_S2`; the S2 projection forbids `recordingLifecycle`, `mediaEvidenceBoundary` and the eight S3 fixture IDs. A stage-s1 or stage-s2 pass on this tree would be a false claim.
 
 A0 registry names checked directly against `docs/14`:
 
 `ck_outbound_task_status`, `ck_inbound_session_status`, `ck_call_record_status`, `ck_call_leg_state`, `ck_call_event_processing_status`, `ck_ivr_decision_action`, `ck_ivr_decision_purpose`, `ck_ivr_decision_reason`, `ck_usage_reservation_status`, `ck_recording_status`, `ck_evidence_status`, `ck_usage_fact_type`, `ck_usage_fact_event_domain`, `ck_idempotency_scope`.
 
-## 10. Deferred inputs and residual risks
+## 11. Deferred inputs and residual risks
 
 Deferred without invention:
 
@@ -529,14 +645,14 @@ Deferred without invention:
 - Q25: authorization-window and clock-skew values. S1 uses the committed absolute `authorizationExpiresAt`.
 - Q27: organization-member task creation/claim role matrix.
 - Q13: event/heartbeat/outbox retention.
-- Q15/Q26/Q28: event wire values, snapshot/wire mapping and B-leg local recovery. S2 closes the 11 event wire types/payloads, event ordering/quarantine, heartbeat, terminal/UNKNOWN/reconciliation, the B-leg local phase machine keyed by `callId` and the IVR event outbox. Recording media wire remains S3.
+- Q15/Q26/Q28: event wire values, snapshot/wire mapping, B-leg local recovery and recording media wire. S2 closes the 11 event wire types/payloads, event ordering/quarantine, heartbeat, terminal/UNKNOWN/reconciliation, the B-leg local phase machine keyed by `callId` and the IVR event outbox. S3 closes recording declaration, upload observation, completion/quarantine, conflict Outbox facts and the media-to-evidence boundary. Real object-storage observation, expiry values, retention, malware scanning and evidence creation identity remain with their named owners.
 
 Classified residuals:
 
 | ID | Classification | Destination |
 | --- | --- | --- |
 | `R-A2-A0-TASKID-TYPE` | A0 presentation mismatch; normative A0 §4.23 and A1 text 1-64 are followed | A0 documentation clarification |
-| `R-A2-DECLARE-REPLAY` | A1/A0 declaration projection boundary | S3 + API/evidence review |
+| `R-A2-DECLARE-REPLAY` | A1/A0 declaration projection boundary; S3 freezes the DECLARED-only replay and fail-closed post-upload re-declare | API/evidence projection review |
 | `R-A2-SESSION-ABANDONED` | A0 state with no v1 wire trigger | IVR/backend product polish |
 | `R-A2-HEARTBEAT-VOLUME` | Durable heartbeat volume and retention | Telephony/operations, Q8/Q13 |
 | `R-A2-UPLOAD-OBSERVE` | Object-storage observation trigger | IVR/evidence, Q7/Q8 |
@@ -549,15 +665,15 @@ Classified residuals:
 | `R-A2-PROMPT-DTMF` | Prompt copy and DTMF pacing are not frozen | Product/legal, Q10 |
 | `R-A2-SIGNATURE` | Signature string, nonce and time window are not frozen | Security/backend, Q7/Q15/Q25 |
 
-S1 and S2 are static contracts. They do not prove PostgreSQL concurrency, actual task claim or reservation behavior, SIP/line/CDR behavior, B-leg dispatch, bridge or recording, COS upload observation, evidence solidification, security signing or production capacity. The fixture evaluator is not a production acceptance matrix.
+S1, S2 and S3 are static contracts. They do not prove PostgreSQL concurrency, actual task claim or reservation behavior, SIP/line/CDR behavior, B-leg dispatch, bridge or recording, real COS object/version observation, malware scanning, credential issuance, evidence creation/solidification, security signing or production capacity. The fixture evaluator is not a production acceptance matrix.
 
-## 11. Documentation and decision record
+## 12. Documentation and decision record
 
 - Canonical human specification: this document.
 - Canonical machine model: `protocol/ivr/v1/ivr-protocol-v1.json`.
-- Deterministic fixtures: `protocol/ivr/v1/fixtures/s1-01-*.json` through `s1-06-*.json` plus `s2-01-*.json` through `s2-11-*.json` (17 cumulative).
+- Deterministic fixtures: `protocol/ivr/v1/fixtures/s1-01-*.json` through `s1-06-*.json`, `s2-01-*.json` through `s2-11-*.json` and `s3-01-*.json` through `s3-08-*.json` (25 cumulative; slices `6+11+8`).
 - Validator: `protocol/ivr/validate.mjs`, zero third-party dependencies, Node 22.
 - S2 promoted the event block from the `DEFERRED_S2` identity form to the full four-column frozen form and owns event payload, execution, recovery, heartbeat, terminal/reconciliation and settlement semantics. The frozen digest is `c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9`.
-- S3 will own recording/media/evidence semantics and must not change the S2 event registry or its digest.
-- No README, second protocol document, JSON Schema copy, package file or A0/A1 modification is part of S1 or S2.
-- No operator/PBX integration, real credential, provider value, timeout, heartbeat interval, retry backoff, tolerance or cloud resource is introduced.
+- S3 owns recording declaration/upload observation/completion/quarantine, conflict Outbox facts and the media-to-evidence handoff boundary. It does not change the S2 event registry or digest, messages, identities, invariants or A0/A1 contracts.
+- No README, second protocol document, JSON Schema copy, package file or A0/A1 modification is part of S1, S2 or S3.
+- No operator/PBX integration, real credential, provider value, timeout, heartbeat interval, retry backoff, tolerance, cloud resource or evidence runtime is introduced.

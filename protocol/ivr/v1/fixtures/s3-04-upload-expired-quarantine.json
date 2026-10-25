@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "id": "s3-04-upload-expired-quarantine",
+  "slice": "s3",
+  "description": "A first upload observation at uploadExpiresAt returns 409 UPLOAD_EXPIRED and quarantines the still-DECLARED recording once with no successful media fact; a completion after expiry returns the first expiry result and a repeat does not re-quarantine or overwrite the first terminal state.",
+  "steps": [
+    {
+      "id": "resolve",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s3-04",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000304",
+        "subjectId": "20000000-0000-5000-8000-000000000304",
+        "nodeId": "node-s3-04",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "11111111-1111-5111-8111-111111111304",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "entitlement": {
+          "availableRecordingSeconds": 0
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "callId": "call-s3-04",
+          "action": "GUIDE_PURCHASE"
+        },
+        "persisted": {
+          "call": {
+            "exists": true
+          }
+        },
+        "counts": {
+          "callsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "declare",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-04",
+        "recordingId": "rec-s3-04",
+        "mimeType": "audio/wav",
+        "sizeBytes": 4096,
+        "durationSeconds": 30,
+        "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "server": {
+        "now": "2026-10-25T10:00:00Z",
+        "uploadExpiresAt": "2026-10-25T10:10:00Z"
+      },
+      "expected": {
+        "status": 201,
+        "response": {
+          "recordingId": "rec-s3-04",
+          "status": "DECLARED"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-04",
+              "status": "DECLARED",
+              "revision": 1
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "upload-observation-after-expiry",
+      "action": "local",
+      "operation": "recording.observeUpload",
+      "body": {
+        "callId": "call-s3-04",
+        "recordingId": "rec-s3-04",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-04-1",
+          "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+          "sizeBytes": 4096,
+          "mimeType": "audio/wav",
+          "durationSeconds": 30
+        },
+        "now": "2026-10-25T10:11:00Z"
+      },
+      "expected": {
+        "status": 409,
+        "code": "UPLOAD_EXPIRED",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-04",
+              "status": "QUARANTINED",
+              "revision": 2,
+              "mediaObject": null,
+              "validated": null,
+              "terminalFacts": null,
+              "completedAt": "2026-10-25T10:11:00Z",
+              "evidenceCreated": false,
+              "evidenceSolidified": false
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-04",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "uploadObservations": 0,
+          "mediaObjectsCreated": 0,
+          "recordingValidations": 0,
+          "recordingQuarantines": 1,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 0
+        }
+      }
+    },
+    {
+      "id": "complete-after-expiry",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-04",
+        "recordingId": "rec-s3-04",
+        "clientReference": "ref-s3-04"
+      },
+      "server": {
+        "now": "2026-10-25T10:11:00Z"
+      },
+      "expected": {
+        "status": 409,
+        "code": "UPLOAD_EXPIRED",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-04",
+              "status": "QUARANTINED",
+              "revision": 2,
+              "mediaObject": null,
+              "validated": null,
+              "terminalFacts": null,
+              "completedAt": "2026-10-25T10:11:00Z",
+              "evidenceCreated": false,
+              "evidenceSolidified": false
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "completion",
+              "recordingId": "rec-s3-04",
+              "status": "PERMANENT_FAILURE"
+            },
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-04",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "mediaObjectsCreated": 0,
+          "recordingValidations": 0,
+          "recordingQuarantines": 1,
+          "recordingOutboxEntries": 2,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 1
+        }
+      }
+    },
+    {
+      "id": "complete-after-expiry-repeat",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-04",
+        "recordingId": "rec-s3-04",
+        "clientReference": "ref-s3-04"
+      },
+      "server": {
+        "now": "2026-10-25T10:12:00Z"
+      },
+      "expected": {
+        "status": 409,
+        "code": "UPLOAD_EXPIRED",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-04",
+              "status": "QUARANTINED",
+              "revision": 2,
+              "mediaObject": null,
+              "validated": null,
+              "completedAt": "2026-10-25T10:11:00Z"
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "completion",
+              "recordingId": "rec-s3-04",
+              "status": "PERMANENT_FAILURE"
+            },
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-04",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "recordingQuarantines": 1,
+          "recordingValidations": 0,
+          "mediaObjectsCreated": 0,
+          "recordingOutboxEntries": 2,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 1,
+          "recordingOutboxRetried": 1
+        }
+      }
+    }
+  ]
+}

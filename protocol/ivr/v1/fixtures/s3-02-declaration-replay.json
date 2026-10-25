@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "id": "s3-02-declaration-replay",
+  "slice": "s3",
+  "description": "The first declaration response is lost; the identical recording identity retry returns the first 201 snapshot with the same credential and expiry, creates no second recording and does not renew uploadExpiresAt even when the server context offers a later expiry.",
+  "steps": [
+    {
+      "id": "resolve",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s3-02",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000302",
+        "subjectId": "20000000-0000-5000-8000-000000000302",
+        "nodeId": "node-s3-02",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "11111111-1111-5111-8111-111111111302",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "entitlement": {
+          "availableRecordingSeconds": 0
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "callId": "call-s3-02",
+          "action": "GUIDE_PURCHASE"
+        },
+        "persisted": {
+          "call": {
+            "exists": true,
+            "status": "ACTIVE"
+          }
+        },
+        "counts": {
+          "callsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "declare-response-lost",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-02",
+        "recordingId": "rec-s3-02",
+        "mimeType": "audio/wav",
+        "sizeBytes": 40960,
+        "durationSeconds": 240,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "server": {
+        "now": "2026-10-25T10:00:00Z",
+        "uploadExpiresAt": "2026-10-25T10:10:00Z"
+      },
+      "delivery": {
+        "responseLost": true
+      },
+      "expected": {
+        "status": 201,
+        "response": {
+          "recordingId": "rec-s3-02",
+          "status": "DECLARED",
+          "uploadExpiresAt": "2026-10-25T10:10:00Z"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-02",
+              "status": "DECLARED",
+              "revision": 1,
+              "uploadExpiresAt": "2026-10-25T10:10:00Z"
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-02",
+              "status": "SENT"
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingDeclarations": 1,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 0
+        }
+      }
+    },
+    {
+      "id": "ivr-restart",
+      "action": "restart",
+      "body": {
+        "callId": "call-s3-02"
+      },
+      "expected": {
+        "status": 200,
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-02",
+              "status": "DECLARED",
+              "revision": 1,
+              "uploadExpiresAt": "2026-10-25T10:10:00Z"
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-02",
+              "status": "SENT"
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingOutboxEntries": 1
+        }
+      }
+    },
+    {
+      "id": "declare-retry",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-02",
+        "recordingId": "rec-s3-02",
+        "mimeType": "audio/wav",
+        "sizeBytes": 40960,
+        "durationSeconds": 240,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "server": {
+        "now": "2026-10-25T10:01:00Z",
+        "uploadExpiresAt": "2026-10-25T10:20:00Z"
+      },
+      "expected": {
+        "status": 201,
+        "responseEqualsStep": "declare-response-lost",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-02",
+              "status": "DECLARED",
+              "revision": 1,
+              "uploadExpiresAt": "2026-10-25T10:10:00Z"
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-02",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingDeclarations": 1,
+          "recordingDeclarationReplays": 1,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxRetried": 1
+        }
+      }
+    }
+  ]
+}
