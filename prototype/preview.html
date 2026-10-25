@@ -4809,7 +4809,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;div class=&quot;suite&quot;&gt;
     &lt;aside class=&quot;screen-index&quot; aria-label=&quot;页面目录&quot;&gt;
       &lt;h1 class=&quot;index-title&quot;&gt;一通话页面集&lt;/h1&gt;
-      &lt;p class=&quot;index-meta&quot;&gt;62 个核心页面 · 点击切换评审&lt;/p&gt;
+      &lt;p class=&quot;index-meta&quot;&gt;63 个核心页面 · 点击切换评审&lt;/p&gt;
 
       &lt;section class=&quot;index-group&quot;&gt;
         &lt;h2 class=&quot;index-label&quot;&gt;开通&lt;/h2&gt;
@@ -4860,7 +4860,8 @@ html&gt;body{padding:0}&lt;/style&gt;
           &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;matterCreate&quot;&gt;&lt;i data-lucide=&quot;folder-plus&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;新建事情&lt;/button&gt;
           &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;call&quot;&gt;&lt;i data-lucide=&quot;contact&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;拨号准备&lt;/button&gt;
           &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;callerSelect&quot;&gt;&lt;i data-lucide=&quot;list-checks&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;选择主叫号码&lt;/button&gt;
-          &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;dialHandoff&quot;&gt;&lt;i data-lucide=&quot;smartphone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;系统拨号交接&lt;/button&gt;
+          &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;dialHandoff&quot;&gt;&lt;i data-lucide=&quot;smartphone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;待拨任务与系统拨号&lt;/button&gt;
+          &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;callStatus&quot;&gt;&lt;i data-lucide=&quot;activity&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;呼叫状态&lt;/button&gt;
           &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;landlineCall&quot;&gt;&lt;i data-lucide=&quot;phone-forwarded&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;固话声讯短号取证&lt;/button&gt;
           &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;callerMismatch&quot;&gt;&lt;i data-lucide=&quot;phone-off&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;主叫号码不一致&lt;/button&gt;
           &lt;button class=&quot;index-button&quot; type=&quot;button&quot; data-page=&quot;callerUnavailable&quot;&gt;&lt;i data-lucide=&quot;shield-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;主叫号码无法核验&lt;/button&gt;
@@ -4924,7 +4925,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;/div&gt;
 
   &lt;!-- ONECALL_BUSINESS:START --&gt;
-&lt;script data-onecall-business-sha256=&quot;c0356ee31a0d5b6af28b79c4409e33f02059d0c06e59a29cc03e289cb155a7e4&quot;&gt;
+&lt;script data-onecall-business-sha256=&quot;83d3ac242d6c7bf725493c6a69783badb2d63995b27eec68b302103ed6d2899c&quot;&gt;
 (function (root, factory) {
   const api = factory();
   if (typeof module === &#x27;object&#x27; &amp;&amp; module.exports) module.exports = api;
@@ -4947,6 +4948,42 @@ html&gt;body{padding:0}&lt;/style&gt;
     &#x27;employees&#x27;, &#x27;employeeLoginSession&#x27;, &#x27;employeeCredentials&#x27;, &#x27;employeeRoles&#x27;,
     &#x27;customerAuthSession&#x27;, &#x27;uiSession&#x27;, &#x27;widgetState&#x27;, &#x27;code&#x27;,
   ]);
+  // The call-task domain is a separate local review fixture. It is never part of
+  // the strict business snapshot above and has its own schema and validator.
+  const CALL_TASK_SCHEMA_VERSION = 1;
+  const CALL_TASK_TTL_SECONDS = 30;
+  const CALL_TASK_FIELDS = [&#x27;schemaVersion&#x27;, &#x27;ttlSeconds&#x27;, &#x27;callerBindings&#x27;, &#x27;tasks&#x27;, &#x27;calls&#x27;, &#x27;sequence&#x27;];
+  const CALL_TASK_REASONS = new Set([&#x27;TTL_EXPIRED&#x27;, &#x27;CALLER_MISMATCH&#x27;, &#x27;NO_ANSWER&#x27;, &#x27;BUSY&#x27;, &#x27;OUTBOUND_FAILED&#x27;, &#x27;REPLACED&#x27;, &#x27;CANCELLED&#x27;, &#x27;SUSPENDED&#x27;]);
+  const CALL_TASK_FAILURE_REASONS = new Set([&#x27;TTL_EXPIRED&#x27;, &#x27;CALLER_MISMATCH&#x27;, &#x27;NO_ANSWER&#x27;, &#x27;BUSY&#x27;, &#x27;OUTBOUND_FAILED&#x27;, &#x27;SUSPENDED&#x27;]);
+  const CALL_TASK_NONTERMINAL = new Set([&#x27;PENDING&#x27;, &#x27;CLAIMED&#x27;]);
+  const CALL_TASK_ACTIVE_PROGRESS = new Set([&#x27;WAITING_CALLEE_INPUT&#x27;, &#x27;CALLEE_CONFIRMED&#x27;, &#x27;CLAIMED&#x27;, &#x27;OUTBOUND_STARTED&#x27;, &#x27;RINGING&#x27;, &#x27;ANSWERED&#x27;, &#x27;BRIDGED&#x27;, &#x27;RECORDING&#x27;]);
+  const CALL_TASK_ENUMS = {
+    ownerType: new Set([&#x27;PERSONAL_ACCOUNT&#x27;, &#x27;ORGANIZATION&#x27;]),
+    numberType: new Set([&#x27;MOBILE&#x27;, &#x27;LANDLINE&#x27;]),
+    businessType: new Set([&#x27;EVIDENCE_CALL&#x27;]),
+    taskStatus: new Set([&#x27;PENDING&#x27;, &#x27;CLAIMED&#x27;, &#x27;COMPLETED&#x27;, &#x27;FAILED&#x27;, &#x27;EXPIRED&#x27;, &#x27;REPLACED&#x27;, &#x27;CANCELLED&#x27;, &#x27;REJECTED&#x27;]),
+    ivrAction: new Set([&#x27;DIAL_TASK_CALLEE&#x27;, &#x27;ENTER_CALLEE&#x27;, &#x27;GUIDE_ACTIVATION&#x27;, &#x27;GUIDE_PURCHASE&#x27;, &#x27;REJECT&#x27;, &#x27;REJECT_CALL_IN_PROGRESS&#x27;, &#x27;REJECT_SUSPENDED&#x27;]),
+    callAction: new Set([&#x27;DIAL_TASK_CALLEE&#x27;, &#x27;ENTER_CALLEE&#x27;, &#x27;REJECT&#x27;]),
+    taskMatch: new Set([&#x27;CLAIMED&#x27;, &#x27;NONE&#x27;, &#x27;MISMATCH&#x27;, &#x27;EXPIRED&#x27;, &#x27;REJECTED&#x27;, &#x27;CONFLICT&#x27;]),
+    callProgress: new Set([&#x27;WAITING_INBOUND&#x27;, &#x27;WAITING_CALLEE_INPUT&#x27;, &#x27;CALLEE_CONFIRMED&#x27;, &#x27;CLAIMED&#x27;, &#x27;OUTBOUND_STARTED&#x27;, &#x27;RINGING&#x27;, &#x27;ANSWERED&#x27;, &#x27;BRIDGED&#x27;, &#x27;RECORDING&#x27;, &#x27;ENDED&#x27;, &#x27;RECORDING_RECEIVED&#x27;, &#x27;EVIDENCE_PROCESSING&#x27;, &#x27;EVIDENCE_READY&#x27;, &#x27;FAILED&#x27;]),
+    calleeConfirmation: new Set([&#x27;NONE&#x27;, &#x27;DTMF_REQUIRED&#x27;, &#x27;DTMF_CONFIRMED&#x27;, &#x27;NOT_APPLICABLE&#x27;]),
+    upload: new Set([&#x27;NOT_STARTED&#x27;, &#x27;UPLOADING&#x27;, &#x27;RECEIVED&#x27;, &#x27;FAILED&#x27;]),
+    evidence: new Set([&#x27;NOT_CREATED&#x27;, &#x27;PROCESSING&#x27;, &#x27;AVAILABLE&#x27;, &#x27;FAILED&#x27;]),
+    eventType: new Set([&#x27;INBOUND_RECEIVED&#x27;, &#x27;TASK_CLAIMED&#x27;, &#x27;DTMF_CALLEE_CONFIRMED&#x27;, &#x27;OUTBOUND_STARTED&#x27;, &#x27;RINGING&#x27;, &#x27;ANSWERED&#x27;, &#x27;BRIDGED&#x27;, &#x27;RECORDING_STARTED&#x27;, &#x27;CALL_ENDED&#x27;, &#x27;RECORDING_RECEIVED&#x27;, &#x27;EVIDENCE_PROCESSING&#x27;, &#x27;EVIDENCE_READY&#x27;, &#x27;CALL_FAILED&#x27;]),
+    eventSource: new Set([&#x27;MINI&#x27;, &#x27;IVR&#x27;, &#x27;ONECALL&#x27;]),
+    callerState: new Set([&#x27;ACTIVE&#x27;, &#x27;INACTIVE&#x27;, &#x27;SUSPENDED&#x27;, &#x27;UNREGISTERED&#x27;]),
+  };
+  const CALL_TASK_EVENT_SOURCE = {
+    INBOUND_RECEIVED: &#x27;IVR&#x27;, TASK_CLAIMED: &#x27;ONECALL&#x27;, DTMF_CALLEE_CONFIRMED: &#x27;IVR&#x27;,
+    OUTBOUND_STARTED: &#x27;IVR&#x27;, RINGING: &#x27;IVR&#x27;, ANSWERED: &#x27;IVR&#x27;, BRIDGED: &#x27;IVR&#x27;, RECORDING_STARTED: &#x27;IVR&#x27;,
+    CALL_ENDED: &#x27;IVR&#x27;, RECORDING_RECEIVED: &#x27;ONECALL&#x27;, EVIDENCE_PROCESSING: &#x27;ONECALL&#x27;, EVIDENCE_READY: &#x27;ONECALL&#x27;,
+  };
+  const CALL_TASK_EVENT_PROGRESS = {
+    TASK_CLAIMED: &#x27;CLAIMED&#x27;, DTMF_CALLEE_CONFIRMED: &#x27;CALLEE_CONFIRMED&#x27;, OUTBOUND_STARTED: &#x27;OUTBOUND_STARTED&#x27;,
+    RINGING: &#x27;RINGING&#x27;, ANSWERED: &#x27;ANSWERED&#x27;, BRIDGED: &#x27;BRIDGED&#x27;, RECORDING_STARTED: &#x27;RECORDING&#x27;,
+    CALL_ENDED: &#x27;ENDED&#x27;, RECORDING_RECEIVED: &#x27;RECORDING_RECEIVED&#x27;, EVIDENCE_PROCESSING: &#x27;EVIDENCE_PROCESSING&#x27;,
+    EVIDENCE_READY: &#x27;EVIDENCE_READY&#x27;, CALL_FAILED: &#x27;FAILED&#x27;,
+  };
   const ENUMS = {
     numberType: new Set([&#x27;MOBILE&#x27;, &#x27;LANDLINE&#x27;]),
     identity: new Set([&#x27;UNVERIFIED&#x27;, &#x27;VERIFIED&#x27;]),
@@ -5034,6 +5071,19 @@ html&gt;body{padding:0}&lt;/style&gt;
     payment: { UNPAID: &#x27;待支付&#x27;, UNKNOWN: &#x27;支付结果待确认&#x27;, PAID: &#x27;支付成功&#x27;, CLOSED: &#x27;已关闭&#x27; },
     entitlement: { NOT_ISSUED: &#x27;未发放&#x27;, PENDING: &#x27;待发放&#x27;, ISSUED: &#x27;已到账&#x27;, FAILED: &#x27;发放失败&#x27; },
     catalog: { DRAFT: &#x27;草稿&#x27;, ACTIVE: &#x27;在售&#x27;, OFFSALE: &#x27;已下架&#x27; },
+    taskStatus: { PENDING: &#x27;待呼入&#x27;, CLAIMED: &#x27;已领取&#x27;, COMPLETED: &#x27;已完成&#x27;, FAILED: &#x27;失败&#x27;, EXPIRED: &#x27;已过期&#x27;, REPLACED: &#x27;已替换&#x27;, CANCELLED: &#x27;已取消&#x27;, REJECTED: &#x27;已拒绝&#x27; },
+    ivrAction: { DIAL_TASK_CALLEE: &#x27;任务自动外呼&#x27;, ENTER_CALLEE: &#x27;无任务 DTMF 输入&#x27;, GUIDE_ACTIVATION: &#x27;引导开通&#x27;, GUIDE_PURCHASE: &#x27;引导购买&#x27;, REJECT: &#x27;拒绝&#x27;, REJECT_CALL_IN_PROGRESS: &#x27;呼叫处理中&#x27;, REJECT_SUSPENDED: &#x27;业务已停用&#x27; },
+    taskMatch: { CLAIMED: &#x27;已领取&#x27;, NONE: &#x27;无任务&#x27;, MISMATCH: &#x27;主叫不匹配&#x27;, EXPIRED: &#x27;已过期&#x27;, REJECTED: &#x27;已拒绝&#x27;, CONFLICT: &#x27;数据冲突&#x27; },
+    callProgress: { WAITING_INBOUND: &#x27;等待呼入&#x27;, WAITING_CALLEE_INPUT: &#x27;等待被叫输入&#x27;, CALLEE_CONFIRMED: &#x27;被叫已确认&#x27;, CLAIMED: &#x27;任务已领取&#x27;, OUTBOUND_STARTED: &#x27;已启动 B 路外呼&#x27;, RINGING: &#x27;被叫振铃&#x27;, ANSWERED: &#x27;被叫已接听&#x27;, BRIDGED: &#x27;已桥接&#x27;, RECORDING: &#x27;录音中&#x27;, ENDED: &#x27;通话已结束&#x27;, RECORDING_RECEIVED: &#x27;录音已接收&#x27;, EVIDENCE_PROCESSING: &#x27;证据处理中&#x27;, EVIDENCE_READY: &#x27;证据可用&#x27;, FAILED: &#x27;通话失败&#x27; },
+    uploadStatus: { NOT_STARTED: &#x27;未上传&#x27;, UPLOADING: &#x27;上传中&#x27;, RECEIVED: &#x27;已接收&#x27;, FAILED: &#x27;上传失败&#x27; },
+    evidenceStatus: { NOT_CREATED: &#x27;未创建&#x27;, PROCESSING: &#x27;处理中&#x27;, AVAILABLE: &#x27;可用&#x27;, FAILED: &#x27;处理失败&#x27; },
+    ownership: &#x27;运营商提供号码、线路和通信承载；自研 IVR 负责呼入接听、B 路外呼、双向桥接、录音、限时挂断及通话/录音上传；ONECALL 负责业务开通、待拨任务、权益与证据处理。&#x27;,
+    callPath: {
+      task: &#x27;任务路径：IVR 原子领取后按冻结被叫自动外呼，电话中不要求确认被叫号码。&#x27;,
+      noTask: &#x27;无任务路径：只有没有有效待拨任务时，IVR 才引导主叫通过 DTMF 输入并确认被叫；不读取或猜测历史任务被叫。&#x27;,
+      launch: &#x27;系统拨号盘已打开仅表示客户端调用了系统拨号能力，不代表已接通、已领取或正在录音。&#x27;,
+      localFixture: &#x27;本地演示/评审状态，不连接真实线路、媒体引擎、对象存储或后台。&#x27;,
+    },
   });
 
   const support = deepFreeze({
@@ -5569,6 +5619,620 @@ html&gt;body{padding:0}&lt;/style&gt;
     return ok(clone(copied));
   }
 
+  // ---------------------------------------------------------------------------
+  // Call-task demo domain (separate from the strict business snapshot)
+  // ---------------------------------------------------------------------------
+
+  function createCallTaskDemoState(now) {
+    const base = toMs(now);
+    const offset = ms =&gt; new Date(ms).toISOString();
+    const event = (callId, index, type, at, detail) =&gt; ({
+      eventId: `${callId}-EV${String(index).padStart(2, &#x27;0&#x27;)}`,
+      type,
+      at: offset(at),
+      source: type === &#x27;CALL_FAILED&#x27; ? &#x27;IVR&#x27; : (CALL_TASK_EVENT_SOURCE[type] || &#x27;IVR&#x27;),
+      detail: detail || &#x27;&#x27;,
+    });
+    const successEvents = (callId, start, seconds) =&gt; [
+      event(callId, 1, &#x27;INBOUND_RECEIVED&#x27;, start),
+      event(callId, 2, &#x27;TASK_CLAIMED&#x27;, start + 1000),
+      event(callId, 3, &#x27;OUTBOUND_STARTED&#x27;, start + 2000),
+      event(callId, 4, &#x27;RINGING&#x27;, start + 4000),
+      event(callId, 5, &#x27;ANSWERED&#x27;, start + 8000),
+      event(callId, 6, &#x27;BRIDGED&#x27;, start + 8000),
+      event(callId, 7, &#x27;RECORDING_STARTED&#x27;, start + 9000),
+      event(callId, 8, &#x27;CALL_ENDED&#x27;, start + 9000 + seconds * 1000),
+      event(callId, 9, &#x27;RECORDING_RECEIVED&#x27;, start + 9000 + seconds * 1000 + 12000),
+      event(callId, 10, &#x27;EVIDENCE_PROCESSING&#x27;, start + 9000 + seconds * 1000 + 22000),
+      event(callId, 11, &#x27;EVIDENCE_READY&#x27;, start + 9000 + seconds * 1000 + 32000),
+    ];
+    const directEvents = (callId, start, seconds) =&gt; {
+      const events = successEvents(callId, start, seconds);
+      events[1] = event(callId, 2, &#x27;DTMF_CALLEE_CONFIRMED&#x27;, start + 1000, &#x27;021 **** 9056&#x27;);
+      return events;
+    };
+    const callerBindings = [
+      { id: &#x27;CB-PERSONAL-6208&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-001&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-001&#x27;, maskedCaller: &#x27;138 **** 6208&#x27;, normalizedCaller: &#x27;13800006208&#x27;, numberType: &#x27;MOBILE&#x27;, active: true },
+      { id: &#x27;CB-PERSONAL-4471&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-001&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-001&#x27;, maskedCaller: &#x27;186 **** 4471&#x27;, normalizedCaller: &#x27;18600004471&#x27;, numberType: &#x27;MOBILE&#x27;, active: true },
+      { id: &#x27;CB-ORG-6688&#x27;, ownerType: &#x27;ORGANIZATION&#x27;, ownerId: &#x27;ORG-HUAQI-001&#x27;, workspaceId: &#x27;organization:ORG-HUAQI-001&#x27;, maskedCaller: &#x27;010 **** 6688&#x27;, normalizedCaller: &#x27;01088886688&#x27;, numberType: &#x27;LANDLINE&#x27;, active: true },
+      { id: &#x27;CB-PERSONAL-7812&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-002&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-002&#x27;, maskedCaller: &#x27;139 **** 7812&#x27;, normalizedCaller: &#x27;13900007812&#x27;, numberType: &#x27;MOBILE&#x27;, active: true },
+    ];
+    const t101 = base - 10 * 60 * 1000;
+    const t103 = base - 25 * 60 * 1000;
+    const t104 = base - 2 * DAY_MS;
+    const tNoTask = base - 20 * 60 * 1000;
+    const tMismatch = base - 15 * 60 * 1000;
+    const tasks = [
+      { id: &#x27;CT-DEMO-0101&#x27;, callerBindingId: &#x27;CB-PERSONAL-6208&#x27;, normalizedCaller: &#x27;13800006208&#x27;, maskedCaller: &#x27;138 **** 6208&#x27;, maskedCallee: &#x27;139 **** 3816&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-001&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-001&#x27;, createdByAccountId: &#x27;ACCOUNT-DEMO-001&#x27;, businessType: &#x27;EVIDENCE_CALL&#x27;, status: &#x27;COMPLETED&#x27;, reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t101), expiresAt: offset(t101 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t101 + 2000), claimedCallId: &#x27;OC-C2038&#x27;, claimedAt: offset(t101 + 5000), idempotencyKey: &#x27;IDEM-CT-DEMO-0101&#x27;, revision: 2 },
+      { id: &#x27;CT-DEMO-0102&#x27;, callerBindingId: &#x27;CB-PERSONAL-6208&#x27;, normalizedCaller: &#x27;13800006208&#x27;, maskedCaller: &#x27;138 **** 6208&#x27;, maskedCallee: &#x27;138 **** 7720&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-001&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-001&#x27;, createdByAccountId: &#x27;ACCOUNT-DEMO-001&#x27;, businessType: &#x27;EVIDENCE_CALL&#x27;, status: &#x27;EXPIRED&#x27;, reasonCode: &#x27;TTL_EXPIRED&#x27;, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(base - 40 * 60 * 1000), expiresAt: offset(base - 40 * 60 * 1000 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: null, claimedCallId: null, claimedAt: null, idempotencyKey: &#x27;IDEM-CT-DEMO-0102&#x27;, revision: 2 },
+      { id: &#x27;CT-DEMO-0103&#x27;, callerBindingId: &#x27;CB-PERSONAL-6208&#x27;, normalizedCaller: &#x27;13800006208&#x27;, maskedCaller: &#x27;138 **** 6208&#x27;, maskedCallee: &#x27;135 **** 7781&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-001&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-001&#x27;, createdByAccountId: &#x27;ACCOUNT-DEMO-001&#x27;, businessType: &#x27;EVIDENCE_CALL&#x27;, status: &#x27;FAILED&#x27;, reasonCode: &#x27;NO_ANSWER&#x27;, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t103), expiresAt: offset(t103 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t103 + 2000), claimedCallId: &#x27;OC-C2035&#x27;, claimedAt: offset(t103 + 4000), idempotencyKey: &#x27;IDEM-CT-DEMO-0103&#x27;, revision: 2 },
+      { id: &#x27;CT-DEMO-0104&#x27;, callerBindingId: &#x27;CB-PERSONAL-7812&#x27;, normalizedCaller: &#x27;13900007812&#x27;, maskedCaller: &#x27;139 **** 7812&#x27;, maskedCallee: &#x27;137 **** 2240&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-002&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-002&#x27;, createdByAccountId: &#x27;ACCOUNT-DEMO-002&#x27;, businessType: &#x27;EVIDENCE_CALL&#x27;, status: &#x27;COMPLETED&#x27;, reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t104), expiresAt: offset(t104 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t104 + 2000), claimedCallId: &#x27;OC-C2034&#x27;, claimedAt: offset(t104 + 5000), idempotencyKey: &#x27;IDEM-CT-DEMO-0104&#x27;, revision: 2 },
+      { id: &#x27;CT-DEMO-0201&#x27;, callerBindingId: &#x27;CB-PERSONAL-7812&#x27;, normalizedCaller: &#x27;13900007812&#x27;, maskedCaller: &#x27;139 **** 7812&#x27;, maskedCallee: &#x27;137 **** 2240&#x27;, ownerType: &#x27;PERSONAL_ACCOUNT&#x27;, ownerId: &#x27;ACCOUNT-DEMO-002&#x27;, workspaceId: &#x27;personal:ACCOUNT-DEMO-002&#x27;, createdByAccountId: &#x27;ACCOUNT-DEMO-002&#x27;, businessType: &#x27;EVIDENCE_CALL&#x27;, status: &#x27;PENDING&#x27;, reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(base - 10000), expiresAt: offset(base - 10000 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: null, claimedCallId: null, claimedAt: null, idempotencyKey: &#x27;IDEM-CT-DEMO-0201&#x27;, revision: 1 },
+    ];
+    const calls = [
+      { id: &#x27;OC-C2038&#x27;, taskId: &#x27;CT-DEMO-0101&#x27;, taskMatch: &#x27;CLAIMED&#x27;, action: &#x27;DIAL_TASK_CALLEE&#x27;, taskPath: true, normalizedCaller: &#x27;13800006208&#x27;, expectedCallerMasked: &#x27;138 **** 6208&#x27;, maskedCaller: &#x27;138 **** 6208&#x27;, maskedCallee: &#x27;139 **** 3816&#x27;, calleeConfirmation: &#x27;NONE&#x27;, progress: &#x27;EVIDENCE_READY&#x27;, endReason: null, recordingSeconds: 522, uploadStatus: &#x27;RECEIVED&#x27;, evidenceStatus: &#x27;AVAILABLE&#x27;, events: successEvents(&#x27;OC-C2038&#x27;, t101 + 4000, 522) },
+      { id: &#x27;OC-C2037&#x27;, taskId: null, taskMatch: &#x27;NONE&#x27;, action: &#x27;ENTER_CALLEE&#x27;, taskPath: false, normalizedCaller: &#x27;01088886688&#x27;, expectedCallerMasked: null, maskedCaller: &#x27;010 **** 6688&#x27;, maskedCallee: &#x27;021 **** 9056&#x27;, calleeConfirmation: &#x27;DTMF_CONFIRMED&#x27;, progress: &#x27;EVIDENCE_READY&#x27;, endReason: null, recordingSeconds: 1038, uploadStatus: &#x27;RECEIVED&#x27;, evidenceStatus: &#x27;AVAILABLE&#x27;, events: directEvents(&#x27;OC-C2037&#x27;, tNoTask, 1038) },
+      { id: &#x27;OC-C2036&#x27;, taskId: &#x27;CT-DEMO-0102&#x27;, taskMatch: &#x27;MISMATCH&#x27;, action: &#x27;REJECT&#x27;, taskPath: true, normalizedCaller: &#x27;18600004471&#x27;, expectedCallerMasked: &#x27;138 **** 6208&#x27;, maskedCaller: &#x27;186 **** 4471&#x27;, maskedCallee: null, calleeConfirmation: &#x27;NOT_APPLICABLE&#x27;, progress: &#x27;FAILED&#x27;, endReason: &#x27;CALLER_MISMATCH&#x27;, recordingSeconds: 0, uploadStatus: &#x27;NOT_STARTED&#x27;, evidenceStatus: &#x27;NOT_CREATED&#x27;, events: [event(&#x27;OC-C2036&#x27;, 1, &#x27;INBOUND_RECEIVED&#x27;, tMismatch), event(&#x27;OC-C2036&#x27;, 2, &#x27;CALL_FAILED&#x27;, tMismatch + 2000, &#x27;CALLER_MISMATCH&#x27;)] },
+      { id: &#x27;OC-C2035&#x27;, taskId: &#x27;CT-DEMO-0103&#x27;, taskMatch: &#x27;CLAIMED&#x27;, action: &#x27;DIAL_TASK_CALLEE&#x27;, taskPath: true, normalizedCaller: &#x27;13800006208&#x27;, expectedCallerMasked: &#x27;138 **** 6208&#x27;, maskedCaller: &#x27;138 **** 6208&#x27;, maskedCallee: &#x27;135 **** 7781&#x27;, calleeConfirmation: &#x27;NONE&#x27;, progress: &#x27;FAILED&#x27;, endReason: &#x27;NO_ANSWER&#x27;, recordingSeconds: 0, uploadStatus: &#x27;NOT_STARTED&#x27;, evidenceStatus: &#x27;NOT_CREATED&#x27;, events: [event(&#x27;OC-C2035&#x27;, 1, &#x27;INBOUND_RECEIVED&#x27;, t103 + 4000), event(&#x27;OC-C2035&#x27;, 2, &#x27;TASK_CLAIMED&#x27;, t103 + 4000), event(&#x27;OC-C2035&#x27;, 3, &#x27;OUTBOUND_STARTED&#x27;, t103 + 6000), event(&#x27;OC-C2035&#x27;, 4, &#x27;RINGING&#x27;, t103 + 8000), event(&#x27;OC-C2035&#x27;, 5, &#x27;CALL_FAILED&#x27;, t103 + 30000, &#x27;NO_ANSWER&#x27;)] },
+      { id: &#x27;OC-C2034&#x27;, taskId: &#x27;CT-DEMO-0104&#x27;, taskMatch: &#x27;CLAIMED&#x27;, action: &#x27;DIAL_TASK_CALLEE&#x27;, taskPath: true, normalizedCaller: &#x27;13900007812&#x27;, expectedCallerMasked: &#x27;139 **** 7812&#x27;, maskedCaller: &#x27;139 **** 7812&#x27;, maskedCallee: &#x27;137 **** 2240&#x27;, calleeConfirmation: &#x27;NONE&#x27;, progress: &#x27;EVIDENCE_READY&#x27;, endReason: null, recordingSeconds: 744, uploadStatus: &#x27;RECEIVED&#x27;, evidenceStatus: &#x27;AVAILABLE&#x27;, events: successEvents(&#x27;OC-C2034&#x27;, t104 + 4000, 744) },
+    ];
+    const state = { schemaVersion: CALL_TASK_SCHEMA_VERSION, ttlSeconds: CALL_TASK_TTL_SECONDS, callerBindings, tasks, calls, sequence: 2000 };
+    if (!validateCallTask(state).ok) throw new Error(&#x27;Invalid call-task demo fixture&#x27;);
+    return state;
+  }
+
+  function createCallTask(state, input, now) {
+    return callTaskMutate(state, draft =&gt; {
+      if (!plain(input)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const allowed = [&#x27;callerBindingId&#x27;, &#x27;maskedCallee&#x27;, &#x27;businessType&#x27;, &#x27;idempotencyKey&#x27;, &#x27;replacePending&#x27;];
+      if (Object.keys(input).some(key =&gt; !allowed.includes(key))) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!id(input.callerBindingId) || !textBetween(input.maskedCallee, 1, 40) || !id(input.idempotencyKey)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.businessType !== undefined &amp;&amp; input.businessType !== &#x27;EVIDENCE_CALL&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.replacePending !== undefined &amp;&amp; typeof input.replacePending !== &#x27;boolean&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const binding = one(draft.callerBindings, item =&gt; item.id === input.callerBindingId);
+      if (!binding) return fail(&#x27;NOT_FOUND&#x27;);
+      if (!binding.active) return fail(&#x27;CALLER_BINDING_INACTIVE&#x27;);
+      const time = toMs(now);
+      const sameKey = one(draft.tasks, item =&gt; item.idempotencyKey === input.idempotencyKey);
+      const sameFingerprint = sameKey &amp;&amp; sameKey.callerBindingId === binding.id &amp;&amp; sameKey.maskedCallee === input.maskedCallee &amp;&amp; sameKey.businessType === &#x27;EVIDENCE_CALL&#x27;;
+      if (sameKey &amp;&amp; !sameFingerprint) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      reapExpiredCallTasks(draft, binding.normalizedCaller, now);
+      if (sameKey) return duplicate(sameKey);
+      const activeCall = draft.calls.find(item =&gt; item.normalizedCaller === binding.normalizedCaller &amp;&amp; CALL_TASK_ACTIVE_PROGRESS.has(item.progress));
+      if (activeCall) return fail(&#x27;CALL_IN_PROGRESS&#x27;);
+      const pending = one(draft.tasks, item =&gt; item.normalizedCaller === binding.normalizedCaller &amp;&amp; CALL_TASK_NONTERMINAL.has(item.status));
+      if (pending &amp;&amp; pending.status === &#x27;CLAIMED&#x27;) return fail(&#x27;CALL_IN_PROGRESS&#x27;);
+      if (pending) {
+        const sameOwner = pending.ownerType === binding.ownerType &amp;&amp; pending.ownerId === binding.ownerId &amp;&amp; pending.workspaceId === binding.workspaceId;
+        if (!sameOwner) return fail(&#x27;CALLER_BUSY&#x27;);
+        if (pending.maskedCallee === input.maskedCallee) return duplicate(pending);
+        if (input.replacePending !== true) return fail(&#x27;PENDING_TASK_EXISTS&#x27;);
+        pending.status = &#x27;REPLACED&#x27;;
+        pending.reasonCode = &#x27;REPLACED&#x27;;
+        pending.revision += 1;
+      }
+      const task = {
+        id: nextCallTaskId(draft, &#x27;CT&#x27;),
+        callerBindingId: binding.id,
+        normalizedCaller: binding.normalizedCaller,
+        maskedCaller: binding.maskedCaller,
+        maskedCallee: input.maskedCallee,
+        ownerType: binding.ownerType,
+        ownerId: binding.ownerId,
+        workspaceId: binding.workspaceId,
+        createdByAccountId: binding.ownerId,
+        businessType: &#x27;EVIDENCE_CALL&#x27;,
+        status: &#x27;PENDING&#x27;,
+        reasonCode: null,
+        ttlSeconds: CALL_TASK_TTL_SECONDS,
+        createdAt: iso(now),
+        expiresAt: new Date(time + CALL_TASK_TTL_SECONDS * 1000).toISOString(),
+        dialerLaunchedAt: null,
+        claimedCallId: null,
+        claimedAt: null,
+        idempotencyKey: input.idempotencyKey,
+        revision: 1,
+      };
+      draft.tasks.push(task);
+      return ok(task);
+    });
+  }
+
+  function cancelCallTask(state, input, now) {
+    return callTaskMutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.taskId) || !id(input.accountId) || !id(input.workspaceId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const task = one(draft.tasks, item =&gt; item.id === input.taskId);
+      if (!task) return fail(&#x27;NOT_FOUND&#x27;);
+      if (task.ownerType !== &#x27;PERSONAL_ACCOUNT&#x27; || task.ownerId !== input.accountId || task.workspaceId !== input.workspaceId) return fail(&#x27;NOT_FOUND&#x27;);
+      if (task.status !== &#x27;PENDING&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (toMs(now) &gt;= Date.parse(task.expiresAt)) return fail(&#x27;TASK_EXPIRED&#x27;);
+      task.status = &#x27;CANCELLED&#x27;;
+      task.reasonCode = &#x27;CANCELLED&#x27;;
+      task.revision += 1;
+      return ok(task);
+    });
+  }
+
+  function recordDialerLaunch(state, input, now) {
+    return callTaskMutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.taskId) || !id(input.accountId) || !id(input.workspaceId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const task = one(draft.tasks, item =&gt; item.id === input.taskId);
+      if (!task) return fail(&#x27;NOT_FOUND&#x27;);
+      if (task.ownerType !== &#x27;PERSONAL_ACCOUNT&#x27; || task.ownerId !== input.accountId || task.workspaceId !== input.workspaceId) return fail(&#x27;NOT_FOUND&#x27;);
+      if (task.status !== &#x27;PENDING&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (toMs(now) &gt;= Date.parse(task.expiresAt)) return fail(&#x27;TASK_EXPIRED&#x27;);
+      if (task.dialerLaunchedAt) return duplicate({ taskId: task.id, dialerLaunchedAt: task.dialerLaunchedAt });
+      task.dialerLaunchedAt = iso(now);
+      task.revision += 1;
+      return ok({ taskId: task.id, dialerLaunchedAt: task.dialerLaunchedAt });
+    });
+  }
+
+  function resolveIvrInbound(state, input, now) {
+    return callTaskMutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.callId) || !textBetween(input.normalizedCaller, 1, 20)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (typeof input.callerTrusted !== &#x27;boolean&#x27; || !CALL_TASK_ENUMS.callerState.has(input.callerState)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!safeBetween(input.availableSeconds, 0, 86400) || typeof input.directAllowed !== &#x27;boolean&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const existing = one(draft.calls, item =&gt; item.id === input.callId);
+      if (existing) {
+        if (existing.normalizedCaller !== input.normalizedCaller) return fail(&#x27;INVALID_TRANSITION&#x27;);
+        return duplicate(decisionForCall(existing));
+      }
+      if (!input.callerTrusted) return fail(&#x27;REJECT&#x27;);
+      const normalizedCaller = input.normalizedCaller;
+      // Ownership is resolved from the unique active caller binding before any
+      // branch that writes a task or creates a call. Missing or ambiguous
+      // ownership fails closed.
+      const binding = uniqueCallerBinding(draft, normalizedCaller);
+      if (input.callerState === &#x27;SUSPENDED&#x27;) {
+        if (!binding) return fail(&#x27;REJECT&#x27;);
+        let rejectedTask = false;
+        for (const task of draft.tasks) {
+          if (task.status === &#x27;PENDING&#x27;
+            &amp;&amp; task.normalizedCaller === normalizedCaller
+            &amp;&amp; task.callerBindingId === binding.id
+            &amp;&amp; task.ownerType === binding.ownerType
+            &amp;&amp; task.ownerId === binding.ownerId
+            &amp;&amp; task.workspaceId === binding.workspaceId) {
+            task.status = &#x27;REJECTED&#x27;;
+            task.reasonCode = &#x27;SUSPENDED&#x27;;
+            task.revision += 1;
+            rejectedTask = true;
+          }
+        }
+        return ok({ action: &#x27;REJECT_SUSPENDED&#x27;, callId: null, taskId: null, taskMatch: &#x27;REJECTED&#x27;, progress: null, maskedCallee: null, calleeConfirmation: &#x27;NOT_APPLICABLE&#x27;, taskPath: false, taskRejected: rejectedTask }, &#x27;REJECT_SUSPENDED&#x27;);
+      }
+      const activeCall = draft.calls.find(item =&gt; item.normalizedCaller === normalizedCaller &amp;&amp; CALL_TASK_ACTIVE_PROGRESS.has(item.progress));
+      if (activeCall) return fail(&#x27;REJECT_CALL_IN_PROGRESS&#x27;);
+      reapExpiredCallTasks(draft, normalizedCaller, now);
+      if (!binding) return fail(&#x27;REJECT&#x27;);
+      if (input.callerState === &#x27;INACTIVE&#x27; || input.callerState === &#x27;UNREGISTERED&#x27;) {
+        return ok({ action: &#x27;GUIDE_ACTIVATION&#x27;, callId: null, taskId: null, taskMatch: &#x27;NONE&#x27;, progress: null, maskedCallee: null, calleeConfirmation: &#x27;NOT_APPLICABLE&#x27;, taskPath: false }, &#x27;GUIDE&#x27;);
+      }
+      if (input.availableSeconds &lt;= 0) {
+        return ok({ action: &#x27;GUIDE_PURCHASE&#x27;, callId: null, taskId: null, taskMatch: &#x27;NONE&#x27;, progress: null, maskedCallee: null, calleeConfirmation: &#x27;NOT_APPLICABLE&#x27;, taskPath: false }, &#x27;GUIDE&#x27;);
+      }
+      const callerPending = draft.tasks.filter(item =&gt; item.normalizedCaller === normalizedCaller &amp;&amp; item.status === &#x27;PENDING&#x27;);
+      // Claiming is ownership-scoped exactly like the SUSPENDED branch: the
+      // task must belong to the unique active binding resolved above. A
+      // same-caller pending task owned by another scope must not be claimable
+      // and must not fall through to the no-task DTMF path.
+      const pending = callerPending.find(item =&gt; item.callerBindingId === binding.id
+        &amp;&amp; item.ownerType === binding.ownerType
+        &amp;&amp; item.ownerId === binding.ownerId
+        &amp;&amp; item.workspaceId === binding.workspaceId);
+      if (!pending &amp;&amp; callerPending.length) return fail(&#x27;REJECT&#x27;);
+      if (pending &amp;&amp; toMs(now) &lt; Date.parse(pending.expiresAt)) {
+        const at = iso(now);
+        pending.status = &#x27;CLAIMED&#x27;;
+        pending.claimedCallId = input.callId;
+        pending.claimedAt = at;
+        pending.revision += 1;
+        const call = {
+          id: input.callId,
+          taskId: pending.id,
+          taskMatch: &#x27;CLAIMED&#x27;,
+          action: &#x27;DIAL_TASK_CALLEE&#x27;,
+          taskPath: true,
+          normalizedCaller,
+          expectedCallerMasked: pending.maskedCaller,
+          maskedCaller: pending.maskedCaller,
+          maskedCallee: pending.maskedCallee,
+          calleeConfirmation: &#x27;NONE&#x27;,
+          progress: &#x27;CLAIMED&#x27;,
+          endReason: null,
+          recordingSeconds: 0,
+          uploadStatus: &#x27;NOT_STARTED&#x27;,
+          evidenceStatus: &#x27;NOT_CREATED&#x27;,
+          events: [
+            { eventId: `${input.callId}-INBOUND`, type: &#x27;INBOUND_RECEIVED&#x27;, at, source: &#x27;IVR&#x27;, detail: &#x27;&#x27; },
+            { eventId: `${input.callId}-CLAIM`, type: &#x27;TASK_CLAIMED&#x27;, at, source: &#x27;ONECALL&#x27;, detail: pending.id },
+          ],
+        };
+        draft.calls.push(call);
+        return ok({ action: &#x27;DIAL_TASK_CALLEE&#x27;, callId: call.id, taskId: pending.id, taskMatch: &#x27;CLAIMED&#x27;, progress: &#x27;CLAIMED&#x27;, maskedCallee: pending.maskedCallee, calleeConfirmation: &#x27;NONE&#x27;, taskPath: true });
+      }
+      // directAllowed only gates the no-task path; a valid task is claimed above.
+      if (input.directAllowed !== true) {
+        return ok({ action: &#x27;GUIDE_PURCHASE&#x27;, callId: null, taskId: null, taskMatch: &#x27;NONE&#x27;, progress: null, maskedCallee: null, calleeConfirmation: &#x27;NOT_APPLICABLE&#x27;, taskPath: false }, &#x27;GUIDE&#x27;);
+      }
+      const call = {
+        id: input.callId,
+        taskId: null,
+        taskMatch: &#x27;NONE&#x27;,
+        action: &#x27;ENTER_CALLEE&#x27;,
+        taskPath: false,
+        normalizedCaller,
+        expectedCallerMasked: null,
+        maskedCaller: binding.maskedCaller,
+        maskedCallee: null,
+        calleeConfirmation: &#x27;DTMF_REQUIRED&#x27;,
+        progress: &#x27;WAITING_CALLEE_INPUT&#x27;,
+        endReason: null,
+        recordingSeconds: 0,
+        uploadStatus: &#x27;NOT_STARTED&#x27;,
+        evidenceStatus: &#x27;NOT_CREATED&#x27;,
+        events: [{ eventId: `${input.callId}-INBOUND`, type: &#x27;INBOUND_RECEIVED&#x27;, at: iso(now), source: &#x27;IVR&#x27;, detail: &#x27;&#x27; }],
+      };
+      draft.calls.push(call);
+      return ok({ action: &#x27;ENTER_CALLEE&#x27;, callId: call.id, taskId: null, taskMatch: &#x27;NONE&#x27;, progress: &#x27;WAITING_CALLEE_INPUT&#x27;, maskedCallee: null, calleeConfirmation: &#x27;DTMF_REQUIRED&#x27;, taskPath: false });
+    });
+  }
+
+  function confirmDirectCallee(state, input, now) {
+    return callTaskMutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.callId) || !textBetween(input.normalizedCaller, 1, 20) || !textBetween(input.maskedCallee, 1, 40) || !id(input.eventId)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.taskId !== undefined &amp;&amp; input.taskId !== null) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const call = one(draft.calls, item =&gt; item.id === input.callId);
+      if (!call) return fail(&#x27;NOT_FOUND&#x27;);
+      if (call.normalizedCaller !== input.normalizedCaller) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const existing = findCallEvent(draft, input.eventId);
+      if (existing) {
+        if (existing.call.id !== input.callId || existing.event.type !== &#x27;DTMF_CALLEE_CONFIRMED&#x27; || existing.event.detail !== input.maskedCallee) return fail(&#x27;INVALID_TRANSITION&#x27;);
+        return duplicate({ callId: call.id, maskedCallee: call.maskedCallee, progress: &#x27;CALLEE_CONFIRMED&#x27;, calleeConfirmation: &#x27;DTMF_CONFIRMED&#x27;, taskPath: false });
+      }
+      if (call.action !== &#x27;ENTER_CALLEE&#x27; || call.taskId !== null || call.taskPath !== false) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (call.progress !== &#x27;WAITING_CALLEE_INPUT&#x27; || call.calleeConfirmation !== &#x27;DTMF_REQUIRED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const last = call.events[call.events.length - 1];
+      if (toMs(now) &lt; Date.parse(last.at)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      call.events.push({ eventId: input.eventId, type: &#x27;DTMF_CALLEE_CONFIRMED&#x27;, at: iso(now), source: &#x27;IVR&#x27;, detail: input.maskedCallee });
+      call.maskedCallee = input.maskedCallee;
+      call.calleeConfirmation = &#x27;DTMF_CONFIRMED&#x27;;
+      call.progress = &#x27;CALLEE_CONFIRMED&#x27;;
+      return ok({ callId: call.id, maskedCallee: call.maskedCallee, progress: &#x27;CALLEE_CONFIRMED&#x27;, calleeConfirmation: &#x27;DTMF_CONFIRMED&#x27;, taskPath: false });
+    });
+  }
+
+  function recordCallFact(state, input, now) {
+    return callTaskMutate(state, draft =&gt; {
+      if (!plain(input) || !id(input.callId) || !id(input.eventId) || !CALL_TASK_ENUMS.eventType.has(input.type)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const call = one(draft.calls, item =&gt; item.id === input.callId);
+      if (!call) return fail(&#x27;NOT_FOUND&#x27;);
+      const at = input.at === undefined ? iso(now) : input.at;
+      if (!date(at)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const detail = input.detail === undefined ? &#x27;&#x27; : input.detail;
+      if (typeof detail !== &#x27;string&#x27; || detail.length &gt; 120) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.recordingSeconds !== undefined &amp;&amp; !safeBetween(input.recordingSeconds, 0, 86400)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const existing = findCallEvent(draft, input.eventId);
+      if (existing) {
+        if (existing.call.id !== input.callId || existing.event.type !== input.type || existing.event.detail !== detail || existing.event.at !== at) return fail(&#x27;INVALID_TRANSITION&#x27;);
+        return duplicate({ callId: call.id, eventId: input.eventId, type: input.type, at: existing.event.at, detail });
+      }
+      const last = call.events[call.events.length - 1];
+      if (toMs(at) &lt; Date.parse(last.at)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (!allowedNextCallEvents(call).includes(input.type)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.type === &#x27;CALL_FAILED&#x27; &amp;&amp; !CALL_TASK_FAILURE_REASONS.has(detail)) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.type === &#x27;TASK_CLAIMED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.type === &#x27;DTMF_CALLEE_CONFIRMED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      if (input.type === &#x27;INBOUND_RECEIVED&#x27;) return fail(&#x27;INVALID_TRANSITION&#x27;);
+      const event = { eventId: input.eventId, type: input.type, at, source: input.type === &#x27;CALL_FAILED&#x27; ? &#x27;IVR&#x27; : CALL_TASK_EVENT_SOURCE[input.type], detail };
+      call.events.push(event);
+      const beforeBridge = [&#x27;INBOUND_RECEIVED&#x27;, &#x27;TASK_CLAIMED&#x27;, &#x27;DTMF_CALLEE_CONFIRMED&#x27;, &#x27;OUTBOUND_STARTED&#x27;, &#x27;RINGING&#x27;].includes(last.type);
+      if (input.type === &#x27;CALL_ENDED&#x27;) {
+        call.recordingSeconds = input.recordingSeconds === undefined ? call.recordingSeconds : input.recordingSeconds;
+        call.progress = &#x27;ENDED&#x27;;
+      } else if (input.type === &#x27;CALL_FAILED&#x27;) {
+        call.recordingSeconds = beforeBridge ? 0 : (input.recordingSeconds || 0);
+        call.endReason = detail;
+        call.progress = &#x27;FAILED&#x27;;
+      } else if (input.type === &#x27;RECORDING_RECEIVED&#x27;) {
+        call.uploadStatus = &#x27;RECEIVED&#x27;;
+        call.progress = &#x27;RECORDING_RECEIVED&#x27;;
+      } else if (input.type === &#x27;EVIDENCE_PROCESSING&#x27;) {
+        call.evidenceStatus = &#x27;PROCESSING&#x27;;
+        call.progress = &#x27;EVIDENCE_PROCESSING&#x27;;
+      } else if (input.type === &#x27;EVIDENCE_READY&#x27;) {
+        call.evidenceStatus = &#x27;AVAILABLE&#x27;;
+        call.progress = &#x27;EVIDENCE_READY&#x27;;
+      } else {
+        call.progress = CALL_TASK_EVENT_PROGRESS[input.type];
+      }
+      const task = call.taskId ? one(draft.tasks, item =&gt; item.id === call.taskId) : null;
+      if (task &amp;&amp; task.claimedCallId === call.id) {
+        if (input.type === &#x27;CALL_ENDED&#x27; &amp;&amp; task.status === &#x27;CLAIMED&#x27;) {
+          task.status = &#x27;COMPLETED&#x27;;
+          task.reasonCode = null;
+          task.revision += 1;
+        }
+        if (input.type === &#x27;CALL_FAILED&#x27; &amp;&amp; task.status === &#x27;CLAIMED&#x27;) {
+          task.status = &#x27;FAILED&#x27;;
+          task.reasonCode = detail;
+          task.revision += 1;
+        }
+      }
+      return ok({ callId: call.id, eventId: event.eventId, type: event.type, at: event.at, detail: event.detail, progress: call.progress });
+    });
+  }
+
+  function callTaskSnapshot(state) {
+    const validation = validateCallTask(state);
+    return validation.ok ? ok(clone(pickCallTask(state))) : validation;
+  }
+
+  function loadCallTaskSnapshot(state, candidate) {
+    if (!plain(state)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    const validation = validateCallTask(candidate);
+    if (!validation.ok) return validation;
+    const copied = clone(pickCallTask(candidate));
+    replaceCallTask(state, copied);
+    return ok(clone(copied));
+  }
+
+  function uniqueCallerBinding(state, normalizedCaller) {
+    if (!plain(state) || !Array.isArray(state.callerBindings) || typeof normalizedCaller !== &#x27;string&#x27;) return null;
+    const matches = state.callerBindings.filter(item =&gt; item &amp;&amp; item.active === true &amp;&amp; item.normalizedCaller === normalizedCaller);
+    return matches.length === 1 ? clone(matches[0]) : null;
+  }
+
+  function callTaskMutate(state, action) {
+    if (!plain(state)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    let draft;
+    try { draft = clone(pickCallTask(state)); } catch (_) { return fail(&#x27;INVALID_CALL_TASK&#x27;); }
+    let result;
+    try { result = action(draft); } catch (_) { return fail(&#x27;INVALID_CALL_TASK&#x27;); }
+    if (!result) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    if (!result.ok) return result;
+    // Duplicate and guide outcomes can carry a deterministic expiry reaping
+    // side effect, so the validated draft (identical otherwise) replaces state.
+    const validation = validateCallTask(draft);
+    if (!validation.ok) return validation;
+    replaceCallTask(state, draft);
+    if (result.code === &#x27;DUPLICATE&#x27;) return duplicate(result.value);
+    return ok(clone(result.value), result.code);
+  }
+
+  function pickCallTask(state) {
+    const output = {};
+    for (const key of CALL_TASK_FIELDS) output[key] = state[key];
+    return output;
+  }
+
+  function replaceCallTask(state, source) {
+    for (const key of CALL_TASK_FIELDS) state[key] = source[key];
+  }
+
+  function nextCallTaskId(state, prefix) {
+    const collection = prefix === &#x27;CT&#x27; ? state.tasks : state.calls;
+    const used = new Set(collection.map(item =&gt; item.id));
+    let sequence = state.sequence;
+    let candidate;
+    do {
+      if (sequence &gt;= Number.MAX_SAFE_INTEGER) throw new Error(&#x27;Call-task ID sequence exhausted&#x27;);
+      sequence += 1;
+      candidate = `${prefix}-${sequence}`;
+    } while (used.has(candidate));
+    state.sequence = sequence;
+    return candidate;
+  }
+
+  function reapExpiredCallTasks(draft, normalizedCaller, now) {
+    const time = toMs(now);
+    for (const task of draft.tasks) {
+      if (task.normalizedCaller === normalizedCaller &amp;&amp; task.status === &#x27;PENDING&#x27; &amp;&amp; time &gt;= Date.parse(task.expiresAt)) {
+        task.status = &#x27;EXPIRED&#x27;;
+        task.reasonCode = &#x27;TTL_EXPIRED&#x27;;
+        task.revision += 1;
+      }
+    }
+  }
+
+  function decisionForCall(call) {
+    return {
+      action: call.action,
+      callId: call.id,
+      taskId: call.taskId,
+      taskMatch: call.taskMatch,
+      progress: call.progress,
+      maskedCallee: call.maskedCallee,
+      calleeConfirmation: call.calleeConfirmation,
+      taskPath: call.taskPath,
+    };
+  }
+
+  function findCallEvent(state, eventId) {
+    for (const call of state.calls) {
+      for (const event of call.events) {
+        if (event.eventId === eventId) return { call, event };
+      }
+    }
+    return null;
+  }
+
+  function allowedNextCallEvents(call) {
+    const last = call.events.length ? call.events[call.events.length - 1].type : null;
+    if (last === &#x27;INBOUND_RECEIVED&#x27;) return call.taskPath ? [&#x27;TASK_CLAIMED&#x27;, &#x27;CALL_FAILED&#x27;] : [&#x27;DTMF_CALLEE_CONFIRMED&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;TASK_CLAIMED&#x27; || last === &#x27;DTMF_CALLEE_CONFIRMED&#x27;) return [&#x27;OUTBOUND_STARTED&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;OUTBOUND_STARTED&#x27;) return [&#x27;RINGING&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;RINGING&#x27;) return [&#x27;ANSWERED&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;ANSWERED&#x27;) return [&#x27;BRIDGED&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;BRIDGED&#x27;) return [&#x27;RECORDING_STARTED&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;RECORDING_STARTED&#x27;) return [&#x27;CALL_ENDED&#x27;, &#x27;CALL_FAILED&#x27;];
+    if (last === &#x27;CALL_ENDED&#x27;) return [&#x27;RECORDING_RECEIVED&#x27;];
+    if (last === &#x27;RECORDING_RECEIVED&#x27;) return [&#x27;EVIDENCE_PROCESSING&#x27;];
+    if (last === &#x27;EVIDENCE_PROCESSING&#x27;) return [&#x27;EVIDENCE_READY&#x27;];
+    return [];
+  }
+
+  function validateCallTask(candidate) {
+    if (!safeData(candidate) || !plain(candidate)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    const keys = Object.keys(candidate).sort();
+    const allowed = [...CALL_TASK_FIELDS].sort();
+    if (keys.length !== allowed.length || keys.some((key, index) =&gt; key !== allowed[index])) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    if (candidate.schemaVersion !== CALL_TASK_SCHEMA_VERSION || candidate.ttlSeconds !== CALL_TASK_TTL_SECONDS) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    if (!safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    if (!Array.isArray(candidate.callerBindings) || !Array.isArray(candidate.tasks) || !Array.isArray(candidate.calls)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    if (!unique(candidate.callerBindings) || !unique(candidate.tasks) || !unique(candidate.tasks, &#x27;idempotencyKey&#x27;) || !unique(candidate.calls)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    for (const binding of candidate.callerBindings) if (!validCallerBinding(binding)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    const bindingsById = new Map(candidate.callerBindings.map(item =&gt; [item.id, item]));
+    const tasksById = new Map(candidate.tasks.map(item =&gt; [item.id, item]));
+    const callsById = new Map(candidate.calls.map(item =&gt; [item.id, item]));
+    for (const task of candidate.tasks) {
+      if (!validCallTask(task, bindingsById)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    }
+    const eventIds = new Set();
+    for (const call of candidate.calls) {
+      if (!validCall(call, tasksById, candidate.callerBindings, eventIds)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+    }
+    const nonterminalByCaller = new Map();
+    for (const task of candidate.tasks) {
+      if (!CALL_TASK_NONTERMINAL.has(task.status)) continue;
+      if (nonterminalByCaller.has(task.normalizedCaller)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+      nonterminalByCaller.set(task.normalizedCaller, task.id);
+    }
+    const activeByCaller = new Map();
+    for (const call of candidate.calls) {
+      if (!CALL_TASK_ACTIVE_PROGRESS.has(call.progress)) continue;
+      if (activeByCaller.has(call.normalizedCaller)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+      activeByCaller.set(call.normalizedCaller, call.id);
+    }
+    for (const task of candidate.tasks) {
+      if ([&#x27;CLAIMED&#x27;, &#x27;COMPLETED&#x27;, &#x27;FAILED&#x27;].includes(task.status)) {
+        const call = callsById.get(task.claimedCallId);
+        if (!call || call.taskId !== task.id) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+        if (task.status === &#x27;CLAIMED&#x27; &amp;&amp; !CALL_TASK_ACTIVE_PROGRESS.has(call.progress)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+        if (task.status === &#x27;COMPLETED&#x27; &amp;&amp; ![&#x27;ENDED&#x27;, &#x27;RECORDING_RECEIVED&#x27;, &#x27;EVIDENCE_PROCESSING&#x27;, &#x27;EVIDENCE_READY&#x27;].includes(call.progress)) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+        if (task.status === &#x27;FAILED&#x27; &amp;&amp; call.progress !== &#x27;FAILED&#x27;) return fail(&#x27;INVALID_CALL_TASK&#x27;);
+      }
+    }
+    return ok(true);
+  }
+
+  function validCallerBinding(binding) {
+    if (!exactKeys(binding, [&#x27;id&#x27;, &#x27;ownerType&#x27;, &#x27;ownerId&#x27;, &#x27;workspaceId&#x27;, &#x27;maskedCaller&#x27;, &#x27;normalizedCaller&#x27;, &#x27;numberType&#x27;, &#x27;active&#x27;])) return false;
+    if (!id(binding.id) || !CALL_TASK_ENUMS.ownerType.has(binding.ownerType) || !id(binding.ownerId) || !id(binding.workspaceId) || !textBetween(binding.maskedCaller, 1, 40) || !textBetween(binding.normalizedCaller, 1, 20) || !CALL_TASK_ENUMS.numberType.has(binding.numberType) || typeof binding.active !== &#x27;boolean&#x27;) return false;
+    if (binding.ownerType === &#x27;PERSONAL_ACCOUNT&#x27; &amp;&amp; binding.workspaceId !== `personal:${binding.ownerId}`) return false;
+    if (binding.ownerType === &#x27;ORGANIZATION&#x27; &amp;&amp; binding.workspaceId !== `organization:${binding.ownerId}`) return false;
+    return true;
+  }
+
+  function validCallTask(task, bindingsById) {
+    if (!exactKeys(task, [&#x27;id&#x27;, &#x27;callerBindingId&#x27;, &#x27;normalizedCaller&#x27;, &#x27;maskedCaller&#x27;, &#x27;maskedCallee&#x27;, &#x27;ownerType&#x27;, &#x27;ownerId&#x27;, &#x27;workspaceId&#x27;, &#x27;createdByAccountId&#x27;, &#x27;businessType&#x27;, &#x27;status&#x27;, &#x27;reasonCode&#x27;, &#x27;ttlSeconds&#x27;, &#x27;createdAt&#x27;, &#x27;expiresAt&#x27;, &#x27;dialerLaunchedAt&#x27;, &#x27;claimedCallId&#x27;, &#x27;claimedAt&#x27;, &#x27;idempotencyKey&#x27;, &#x27;revision&#x27;])) return false;
+    if (!id(task.id) || !id(task.callerBindingId) || !textBetween(task.normalizedCaller, 1, 20) || !textBetween(task.maskedCaller, 1, 40) || !textBetween(task.maskedCallee, 1, 40)) return false;
+    if (!CALL_TASK_ENUMS.ownerType.has(task.ownerType) || !id(task.ownerId) || !id(task.workspaceId) || !id(task.createdByAccountId)) return false;
+    if (!CALL_TASK_ENUMS.businessType.has(task.businessType) || !CALL_TASK_ENUMS.taskStatus.has(task.status)) return false;
+    if (task.reasonCode !== null &amp;&amp; !CALL_TASK_REASONS.has(task.reasonCode)) return false;
+    if (task.ttlSeconds !== CALL_TASK_TTL_SECONDS) return false;
+    if (!date(task.createdAt) || !date(task.expiresAt) || Date.parse(task.expiresAt) - Date.parse(task.createdAt) !== CALL_TASK_TTL_SECONDS * 1000) return false;
+    if (task.dialerLaunchedAt !== null &amp;&amp; !date(task.dialerLaunchedAt)) return false;
+    if (!id(task.idempotencyKey) || !safePositive(task.revision)) return false;
+    const binding = bindingsById.get(task.callerBindingId);
+    if (!binding || binding.normalizedCaller !== task.normalizedCaller || binding.maskedCaller !== task.maskedCaller || binding.ownerType !== task.ownerType || binding.ownerId !== task.ownerId || binding.workspaceId !== task.workspaceId) return false;
+    if (task.status === &#x27;PENDING&#x27;) {
+      if (task.reasonCode !== null || task.claimedCallId !== null || task.claimedAt !== null) return false;
+    } else if (task.status === &#x27;CLAIMED&#x27;) {
+      if (task.reasonCode !== null || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else if (task.status === &#x27;COMPLETED&#x27;) {
+      if (task.reasonCode !== null || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else if (task.status === &#x27;FAILED&#x27;) {
+      if (!CALL_TASK_FAILURE_REASONS.has(task.reasonCode) || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else {
+      if (task.claimedCallId !== null || task.claimedAt !== null) return false;
+      if (task.status === &#x27;EXPIRED&#x27; &amp;&amp; task.reasonCode !== &#x27;TTL_EXPIRED&#x27;) return false;
+      if (task.status === &#x27;REPLACED&#x27; &amp;&amp; task.reasonCode !== &#x27;REPLACED&#x27;) return false;
+      if (task.status === &#x27;CANCELLED&#x27; &amp;&amp; task.reasonCode !== &#x27;CANCELLED&#x27;) return false;
+      if (task.status === &#x27;REJECTED&#x27; &amp;&amp; ![&#x27;SUSPENDED&#x27;, &#x27;CALLER_MISMATCH&#x27;].includes(task.reasonCode)) return false;
+    }
+    if (task.claimedAt !== null &amp;&amp; (Date.parse(task.claimedAt) &lt; Date.parse(task.createdAt) || Date.parse(task.claimedAt) &gt;= Date.parse(task.expiresAt))) return false;
+    return true;
+  }
+
+  function validCall(call, tasksById, callerBindings, eventIds) {
+    if (!exactKeys(call, [&#x27;id&#x27;, &#x27;taskId&#x27;, &#x27;taskMatch&#x27;, &#x27;action&#x27;, &#x27;taskPath&#x27;, &#x27;normalizedCaller&#x27;, &#x27;expectedCallerMasked&#x27;, &#x27;maskedCaller&#x27;, &#x27;maskedCallee&#x27;, &#x27;calleeConfirmation&#x27;, &#x27;progress&#x27;, &#x27;endReason&#x27;, &#x27;recordingSeconds&#x27;, &#x27;uploadStatus&#x27;, &#x27;evidenceStatus&#x27;, &#x27;events&#x27;])) return false;
+    if (!id(call.id) || !textBetween(call.normalizedCaller, 1, 20) || !textBetween(call.maskedCaller, 1, 40)) return false;
+    if (call.expectedCallerMasked !== null &amp;&amp; !textBetween(call.expectedCallerMasked, 1, 40)) return false;
+    if (call.maskedCallee !== null &amp;&amp; !textBetween(call.maskedCallee, 1, 40)) return false;
+    if (!CALL_TASK_ENUMS.callAction.has(call.action) || !CALL_TASK_ENUMS.taskMatch.has(call.taskMatch) || !CALL_TASK_ENUMS.calleeConfirmation.has(call.calleeConfirmation)) return false;
+    if (!CALL_TASK_ENUMS.callProgress.has(call.progress) || !CALL_TASK_ENUMS.upload.has(call.uploadStatus) || !CALL_TASK_ENUMS.evidence.has(call.evidenceStatus)) return false;
+    if (typeof call.taskPath !== &#x27;boolean&#x27; || !safeBetween(call.recordingSeconds, 0, 86400)) return false;
+    if (call.endReason !== null &amp;&amp; !CALL_TASK_REASONS.has(call.endReason)) return false;
+    if (call.taskId !== null &amp;&amp; !id(call.taskId)) return false;
+    if (call.taskPath !== (call.taskId !== null)) return false;
+    if (!Array.isArray(call.events) || !call.events.length) return false;
+    for (const [index, event] of call.events.entries()) {
+      if (!exactKeys(event, [&#x27;eventId&#x27;, &#x27;type&#x27;, &#x27;at&#x27;, &#x27;source&#x27;, &#x27;detail&#x27;]) || !id(event.eventId) || !CALL_TASK_ENUMS.eventType.has(event.type) || !date(event.at) || !CALL_TASK_ENUMS.eventSource.has(event.source) || typeof event.detail !== &#x27;string&#x27; || event.detail.length &gt; 120) return false;
+      if (eventIds.has(event.eventId)) return false;
+      eventIds.add(event.eventId);
+      if (index === 0) {
+        if (event.type !== &#x27;INBOUND_RECEIVED&#x27; || event.source !== &#x27;IVR&#x27;) return false;
+        continue;
+      }
+      if (!allowedNextCallEvents({ events: call.events.slice(0, index), taskPath: call.taskPath }).includes(event.type)) return false;
+      if (Date.parse(event.at) &lt; Date.parse(call.events[index - 1].at)) return false;
+      if (event.type === &#x27;CALL_FAILED&#x27;) {
+        if (!CALL_TASK_FAILURE_REASONS.has(event.detail)) return false;
+        if (event.source !== &#x27;IVR&#x27; &amp;&amp; event.source !== &#x27;ONECALL&#x27;) return false;
+      } else if (CALL_TASK_EVENT_SOURCE[event.type] !== event.source) return false;
+    }
+    const has = type =&gt; call.events.some(event =&gt; event.type === type);
+    const last = call.events[call.events.length - 1];
+    const derivedProgress = last.type === &#x27;INBOUND_RECEIVED&#x27; ? (call.action === &#x27;ENTER_CALLEE&#x27; ? &#x27;WAITING_CALLEE_INPUT&#x27; : &#x27;WAITING_INBOUND&#x27;) : CALL_TASK_EVENT_PROGRESS[last.type];
+    if (call.progress !== derivedProgress) return false;
+    const derivedUpload = has(&#x27;RECORDING_RECEIVED&#x27;) ? &#x27;RECEIVED&#x27; : &#x27;NOT_STARTED&#x27;;
+    const derivedEvidence = has(&#x27;EVIDENCE_READY&#x27;) ? &#x27;AVAILABLE&#x27; : has(&#x27;EVIDENCE_PROCESSING&#x27;) ? &#x27;PROCESSING&#x27; : &#x27;NOT_CREATED&#x27;;
+    if (call.uploadStatus !== derivedUpload || call.evidenceStatus !== derivedEvidence) return false;
+    if (call.action === &#x27;DIAL_TASK_CALLEE&#x27;) {
+      if (!call.taskPath || call.taskMatch !== &#x27;CLAIMED&#x27; || call.calleeConfirmation !== &#x27;NONE&#x27; || !call.maskedCallee) return false;
+      const task = tasksById.get(call.taskId);
+      if (!task || task.claimedCallId !== call.id || task.normalizedCaller !== call.normalizedCaller || task.maskedCallee !== call.maskedCallee || task.maskedCaller !== call.expectedCallerMasked) return false;
+      if (!has(&#x27;TASK_CLAIMED&#x27;) || !call.events.some(event =&gt; event.type === &#x27;TASK_CLAIMED&#x27; &amp;&amp; event.at === task.claimedAt)) return false;
+    } else if (call.action === &#x27;ENTER_CALLEE&#x27;) {
+      if (call.taskPath || call.taskMatch !== &#x27;NONE&#x27; || call.taskId !== null || call.expectedCallerMasked !== null) return false;
+      if (call.calleeConfirmation === &#x27;DTMF_REQUIRED&#x27;) {
+        if (call.progress !== &#x27;WAITING_CALLEE_INPUT&#x27; || has(&#x27;DTMF_CALLEE_CONFIRMED&#x27;) || call.maskedCallee !== null) return false;
+      } else if (call.calleeConfirmation === &#x27;DTMF_CONFIRMED&#x27;) {
+        if (call.progress === &#x27;WAITING_CALLEE_INPUT&#x27; || !has(&#x27;DTMF_CALLEE_CONFIRMED&#x27;) || !call.maskedCallee) return false;
+      } else return false;
+    } else {
+      if (call.progress !== &#x27;FAILED&#x27; || call.calleeConfirmation !== &#x27;NOT_APPLICABLE&#x27; || call.maskedCallee !== null || !call.endReason) return false;
+      if (call.taskId !== null) {
+        const task = tasksById.get(call.taskId);
+        if (!task || call.taskMatch !== &#x27;MISMATCH&#x27; || task.claimedCallId === call.id) return false;
+        if (call.expectedCallerMasked === null || call.expectedCallerMasked === call.maskedCaller) return false;
+      } else if (call.taskMatch !== &#x27;NONE&#x27;) return false;
+    }
+    if (call.progress === &#x27;FAILED&#x27;) {
+      if (!has(&#x27;CALL_FAILED&#x27;) || call.endReason !== last.detail) return false;
+      const failureIndex = call.events.findIndex(event =&gt; event.type === &#x27;CALL_FAILED&#x27;);
+      const beforeBridge = !call.events.slice(0, failureIndex).some(event =&gt; event.type === &#x27;BRIDGED&#x27;);
+      if (beforeBridge &amp;&amp; (call.recordingSeconds !== 0 || call.uploadStatus !== &#x27;NOT_STARTED&#x27; || call.evidenceStatus !== &#x27;NOT_CREATED&#x27;)) return false;
+    } else if (call.endReason !== null) return false;
+    if (has(&#x27;CALL_ENDED&#x27;)) {
+      if (!has(&#x27;RECORDING_STARTED&#x27;)) return false;
+      if (call.uploadStatus === &#x27;RECEIVED&#x27; &amp;&amp; call.recordingSeconds &lt;= 0) return false;
+    } else if (call.recordingSeconds !== 0) return false;
+    if (has(&#x27;EVIDENCE_READY&#x27;) &amp;&amp; !has(&#x27;EVIDENCE_PROCESSING&#x27;)) return false;
+    if (has(&#x27;EVIDENCE_PROCESSING&#x27;) &amp;&amp; call.uploadStatus !== &#x27;RECEIVED&#x27;) return false;
+    if (has(&#x27;RECORDING_RECEIVED&#x27;) &amp;&amp; !has(&#x27;CALL_ENDED&#x27;)) return false;
+    const binding = uniqueBindingFromList(callerBindings, call.normalizedCaller);
+    if (binding &amp;&amp; binding.maskedCaller !== call.maskedCaller) return false;
+    return true;
+  }
+
+  function uniqueBindingFromList(callerBindings, normalizedCaller) {
+    const matches = callerBindings.filter(item =&gt; item.active === true &amp;&amp; item.normalizedCaller === normalizedCaller);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
   function validateState(candidate) {
     if (!safeData(candidate) || !plain(candidate)) return fail(&#x27;INVALID_TRANSITION&#x27;);
     const keys = Object.keys(candidate).sort();
@@ -6060,6 +6724,18 @@ html&gt;body{padding:0}&lt;/style&gt;
     trialStatus,
     snapshot,
     loadReviewSnapshot,
+    CALL_TASK_TTL_SECONDS,
+    createCallTaskDemoState,
+    createCallTask,
+    cancelCallTask,
+    recordDialerLaunch,
+    resolveIvrInbound,
+    confirmDirectCallee,
+    recordCallFact,
+    callTaskSnapshot,
+    loadCallTaskSnapshot,
+    validateCallTask,
+    uniqueCallerBinding,
   });
 });
 &lt;/script&gt;
@@ -6078,6 +6754,91 @@ html&gt;body{padding:0}&lt;/style&gt;
       let business = B.createDemoState(new Date());
       business.subjects.push({id:&quot;MINI-ACCOUNT-001&quot;,maskedNumber:&quot;138 **** 6208&quot;,numberType:&quot;MOBILE&quot;,source:&quot;MINIAPP&quot;,accountId:accountContext.account.id,identity:&quot;VERIFIED&quot;,activation:&quot;ACTIVE&quot;,revision:1,claimRisk:&quot;NONE&quot;});
       const review = {scenario:&quot;returning&quot;,subjectId:&quot;SUBJ-REPEAT-001&quot;,accountId:accountContext.account.id,claimRequestId:null,orderId:null,notice:&quot;&quot;,blockedCode:null};
+      // Call-task domain is a separate validated local fixture from the business snapshot.
+      let callTaskState = B.createCallTaskDemoState(new Date());
+      const callReview = {taskId:null,callId:null,attempt:0,notice:null,refreshed:false};
+      const DEMO_CALLEE = &quot;139 **** 3816&quot;;
+      const ALT_CALLEE = &quot;136 **** 5521&quot;;
+      const callTaskErrors = {
+        CALLER_BUSY:&quot;该主叫已有其他账户的待拨任务，本次不能创建或查看其被叫。&quot;,
+        CALL_IN_PROGRESS:&quot;该主叫当前已有进行中的呼叫，请稍后再试。&quot;,
+        PENDING_TASK_EXISTS:&quot;该主叫已有另一个待拨任务，请先替换或取消原任务。&quot;,
+        CALLER_BINDING_INACTIVE:&quot;该主叫号码当前不可用。&quot;,
+        TASK_EXPIRED:&quot;待拨任务已过期，不能打开系统拨号盘。&quot;,
+        NOT_FOUND:&quot;未找到可用的待拨任务。&quot;,
+      };
+      function taskIdKey(value) { return String(value||&quot;&quot;).replace(/[^0-9A-Za-z]/g,&quot;&quot;); }
+      function ownTask(task) { return !!task &amp;&amp; task.ownerType===&quot;PERSONAL_ACCOUNT&quot; &amp;&amp; task.ownerId===review.accountId &amp;&amp; task.workspaceId===&quot;personal:&quot;+review.accountId; }
+      function ownCall(call) {
+        if (!call) return false;
+        const binding=B.uniqueCallerBinding(callTaskState,call.normalizedCaller);
+        return !!binding &amp;&amp; binding.ownerType===&quot;PERSONAL_ACCOUNT&quot; &amp;&amp; binding.ownerId===review.accountId &amp;&amp; binding.workspaceId===&quot;personal:&quot;+review.accountId;
+      }
+      function callTask() { const task=callReview.taskId?callTaskState.tasks.find(function(item){return item.id===callReview.taskId;}):null;return task&amp;&amp;ownTask(task)?task:null; }
+      function callRecord() { const call=callReview.callId?callTaskState.calls.find(function(item){return item.id===callReview.callId;}):null;return call&amp;&amp;ownCall(call)?call:null; }
+      function currentOwnPendingTask() {
+        const binding=selectedCaller().bindingId;
+        const bound=callTaskState.callerBindings.find(function(item){return item.id===binding;});
+        if(!bound) return null;
+        const pending=callTaskState.tasks.find(function(item){return item.normalizedCaller===bound.normalizedCaller&amp;&amp;item.status===&quot;PENDING&quot;;});
+        return pending&amp;&amp;ownTask(pending)?pending:null;
+      }
+      function callTaskAttemptKey(binding, attempt) {
+        return &quot;MINI-TASK-&quot;+taskIdKey(binding)+&quot;-&quot;+taskIdKey(DEMO_CALLEE)+&quot;-A&quot;+attempt;
+      }
+      function ensureCallTask() {
+        const binding=selectedCaller().bindingId;
+        let key=callTaskAttemptKey(binding,callReview.attempt);
+        let keyed=callTaskState.tasks.find(function(item){return item.idempotencyKey===key;});
+        while(keyed &amp;&amp; [&quot;PENDING&quot;,&quot;CLAIMED&quot;].indexOf(keyed.status)===-1){callReview.attempt+=1;key=callTaskAttemptKey(binding,callReview.attempt);keyed=callTaskState.tasks.find(function(item){return item.idempotencyKey===key;});}
+        const result=B.createCallTask(callTaskState,{callerBindingId:binding,maskedCallee:DEMO_CALLEE,businessType:&quot;EVIDENCE_CALL&quot;,idempotencyKey:key,replacePending:false},new Date());
+        if(result.ok){callReview.taskId=result.value.id;callReview.callId=null;callReview.notice=null;}
+        else { const pending=currentOwnPendingTask();callReview.taskId=pending?pending.id:null;callReview.callId=null;callReview.notice=result.code; }
+        return result;
+      }
+      function callTaskStatusText(task) {
+        if(!task) return &quot;无任务&quot;;
+        if(task.status===&quot;PENDING&quot; &amp;&amp; Date.now()&gt;=Date.parse(task.expiresAt)) return B.labels.taskStatus.EXPIRED;
+        return B.labels.taskStatus[task.status]||task.status;
+      }
+      function renderSourceBadge(source) {
+        const labels={MINI:&quot;小程序（仅拨号盘事件）&quot;,IVR:&quot;自研 IVR（通信事实）&quot;,ONECALL:&quot;ONECALL（任务/权益/证据）&quot;};
+        return &#x27;&lt;span class=&quot;state&quot;&gt;&#x27;+(labels[source]||source)+&#x27;&lt;/span&gt;&#x27;;
+      }
+      function callFactRows(call) {
+        if(!call) return &quot;&quot;;
+        return call.events.map(function(event){
+          return &#x27;&lt;div class=&quot;record-card&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;&#x27;+event.type+&#x27;&lt;/span&gt;&#x27;+renderSourceBadge(event.source)+&#x27;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;时间&lt;/span&gt;&lt;strong&gt;&#x27;+event.at.replace(&quot;T&quot;,&quot; &quot;).slice(0,19)+&#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;说明&lt;/span&gt;&lt;strong&gt;&#x27;+(event.detail||&quot;本地演示事实&quot;)+&#x27;&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&#x27;;
+        }).join(&quot;&quot;);
+      }
+      function callFailureCopy(task,call) {
+        const reason=(call&amp;&amp;call.endReason)||(task&amp;&amp;task.reasonCode)||&quot;&quot;;
+        const copies={
+          TTL_EXPIRED:&quot;任务已过期 · 未领取 · 未外呼 · 未生成证据&quot;,
+          CALLER_MISMATCH:&quot;主叫不一致 · 未领取任务 · 未扣录音额度 · 未生成证据&quot;,
+          NO_ANSWER:&quot;被叫未接 · 未形成证据 · 未扣录音额度&quot;,
+          BUSY:&quot;被叫忙 · 未形成证据 · 未扣录音额度&quot;,
+          OUTBOUND_FAILED:&quot;B 路外呼失败 · 未形成证据 · 未扣录音额度&quot;,
+        };
+        return copies[reason]||&quot;通话失败 · 未形成证据 · 未扣录音额度&quot;;
+      }
+      function callStatusCopy(progress,task,call) {
+        if(progress===&quot;FAILED&quot;) return callFailureCopy(task,call);
+        if(progress===&quot;WAITING_INBOUND&quot;) return &quot;等待呼入；30 秒内未呼入将失效，不会猜测历史被叫。&quot;;
+        if(progress===&quot;WAITING_CALLEE_INPUT&quot;) return &quot;无待拨任务；等待主叫通过 DTMF 输入并确认被叫。&quot;;
+        if(progress===&quot;CALLEE_CONFIRMED&quot;) return &quot;主叫已通过 DTMF 确认被叫；随后由自研 IVR 发起 B 路外呼。&quot;;
+        if(progress===&quot;CLAIMED&quot;) return &quot;IVR 已原子领取；按冻结被叫自动外呼；电话中不会要求确认被叫。&quot;;
+        if(progress===&quot;OUTBOUND_STARTED&quot;) return &quot;已启动 B 路外呼；尚未接通。&quot;;
+        if(progress===&quot;RINGING&quot;) return &quot;被叫振铃，尚未接通。&quot;;
+        if(progress===&quot;ANSWERED&quot;) return &quot;被叫已接听，尚未桥接。&quot;;
+        if(progress===&quot;BRIDGED&quot;) return &quot;A/B 双方已桥接；尚未开始录音。&quot;;
+        if(progress===&quot;RECORDING&quot;) return &quot;A/B 已桥接，自研 IVR 录音中；限时与上传由 IVR 执行。&quot;;
+        if(progress===&quot;ENDED&quot;) return &quot;通话已结束；录音上传与证据处理是独立状态。&quot;;
+        if(progress===&quot;RECORDING_RECEIVED&quot;) return &quot;录音已接收；证据处理是独立状态。&quot;;
+        if(progress===&quot;EVIDENCE_PROCESSING&quot;) return &quot;ONECALL 证据处理中；尚不可出证。&quot;;
+        if(progress===&quot;EVIDENCE_READY&quot;) return &quot;ONECALL 已完成证据处理；只有此状态可进入证据结果。&quot;;
+        return &quot;本地演示状态。&quot;;
+      }
 
       function clone(value) { return JSON.parse(JSON.stringify(value)); }
       function formatSeconds(value) { const seconds=Math.max(0,Number(value)||0);return String(Math.floor(seconds/60)).padStart(2,&quot;0&quot;)+&quot;:&quot;+String(seconds%60).padStart(2,&quot;0&quot;); }
@@ -6089,7 +6850,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       function supportHtml(context) { const instruction=Object.values(B.support.instructions).join(&quot;&lt;br&gt;&quot;);return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;线下人工客服&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;&#x27;+B.support.contactLabel+&#x27;&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;咨询、退款、发票与认领由人工客服线下承接；当前原型不提供在线提交、回执或处理时效承诺。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:18px&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;需要准备&lt;/span&gt;&lt;span class=&quot;state warning&quot;&gt;&lt;i data-lucide=&quot;clock-3&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;待配置&lt;/span&gt;&lt;/div&gt;&lt;p style=&quot;margin:12px 0 0;color:var(--oc-body);line-height:20px&quot;&gt;&#x27;+instruction+&#x27;&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;不填写完整身份证件、验证码或证据正文；页面不会跳转到虚构电话、邮箱或微信。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;; }
 
       const wave = &#x27;&lt;div class=&quot;waveform&quot; aria-label=&quot;录音波形预览&quot;&gt;&#x27; + [18,28,38,24,45,31,52,34,42,26,48,61,39,52,29,44,35,55,32,46,24,37,20].map(function (height) { return &#x27;&lt;i style=&quot;--bar:&#x27; + height + &#x27;px&quot;&gt;&lt;/i&gt;&#x27;; }).join(&quot;&quot;) + &#x27;&lt;/div&gt;&#x27;;
-      const introWave = &#x27;&lt;div class=&quot;waveform intro-waveform&quot; aria-label=&quot;运营商网络侧原始录音波形示意&quot;&gt;&#x27; + [18,28,38,24,45,31,62,34,51,27,43,70,39,55,31,46,76,38,59,27,42,34,66,47,31,52,29,45,25,38,22].map(function (height) { return &#x27;&lt;i style=&quot;--bar:&#x27; + height + &#x27;px&quot;&gt;&lt;/i&gt;&#x27;; }).join(&quot;&quot;) + &#x27;&lt;/div&gt;&#x27;;
+      const introWave = &#x27;&lt;div class=&quot;waveform intro-waveform&quot; aria-label=&quot;自研 IVR 网络侧原始录音波形示意&quot;&gt;&#x27; + [18,28,38,24,45,31,62,34,51,27,43,70,39,55,31,46,76,38,59,27,42,34,66,47,31,52,29,45,25,38,22].map(function (height) { return &#x27;&lt;i style=&quot;--bar:&#x27; + height + &#x27;px&quot;&gt;&lt;/i&gt;&#x27;; }).join(&quot;&quot;) + &#x27;&lt;/div&gt;&#x27;;
 
       function steps(current, label) {
         let track = &quot;&quot;;
@@ -6219,7 +6980,7 @@ html&gt;body{padding:0}&lt;/style&gt;
       }
 
       function captureHomeHtml() {
-        return &#x27;&lt;div class=&quot;screen-pad first-guide&quot;&gt;&lt;div class=&quot;first-guide-brand&quot;&gt;&lt;i data-lucide=&quot;audio-waveform&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;strong&gt;一通话&lt;/strong&gt;&lt;span&gt;ONECALL&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;first-guide-visual&quot;&gt;&lt;div class=&quot;first-guide-labels&quot;&gt;&lt;span&gt;VOICE / ORIGINAL&lt;/span&gt;&lt;span&gt;TIME / VERIFIED&lt;/span&gt;&lt;/div&gt;&#x27; + introWave + &#x27;&lt;div class=&quot;first-guide-meta&quot;&gt;&lt;span class=&quot;first-guide-time&quot;&gt;00:00:00&lt;/span&gt;&lt;span&gt;通信网络侧 · 原始记录&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;first-guide-copy&quot;&gt;&lt;h3 class=&quot;first-guide-title&quot;&gt;把重要的通话，&lt;br&gt;留成证据。&lt;/h3&gt;&lt;p class=&quot;first-guide-lead&quot;&gt;运营商在通信网络侧生成原始录音，并同步完成固证。完成安全开通后，即可发起取证电话。&lt;/p&gt;&lt;p class=&quot;first-guide-promise&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;一通电话，一份可校验的证据记录&lt;/span&gt;&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;trial-invite&quot;&gt;&lt;div class=&quot;trial-invite-head&quot;&gt;&lt;span class=&quot;trial-invite-label&quot;&gt;&lt;i data-lucide=&quot;gift&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;新用户免费试用&lt;/span&gt;&lt;strong&gt;&#x27; + formatSeconds(business.rule.seconds) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;p&gt;DEMO_NOT_APPROVED · 可分多次拨打，按有效录音时长累计；累计达到当前规则上限时，当前通话会主动挂断。&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;intro&quot;&gt;开通并查看当前试用&lt;/button&gt;&lt;p class=&quot;first-guide-note&quot;&gt;完成 3 步安全开通即可领取 · 目前仅支持大陆居民身份证用户&lt;/p&gt;&#x27; + freeToolboxSectionHtml() + &#x27;&lt;/div&gt;&#x27;;
+        return &#x27;&lt;div class=&quot;screen-pad first-guide&quot;&gt;&lt;div class=&quot;first-guide-brand&quot;&gt;&lt;i data-lucide=&quot;audio-waveform&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;strong&gt;一通话&lt;/strong&gt;&lt;span&gt;ONECALL&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;first-guide-visual&quot;&gt;&lt;div class=&quot;first-guide-labels&quot;&gt;&lt;span&gt;VOICE / ORIGINAL&lt;/span&gt;&lt;span&gt;TIME / VERIFIED&lt;/span&gt;&lt;/div&gt;&#x27; + introWave + &#x27;&lt;div class=&quot;first-guide-meta&quot;&gt;&lt;span class=&quot;first-guide-time&quot;&gt;00:00:00&lt;/span&gt;&lt;span&gt;通信网络侧 · 原始记录&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;first-guide-copy&quot;&gt;&lt;h3 class=&quot;first-guide-title&quot;&gt;把重要的通话，&lt;br&gt;留成证据。&lt;/h3&gt;&lt;p class=&quot;first-guide-lead&quot;&gt;自研 IVR 在通信网络侧生成原始录音，并由 ONECALL 完成证据处理。完成安全开通后，即可发起取证电话。&lt;/p&gt;&lt;p class=&quot;first-guide-promise&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;一通电话，一份可校验的证据记录&lt;/span&gt;&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;trial-invite&quot;&gt;&lt;div class=&quot;trial-invite-head&quot;&gt;&lt;span class=&quot;trial-invite-label&quot;&gt;&lt;i data-lucide=&quot;gift&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;新用户免费试用&lt;/span&gt;&lt;strong&gt;&#x27; + formatSeconds(business.rule.seconds) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;p&gt;DEMO_NOT_APPROVED · 可分多次拨打，按有效录音时长累计；累计达到当前规则上限时，当前通话会主动挂断。&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;intro&quot;&gt;开通并查看当前试用&lt;/button&gt;&lt;p class=&quot;first-guide-note&quot;&gt;完成 3 步安全开通即可领取 · 目前仅支持大陆居民身份证用户&lt;/p&gt;&#x27; + freeToolboxSectionHtml() + &#x27;&lt;/div&gt;&#x27;;
       }
 
       function trialHomeHtml() {
@@ -6390,8 +7151,8 @@ html&gt;body{padding:0}&lt;/style&gt;
       }
 
       const callerOptions = [
-        {id: &quot;phone-6208&quot;, mask: &quot;138 **** 6208&quot;, verification: &quot;微信平台验证&quot;, status: &quot;已授权并开通&quot;, active: true},
-        {id: &quot;phone-4471&quot;, mask: &quot;186 **** 4471&quot;, verification: &quot;短信验证码验证&quot;, status: &quot;已授权并开通&quot;, active: true}
+        {id: &quot;phone-6208&quot;, bindingId: &quot;CB-PERSONAL-6208&quot;, mask: &quot;138 **** 6208&quot;, verification: &quot;微信平台验证&quot;, status: &quot;已授权并开通&quot;, active: true},
+        {id: &quot;phone-4471&quot;, bindingId: &quot;CB-PERSONAL-4471&quot;, mask: &quot;186 **** 4471&quot;, verification: &quot;短信验证码验证&quot;, status: &quot;已授权并开通&quot;, active: true}
       ];
       let selectedCallerId = &quot;phone-6208&quot;;
       let callerReturnPage = &quot;call&quot;;
@@ -6476,7 +7237,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           const selected = item.id === selectedCallerId;
           return &#x27;&lt;button class=&quot;caller-option&quot; type=&quot;button&quot; data-action=&quot;select-caller&quot; data-caller-id=&quot;&#x27; + item.id + &#x27;&quot; aria-pressed=&quot;&#x27; + selected + &#x27;&quot;&#x27; + (item.active ? &#x27;&#x27; : &#x27; disabled&#x27;) + &#x27;&gt;&lt;span&gt;&lt;strong&gt;&#x27; + item.mask + &#x27;&lt;/strong&gt;&lt;span&gt;&#x27; + item.verification + &#x27; · &#x27; + item.status + &#x27;&lt;/span&gt;&lt;/span&gt;&lt;i data-lucide=&quot;&#x27; + (selected ? &#x27;circle-check&#x27; : (item.active ? &#x27;circle&#x27; : &#x27;lock-keyhole&#x27;)) + &#x27;&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;&#x27;;
         }).join(&quot;&quot;);
-        return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;h3 class=&quot;page-heading&quot;&gt;选择本次手机主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;小程序直接拨号仅支持已开通手机号。双卡手机最终使用哪张 SIM 卡，由系统拨号页和你的选择决定。&lt;/p&gt;&lt;div class=&quot;caller-options&quot;&gt;&#x27; + options + &#x27;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;固话号码不会出现在这里，请使用“固话声讯短号取证”。运营商会在接通前识别真实主叫；与所选手机号不一致时，本次电话不会建立。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;&#x27; + callerReturnPage + &#x27;&quot;&gt;确认使用 &#x27; + selectedCaller().mask + &#x27;&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;改用固话取证&lt;/button&gt;&lt;/div&gt;&#x27;;
+        return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;h3 class=&quot;page-heading&quot;&gt;选择本次手机主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;小程序直接拨号仅支持已开通手机号。双卡手机最终使用哪张 SIM 卡，由系统拨号页和你的选择决定。&lt;/p&gt;&lt;div class=&quot;caller-options&quot;&gt;&#x27; + options + &#x27;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;固话号码不会出现在这里，请使用“固话声讯短号取证”。自研 IVR 会从经运营商线路传递的主叫取得可信主叫；与所选手机号不一致时，本次电话不会建立。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;&#x27; + callerReturnPage + &#x27;&quot;&gt;确认使用 &#x27; + selectedCaller().mask + &#x27;&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;改用固话取证&lt;/button&gt;&lt;/div&gt;&#x27;;
       }
 
       function callPreparationHtml(isTrial) {
@@ -6485,17 +7246,127 @@ html&gt;body{padding:0}&lt;/style&gt;
           ? &#x27;&lt;p class=&quot;eyebrow&quot;&gt;本次最多可录 &#x27;+formatSeconds(remaining)+&#x27;&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;确认本次试用电话&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;额度来自原 IVR 试用快照；达到剩余上限时，系统将结束本次录音模拟。&lt;/p&gt;&lt;div class=&quot;trial-usage&quot;&gt;&lt;div class=&quot;trial-usage-head&quot;&gt;&lt;span&gt;拨号前可用时长&lt;/span&gt;&lt;strong class=&quot;trial-remaining&quot;&gt;&#x27;+formatSeconds(remaining)+&#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;trial-usage-meta&quot;&gt;&lt;span&gt;跨通话累计&lt;/span&gt;&lt;span&gt;用完不自动转付费&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
           : &#x27;&lt;p class=&quot;eyebrow&quot;&gt;小程序拨号 · 仅支持手机号&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;确认本次取证电话&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;先确认被叫和本次手机主叫号码，再由系统拨号页完成呼出。固话请改用声讯短号。&lt;/p&gt;&#x27;;
         const tips = isTrial ? &#x27;&#x27; : &#x27;&lt;details class=&quot;disclosure&quot; style=&quot;margin-top:14px;border-top:1px solid var(--oc-line);border-bottom:1px solid var(--oc-line)&quot;&gt;&lt;summary&gt;&lt;span&gt;打之前看三点&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;开头确认双方姓名和关系。&lt;/li&gt;&lt;li&gt;金额、日期和承诺逐项说清。&lt;/li&gt;&lt;li&gt;保持完整上下文并依法使用录音。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&#x27;;
-        return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + intro + &#x27;&lt;h4 class=&quot;section-title&quot;&gt;拨给谁&lt;/h4&gt;&lt;div class=&quot;phone-number&quot;&gt;&lt;span&gt;139 **** 3816&lt;/span&gt;&lt;i data-lucide=&quot;contact&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;本次主叫号码&lt;/h4&gt;&#x27; + callerSelectButton(isTrial ? &#x27;trialCall&#x27; : &#x27;call&#x27;) + &#x27;&lt;p class=&quot;field-help&quot;&gt;若系统要求选择电话卡，请选择尾号 &#x27; + selectedCaller().mask.slice(-4) + &#x27; 对应的 SIM 卡&lt;/p&gt;&#x27; + tips + &#x27;&lt;div class=&quot;switch-row&quot;&gt;&lt;div&gt;&lt;strong&gt;通话录音提示音&lt;/strong&gt;&lt;span&gt;默认开启，可在本次通话前关闭&lt;/span&gt;&lt;/div&gt;&lt;span class=&quot;switch&quot; role=&quot;switch&quot; aria-checked=&quot;true&quot; aria-label=&quot;通话录音提示音已开启&quot;&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;radio-tower&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;小程序不能指定双卡手机的呼出 SIM。通信侧将在接通前核验真实主叫；不一致时立即阻止，不扣录音分钟，也不生成证据。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;dialHandoff&quot; data-call-mode=&quot;&#x27; + (isTrial ? &#x27;trial&#x27; : &#x27;paid&#x27;) + &#x27;&quot; &#x27;+(isTrial&amp;&amp;!remaining?&#x27;disabled&#x27;:&#x27;&#x27;)+&#x27;&gt;&#x27; + (isTrial ? &#x27;下一步（最多 &#x27;+formatSeconds(remaining)+&#x27;）&#x27; : &#x27;下一步，打开系统拨号盘&#x27;) + &#x27;&lt;/button&gt;&lt;/div&gt;&#x27;;
+        return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + intro + &#x27;&lt;h4 class=&quot;section-title&quot;&gt;拨给谁&lt;/h4&gt;&lt;div class=&quot;phone-number&quot;&gt;&lt;span&gt;139 **** 3816&lt;/span&gt;&lt;i data-lucide=&quot;contact&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;本次主叫号码&lt;/h4&gt;&#x27; + callerSelectButton(isTrial ? &#x27;trialCall&#x27; : &#x27;call&#x27;) + &#x27;&lt;p class=&quot;field-help&quot;&gt;若系统要求选择电话卡，请选择尾号 &#x27; + selectedCaller().mask.slice(-4) + &#x27; 对应的 SIM 卡&lt;/p&gt;&#x27; + tips + &#x27;&lt;div class=&quot;switch-row&quot;&gt;&lt;div&gt;&lt;strong&gt;通话录音提示音&lt;/strong&gt;&lt;span&gt;默认开启，可在本次通话前关闭&lt;/span&gt;&lt;/div&gt;&lt;span class=&quot;switch&quot; role=&quot;switch&quot; aria-checked=&quot;true&quot; aria-label=&quot;通话录音提示音已开启&quot;&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;clipboard-list&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;下一步将创建待拨任务（默认冻结 30 秒）；系统拨号只打开系统拨号盘，不代表已接通、已领取或正在录音。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;radio-tower&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;小程序不能指定双卡手机的呼出 SIM。自研 IVR 会从经运营商线路传递的主叫取得可信主叫；不一致时立即阻止，不扣录音分钟，也不生成证据。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;dialHandoff&quot; data-call-mode=&quot;&#x27; + (isTrial ? &#x27;trial&#x27; : &#x27;paid&#x27;) + &#x27;&quot; &#x27;+(isTrial&amp;&amp;!remaining?&#x27;disabled&#x27;:&#x27;&#x27;)+&#x27;&gt;&#x27; + (isTrial ? &#x27;下一步（最多 &#x27;+formatSeconds(remaining)+&#x27;）&#x27; : &#x27;下一步，打开系统拨号盘&#x27;) + &#x27;&lt;/button&gt;&lt;/div&gt;&#x27;;
       }
 
       function dialHandoffHtml() {
-        const item = selectedCaller();
-        const successTarget = callMode === &quot;trial&quot; ? &quot;trialLimit&quot; : &quot;solidified&quot;;
-        return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;接通前将核验真实主叫&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;请在系统拨号页选对电话卡&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;微信只能打开系统拨号盘，不能替你指定 SIM 卡。本次预期主叫为 &#x27; + item.mask + &#x27;。&lt;/p&gt;&lt;div class=&quot;dial-check&quot;&gt;&lt;div class=&quot;dial-check-row&quot;&gt;&lt;span class=&quot;dial-check-icon&quot;&gt;&lt;i data-lucide=&quot;smartphone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;span class=&quot;dial-check-copy&quot;&gt;&lt;strong&gt;在系统拨号页选择尾号 &#x27; + item.mask.slice(-4) + &#x27; 的电话卡&lt;/strong&gt;&lt;span&gt;如果系统直接使用默认卡，请先确认默认通话卡设置。&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;dial-check-row&quot;&gt;&lt;span class=&quot;dial-check-icon&quot;&gt;&lt;i data-lucide=&quot;radio-tower&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;span class=&quot;dial-check-copy&quot;&gt;&lt;strong&gt;运营商接通前核对真实主叫&lt;/strong&gt;&lt;span&gt;只有与所选号码完全一致，才允许接通、录音、计费和固证。&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;dial-check-row&quot;&gt;&lt;span class=&quot;dial-check-icon&quot;&gt;&lt;i data-lucide=&quot;shield-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;span class=&quot;dial-check-copy&quot;&gt;&lt;strong&gt;不一致或无法识别时直接阻止&lt;/strong&gt;&lt;span&gt;不会自动切换到另一个绑定号码，也不会生成无效证据。&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;volume-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;号码不一致时，电话中会播放原因提示；返回小程序后也能查看失败结果并重新选择号码。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;&#x27; + successTarget + &#x27;&quot;&gt;打开系统拨号盘&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;callerSelect&quot; data-return-page=&quot;dialHandoff&quot;&gt;更换本次主叫号码&lt;/button&gt;&lt;/div&gt;&#x27;;
+        const task = callTask();
+        if (!task) {
+          const message = callReview.notice ? (callTaskErrors[callReview.notice] || (&quot;操作被拒绝：&quot; + callReview.notice)) : &quot;请先确认被叫并发起取证电话，系统会在此创建待拨任务。&quot;;
+          return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;待拨任务 · 本地演示&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;暂时无法创建待拨任务&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;&#x27; + message + &#x27;&lt;/p&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.callPath.localFixture + &#x27;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;返回重新发起&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;captureReady&quot;&gt;返回取证首页&lt;/button&gt;&lt;/div&gt;&#x27;;
+        }
+        const nowMs = Date.now();
+        const expiresMs = Date.parse(task.expiresAt);
+        const expired = task.status === &quot;PENDING&quot; &amp;&amp; nowMs &gt;= expiresMs;
+        const remaining = Math.max(0, Math.ceil((expiresMs - nowMs) / 1000));
+        const statusText = callTaskStatusText(task);
+        const notice = callReview.notice ? &#x27;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + (callTaskErrors[callReview.notice] || (&quot;操作被拒绝：&quot; + callReview.notice)) + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27; : &#x27;&#x27;;
+        const terminal = [&quot;EXPIRED&quot;, &quot;REPLACED&quot;, &quot;CANCELLED&quot;, &quot;REJECTED&quot;].indexOf(task.status) &gt; -1 || expired;
+        let actions = &quot;&quot;;
+        if (terminal) actions = &#x27;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-action=&quot;retry-task&quot;&gt;重新发起&lt;/button&gt;&#x27;;
+        else if (task.status === &quot;PENDING&quot;) actions = &#x27;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-action=&quot;launch-dialer&quot;&gt;打开系统拨号盘&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-action=&quot;replace-task&quot;&gt;更换本次被叫（演示）&lt;/button&gt;&lt;button class=&quot;text-action&quot; type=&quot;button&quot; data-action=&quot;cancel-task&quot; style=&quot;margin:14px auto 0&quot;&gt;取消待拨任务&lt;/button&gt;&#x27;;
+        else actions = &#x27;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;callStatus&quot;&gt;查看呼叫状态&lt;/button&gt;&#x27;;
+        const heading = expired ? &quot;待拨任务已过期&quot; : task.status === &quot;CANCELLED&quot; ? &quot;待拨任务已取消&quot; : task.status === &quot;REPLACED&quot; ? &quot;待拨任务已替换&quot; : task.status === &quot;COMPLETED&quot; ? &quot;待拨任务已完成&quot; : task.status === &quot;FAILED&quot; ? &quot;待拨任务未成功&quot; : &quot;已创建待拨任务&quot;;
+        return &#x27;&lt;div class=&quot;screen-pad&quot; data-task-id=&quot;&#x27; + task.id + &#x27;&quot; data-task-status=&quot;&#x27; + (expired ? &quot;EXPIRED&quot; : task.status) + &#x27;&quot; data-task-ttl=&quot;&#x27; + task.ttlSeconds + &#x27;&quot; data-task-expires-at=&quot;&#x27; + task.expiresAt + &#x27;&quot;&gt;&#x27;
+          + &#x27;&lt;p class=&quot;eyebrow&quot;&gt;待拨任务 · &#x27; + statusText + &#x27;&lt;/p&gt;&#x27;
+          + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;&#x27; + heading + &#x27;&lt;/h3&gt;&#x27;
+          + &#x27;&lt;p class=&quot;page-lead&quot;&gt;30 秒内呼入才会由 IVR 原子领取；系统拨号盘只表示客户端调用了系统能力。本次预期主叫 &#x27; + task.maskedCaller + &#x27;。&lt;/p&gt;&#x27;
+          + &#x27;&lt;div class=&quot;checkout-summary&quot;&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;任务&lt;/span&gt;&lt;strong&gt;&#x27; + task.id + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;主叫 / 被叫&lt;/span&gt;&lt;strong&gt;&#x27; + task.maskedCaller + &#x27; → &#x27; + task.maskedCallee + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;冻结时长&lt;/span&gt;&lt;strong&gt;30 秒&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;到期&lt;/span&gt;&lt;strong&gt;&#x27; + task.expiresAt.replace(&quot;T&quot;, &quot; &quot;).slice(0, 19) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;剩余（渲染时计算）&lt;/span&gt;&lt;strong&gt;&#x27; + formatSeconds(remaining) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;系统拨号盘&lt;/span&gt;&lt;strong&gt;&#x27; + (task.dialerLaunchedAt ? &quot;已打开（仅客户端）&quot; : &quot;未打开&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
+          + notice
+          + &#x27;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.callPath.task + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27;
+          + &#x27;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;smartphone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.callPath.launch + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27;
+          + &#x27;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.ownership + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27;
+          + &#x27;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&#x27; + actions
+          + &#x27;&lt;div class=&quot;notice&quot; style=&quot;margin-top:14px&quot;&gt;&lt;i data-lucide=&quot;flask-conical&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.callPath.localFixture + &#x27;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;;
+      }
+
+      function callStatusHtml() {
+        const task = callTask();
+        const call = callRecord();
+        if (!task &amp;&amp; !call) {
+          return &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark warning&quot;&gt;&lt;i data-lucide=&quot;activity&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;没有可展示的呼叫状态&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;请先创建待拨任务，或使用评审 hook 选择本地演示状态。&lt;/p&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.callPath.localFixture + &#x27;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;发起取证电话&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;dialHandoff&quot;&gt;查看待拨任务&lt;/button&gt;&lt;/div&gt;&#x27;;
+        }
+        let progress = call ? call.progress : (task.status === &quot;PENDING&quot; ? &quot;WAITING_INBOUND&quot; : &quot;FAILED&quot;);
+        const taskPath = call ? call.taskPath : true;
+        const confirmation = call ? call.calleeConfirmation : &quot;NONE&quot;;
+        if (!call &amp;&amp; task.status === &quot;PENDING&quot; &amp;&amp; Date.now() &gt;= Date.parse(task.expiresAt)) progress = &quot;FAILED&quot;;
+        if (!call &amp;&amp; [&quot;CANCELLED&quot;, &quot;REPLACED&quot;, &quot;REJECTED&quot;].indexOf(task.status) &gt; -1) progress = &quot;FAILED&quot;;
+        if (!call &amp;&amp; task.status === &quot;CLAIMED&quot;) progress = &quot;CLAIMED&quot;;
+        if (!call &amp;&amp; task.status === &quot;COMPLETED&quot;) progress = &quot;ENDED&quot;;
+        const launched = !!(task &amp;&amp; task.dialerLaunchedAt);
+        const connected = [&quot;ANSWERED&quot;, &quot;BRIDGED&quot;, &quot;RECORDING&quot;, &quot;ENDED&quot;, &quot;RECORDING_RECEIVED&quot;, &quot;EVIDENCE_PROCESSING&quot;, &quot;EVIDENCE_READY&quot;].indexOf(progress) &gt; -1;
+        const evidenceReady = progress === &quot;EVIDENCE_READY&quot;;
+        const headerLine = evidenceReady ? (launched ? &quot;系统拨号盘已打开 · 证据可用&quot; : &quot;证据可用&quot;) : launched ? (&quot;系统拨号盘已打开 · &quot; + (connected ? &quot;已接通&quot; : &quot;尚未接通&quot;)) : (connected ? &quot;已接通&quot; : &quot;尚未接通&quot;);
+        const taskRows = task
+          ? &#x27;&lt;h4 class=&quot;section-title&quot;&gt;待拨任务事实&lt;/h4&gt;&lt;div class=&quot;record-card&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;&#x27; + task.id + &#x27;&lt;/span&gt;&#x27; + renderSourceBadge(&quot;MINI&quot;) + &#x27;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;任务状态&lt;/span&gt;&lt;strong&gt;&#x27; + callTaskStatusText(task) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;冻结&lt;/span&gt;&lt;strong&gt;&#x27; + task.ttlSeconds + &#x27; 秒&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;到期&lt;/span&gt;&lt;strong&gt;&#x27; + task.expiresAt.replace(&quot;T&quot;, &quot; &quot;).slice(0, 19) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;系统拨号盘&lt;/span&gt;&lt;strong&gt;&#x27; + (task.dialerLaunchedAt ? &quot;已打开（仅客户端）&quot; : &quot;未打开&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;领取&lt;/span&gt;&lt;strong&gt;&#x27; + (task.claimedCallId ? &quot;已领取 · &quot; + task.claimedCallId : &quot;未领取&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;被叫&lt;/span&gt;&lt;strong&gt;&#x27; + (call &amp;&amp; call.maskedCallee ? call.maskedCallee : task.maskedCallee) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
+          : &#x27;&#x27;;
+        const callRows = call
+          ? &#x27;&lt;h4 class=&quot;section-title&quot;&gt;呼叫与证据事实&lt;/h4&gt;&lt;div class=&quot;record-card&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;&#x27; + call.id + &#x27;&lt;/span&gt;&#x27; + renderSourceBadge(&quot;IVR&quot;) + &#x27;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;决策&lt;/span&gt;&lt;strong&gt;&#x27; + B.labels.ivrAction[call.action] + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;匹配&lt;/span&gt;&lt;strong&gt;&#x27; + B.labels.taskMatch[call.taskMatch] + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;被叫确认&lt;/span&gt;&lt;strong&gt;&#x27; + (call.calleeConfirmation === &quot;NONE&quot; ? &quot;无需确认（任务自动外呼）&quot; : call.calleeConfirmation === &quot;DTMF_CONFIRMED&quot; ? &quot;已通过 DTMF 确认&quot; : call.calleeConfirmation === &quot;DTMF_REQUIRED&quot; ? &quot;等待 DTMF 输入&quot; : &quot;不适用&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;进度&lt;/span&gt;&lt;strong&gt;&#x27; + B.labels.callProgress[call.progress] + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;录音上传&lt;/span&gt;&lt;strong&gt;&#x27; + B.labels.uploadStatus[call.uploadStatus] + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;证据处理&lt;/span&gt;&lt;strong&gt;&#x27; + B.labels.evidenceStatus[call.evidenceStatus] + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;事实时间线&lt;/h4&gt;&#x27; + callFactRows(call)
+          : &#x27;&lt;h4 class=&quot;section-title&quot;&gt;事实时间线&lt;/h4&gt;&lt;div class=&quot;record-card&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;等待 IVR 呼入&lt;/span&gt;&#x27; + renderSourceBadge(&quot;MINI&quot;) + &#x27;&lt;/div&gt;&lt;p class=&quot;page-lead&quot; style=&quot;margin:10px 0 0&quot;&gt;尚未产生 IVR 呼叫事实；系统拨号盘打开不等于接入、领取或录音。&lt;/p&gt;&lt;/div&gt;&#x27;;
+        const pathCopy = taskPath ? B.labels.callPath.task : B.labels.callPath.noTask;
+        const failure = progress === &quot;FAILED&quot; ? &#x27;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;phone-off&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + callFailureCopy(task, call) + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27; : &#x27;&#x27;;
+        let primary = &#x27;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-action=&quot;refresh-call-status&quot;&gt;返回小程序后刷新&lt;/button&gt;&#x27;;
+        if (evidenceReady) primary = &#x27;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;solidified&quot;&gt;查看证据结果&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-action=&quot;refresh-call-status&quot;&gt;返回小程序后刷新&lt;/button&gt;&#x27;;
+        else if (progress === &quot;FAILED&quot;) primary = &#x27;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;重新发起&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-action=&quot;refresh-call-status&quot;&gt;返回小程序后刷新&lt;/button&gt;&#x27;;
+        return &#x27;&lt;div class=&quot;screen-pad&quot; data-call-path=&quot;&#x27; + (taskPath ? &quot;task&quot; : &quot;no-task&quot;) + &#x27;&quot; data-callee-confirmation=&quot;&#x27; + confirmation + &#x27;&quot; data-call-progress=&quot;&#x27; + progress + &#x27;&quot;&gt;&#x27;
+          + &#x27;&lt;p class=&quot;eyebrow&quot;&gt;呼叫状态 · 本地演示&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;&#x27; + headerLine + &#x27;&lt;/h3&gt;&#x27;
+          + &#x27;&lt;p class=&quot;page-lead&quot;&gt;&#x27; + callStatusCopy(progress, task, call) + &#x27;&lt;/p&gt;&#x27;
+          + (callReview.refreshed ? &#x27;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;refresh-cw&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;原型未连接服务端；状态来自本地评审 fixture，刷新不会伪造推进。&lt;/span&gt;&lt;/div&gt;&#x27; : &#x27;&#x27;)
+          + failure
+          + taskRows + callRows
+          + &#x27;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;route&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + pathCopy + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27;
+          + &#x27;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.ownership + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27;
+          + &#x27;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;flask-conical&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;呼叫级证据状态仅为诊断投影；权威证据列表来自业务 evidence。&#x27; + B.labels.callPath.localFixture + &#x27;&lt;/span&gt;&lt;/div&gt;&#x27;
+          + &#x27;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&#x27; + primary
+          + &#x27;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;dialHandoff&quot;&gt;查看待拨任务&lt;/button&gt;&lt;/div&gt;&#x27;;
+      }
+
+      function buildCallDemoState(name) {
+        const base = new Date();
+        const baseMs = base.getTime();
+        const state = B.createCallTaskDemoState(base);
+        callReview.taskId = null;
+        callReview.callId = null;
+        callReview.notice = null;
+        callReview.refreshed = false;
+        const account = review.accountId;
+        const workspace = &quot;personal:&quot; + review.accountId;
+        if (name === &quot;failed-mismatch&quot;) { callReview.taskId = &quot;CT-DEMO-0102&quot;; callReview.callId = &quot;OC-C2036&quot;; return state; }
+        if (name === &quot;failed-no-answer&quot;) { callReview.taskId = &quot;CT-DEMO-0103&quot;; callReview.callId = &quot;OC-C2035&quot;; return state; }
+        const created = B.createCallTask(state, { callerBindingId: &quot;CB-PERSONAL-6208&quot;, maskedCallee: DEMO_CALLEE, businessType: &quot;EVIDENCE_CALL&quot;, idempotencyKey: &quot;MINI-DEMO-&quot; + name }, base);
+        if (!created.ok) return null;
+        callReview.taskId = created.value.id;
+        if (!B.recordDialerLaunch(state, { taskId: created.value.id, accountId: account, workspaceId: workspace }, new Date(baseMs + 500)).ok) return null;
+        if (name === &quot;waiting&quot;) return state;
+        if (name === &quot;failed-expired&quot;) {
+          const reaped = B.createCallTask(state, { callerBindingId: &quot;CB-PERSONAL-6208&quot;, maskedCallee: DEMO_CALLEE, businessType: &quot;EVIDENCE_CALL&quot;, idempotencyKey: &quot;MINI-DEMO-&quot; + name }, new Date(baseMs + 31000));
+          return reaped.ok ? state : null;
+        }
+        const callId = &quot;MINI-DEMO-CALL-&quot; + name;
+        const resolved = B.resolveIvrInbound(state, { callId: callId, normalizedCaller: &quot;13800006208&quot;, callerTrusted: true, callerState: &quot;ACTIVE&quot;, availableSeconds: 300, directAllowed: true }, new Date(baseMs + 1000));
+        if (!resolved.ok) return null;
+        callReview.callId = callId;
+        const facts = [];
+        if ([&quot;ringing&quot;, &quot;recording&quot;, &quot;ended&quot;, &quot;evidence&quot;].indexOf(name) &gt; -1) facts.push([&quot;OUTBOUND_STARTED&quot;, 2000]);
+        if ([&quot;ringing&quot;, &quot;recording&quot;, &quot;ended&quot;, &quot;evidence&quot;].indexOf(name) &gt; -1) facts.push([&quot;RINGING&quot;, 3000]);
+        if ([&quot;recording&quot;, &quot;ended&quot;, &quot;evidence&quot;].indexOf(name) &gt; -1) facts.push([&quot;ANSWERED&quot;, 4000], [&quot;BRIDGED&quot;, 5000], [&quot;RECORDING_STARTED&quot;, 6000]);
+        if ([&quot;ended&quot;, &quot;evidence&quot;].indexOf(name) &gt; -1) facts.push([&quot;CALL_ENDED&quot;, 10000, 522]);
+        if (name === &quot;evidence&quot;) facts.push([&quot;RECORDING_RECEIVED&quot;, 11000], [&quot;EVIDENCE_PROCESSING&quot;, 12000], [&quot;EVIDENCE_READY&quot;, 13000]);
+        for (const fact of facts) {
+          const input = { callId: callId, eventId: callId + &quot;-EV-&quot; + fact[0], type: fact[0], at: new Date(baseMs + fact[1]).toISOString() };
+          if (fact[0] === &quot;CALL_ENDED&quot;) input.recordingSeconds = fact[2];
+          if (!B.recordCallFact(state, input, new Date(baseMs + fact[1])).ok) return null;
+        }
+        return state;
       }
 
       function solidifiedHtml() {
-        return &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark success&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;证据已固化&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;运营商确认实际主叫与本次所选号码一致，录音已完成内部固证并取得公证处存证记录。&lt;/p&gt;&lt;div class=&quot;record-card&quot; style=&quot;text-align:left&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;EVIDENCE / CALL&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;已存证&lt;/span&gt;&lt;/div&gt;&lt;h4 class=&quot;record-title&quot;&gt;小李与张哥｜借款还款确认&lt;/h4&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;实际主叫&lt;/span&gt;&lt;strong&gt;&#x27; + selectedCaller().mask + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;运营商校验&lt;/span&gt;&lt;strong&gt;与所选号码一致&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;通话时长&lt;/span&gt;&lt;strong&gt;05:42&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;形成时间&lt;/span&gt;&lt;strong&gt;今天 14:32&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;公证处记录号&lt;/span&gt;&lt;strong&gt;YUZHANG-7F2A&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;哈希值&lt;/span&gt;&lt;strong&gt;8f4c2a91...6b8&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;detail&quot;&gt;查看证据与 AI 摘要&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;captureReady&quot;&gt;先存着，以后再出证&lt;/button&gt;&lt;/div&gt;&#x27;;
+        const task = callTask();
+        const call = callRecord();
+        const callerMask = call ? call.maskedCaller : selectedCaller().mask;
+        const duration = call &amp;&amp; call.recordingSeconds ? formatSeconds(call.recordingSeconds) : &quot;05:42&quot;;
+        const taskLine = task ? (task.id + &quot; · &quot; + callTaskStatusText(task)) : &quot;无任务路径 · DTMF 已确认被叫&quot;;
+        return &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark success&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;证据可用&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;自研 IVR 已完成可信主叫确认、B 路外呼、桥接与录音上传；ONECALL 已完成证据处理。只有证据可用状态才可以进入本页。&lt;/p&gt;&lt;div class=&quot;record-card&quot; style=&quot;text-align:left&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;EVIDENCE / CALL&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;证据可用&lt;/span&gt;&lt;/div&gt;&lt;h4 class=&quot;record-title&quot;&gt;小李与张哥｜借款还款确认&lt;/h4&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;IVR 可信主叫（线路传递）&lt;/span&gt;&lt;strong&gt;&#x27; + callerMask + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;任务 / 路径&lt;/span&gt;&lt;strong&gt;&#x27; + taskLine + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;IVR 权威录音时长&lt;/span&gt;&lt;strong&gt;&#x27; + duration + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;ONECALL 证据处理&lt;/span&gt;&lt;strong&gt;可用&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;录音上传&lt;/span&gt;&lt;strong&gt;&#x27; + (call ? B.labels.uploadStatus[call.uploadStatus] : &quot;已接收&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;公证处记录号&lt;/span&gt;&lt;strong&gt;YUZHANG-7F2A&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.ownership + &#x27;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;detail&quot;&gt;查看证据与 AI 摘要&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;captureReady&quot;&gt;先存着，以后再出证&lt;/button&gt;&lt;/div&gt;&#x27;;
       }
 
       function bindingAuthorizationHtml(mask) {
@@ -6552,12 +7423,12 @@ html&gt;body{padding:0}&lt;/style&gt;
         phone: {
           title: &quot;绑定主叫号码&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + steps(3, &quot;绑定号码并授权&quot;) + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;绑定本人使用的主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;手机号可通过微信或短信验证；独立固话直线可使用运营商主叫验证。&lt;/p&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;phone-outgoing&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&lt;strong&gt;两种拨号方式&lt;/strong&gt;&lt;br&gt;小程序直接拨号仅支持手机号；固话绑定成功后，需使用该座机拨打运营商声讯短号。&lt;/span&gt;&lt;/div&gt;&lt;button class=&quot;verification-choice&quot; type=&quot;button&quot; data-go=&quot;phoneWechatConfirm&quot;&gt;&lt;span class=&quot;row-main&quot;&gt;&lt;span class=&quot;row-icon&quot;&gt;&lt;i data-lucide=&quot;message-circle&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;span class=&quot;row-copy&quot;&gt;&lt;strong&gt;微信授权获取手机号&lt;/strong&gt;&lt;span&gt;无需输入号码和验证码，授权后仍需确认由本人实际使用&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&quot;state pending&quot;&gt;推荐&lt;/span&gt;&lt;/button&gt;&lt;div class=&quot;method-divider&quot;&gt;&lt;span&gt;或&lt;/span&gt;&lt;/div&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;phoneSms&quot;&gt;使用短信验证码绑定其他手机号&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineBind&quot;&gt;绑定固话座机&lt;/button&gt;&lt;details class=&quot;disclosure&quot; style=&quot;margin-top:16px;border-top:1px solid var(--oc-line);border-bottom:1px solid var(--oc-line)&quot;&gt;&lt;summary&gt;&lt;span&gt;不同验证方式能证明什么&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;微信表示用户提供经平台验证的手机号；短信表示当前可接收验证码。&lt;/li&gt;&lt;li&gt;固话主叫验证表示用户能从该线路发起并完成一次验证呼叫。&lt;/li&gt;&lt;li&gt;以上均不等于运营商实名或号码产权已经与账户身份一致，申请公证书时另行核验。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;p class=&quot;button-note&quot;&gt;个人账户最多绑定三个有效主叫号码，手机号与固话合计计算&lt;/p&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + steps(3, &quot;绑定号码并授权&quot;) + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;绑定本人使用的主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;手机号可通过微信或短信验证；独立固话直线可使用经运营商线路传递的可信主叫验证。&lt;/p&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;phone-outgoing&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&lt;strong&gt;两种拨号方式&lt;/strong&gt;&lt;br&gt;小程序直接拨号仅支持手机号；固话绑定成功后，需使用该座机拨打运营商声讯短号。&lt;/span&gt;&lt;/div&gt;&lt;button class=&quot;verification-choice&quot; type=&quot;button&quot; data-go=&quot;phoneWechatConfirm&quot;&gt;&lt;span class=&quot;row-main&quot;&gt;&lt;span class=&quot;row-icon&quot;&gt;&lt;i data-lucide=&quot;message-circle&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;span class=&quot;row-copy&quot;&gt;&lt;strong&gt;微信授权获取手机号&lt;/strong&gt;&lt;span&gt;无需输入号码和验证码，授权后仍需确认由本人实际使用&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&quot;state pending&quot;&gt;推荐&lt;/span&gt;&lt;/button&gt;&lt;div class=&quot;method-divider&quot;&gt;&lt;span&gt;或&lt;/span&gt;&lt;/div&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;phoneSms&quot;&gt;使用短信验证码绑定其他手机号&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineBind&quot;&gt;绑定固话座机&lt;/button&gt;&lt;details class=&quot;disclosure&quot; style=&quot;margin-top:16px;border-top:1px solid var(--oc-line);border-bottom:1px solid var(--oc-line)&quot;&gt;&lt;summary&gt;&lt;span&gt;不同验证方式能证明什么&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;微信表示用户提供经平台验证的手机号；短信表示当前可接收验证码。&lt;/li&gt;&lt;li&gt;固话主叫验证表示用户能从该线路发起并完成一次验证呼叫。&lt;/li&gt;&lt;li&gt;以上均不等于运营商实名或号码产权已经与账户身份一致，申请公证书时另行核验。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;p class=&quot;button-note&quot;&gt;个人账户最多绑定三个有效主叫号码，手机号与固话合计计算&lt;/p&gt;&lt;/div&gt;&#x27;
         },
         phoneWechatConfirm: {
           title: &quot;确认微信手机号&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + steps(3, &quot;绑定号码并授权&quot;) + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;确认微信提供的号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;微信已返回一个经平台验证的手机号，请确认它将用于后续取证电话。&lt;/p&gt;&lt;div class=&quot;verified-number&quot;&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;badge-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;已通过微信平台验证&lt;/span&gt;&lt;strong&gt;138 **** 6208&lt;/strong&gt;&lt;span&gt;该结果不代表运营商实名登记人与当前账户身份一致。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;运营商将在每次接通前核验真实主叫。与本次所选号码不一致时，电话不会接通，也不会录音或扣减额度。&lt;/span&gt;&lt;/div&gt;&#x27; + bindingAuthorizationHtml(&quot;138 **** 6208&quot;) + &#x27;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-phone-submit data-go=&quot;provisioning&quot; data-binding-mask=&quot;138 **** 6208&quot; data-binding-method=&quot;微信平台验证&quot; disabled&gt;同意授权并提交开通&lt;/button&gt;&lt;p class=&quot;button-note&quot;&gt;提交后同步返回开通结果&lt;/p&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;phoneSms&quot;&gt;改用短信验证&lt;/button&gt;&lt;button class=&quot;text-action&quot; type=&quot;button&quot; data-go=&quot;phoneWechatIssue&quot; style=&quot;margin:12px auto 0&quot;&gt;查看授权未完成状态&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + steps(3, &quot;绑定号码并授权&quot;) + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;确认微信提供的号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;微信已返回一个经平台验证的手机号，请确认它将用于后续取证电话。&lt;/p&gt;&lt;div class=&quot;verified-number&quot;&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;badge-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;已通过微信平台验证&lt;/span&gt;&lt;strong&gt;138 **** 6208&lt;/strong&gt;&lt;span&gt;该结果不代表运营商实名登记人与当前账户身份一致。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;自研 IVR 将从经运营商线路传递的主叫取得可信主叫。与本次所选号码不一致时，电话不会接通，也不会录音或扣减额度。&lt;/span&gt;&lt;/div&gt;&#x27; + bindingAuthorizationHtml(&quot;138 **** 6208&quot;) + &#x27;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-phone-submit data-go=&quot;provisioning&quot; data-binding-mask=&quot;138 **** 6208&quot; data-binding-method=&quot;微信平台验证&quot; disabled&gt;同意授权并提交开通&lt;/button&gt;&lt;p class=&quot;button-note&quot;&gt;提交后同步返回开通结果&lt;/p&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;phoneSms&quot;&gt;改用短信验证&lt;/button&gt;&lt;button class=&quot;text-action&quot; type=&quot;button&quot; data-go=&quot;phoneWechatIssue&quot; style=&quot;margin:12px auto 0&quot;&gt;查看授权未完成状态&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         phoneWechatIssue: {
           title: &quot;微信授权未完成&quot;,
@@ -6577,12 +7448,12 @@ html&gt;body{padding:0}&lt;/style&gt;
         landlineBind: {
           title: &quot;绑定固话号码&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;新增主叫号码 · 固话&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;绑定本人或本企业使用的固话&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;填写带区号的完整号码。验证时需要使用该座机完成真实主叫挑战。&lt;/p&gt;&lt;div class=&quot;field&quot;&gt;&lt;label for=&quot;oc-landline&quot;&gt;固话号码&lt;/label&gt;&lt;div class=&quot;input-wrap&quot;&gt;&lt;input id=&quot;oc-landline&quot; value=&quot;010-88886688&quot; aria-label=&quot;带区号的固话号码&quot;&gt;&lt;/div&gt;&lt;p class=&quot;field-help&quot;&gt;号码将按国家码、区号和本地号码标准化保存；分机号不作为主叫号码&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;phone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&lt;strong&gt;仅支持独立固话直线&lt;/strong&gt;&lt;br&gt;运营商必须能够返回与所填号码一致的真实主叫。企业总机、PBX 和仅显示统一外呼号的分机暂不支持。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;authorization-summary&quot;&gt;&lt;div class=&quot;authorization-item&quot;&gt;&lt;i data-lucide=&quot;file-check-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;div&gt;&lt;strong&gt;授权与号码归属边界&lt;/strong&gt;&lt;span&gt;主叫验证只证明可从该线路完成验证呼叫，不代表运营商登记人或号码产权已经与账户身份一致；申请公证书时按公证机构规则另行核验。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;check-list&quot;&gt;&lt;label class=&quot;check-row&quot;&gt;&lt;input class=&quot;consent-input&quot; type=&quot;checkbox&quot; data-landline-confirm&gt;&lt;span class=&quot;check-copy&quot;&gt;我确认本人或本企业对该固话具有合法使用和管理权限，并同意按上述范围处理号码及通话相关敏感信息、开通一通话内部录音服务及进行必要的数据共享。&lt;/span&gt;&lt;/label&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-landline-submit data-go=&quot;landlineVerify&quot; disabled&gt;同意并开始主叫验证&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;phone&quot;&gt;改绑手机号&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;新增主叫号码 · 固话&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;绑定本人或本企业使用的固话&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;填写带区号的完整号码。验证时需要使用该座机完成真实主叫挑战。&lt;/p&gt;&lt;div class=&quot;field&quot;&gt;&lt;label for=&quot;oc-landline&quot;&gt;固话号码&lt;/label&gt;&lt;div class=&quot;input-wrap&quot;&gt;&lt;input id=&quot;oc-landline&quot; value=&quot;010-88886688&quot; aria-label=&quot;带区号的固话号码&quot;&gt;&lt;/div&gt;&lt;p class=&quot;field-help&quot;&gt;号码将按国家码、区号和本地号码标准化保存；分机号不作为主叫号码&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;phone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&lt;strong&gt;仅支持独立固话直线&lt;/strong&gt;&lt;br&gt;自研 IVR 必须能够取得经运营商线路传递且与所填号码一致的可信主叫。企业总机、PBX 和仅显示统一外呼号的分机暂不支持。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;authorization-summary&quot;&gt;&lt;div class=&quot;authorization-item&quot;&gt;&lt;i data-lucide=&quot;file-check-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;div&gt;&lt;strong&gt;授权与号码归属边界&lt;/strong&gt;&lt;span&gt;主叫验证只证明可从该线路完成验证呼叫，不代表运营商登记人或号码产权已经与账户身份一致；申请公证书时按公证机构规则另行核验。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;check-list&quot;&gt;&lt;label class=&quot;check-row&quot;&gt;&lt;input class=&quot;consent-input&quot; type=&quot;checkbox&quot; data-landline-confirm&gt;&lt;span class=&quot;check-copy&quot;&gt;我确认本人或本企业对该固话具有合法使用和管理权限，并同意按上述范围处理号码及通话相关敏感信息、开通一通话内部录音服务及进行必要的数据共享。&lt;/span&gt;&lt;/label&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-landline-submit data-go=&quot;landlineVerify&quot; disabled&gt;同意并开始主叫验证&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;phone&quot;&gt;改绑手机号&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         landlineVerify: {
           title: &quot;固话主叫验证&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;验证 010 **** 6688&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;用这部座机完成一次验证呼叫&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;运营商将读取本次呼叫的真实主叫，并与待绑定号码完全匹配。&lt;/p&gt;&lt;div class=&quot;checkout-summary&quot;&gt;&lt;div class=&quot;checkout-row total&quot;&gt;&lt;span&gt;验证声讯短号&lt;/span&gt;&lt;strong&gt;95XXX&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;验证短码&lt;/span&gt;&lt;strong&gt;483 621&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;有效时间&lt;/span&gt;&lt;strong&gt;10 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;step-list&quot;&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;01&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;拿起待绑定座机&lt;/strong&gt;&lt;span&gt;必须使用 010 **** 6688 对应的实际线路&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;02&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;拨打页面显示的声讯短号&lt;/strong&gt;&lt;span&gt;95XXX 为原型占位，正式号码由后台按运营商覆盖下发&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;03&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;按语音提示输入 483 621&lt;/strong&gt;&lt;span&gt;短码一次有效，超时或使用后不能重放&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;主叫不可识别、号码不一致、线路未覆盖或短码失效时验证失败，不会绑定其他实际主叫号码。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;landlineReady&quot;&gt;我已完成呼叫，查询结果&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineBind&quot;&gt;重新填写号码&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;验证 010 **** 6688&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;用这部座机完成一次验证呼叫&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;自研 IVR 将取得经运营商线路传递的可信主叫，并与待绑定号码完全匹配。&lt;/p&gt;&lt;div class=&quot;checkout-summary&quot;&gt;&lt;div class=&quot;checkout-row total&quot;&gt;&lt;span&gt;验证声讯短号&lt;/span&gt;&lt;strong&gt;95XXX&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;验证短码&lt;/span&gt;&lt;strong&gt;483 621&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;有效时间&lt;/span&gt;&lt;strong&gt;10 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;step-list&quot;&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;01&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;拿起待绑定座机&lt;/strong&gt;&lt;span&gt;必须使用 010 **** 6688 对应的实际线路&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;02&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;拨打页面显示的声讯短号&lt;/strong&gt;&lt;span&gt;95XXX 为原型占位，正式号码由后台按运营商覆盖下发&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;03&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;按语音提示输入 483 621&lt;/strong&gt;&lt;span&gt;短码一次有效，超时或使用后不能重放&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;主叫不可识别、号码不一致、线路未覆盖或短码失效时验证失败，不会绑定其他实际主叫号码。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;landlineReady&quot;&gt;我已完成呼叫，查询结果&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineBind&quot;&gt;重新填写号码&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         landlineReady: {
           title: &quot;固话内部服务&quot;,
@@ -6621,7 +7492,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           back: false,
           nav: &quot;capture&quot;,
           navTarget: &quot;captureReady&quot;,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;已开通 3 个主叫号码 · 公证处存证服务正常&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;把重要的通话，留成证据。&lt;/h3&gt;&lt;div class=&quot;source-hero&quot;&gt;&lt;div class=&quot;inline&quot;&gt;&lt;i data-lucide=&quot;audio-waveform&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;strong&gt;运营商网络侧录音&lt;/strong&gt;&lt;/div&gt;&lt;p&gt;手机号可从小程序打开系统拨号盘；固话需从已绑定座机拨打声讯短号。&lt;/p&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;用手机号拨打取证电话&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;用固话拨打声讯短号&lt;/button&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title has-lead&quot;&gt;取证工具箱&lt;/h4&gt;&lt;p class=&quot;section-lead&quot;&gt;除了电话取证，还可以用以下方式记录现场或导入已有证据。&lt;/p&gt;&lt;div class=&quot;row-list&quot;&gt;&#x27; + row(&quot;camera&quot;, &quot;现场拍照&quot;, &quot;用小程序相机拍摄，记录现场画面&quot;, &quot;photoCapture&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + row(&quot;video&quot;, &quot;现场录像&quot;, &quot;连续记录现场环境与事件过程&quot;, &quot;videoCapture&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + row(&quot;mic&quot;, &quot;现场录音&quot;, &quot;录制现场环境声，不用于电话录音&quot;, &quot;audioCapture&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + row(&quot;files&quot;, &quot;导入已有证据&quot;, &quot;从相册或微信聊天选择已有材料&quot;, &quot;importSources&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + &#x27;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;circle-help&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;手机号和固话形成的录音统一进入证据箱，共享账户套餐额度，并按运营商确认的实际主叫号码统计。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;已开通 3 个主叫号码 · 公证处存证服务正常&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;把重要的通话，留成证据。&lt;/h3&gt;&lt;div class=&quot;source-hero&quot;&gt;&lt;div class=&quot;inline&quot;&gt;&lt;i data-lucide=&quot;audio-waveform&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;strong&gt;自研 IVR 网络侧录音&lt;/strong&gt;&lt;/div&gt;&lt;p&gt;手机号可从小程序打开系统拨号盘；固话需从已绑定座机拨打声讯短号。&lt;/p&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;用手机号拨打取证电话&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;用固话拨打声讯短号&lt;/button&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title has-lead&quot;&gt;取证工具箱&lt;/h4&gt;&lt;p class=&quot;section-lead&quot;&gt;除了电话取证，还可以用以下方式记录现场或导入已有证据。&lt;/p&gt;&lt;div class=&quot;row-list&quot;&gt;&#x27; + row(&quot;camera&quot;, &quot;现场拍照&quot;, &quot;用小程序相机拍摄，记录现场画面&quot;, &quot;photoCapture&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + row(&quot;video&quot;, &quot;现场录像&quot;, &quot;连续记录现场环境与事件过程&quot;, &quot;videoCapture&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + row(&quot;mic&quot;, &quot;现场录音&quot;, &quot;录制现场环境声，不用于电话录音&quot;, &quot;audioCapture&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + row(&quot;files&quot;, &quot;导入已有证据&quot;, &quot;从相册或微信聊天选择已有材料&quot;, &quot;importSources&quot;, null, &#x27;data-entitlement-mode=&quot;plan&quot;&#x27;) + &#x27;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;circle-help&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;手机号和固话形成的录音统一进入证据箱，共享账户套餐额度，并按自研 IVR 从线路传递结果确认的可信主叫号码统计。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
         },
         toolboxArchive: {
           title: &quot;取证工具箱&quot;,
@@ -6641,7 +7512,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         audioCapture: {
           title: &quot;现场录音&quot;,
           back: true,
-          html: function () { return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + captureEntitlementNoticeHtml() + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;记录现场环境声&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;这是小程序麦克风录音，不是运营商网络侧电话录音。&lt;/p&gt;&lt;div class=&quot;audio-recorder&quot; data-audio-stage&gt;&lt;div class=&quot;audio-mode-icon&quot;&gt;&lt;i data-lucide=&quot;mic&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;div class=&quot;recording-time&quot; data-audio-time&gt;00:00&lt;/div&gt;&lt;div class=&quot;recording-state&quot; data-audio-state&gt;准备录音&lt;/div&gt;&#x27; + wave + &#x27;&lt;button class=&quot;capture-round&quot; type=&quot;button&quot; data-action=&quot;audio-start&quot; aria-label=&quot;开始现场录音&quot;&gt;&lt;i data-lucide=&quot;mic&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;请确认现场录音符合法律要求。停止后可补充人物与事情说明，说明只作为用户注释保存。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;; }
+          html: function () { return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&#x27; + captureEntitlementNoticeHtml() + &#x27;&lt;h3 class=&quot;page-heading&quot;&gt;记录现场环境声&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;这是小程序麦克风录音，不是自研 IVR 通话录音。&lt;/p&gt;&lt;div class=&quot;audio-recorder&quot; data-audio-stage&gt;&lt;div class=&quot;audio-mode-icon&quot;&gt;&lt;i data-lucide=&quot;mic&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;div class=&quot;recording-time&quot; data-audio-time&gt;00:00&lt;/div&gt;&lt;div class=&quot;recording-state&quot; data-audio-state&gt;准备录音&lt;/div&gt;&#x27; + wave + &#x27;&lt;button class=&quot;capture-round&quot; type=&quot;button&quot; data-action=&quot;audio-start&quot; aria-label=&quot;开始现场录音&quot;&gt;&lt;i data-lucide=&quot;mic&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;请确认现场录音符合法律要求。停止后可补充人物与事情说明，说明只作为用户注释保存。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;; }
         },
         importSources: {
           title: &quot;导入已有证据&quot;,
@@ -6693,24 +7564,29 @@ html&gt;body{padding:0}&lt;/style&gt;
           html: callerSelectHtml
         },
         dialHandoff: {
-          title: &quot;打开系统拨号盘&quot;,
+          title: &quot;待拨任务&quot;,
           back: true,
           html: dialHandoffHtml
+        },
+        callStatus: {
+          title: &quot;呼叫状态&quot;,
+          back: true,
+          html: callStatusHtml
         },
         landlineCall: {
           title: &quot;固话取证&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;已绑定固话 010 **** 6688&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;从这部座机拨打声讯短号&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;小程序不能替座机发起呼叫。运营商会以真实固话主叫作为号码归属、录音、计费和固证依据。&lt;/p&gt;&lt;div class=&quot;checkout-summary&quot;&gt;&lt;div class=&quot;checkout-row total&quot;&gt;&lt;span&gt;取证声讯短号&lt;/span&gt;&lt;strong&gt;95XXX&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;本次可用主叫&lt;/span&gt;&lt;strong&gt;010 **** 6688&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;共享录音余额&lt;/span&gt;&lt;strong&gt;37 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;step-list&quot;&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;01&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;使用已绑定座机拨打 95XXX&lt;/strong&gt;&lt;span&gt;95XXX 为原型占位，正式短号由后台按运营商覆盖下发&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;02&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;运营商识别真实主叫&lt;/strong&gt;&lt;span&gt;只有 010 **** 6688 仍为已验证、已授权和已开通状态才继续&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;03&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;按语音提示输入被叫号码&lt;/strong&gt;&lt;span&gt;接通后在通信网络侧录音，结束后自动固证并进入证据箱&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;主叫不可识别、未绑定、未授权、已停用或线路未覆盖时直接拒绝，不录音、不扣额度、不生成证据。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;building-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;当前只支持独立固话直线。企业总机、PBX 和分机号码暂不在首发范围。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;evidenceBox&quot;&gt;通话结束后查看证据&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;numbers&quot;&gt;管理主叫号码&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot; data-call-path=&quot;no-task&quot; data-callee-confirmation=&quot;DTMF_REQUIRED&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;无待拨任务 · DTMF 输入并确认被叫&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;从这部座机拨打声讯短号&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;小程序不能替座机发起呼叫。自研 IVR 接听呼入后，只有没有有效待拨任务时，才引导主叫通过 DTMF 输入并确认被叫，再发起 B 路外呼。&lt;/p&gt;&lt;div class=&quot;checkout-summary&quot;&gt;&lt;div class=&quot;checkout-row total&quot;&gt;&lt;span&gt;取证声讯短号&lt;/span&gt;&lt;strong&gt;95XXX&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;本次可用主叫&lt;/span&gt;&lt;strong&gt;010 **** 6688&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;checkout-row&quot;&gt;&lt;span&gt;共享录音余额&lt;/span&gt;&lt;strong&gt;37 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;step-list&quot;&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;01&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;使用已绑定座机拨打 95XXX&lt;/strong&gt;&lt;span&gt;95XXX 为原型占位，正式短号由后台按运营商覆盖下发&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;02&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;自研 IVR 接听并取得可信主叫&lt;/strong&gt;&lt;span&gt;经运营商线路传递的主叫需仍为已验证、已授权和已开通状态&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;step-row&quot;&gt;&lt;span class=&quot;step-num&quot;&gt;03&lt;/span&gt;&lt;span class=&quot;step-copy&quot;&gt;&lt;strong&gt;按语音提示输入并确认被叫号码&lt;/strong&gt;&lt;span&gt;这是无任务 DTMF 路径；不读取或猜测历史任务被叫，确认后由自研 IVR 发起 B 路外呼&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;shield-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;主叫不可识别、未绑定、未授权、已停用或线路未覆盖时直接拒绝，不录音、不扣额度、不生成证据。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;route&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.callPath.noTask + &#x27;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;&#x27; + B.labels.ownership + &#x27;&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;building-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;当前只支持独立固话直线。企业总机、PBX 和分机号码暂不在首发范围。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;evidenceBox&quot;&gt;通话结束后查看证据&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;numbers&quot;&gt;管理主叫号码&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         callerMismatch: {
           title: &quot;取证电话未建立&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark danger&quot;&gt;&lt;i data-lucide=&quot;phone-off&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;主叫号码不一致&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;本次实际使用尾号 4471 的号码呼出，与所选尾号 6208 不一致。运营商已在接通前阻止本次取证电话。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:22px;text-align:left&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;强一致校验&lt;/span&gt;&lt;span class=&quot;state danger&quot;&gt;&lt;i data-lucide=&quot;circle-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;未通过&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;所选主叫&lt;/span&gt;&lt;strong&gt;138 **** 6208&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;实际主叫&lt;/span&gt;&lt;strong&gt;186 **** 4471&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;录音用量&lt;/span&gt;&lt;strong&gt;未扣减&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;证据记录&lt;/span&gt;&lt;strong&gt;未生成&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;smartphone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;即使实际主叫是账户下另一个已开通号码，也不会静默切换。请重新选择本次号码，并在系统拨号页选择对应 SIM 卡。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;callerSelect&quot; data-return-page=&quot;call&quot;&gt;重新选择并拨打&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;captureReady&quot;&gt;返回取证首页&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark danger&quot;&gt;&lt;i data-lucide=&quot;phone-off&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;主叫号码不一致&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;本次实际使用尾号 4471 的号码呼出，与所选尾号 6208 不一致。自研 IVR 已在接通前阻止本次取证电话。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:22px;text-align:left&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;强一致校验&lt;/span&gt;&lt;span class=&quot;state danger&quot;&gt;&lt;i data-lucide=&quot;circle-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;未通过&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;所选主叫&lt;/span&gt;&lt;strong&gt;138 **** 6208&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;实际主叫&lt;/span&gt;&lt;strong&gt;186 **** 4471&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;录音用量&lt;/span&gt;&lt;strong&gt;未扣减&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;证据记录&lt;/span&gt;&lt;strong&gt;未生成&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;smartphone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;即使实际主叫是账户下另一个已开通号码，也不会静默切换。请重新选择本次号码，并在系统拨号页选择对应 SIM 卡。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;callerSelect&quot; data-return-page=&quot;call&quot;&gt;重新选择并拨打&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;captureReady&quot;&gt;返回取证首页&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         callerUnavailable: {
           title: &quot;取证电话未建立&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark warning&quot;&gt;&lt;i data-lucide=&quot;shield-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;未能确认可用主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;运营商没有取得可用于本次取证的主叫校验结果，系统已按失败关闭，没有建立录音会话。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:22px;text-align:left&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;实际主叫号码未绑定当前账户。&lt;/li&gt;&lt;li&gt;号码尚未授权、未开通或已经停用。&lt;/li&gt;&lt;li&gt;运营商暂时无法识别主叫号码或校验超时。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;circle-help&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;以上情况均不允许接通、录音、计费或固证。失败尝试只保留安全审计记录，不进入证据箱。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;numbers&quot;&gt;检查号码状态&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;重新拨打&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad centered&quot;&gt;&lt;div class=&quot;hero-mark warning&quot;&gt;&lt;i data-lucide=&quot;shield-x&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;h3 class=&quot;page-heading&quot;&gt;未能确认可用主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;自研 IVR 没有取得可用于本次取证的可信主叫结果，系统已按失败关闭，没有建立录音会话。&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:22px;text-align:left&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;实际主叫号码未绑定当前账户。&lt;/li&gt;&lt;li&gt;号码尚未授权、未开通或已经停用。&lt;/li&gt;&lt;li&gt;线路暂时无法传递可信主叫或校验超时。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot; style=&quot;text-align:left&quot;&gt;&lt;i data-lucide=&quot;circle-help&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;以上情况均不允许接通、录音、计费或固证。失败尝试只保留安全审计记录，不进入证据箱。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;numbers&quot;&gt;检查号码状态&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;call&quot;&gt;重新拨打&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         solidified: {
           title: &quot;通话已结束&quot;,
@@ -6720,7 +7596,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         detail: {
           title: &quot;证据详情&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;内部固证完成 · 公证处已存证&lt;/span&gt;&lt;span class=&quot;micro&quot;&gt;v1&lt;/span&gt;&lt;/div&gt;&lt;h3 class=&quot;record-title&quot;&gt;小李与张哥｜5万元借款确认&lt;/h3&gt;&lt;p class=&quot;micro&quot; style=&quot;margin:4px 0 0&quot;&gt;今天 14:32 · 通话 05:42&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:14px&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;strong style=&quot;font-size:14px&quot;&gt;原始录音&lt;/strong&gt;&lt;span class=&quot;micro&quot;&gt;未剪辑 · 完整&lt;/span&gt;&lt;/div&gt;&#x27; + wave + &#x27;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;micro&quot;&gt;00:00 / 05:42&lt;/span&gt;&lt;button type=&quot;button&quot; aria-label=&quot;播放录音&quot; style=&quot;width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:10px;background:#2468f2;color:#fff&quot;&gt;&lt;i data-lucide=&quot;play&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;&lt;span class=&quot;micro&quot;&gt;1.0x&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;surface&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;strong style=&quot;font-size:14px;color:#2468f2&quot;&gt;AI 提炼了 3 个要点&lt;/strong&gt;&lt;button type=&quot;button&quot; data-go=&quot;ai&quot; style=&quot;border:0;background:transparent;color:#2468f2;font-size:12px&quot;&gt;查看全文&lt;/button&gt;&lt;/div&gt;&lt;p style=&quot;margin:9px 0 0;color:#445064;font-size:12px;line-height:19px&quot;&gt;双方确认 5 万元借款事实及还款安排，对方承诺 10 月 20 日前归还本金。&lt;/p&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;金额 5 万元&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;日期 10 月 20 日&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;承诺归还&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;surface&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;strong style=&quot;font-size:14px&quot;&gt;固证信息&lt;/strong&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可校验&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;可信时间&lt;/span&gt;&lt;strong&gt;今天 14:32:07&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;公证处记录号&lt;/span&gt;&lt;strong&gt;YUZHANG-7F2A&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;哈希&lt;/span&gt;&lt;strong&gt;8f4c2a91...6b8&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;来源&lt;/span&gt;&lt;strong&gt;运营商网络侧&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;apply&quot;&gt;申请出证&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;shield-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;内部固证完成 · 公证处已存证&lt;/span&gt;&lt;span class=&quot;micro&quot;&gt;v1&lt;/span&gt;&lt;/div&gt;&lt;h3 class=&quot;record-title&quot;&gt;小李与张哥｜5万元借款确认&lt;/h3&gt;&lt;p class=&quot;micro&quot; style=&quot;margin:4px 0 0&quot;&gt;今天 14:32 · 通话 05:42&lt;/p&gt;&lt;div class=&quot;surface&quot; style=&quot;margin-top:14px&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;strong style=&quot;font-size:14px&quot;&gt;原始录音&lt;/strong&gt;&lt;span class=&quot;micro&quot;&gt;未剪辑 · 完整&lt;/span&gt;&lt;/div&gt;&#x27; + wave + &#x27;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;micro&quot;&gt;00:00 / 05:42&lt;/span&gt;&lt;button type=&quot;button&quot; aria-label=&quot;播放录音&quot; style=&quot;width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:10px;background:#2468f2;color:#fff&quot;&gt;&lt;i data-lucide=&quot;play&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;&lt;span class=&quot;micro&quot;&gt;1.0x&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;surface&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;strong style=&quot;font-size:14px;color:#2468f2&quot;&gt;AI 提炼了 3 个要点&lt;/strong&gt;&lt;button type=&quot;button&quot; data-go=&quot;ai&quot; style=&quot;border:0;background:transparent;color:#2468f2;font-size:12px&quot;&gt;查看全文&lt;/button&gt;&lt;/div&gt;&lt;p style=&quot;margin:9px 0 0;color:#445064;font-size:12px;line-height:19px&quot;&gt;双方确认 5 万元借款事实及还款安排，对方承诺 10 月 20 日前归还本金。&lt;/p&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;金额 5 万元&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;日期 10 月 20 日&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;承诺归还&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;surface&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;strong style=&quot;font-size:14px&quot;&gt;固证信息&lt;/strong&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可校验&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;可信时间&lt;/span&gt;&lt;strong&gt;今天 14:32:07&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;公证处记录号&lt;/span&gt;&lt;strong&gt;YUZHANG-7F2A&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;哈希&lt;/span&gt;&lt;strong&gt;8f4c2a91...6b8&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;来源&lt;/span&gt;&lt;strong&gt;自研 IVR · 线路传递&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; data-go=&quot;apply&quot;&gt;申请出证&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         ai: {
           title: &quot;AI 转写与摘要&quot;,
@@ -6745,7 +7621,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         usageDetail: {
           title: &quot;用量明细&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;div&gt;&lt;h3 class=&quot;page-heading&quot; style=&quot;font-size:22px;line-height:29px&quot;&gt;全部主叫号码用量&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;手机号和固话共享账户额度；每笔流水以运营商确认的实际主叫号码统计。&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;metric-strip&quot;&gt;&lt;div class=&quot;metric&quot;&gt;&lt;strong&gt;23&lt;/strong&gt;&lt;span&gt;录音分钟合计&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;metric&quot;&gt;&lt;strong&gt;18&lt;/strong&gt;&lt;span&gt;AI 分钟&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;metric&quot;&gt;&lt;strong&gt;0.8 GB&lt;/strong&gt;&lt;span&gt;存储&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;按号码类型&lt;/h4&gt;&lt;div class=&quot;entitlement-grid&quot;&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;5.7 分钟&lt;/strong&gt;&lt;span&gt;手机号录音&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;17.3 分钟&lt;/strong&gt;&lt;span&gt;固话录音&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;2 个&lt;/strong&gt;&lt;span&gt;本期使用主叫号&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;2 种&lt;/strong&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;最近流水&lt;/h4&gt;&lt;div class=&quot;surface&quot;&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;固话取证通话确认&lt;/strong&gt;&lt;span&gt;今天 16:10 · 固话 010 **** 6688 · 声讯短号 · 证据 OC-E1035&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;-17.3 分钟&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;手机取证通话确认&lt;/strong&gt;&lt;span&gt;今天 14:38 · 手机 138 **** 6208 · 小程序拨号 · 证据 OC-E1028&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;-5.7 分钟&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;AI 转写与摘要&lt;/strong&gt;&lt;span&gt;今天 14:35 · 证据 OC-E1028&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;-5.7 分钟&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;现场照片存储&lt;/strong&gt;&lt;span&gt;今天 15:08 · 证据 OC-E1031&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;+3.8 MB&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;统计保留账户、实际主叫、号码类型、接入方式、运营商会话和证据编号。未接通、无有效录音或处理失败的预占会释放。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;div&gt;&lt;h3 class=&quot;page-heading&quot; style=&quot;font-size:22px;line-height:29px&quot;&gt;全部主叫号码用量&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;手机号和固话共享账户额度；每笔流水以自研 IVR 从线路传递结果确认的可信主叫号码统计。&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;metric-strip&quot;&gt;&lt;div class=&quot;metric&quot;&gt;&lt;strong&gt;23&lt;/strong&gt;&lt;span&gt;录音分钟合计&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;metric&quot;&gt;&lt;strong&gt;18&lt;/strong&gt;&lt;span&gt;AI 分钟&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;metric&quot;&gt;&lt;strong&gt;0.8 GB&lt;/strong&gt;&lt;span&gt;存储&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;按号码类型&lt;/h4&gt;&lt;div class=&quot;entitlement-grid&quot;&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;5.7 分钟&lt;/strong&gt;&lt;span&gt;手机号录音&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;17.3 分钟&lt;/strong&gt;&lt;span&gt;固话录音&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;2 个&lt;/strong&gt;&lt;span&gt;本期使用主叫号&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;entitlement-item&quot;&gt;&lt;strong&gt;2 种&lt;/strong&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;h4 class=&quot;section-title&quot;&gt;最近流水&lt;/h4&gt;&lt;div class=&quot;surface&quot;&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;固话取证通话确认&lt;/strong&gt;&lt;span&gt;今天 16:10 · 固话 010 **** 6688 · 声讯短号 · 证据 OC-E1035&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;-17.3 分钟&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;手机取证通话确认&lt;/strong&gt;&lt;span&gt;今天 14:38 · 手机 138 **** 6208 · 小程序拨号 · 证据 OC-E1028&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;-5.7 分钟&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;AI 转写与摘要&lt;/strong&gt;&lt;span&gt;今天 14:35 · 证据 OC-E1028&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;-5.7 分钟&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;usage-row&quot;&gt;&lt;div&gt;&lt;strong&gt;现场照片存储&lt;/strong&gt;&lt;span&gt;今天 15:08 · 证据 OC-E1031&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;usage-value&quot;&gt;+3.8 MB&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;统计保留账户、可信主叫、号码类型、接入方式、IVR 会话和证据编号。未接通、无有效录音或处理失败的预占会释放。&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
         },
         productDetail: {
           title: &quot;套餐商品详情&quot;,
@@ -6770,7 +7646,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         numbers: {
           title: &quot;主叫号码&quot;,
           back: true,
-          html: function(){const selected=currentSubject();return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;page-lead&quot; data-selected-subject=&quot;&#x27;+(selected?.id||&quot;&quot;)+&#x27;&quot;&gt;当前业务号码：&#x27;+(selected?.maskedNumber||&quot;未选择&quot;)+&#x27;&lt;/p&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;div&gt;&lt;h3 class=&quot;page-heading&quot; style=&quot;font-size:22px;line-height:29px&quot;&gt;已绑定 3 / 3 个主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;2 个手机号和 1 个固话均可用于取证，共享账户套餐额度并分别统计录音。&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;number-card&quot; style=&quot;margin-top:18px&quot;&gt;&lt;div class=&quot;number-top&quot;&gt;&lt;span class=&quot;number-mask&quot;&gt;138 **** 6208&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;number-meta&quot;&gt;&lt;div&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;手机号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;号码验证&lt;/span&gt;&lt;strong&gt;微信平台验证&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;strong&gt;小程序拨号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;本账期录音&lt;/span&gt;&lt;strong&gt;5.7 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;默认手机主叫&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;套餐额度共享&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;number-card&quot;&gt;&lt;div class=&quot;number-top&quot;&gt;&lt;span class=&quot;number-mask&quot;&gt;186 **** 4471&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;number-meta&quot;&gt;&lt;div&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;手机号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;号码验证&lt;/span&gt;&lt;strong&gt;短信验证码验证&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;strong&gt;小程序拨号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;本账期录音&lt;/span&gt;&lt;strong&gt;0 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;公证资格已过期&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;套餐额度共享&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;number-card&quot;&gt;&lt;div class=&quot;number-top&quot;&gt;&lt;span class=&quot;number-mask&quot;&gt;010 **** 6688&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;number-meta&quot;&gt;&lt;div&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;独立固话直线&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;号码验证&lt;/span&gt;&lt;strong&gt;运营商主叫验证&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;strong&gt;拨打声讯短号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;本账期录音&lt;/span&gt;&lt;strong&gt;17.3 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;归属待公证前核验&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;套餐额度共享&lt;/span&gt;&lt;/div&gt;&lt;button class=&quot;text-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;查看固话取证方式&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;个人账户手机号与固话合计最多三个。号码验证证明的范围不同，均不直接代表运营商实名或号码产权一致；申请公证书时按号码类型核验。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; disabled&gt;已达到 3 个主叫号码上限&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;revokeAuth&quot;&gt;停用或撤销授权&lt;/button&gt;&lt;/div&gt;&#x27;;}
+          html: function(){const selected=currentSubject();return &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;page-lead&quot; data-selected-subject=&quot;&#x27;+(selected?.id||&quot;&quot;)+&#x27;&quot;&gt;当前业务号码：&#x27;+(selected?.maskedNumber||&quot;未选择&quot;)+&#x27;&lt;/p&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;div&gt;&lt;h3 class=&quot;page-heading&quot; style=&quot;font-size:22px;line-height:29px&quot;&gt;已绑定 3 / 3 个主叫号码&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;2 个手机号和 1 个固话均可用于取证，共享账户套餐额度并分别统计录音。&lt;/p&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;number-card&quot; style=&quot;margin-top:18px&quot;&gt;&lt;div class=&quot;number-top&quot;&gt;&lt;span class=&quot;number-mask&quot;&gt;138 **** 6208&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;number-meta&quot;&gt;&lt;div&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;手机号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;号码验证&lt;/span&gt;&lt;strong&gt;微信平台验证&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;strong&gt;小程序拨号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;本账期录音&lt;/span&gt;&lt;strong&gt;5.7 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;默认手机主叫&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;套餐额度共享&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;number-card&quot;&gt;&lt;div class=&quot;number-top&quot;&gt;&lt;span class=&quot;number-mask&quot;&gt;186 **** 4471&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;number-meta&quot;&gt;&lt;div&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;手机号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;号码验证&lt;/span&gt;&lt;strong&gt;短信验证码验证&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;strong&gt;小程序拨号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;本账期录音&lt;/span&gt;&lt;strong&gt;0 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;公证资格已过期&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;套餐额度共享&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;number-card&quot;&gt;&lt;div class=&quot;number-top&quot;&gt;&lt;span class=&quot;number-mask&quot;&gt;010 **** 6688&lt;/span&gt;&lt;span class=&quot;state&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;可取证&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;number-meta&quot;&gt;&lt;div&gt;&lt;span&gt;号码类型&lt;/span&gt;&lt;strong&gt;独立固话直线&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;号码验证&lt;/span&gt;&lt;strong&gt;IVR 线路可信主叫验证&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;接入方式&lt;/span&gt;&lt;strong&gt;拨打声讯短号&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;span&gt;本账期录音&lt;/span&gt;&lt;strong&gt;17.3 分钟&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;tag-row&quot;&gt;&lt;span class=&quot;tag&quot;&gt;归属待公证前核验&lt;/span&gt;&lt;span class=&quot;tag&quot;&gt;套餐额度共享&lt;/span&gt;&lt;/div&gt;&lt;button class=&quot;text-action&quot; type=&quot;button&quot; data-go=&quot;landlineCall&quot;&gt;查看固话取证方式&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;notice&quot;&gt;&lt;i data-lucide=&quot;info&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;个人账户手机号与固话合计最多三个。号码验证证明的范围不同，均不直接代表运营商实名或号码产权一致；申请公证书时按号码类型核验。&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;primary-action&quot; type=&quot;button&quot; disabled&gt;已达到 3 个主叫号码上限&lt;/button&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;revokeAuth&quot;&gt;停用或撤销授权&lt;/button&gt;&lt;/div&gt;&#x27;;}
         },
         revokeAuth: {
           title: &quot;停用或撤销授权&quot;,
@@ -6823,7 +7699,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         privacy: {
           title: &quot;隐私与数据说明&quot;,
           back: true,
-          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;版本 ONECALL-PRIVACY-2026.10&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;你的数据如何被使用&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;身份信息、号码、录音和证据材料只按明确目的处理；不同处理活动分别记录授权。&lt;/p&gt;&lt;div class=&quot;disclosure-list&quot;&gt;&lt;details class=&quot;disclosure&quot; open&gt;&lt;summary&gt;&lt;span&gt;身份与号码信息&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;姓名和身份证号用于实名核验；身份证号加密保存，检索使用不可逆索引。&lt;/li&gt;&lt;li&gt;微信/短信用于验证手机号；运营商真实主叫用于验证独立固话。以上结果均不直接代表运营商实名、登记归属或号码产权一致。&lt;/li&gt;&lt;li&gt;每次取证电话均以运营商识别的真实主叫为准。申请线下公证书前，手机号另做三要素核验，固话按公证机构规则核验登记归属或合法使用权。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;details class=&quot;disclosure&quot;&gt;&lt;summary&gt;&lt;span&gt;录音、证据与 AI&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;原始材料用于加密保存、完整性校验、存证和用户申请的出证。&lt;/li&gt;&lt;li&gt;AI 转写和摘要是派生内容，不覆盖原始录音；处理范围以用户授权和权益为准。&lt;/li&gt;&lt;li&gt;公证处默认接收经批准的最小元数据和哈希，不默认接收完整正文或身份信息。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;details class=&quot;disclosure&quot;&gt;&lt;summary&gt;&lt;span&gt;保存、撤销与用户权利&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;正式保存期限、删除和法定留存规则由上线法务版本确认。&lt;/li&gt;&lt;li&gt;撤销号码授权只停止后续录音，不修改既有证据。&lt;/li&gt;&lt;li&gt;用户可申请查阅、更正、导出、注销或投诉；依法不能立即删除时说明理由。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;support&quot;&gt;咨询数据与隐私问题&lt;/button&gt;&lt;/div&gt;&#x27;
+          html: &#x27;&lt;div class=&quot;screen-pad&quot;&gt;&lt;p class=&quot;eyebrow&quot;&gt;版本 ONECALL-PRIVACY-2026.10&lt;/p&gt;&lt;h3 class=&quot;page-heading&quot;&gt;你的数据如何被使用&lt;/h3&gt;&lt;p class=&quot;page-lead&quot;&gt;身份信息、号码、录音和证据材料只按明确目的处理；不同处理活动分别记录授权。&lt;/p&gt;&lt;div class=&quot;disclosure-list&quot;&gt;&lt;details class=&quot;disclosure&quot; open&gt;&lt;summary&gt;&lt;span&gt;身份与号码信息&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;姓名和身份证号用于实名核验；身份证号加密保存，检索使用不可逆索引。&lt;/li&gt;&lt;li&gt;微信/短信用于验证手机号；自研 IVR 从线路传递结果取得的可信主叫用于验证独立固话。以上结果均不直接代表运营商实名登记、号码产权或登记名义一致。&lt;/li&gt;&lt;li&gt;每次取证电话均以自研 IVR 从线路传递结果取得的可信主叫为准。申请线下公证书前，手机号另做三要素核验，固话按公证机构规则核验登记归属或合法使用权。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;details class=&quot;disclosure&quot;&gt;&lt;summary&gt;&lt;span&gt;录音、证据与 AI&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;原始材料用于加密保存、完整性校验、存证和用户申请的出证。&lt;/li&gt;&lt;li&gt;AI 转写和摘要是派生内容，不覆盖原始录音；处理范围以用户授权和权益为准。&lt;/li&gt;&lt;li&gt;公证处默认接收经批准的最小元数据和哈希，不默认接收完整正文或身份信息。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;details class=&quot;disclosure&quot;&gt;&lt;summary&gt;&lt;span&gt;保存、撤销与用户权利&lt;/span&gt;&lt;span class=&quot;disclosure-action&quot;&gt;&lt;span class=&quot;expand-label&quot;&gt;查看详情&lt;/span&gt;&lt;span class=&quot;collapse-label&quot;&gt;收起&lt;/span&gt;&lt;i data-lucide=&quot;chevron-down&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/span&gt;&lt;/summary&gt;&lt;div class=&quot;disclosure-body&quot;&gt;&lt;ul class=&quot;compact-list&quot;&gt;&lt;li&gt;正式保存期限、删除和法定留存规则由上线法务版本确认。&lt;/li&gt;&lt;li&gt;撤销号码授权只停止后续录音，不修改既有证据。&lt;/li&gt;&lt;li&gt;用户可申请查阅、更正、导出、注销或投诉；依法不能立即删除时说明理由。&lt;/li&gt;&lt;/ul&gt;&lt;/div&gt;&lt;/details&gt;&lt;/div&gt;&lt;div class=&quot;spacer&quot;&gt;&lt;/div&gt;&lt;button class=&quot;secondary-action&quot; type=&quot;button&quot; data-go=&quot;support&quot;&gt;咨询数据与隐私问题&lt;/button&gt;&lt;/div&gt;&#x27;
         },
         support: {
           title: &quot;线下人工客服&quot;,
@@ -7013,6 +7889,47 @@ html&gt;body{padding:0}&lt;/style&gt;
             }
             return;
           }
+          if (action === &quot;launch-dialer&quot;) {
+            const task = callTask();
+            if (!task) return;
+            const result = B.recordDialerLaunch(callTaskState, {taskId:task.id,accountId:review.accountId,workspaceId:&quot;personal:&quot;+review.accountId}, new Date());
+            if (result.ok) { callReview.notice = null; callReview.refreshed = false; show(&quot;callStatus&quot;); }
+            else { callReview.notice = result.code; show(&quot;dialHandoff&quot;, false); }
+            return;
+          }
+          if (action === &quot;replace-task&quot;) {
+            const task = callTask();
+            if (!task) return;
+            const nextCallee = task.maskedCallee === DEMO_CALLEE ? ALT_CALLEE : DEMO_CALLEE;
+            callReview.attempt += 1;
+            const key = &quot;MINI-TASK-&quot;+taskIdKey(task.callerBindingId)+&quot;-&quot;+taskIdKey(nextCallee)+&quot;-R&quot;+callReview.attempt;
+            const result = B.createCallTask(callTaskState, {callerBindingId:task.callerBindingId,maskedCallee:nextCallee,businessType:&quot;EVIDENCE_CALL&quot;,idempotencyKey:key,replacePending:true}, new Date());
+            if (result.ok) { callReview.taskId = result.value.id; callReview.callId = null; callReview.notice = null; callReview.refreshed = false; show(&quot;dialHandoff&quot;, false); }
+            else { callReview.notice = result.code; show(&quot;dialHandoff&quot;, false); }
+            return;
+          }
+          if (action === &quot;cancel-task&quot;) {
+            const task = callTask();
+            if (!task) return;
+            const result = B.cancelCallTask(callTaskState, {taskId:task.id,accountId:review.accountId,workspaceId:&quot;personal:&quot;+review.accountId}, new Date());
+            if (result.ok) { callReview.notice = null; show(&quot;dialHandoff&quot;, false); }
+            else { callReview.notice = result.code; show(&quot;dialHandoff&quot;, false); }
+            return;
+          }
+          if (action === &quot;retry-task&quot;) {
+            callReview.attempt += 1;
+            const binding = selectedCaller().bindingId;
+            const key = callTaskAttemptKey(binding, callReview.attempt);
+            const result = B.createCallTask(callTaskState, {callerBindingId:binding,maskedCallee:DEMO_CALLEE,businessType:&quot;EVIDENCE_CALL&quot;,idempotencyKey:key,replacePending:false}, new Date());
+            if (result.ok) { callReview.taskId = result.value.id; callReview.callId = null; callReview.notice = null; callReview.refreshed = false; show(&quot;dialHandoff&quot;, false); }
+            else { const pending = currentOwnPendingTask(); callReview.taskId = pending ? pending.id : null; callReview.notice = result.code; show(&quot;dialHandoff&quot;, false); }
+            return;
+          }
+          if (action === &quot;refresh-call-status&quot;) {
+            callReview.refreshed = true;
+            show(&quot;callStatus&quot;, false);
+            return;
+          }
         }
         const goButton = event.target.closest(&quot;[data-go]&quot;);
         if (goButton &amp;&amp; root.contains(goButton)) {
@@ -7044,6 +7961,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           if (goButton.dataset.go === &quot;captureResult&quot; &amp;&amp; captureEntitlementMode === &quot;free&quot; &amp;&amp; freeEvidenceRemaining &gt; 0) {
             freeEvidenceRemaining = 0;
           }
+          if (goButton.dataset.go === &quot;dialHandoff&quot;) ensureCallTask();
           show(goButton.dataset.go);
         }
       });
@@ -7146,6 +8064,30 @@ html&gt;body{padding:0}&lt;/style&gt;
           const selector=selectors[name]||selectors.returning;const sessions=business.sessions.filter(function(item){return item.status===&quot;CONFIRMED&quot;;}).slice().reverse();let target=sessions.map(function(item){return business.subjects.find(function(subject){return subject.id===item.subjectId;});}).find(selector)||business.subjects.find(selector);if(!target)return {ok:false,code:&quot;NOT_FOUND&quot;};review.scenario=name;review.subjectId=target.id;review.blockedCode=null;review.claimRequestId=null;show(name===&quot;conflict&quot;||name===&quot;recycled&quot;?&quot;ivrReturn&quot;:&quot;ivrReturn&quot;,false);return {ok:true,subjectId:target.id};
         },
         setClaimRequestId:function(requestId){review.claimRequestId=requestId;return {ok:true};},
+        callTaskSnapshot:function(){const result=B.callTaskSnapshot(callTaskState);if(!result.ok)throw Error(result.code);return result.value;},
+        loadCallTaskSnapshot:function(candidate){
+          const result=B.loadCallTaskSnapshot(callTaskState,candidate);
+          if(result.ok){
+            const currentTask=callReview.taskId?callTaskState.tasks.find(function(item){return item.id===callReview.taskId;}):null;
+            if(!currentTask||!ownTask(currentTask))callReview.taskId=null;
+            const linkedCall=currentTask?callTaskState.calls.find(function(item){return item.taskId===currentTask.id;}):null;
+            if(!callReview.callId||!callTaskState.calls.some(function(item){return item.id===callReview.callId;}))callReview.callId=linkedCall?linkedCall.id:null;
+            callReview.notice=null;
+            show(current,false);
+          }
+          return clone(result);
+        },
+        setCallDemoState:function(name){
+          const names=[&quot;waiting&quot;,&quot;claimed&quot;,&quot;ringing&quot;,&quot;recording&quot;,&quot;ended&quot;,&quot;evidence&quot;,&quot;failed-expired&quot;,&quot;failed-mismatch&quot;,&quot;failed-no-answer&quot;];
+          if(names.indexOf(name)===-1)return {ok:false,code:&quot;NOT_FOUND&quot;};
+          const candidate=buildCallDemoState(name);
+          if(!candidate)return {ok:false,code:&quot;INVALID_DEMO_STATE&quot;};
+          const validation=B.callTaskSnapshot(candidate);
+          if(!validation.ok)return {ok:false,code:validation.code||&quot;INVALID_DEMO_STATE&quot;};
+          callTaskState=candidate;
+          show(&quot;callStatus&quot;,false);
+          return {ok:true,state:name,taskId:callReview.taskId,callId:callReview.callId};
+        },
         navigate:function(pageId){if(!pages[pageId])return {ok:false,code:&quot;NOT_FOUND&quot;};show(pageId,false);return {ok:true,pageId:pageId};},
         currentPage:function(){return current;}
       };

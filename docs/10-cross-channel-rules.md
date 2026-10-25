@@ -1,6 +1,6 @@
 # 跨端套餐与状态规则
 
-> 当前状态：S1/S2/S3 本地实现与规定 QA 已通过，2026-10-20；正式评审/验收由主控后续 gate 决定。本文定义三个本地原型的统一演示语义。演示数据不是生产定价、真实支付或真实 IVR 能力。2026-10-21 锁定的生产 IVR 待拨任务、独立呼入决策、30 秒失效和通话/录音上传规则见 [13](13-ivr-call-task-and-inbound-design.md)，当前原型尚未实现该生产协议。
+> 当前状态：S1/S2/S3 本地实现与规定 QA 已通过，2026-10-20；正式评审/验收由主控后续 gate 决定。本文定义三个本地原型的统一演示语义。演示数据不是生产定价、真实支付或真实 IVR 能力。2026-10-21 锁定的生产 IVR 待拨任务、独立呼入决策、30 秒失效和通话/录音上传规则见 [13](13-ivr-call-task-and-inbound-design.md)。2026-10-25 起，三个维护中的原型已用独立本地 call-task fixture 演示任务/无任务、创建时冻结 30 秒、原子领取、按冻结被叫自动外呼、上传/证据分离与失败回显；这仍是本地评审证据，不代表生产协议、真实并发、线路或媒体引擎已联调。
 
 ## 1. 单一规则源
 
@@ -82,6 +82,7 @@ S3 修复回归另覆盖普通微信/短信开通的主体、同意、试用与�
 node --check .\shared\onecall-business.js
 node --check .\shared\build-prototypes.js
 node --test .\shared\qa\business.test.js
+node --test .\shared\qa\call-task.test.js
 node --test .\shared\qa\runner-exit.test.js
 node .\shared\build-prototypes.js --check
 powershell -ExecutionPolicy Bypass -File .\operations-prototype\qa\run.ps1
@@ -92,4 +93,4 @@ node .\shared\qa\cross-channel.js
 
 运营后台 S2 已使用同一业务状态，六个主导航为概览、用户、套餐、订单、员工和操作记录。开通/IVR 为用户子导航，试用为套餐子导航。独立员工登录、两类权限、至少一个启用管理员、会话撤销和员工身份审计均为本地演示；真实身份与后端鉴权仍属生产服务工作。新增/编辑草稿、已发布复制、发布退市、上下架和完整历史检查不覆盖订单及已发试用。旧 PKG 样例仅作只读历史版本。
 
-三个 runner 和跨端 QA 已通过；覆盖后台员工/套餐、十二 IVR 场景，Mini 当前 62 页与 393/320px（账号页另含 760px），Web 既有角色/证据等回归与 1440/1280/1024/720px。跨端脚本先在后台真实演示登录并发布套餐/试用，再检查两端可见版本/价格/权益/有效期/渠道、冻结结算与下架/移除渠道拒绝、动态 IVR 原试用/证据认领、WEB 与 MINIAPP 订单、支付与独立发放、事件重放、五类主体引用篡改、逐类禁止字段原子拒绝及模块哈希相同。Aggregate deepreview 修复另覆盖事件双向所有权、风险优先级、目录矩阵、耗尽场景重开、Mini 固话跨端交接及 Web 规范暂停/恢复；这些历史结果的裁决见对应 gate artifacts。运行记录和目视截图见 [S3 implementation](gateflow/cross-channel-alignment-s3-implementation.md)。这些是本地 fixture 验证，生产并发、支付验签、证据权限和持久化仍未实现。
+三个 runner 和跨端 QA 的既有覆盖已通过；本轮新增只读任务/呼叫诊断断言已加入 runner 与跨端脚本，但受当前会话执行权限限制未能重跑，结果与阻塞见 `docs/gateflow/ivr-three-surface-prototype-sync-implementation.md`。既有覆盖包括后台员工/套餐、十二 IVR 场景，Mini 当前 63 页与 393/320px（账号页另含 760px），Web 既有角色/证据等回归与 1440/1280/1024/720px。跨端脚本先在后台真实演示登录并发布套餐/试用，再检查两端可见版本/价格/权益/有效期/渠道、冻结结算与下架/移除渠道拒绝、动态 IVR 原试用/证据认领、WEB 与 MINIAPP 订单、支付与独立发放、事件重放、五类主体引用篡改、逐类禁止字段原子拒绝及模块哈希相同。Aggregate deepreview 修复另覆盖事件双向所有权、风险优先级、目录矩阵、耗尽场景重开、Mini 固话跨端交接及 Web 规范暂停/恢复；这些历史结果的裁决见对应 gate artifacts。运行记录和目视截图见 [S3 implementation](gateflow/cross-channel-alignment-s3-implementation.md)。这些是本地 fixture 验证，生产并发、支付验签、证据权限和持久化仍未实现。

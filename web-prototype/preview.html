@@ -640,7 +640,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <!-- ONECALL_BUSINESS:START -->
-<script data-onecall-business-sha256="c0356ee31a0d5b6af28b79c4409e33f02059d0c06e59a29cc03e289cb155a7e4">
+<script data-onecall-business-sha256="83d3ac242d6c7bf725493c6a69783badb2d63995b27eec68b302103ed6d2899c">
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -663,6 +663,42 @@
     'employees', 'employeeLoginSession', 'employeeCredentials', 'employeeRoles',
     'customerAuthSession', 'uiSession', 'widgetState', 'code',
   ]);
+  // The call-task domain is a separate local review fixture. It is never part of
+  // the strict business snapshot above and has its own schema and validator.
+  const CALL_TASK_SCHEMA_VERSION = 1;
+  const CALL_TASK_TTL_SECONDS = 30;
+  const CALL_TASK_FIELDS = ['schemaVersion', 'ttlSeconds', 'callerBindings', 'tasks', 'calls', 'sequence'];
+  const CALL_TASK_REASONS = new Set(['TTL_EXPIRED', 'CALLER_MISMATCH', 'NO_ANSWER', 'BUSY', 'OUTBOUND_FAILED', 'REPLACED', 'CANCELLED', 'SUSPENDED']);
+  const CALL_TASK_FAILURE_REASONS = new Set(['TTL_EXPIRED', 'CALLER_MISMATCH', 'NO_ANSWER', 'BUSY', 'OUTBOUND_FAILED', 'SUSPENDED']);
+  const CALL_TASK_NONTERMINAL = new Set(['PENDING', 'CLAIMED']);
+  const CALL_TASK_ACTIVE_PROGRESS = new Set(['WAITING_CALLEE_INPUT', 'CALLEE_CONFIRMED', 'CLAIMED', 'OUTBOUND_STARTED', 'RINGING', 'ANSWERED', 'BRIDGED', 'RECORDING']);
+  const CALL_TASK_ENUMS = {
+    ownerType: new Set(['PERSONAL_ACCOUNT', 'ORGANIZATION']),
+    numberType: new Set(['MOBILE', 'LANDLINE']),
+    businessType: new Set(['EVIDENCE_CALL']),
+    taskStatus: new Set(['PENDING', 'CLAIMED', 'COMPLETED', 'FAILED', 'EXPIRED', 'REPLACED', 'CANCELLED', 'REJECTED']),
+    ivrAction: new Set(['DIAL_TASK_CALLEE', 'ENTER_CALLEE', 'GUIDE_ACTIVATION', 'GUIDE_PURCHASE', 'REJECT', 'REJECT_CALL_IN_PROGRESS', 'REJECT_SUSPENDED']),
+    callAction: new Set(['DIAL_TASK_CALLEE', 'ENTER_CALLEE', 'REJECT']),
+    taskMatch: new Set(['CLAIMED', 'NONE', 'MISMATCH', 'EXPIRED', 'REJECTED', 'CONFLICT']),
+    callProgress: new Set(['WAITING_INBOUND', 'WAITING_CALLEE_INPUT', 'CALLEE_CONFIRMED', 'CLAIMED', 'OUTBOUND_STARTED', 'RINGING', 'ANSWERED', 'BRIDGED', 'RECORDING', 'ENDED', 'RECORDING_RECEIVED', 'EVIDENCE_PROCESSING', 'EVIDENCE_READY', 'FAILED']),
+    calleeConfirmation: new Set(['NONE', 'DTMF_REQUIRED', 'DTMF_CONFIRMED', 'NOT_APPLICABLE']),
+    upload: new Set(['NOT_STARTED', 'UPLOADING', 'RECEIVED', 'FAILED']),
+    evidence: new Set(['NOT_CREATED', 'PROCESSING', 'AVAILABLE', 'FAILED']),
+    eventType: new Set(['INBOUND_RECEIVED', 'TASK_CLAIMED', 'DTMF_CALLEE_CONFIRMED', 'OUTBOUND_STARTED', 'RINGING', 'ANSWERED', 'BRIDGED', 'RECORDING_STARTED', 'CALL_ENDED', 'RECORDING_RECEIVED', 'EVIDENCE_PROCESSING', 'EVIDENCE_READY', 'CALL_FAILED']),
+    eventSource: new Set(['MINI', 'IVR', 'ONECALL']),
+    callerState: new Set(['ACTIVE', 'INACTIVE', 'SUSPENDED', 'UNREGISTERED']),
+  };
+  const CALL_TASK_EVENT_SOURCE = {
+    INBOUND_RECEIVED: 'IVR', TASK_CLAIMED: 'ONECALL', DTMF_CALLEE_CONFIRMED: 'IVR',
+    OUTBOUND_STARTED: 'IVR', RINGING: 'IVR', ANSWERED: 'IVR', BRIDGED: 'IVR', RECORDING_STARTED: 'IVR',
+    CALL_ENDED: 'IVR', RECORDING_RECEIVED: 'ONECALL', EVIDENCE_PROCESSING: 'ONECALL', EVIDENCE_READY: 'ONECALL',
+  };
+  const CALL_TASK_EVENT_PROGRESS = {
+    TASK_CLAIMED: 'CLAIMED', DTMF_CALLEE_CONFIRMED: 'CALLEE_CONFIRMED', OUTBOUND_STARTED: 'OUTBOUND_STARTED',
+    RINGING: 'RINGING', ANSWERED: 'ANSWERED', BRIDGED: 'BRIDGED', RECORDING_STARTED: 'RECORDING',
+    CALL_ENDED: 'ENDED', RECORDING_RECEIVED: 'RECORDING_RECEIVED', EVIDENCE_PROCESSING: 'EVIDENCE_PROCESSING',
+    EVIDENCE_READY: 'EVIDENCE_READY', CALL_FAILED: 'FAILED',
+  };
   const ENUMS = {
     numberType: new Set(['MOBILE', 'LANDLINE']),
     identity: new Set(['UNVERIFIED', 'VERIFIED']),
@@ -750,6 +786,19 @@
     payment: { UNPAID: '待支付', UNKNOWN: '支付结果待确认', PAID: '支付成功', CLOSED: '已关闭' },
     entitlement: { NOT_ISSUED: '未发放', PENDING: '待发放', ISSUED: '已到账', FAILED: '发放失败' },
     catalog: { DRAFT: '草稿', ACTIVE: '在售', OFFSALE: '已下架' },
+    taskStatus: { PENDING: '待呼入', CLAIMED: '已领取', COMPLETED: '已完成', FAILED: '失败', EXPIRED: '已过期', REPLACED: '已替换', CANCELLED: '已取消', REJECTED: '已拒绝' },
+    ivrAction: { DIAL_TASK_CALLEE: '任务自动外呼', ENTER_CALLEE: '无任务 DTMF 输入', GUIDE_ACTIVATION: '引导开通', GUIDE_PURCHASE: '引导购买', REJECT: '拒绝', REJECT_CALL_IN_PROGRESS: '呼叫处理中', REJECT_SUSPENDED: '业务已停用' },
+    taskMatch: { CLAIMED: '已领取', NONE: '无任务', MISMATCH: '主叫不匹配', EXPIRED: '已过期', REJECTED: '已拒绝', CONFLICT: '数据冲突' },
+    callProgress: { WAITING_INBOUND: '等待呼入', WAITING_CALLEE_INPUT: '等待被叫输入', CALLEE_CONFIRMED: '被叫已确认', CLAIMED: '任务已领取', OUTBOUND_STARTED: '已启动 B 路外呼', RINGING: '被叫振铃', ANSWERED: '被叫已接听', BRIDGED: '已桥接', RECORDING: '录音中', ENDED: '通话已结束', RECORDING_RECEIVED: '录音已接收', EVIDENCE_PROCESSING: '证据处理中', EVIDENCE_READY: '证据可用', FAILED: '通话失败' },
+    uploadStatus: { NOT_STARTED: '未上传', UPLOADING: '上传中', RECEIVED: '已接收', FAILED: '上传失败' },
+    evidenceStatus: { NOT_CREATED: '未创建', PROCESSING: '处理中', AVAILABLE: '可用', FAILED: '处理失败' },
+    ownership: '运营商提供号码、线路和通信承载；自研 IVR 负责呼入接听、B 路外呼、双向桥接、录音、限时挂断及通话/录音上传；ONECALL 负责业务开通、待拨任务、权益与证据处理。',
+    callPath: {
+      task: '任务路径：IVR 原子领取后按冻结被叫自动外呼，电话中不要求确认被叫号码。',
+      noTask: '无任务路径：只有没有有效待拨任务时，IVR 才引导主叫通过 DTMF 输入并确认被叫；不读取或猜测历史任务被叫。',
+      launch: '系统拨号盘已打开仅表示客户端调用了系统拨号能力，不代表已接通、已领取或正在录音。',
+      localFixture: '本地演示/评审状态，不连接真实线路、媒体引擎、对象存储或后台。',
+    },
   });
 
   const support = deepFreeze({
@@ -1285,6 +1334,620 @@
     return ok(clone(copied));
   }
 
+  // ---------------------------------------------------------------------------
+  // Call-task demo domain (separate from the strict business snapshot)
+  // ---------------------------------------------------------------------------
+
+  function createCallTaskDemoState(now) {
+    const base = toMs(now);
+    const offset = ms => new Date(ms).toISOString();
+    const event = (callId, index, type, at, detail) => ({
+      eventId: `${callId}-EV${String(index).padStart(2, '0')}`,
+      type,
+      at: offset(at),
+      source: type === 'CALL_FAILED' ? 'IVR' : (CALL_TASK_EVENT_SOURCE[type] || 'IVR'),
+      detail: detail || '',
+    });
+    const successEvents = (callId, start, seconds) => [
+      event(callId, 1, 'INBOUND_RECEIVED', start),
+      event(callId, 2, 'TASK_CLAIMED', start + 1000),
+      event(callId, 3, 'OUTBOUND_STARTED', start + 2000),
+      event(callId, 4, 'RINGING', start + 4000),
+      event(callId, 5, 'ANSWERED', start + 8000),
+      event(callId, 6, 'BRIDGED', start + 8000),
+      event(callId, 7, 'RECORDING_STARTED', start + 9000),
+      event(callId, 8, 'CALL_ENDED', start + 9000 + seconds * 1000),
+      event(callId, 9, 'RECORDING_RECEIVED', start + 9000 + seconds * 1000 + 12000),
+      event(callId, 10, 'EVIDENCE_PROCESSING', start + 9000 + seconds * 1000 + 22000),
+      event(callId, 11, 'EVIDENCE_READY', start + 9000 + seconds * 1000 + 32000),
+    ];
+    const directEvents = (callId, start, seconds) => {
+      const events = successEvents(callId, start, seconds);
+      events[1] = event(callId, 2, 'DTMF_CALLEE_CONFIRMED', start + 1000, '021 **** 9056');
+      return events;
+    };
+    const callerBindings = [
+      { id: 'CB-PERSONAL-6208', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', maskedCaller: '138 **** 6208', normalizedCaller: '13800006208', numberType: 'MOBILE', active: true },
+      { id: 'CB-PERSONAL-4471', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', maskedCaller: '186 **** 4471', normalizedCaller: '18600004471', numberType: 'MOBILE', active: true },
+      { id: 'CB-ORG-6688', ownerType: 'ORGANIZATION', ownerId: 'ORG-HUAQI-001', workspaceId: 'organization:ORG-HUAQI-001', maskedCaller: '010 **** 6688', normalizedCaller: '01088886688', numberType: 'LANDLINE', active: true },
+      { id: 'CB-PERSONAL-7812', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-002', workspaceId: 'personal:ACCOUNT-DEMO-002', maskedCaller: '139 **** 7812', normalizedCaller: '13900007812', numberType: 'MOBILE', active: true },
+    ];
+    const t101 = base - 10 * 60 * 1000;
+    const t103 = base - 25 * 60 * 1000;
+    const t104 = base - 2 * DAY_MS;
+    const tNoTask = base - 20 * 60 * 1000;
+    const tMismatch = base - 15 * 60 * 1000;
+    const tasks = [
+      { id: 'CT-DEMO-0101', callerBindingId: 'CB-PERSONAL-6208', normalizedCaller: '13800006208', maskedCaller: '138 **** 6208', maskedCallee: '139 **** 3816', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', createdByAccountId: 'ACCOUNT-DEMO-001', businessType: 'EVIDENCE_CALL', status: 'COMPLETED', reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t101), expiresAt: offset(t101 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t101 + 2000), claimedCallId: 'OC-C2038', claimedAt: offset(t101 + 5000), idempotencyKey: 'IDEM-CT-DEMO-0101', revision: 2 },
+      { id: 'CT-DEMO-0102', callerBindingId: 'CB-PERSONAL-6208', normalizedCaller: '13800006208', maskedCaller: '138 **** 6208', maskedCallee: '138 **** 7720', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', createdByAccountId: 'ACCOUNT-DEMO-001', businessType: 'EVIDENCE_CALL', status: 'EXPIRED', reasonCode: 'TTL_EXPIRED', ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(base - 40 * 60 * 1000), expiresAt: offset(base - 40 * 60 * 1000 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: null, claimedCallId: null, claimedAt: null, idempotencyKey: 'IDEM-CT-DEMO-0102', revision: 2 },
+      { id: 'CT-DEMO-0103', callerBindingId: 'CB-PERSONAL-6208', normalizedCaller: '13800006208', maskedCaller: '138 **** 6208', maskedCallee: '135 **** 7781', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', createdByAccountId: 'ACCOUNT-DEMO-001', businessType: 'EVIDENCE_CALL', status: 'FAILED', reasonCode: 'NO_ANSWER', ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t103), expiresAt: offset(t103 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t103 + 2000), claimedCallId: 'OC-C2035', claimedAt: offset(t103 + 4000), idempotencyKey: 'IDEM-CT-DEMO-0103', revision: 2 },
+      { id: 'CT-DEMO-0104', callerBindingId: 'CB-PERSONAL-7812', normalizedCaller: '13900007812', maskedCaller: '139 **** 7812', maskedCallee: '137 **** 2240', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-002', workspaceId: 'personal:ACCOUNT-DEMO-002', createdByAccountId: 'ACCOUNT-DEMO-002', businessType: 'EVIDENCE_CALL', status: 'COMPLETED', reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t104), expiresAt: offset(t104 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t104 + 2000), claimedCallId: 'OC-C2034', claimedAt: offset(t104 + 5000), idempotencyKey: 'IDEM-CT-DEMO-0104', revision: 2 },
+      { id: 'CT-DEMO-0201', callerBindingId: 'CB-PERSONAL-7812', normalizedCaller: '13900007812', maskedCaller: '139 **** 7812', maskedCallee: '137 **** 2240', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-002', workspaceId: 'personal:ACCOUNT-DEMO-002', createdByAccountId: 'ACCOUNT-DEMO-002', businessType: 'EVIDENCE_CALL', status: 'PENDING', reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(base - 10000), expiresAt: offset(base - 10000 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: null, claimedCallId: null, claimedAt: null, idempotencyKey: 'IDEM-CT-DEMO-0201', revision: 1 },
+    ];
+    const calls = [
+      { id: 'OC-C2038', taskId: 'CT-DEMO-0101', taskMatch: 'CLAIMED', action: 'DIAL_TASK_CALLEE', taskPath: true, normalizedCaller: '13800006208', expectedCallerMasked: '138 **** 6208', maskedCaller: '138 **** 6208', maskedCallee: '139 **** 3816', calleeConfirmation: 'NONE', progress: 'EVIDENCE_READY', endReason: null, recordingSeconds: 522, uploadStatus: 'RECEIVED', evidenceStatus: 'AVAILABLE', events: successEvents('OC-C2038', t101 + 4000, 522) },
+      { id: 'OC-C2037', taskId: null, taskMatch: 'NONE', action: 'ENTER_CALLEE', taskPath: false, normalizedCaller: '01088886688', expectedCallerMasked: null, maskedCaller: '010 **** 6688', maskedCallee: '021 **** 9056', calleeConfirmation: 'DTMF_CONFIRMED', progress: 'EVIDENCE_READY', endReason: null, recordingSeconds: 1038, uploadStatus: 'RECEIVED', evidenceStatus: 'AVAILABLE', events: directEvents('OC-C2037', tNoTask, 1038) },
+      { id: 'OC-C2036', taskId: 'CT-DEMO-0102', taskMatch: 'MISMATCH', action: 'REJECT', taskPath: true, normalizedCaller: '18600004471', expectedCallerMasked: '138 **** 6208', maskedCaller: '186 **** 4471', maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', progress: 'FAILED', endReason: 'CALLER_MISMATCH', recordingSeconds: 0, uploadStatus: 'NOT_STARTED', evidenceStatus: 'NOT_CREATED', events: [event('OC-C2036', 1, 'INBOUND_RECEIVED', tMismatch), event('OC-C2036', 2, 'CALL_FAILED', tMismatch + 2000, 'CALLER_MISMATCH')] },
+      { id: 'OC-C2035', taskId: 'CT-DEMO-0103', taskMatch: 'CLAIMED', action: 'DIAL_TASK_CALLEE', taskPath: true, normalizedCaller: '13800006208', expectedCallerMasked: '138 **** 6208', maskedCaller: '138 **** 6208', maskedCallee: '135 **** 7781', calleeConfirmation: 'NONE', progress: 'FAILED', endReason: 'NO_ANSWER', recordingSeconds: 0, uploadStatus: 'NOT_STARTED', evidenceStatus: 'NOT_CREATED', events: [event('OC-C2035', 1, 'INBOUND_RECEIVED', t103 + 4000), event('OC-C2035', 2, 'TASK_CLAIMED', t103 + 4000), event('OC-C2035', 3, 'OUTBOUND_STARTED', t103 + 6000), event('OC-C2035', 4, 'RINGING', t103 + 8000), event('OC-C2035', 5, 'CALL_FAILED', t103 + 30000, 'NO_ANSWER')] },
+      { id: 'OC-C2034', taskId: 'CT-DEMO-0104', taskMatch: 'CLAIMED', action: 'DIAL_TASK_CALLEE', taskPath: true, normalizedCaller: '13900007812', expectedCallerMasked: '139 **** 7812', maskedCaller: '139 **** 7812', maskedCallee: '137 **** 2240', calleeConfirmation: 'NONE', progress: 'EVIDENCE_READY', endReason: null, recordingSeconds: 744, uploadStatus: 'RECEIVED', evidenceStatus: 'AVAILABLE', events: successEvents('OC-C2034', t104 + 4000, 744) },
+    ];
+    const state = { schemaVersion: CALL_TASK_SCHEMA_VERSION, ttlSeconds: CALL_TASK_TTL_SECONDS, callerBindings, tasks, calls, sequence: 2000 };
+    if (!validateCallTask(state).ok) throw new Error('Invalid call-task demo fixture');
+    return state;
+  }
+
+  function createCallTask(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input)) return fail('INVALID_TRANSITION');
+      const allowed = ['callerBindingId', 'maskedCallee', 'businessType', 'idempotencyKey', 'replacePending'];
+      if (Object.keys(input).some(key => !allowed.includes(key))) return fail('INVALID_TRANSITION');
+      if (!id(input.callerBindingId) || !textBetween(input.maskedCallee, 1, 40) || !id(input.idempotencyKey)) return fail('INVALID_TRANSITION');
+      if (input.businessType !== undefined && input.businessType !== 'EVIDENCE_CALL') return fail('INVALID_TRANSITION');
+      if (input.replacePending !== undefined && typeof input.replacePending !== 'boolean') return fail('INVALID_TRANSITION');
+      const binding = one(draft.callerBindings, item => item.id === input.callerBindingId);
+      if (!binding) return fail('NOT_FOUND');
+      if (!binding.active) return fail('CALLER_BINDING_INACTIVE');
+      const time = toMs(now);
+      const sameKey = one(draft.tasks, item => item.idempotencyKey === input.idempotencyKey);
+      const sameFingerprint = sameKey && sameKey.callerBindingId === binding.id && sameKey.maskedCallee === input.maskedCallee && sameKey.businessType === 'EVIDENCE_CALL';
+      if (sameKey && !sameFingerprint) return fail('INVALID_TRANSITION');
+      reapExpiredCallTasks(draft, binding.normalizedCaller, now);
+      if (sameKey) return duplicate(sameKey);
+      const activeCall = draft.calls.find(item => item.normalizedCaller === binding.normalizedCaller && CALL_TASK_ACTIVE_PROGRESS.has(item.progress));
+      if (activeCall) return fail('CALL_IN_PROGRESS');
+      const pending = one(draft.tasks, item => item.normalizedCaller === binding.normalizedCaller && CALL_TASK_NONTERMINAL.has(item.status));
+      if (pending && pending.status === 'CLAIMED') return fail('CALL_IN_PROGRESS');
+      if (pending) {
+        const sameOwner = pending.ownerType === binding.ownerType && pending.ownerId === binding.ownerId && pending.workspaceId === binding.workspaceId;
+        if (!sameOwner) return fail('CALLER_BUSY');
+        if (pending.maskedCallee === input.maskedCallee) return duplicate(pending);
+        if (input.replacePending !== true) return fail('PENDING_TASK_EXISTS');
+        pending.status = 'REPLACED';
+        pending.reasonCode = 'REPLACED';
+        pending.revision += 1;
+      }
+      const task = {
+        id: nextCallTaskId(draft, 'CT'),
+        callerBindingId: binding.id,
+        normalizedCaller: binding.normalizedCaller,
+        maskedCaller: binding.maskedCaller,
+        maskedCallee: input.maskedCallee,
+        ownerType: binding.ownerType,
+        ownerId: binding.ownerId,
+        workspaceId: binding.workspaceId,
+        createdByAccountId: binding.ownerId,
+        businessType: 'EVIDENCE_CALL',
+        status: 'PENDING',
+        reasonCode: null,
+        ttlSeconds: CALL_TASK_TTL_SECONDS,
+        createdAt: iso(now),
+        expiresAt: new Date(time + CALL_TASK_TTL_SECONDS * 1000).toISOString(),
+        dialerLaunchedAt: null,
+        claimedCallId: null,
+        claimedAt: null,
+        idempotencyKey: input.idempotencyKey,
+        revision: 1,
+      };
+      draft.tasks.push(task);
+      return ok(task);
+    });
+  }
+
+  function cancelCallTask(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.taskId) || !id(input.accountId) || !id(input.workspaceId)) return fail('INVALID_TRANSITION');
+      const task = one(draft.tasks, item => item.id === input.taskId);
+      if (!task) return fail('NOT_FOUND');
+      if (task.ownerType !== 'PERSONAL_ACCOUNT' || task.ownerId !== input.accountId || task.workspaceId !== input.workspaceId) return fail('NOT_FOUND');
+      if (task.status !== 'PENDING') return fail('INVALID_TRANSITION');
+      if (toMs(now) >= Date.parse(task.expiresAt)) return fail('TASK_EXPIRED');
+      task.status = 'CANCELLED';
+      task.reasonCode = 'CANCELLED';
+      task.revision += 1;
+      return ok(task);
+    });
+  }
+
+  function recordDialerLaunch(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.taskId) || !id(input.accountId) || !id(input.workspaceId)) return fail('INVALID_TRANSITION');
+      const task = one(draft.tasks, item => item.id === input.taskId);
+      if (!task) return fail('NOT_FOUND');
+      if (task.ownerType !== 'PERSONAL_ACCOUNT' || task.ownerId !== input.accountId || task.workspaceId !== input.workspaceId) return fail('NOT_FOUND');
+      if (task.status !== 'PENDING') return fail('INVALID_TRANSITION');
+      if (toMs(now) >= Date.parse(task.expiresAt)) return fail('TASK_EXPIRED');
+      if (task.dialerLaunchedAt) return duplicate({ taskId: task.id, dialerLaunchedAt: task.dialerLaunchedAt });
+      task.dialerLaunchedAt = iso(now);
+      task.revision += 1;
+      return ok({ taskId: task.id, dialerLaunchedAt: task.dialerLaunchedAt });
+    });
+  }
+
+  function resolveIvrInbound(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.callId) || !textBetween(input.normalizedCaller, 1, 20)) return fail('INVALID_TRANSITION');
+      if (typeof input.callerTrusted !== 'boolean' || !CALL_TASK_ENUMS.callerState.has(input.callerState)) return fail('INVALID_TRANSITION');
+      if (!safeBetween(input.availableSeconds, 0, 86400) || typeof input.directAllowed !== 'boolean') return fail('INVALID_TRANSITION');
+      const existing = one(draft.calls, item => item.id === input.callId);
+      if (existing) {
+        if (existing.normalizedCaller !== input.normalizedCaller) return fail('INVALID_TRANSITION');
+        return duplicate(decisionForCall(existing));
+      }
+      if (!input.callerTrusted) return fail('REJECT');
+      const normalizedCaller = input.normalizedCaller;
+      // Ownership is resolved from the unique active caller binding before any
+      // branch that writes a task or creates a call. Missing or ambiguous
+      // ownership fails closed.
+      const binding = uniqueCallerBinding(draft, normalizedCaller);
+      if (input.callerState === 'SUSPENDED') {
+        if (!binding) return fail('REJECT');
+        let rejectedTask = false;
+        for (const task of draft.tasks) {
+          if (task.status === 'PENDING'
+            && task.normalizedCaller === normalizedCaller
+            && task.callerBindingId === binding.id
+            && task.ownerType === binding.ownerType
+            && task.ownerId === binding.ownerId
+            && task.workspaceId === binding.workspaceId) {
+            task.status = 'REJECTED';
+            task.reasonCode = 'SUSPENDED';
+            task.revision += 1;
+            rejectedTask = true;
+          }
+        }
+        return ok({ action: 'REJECT_SUSPENDED', callId: null, taskId: null, taskMatch: 'REJECTED', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false, taskRejected: rejectedTask }, 'REJECT_SUSPENDED');
+      }
+      const activeCall = draft.calls.find(item => item.normalizedCaller === normalizedCaller && CALL_TASK_ACTIVE_PROGRESS.has(item.progress));
+      if (activeCall) return fail('REJECT_CALL_IN_PROGRESS');
+      reapExpiredCallTasks(draft, normalizedCaller, now);
+      if (!binding) return fail('REJECT');
+      if (input.callerState === 'INACTIVE' || input.callerState === 'UNREGISTERED') {
+        return ok({ action: 'GUIDE_ACTIVATION', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
+      }
+      if (input.availableSeconds <= 0) {
+        return ok({ action: 'GUIDE_PURCHASE', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
+      }
+      const callerPending = draft.tasks.filter(item => item.normalizedCaller === normalizedCaller && item.status === 'PENDING');
+      // Claiming is ownership-scoped exactly like the SUSPENDED branch: the
+      // task must belong to the unique active binding resolved above. A
+      // same-caller pending task owned by another scope must not be claimable
+      // and must not fall through to the no-task DTMF path.
+      const pending = callerPending.find(item => item.callerBindingId === binding.id
+        && item.ownerType === binding.ownerType
+        && item.ownerId === binding.ownerId
+        && item.workspaceId === binding.workspaceId);
+      if (!pending && callerPending.length) return fail('REJECT');
+      if (pending && toMs(now) < Date.parse(pending.expiresAt)) {
+        const at = iso(now);
+        pending.status = 'CLAIMED';
+        pending.claimedCallId = input.callId;
+        pending.claimedAt = at;
+        pending.revision += 1;
+        const call = {
+          id: input.callId,
+          taskId: pending.id,
+          taskMatch: 'CLAIMED',
+          action: 'DIAL_TASK_CALLEE',
+          taskPath: true,
+          normalizedCaller,
+          expectedCallerMasked: pending.maskedCaller,
+          maskedCaller: pending.maskedCaller,
+          maskedCallee: pending.maskedCallee,
+          calleeConfirmation: 'NONE',
+          progress: 'CLAIMED',
+          endReason: null,
+          recordingSeconds: 0,
+          uploadStatus: 'NOT_STARTED',
+          evidenceStatus: 'NOT_CREATED',
+          events: [
+            { eventId: `${input.callId}-INBOUND`, type: 'INBOUND_RECEIVED', at, source: 'IVR', detail: '' },
+            { eventId: `${input.callId}-CLAIM`, type: 'TASK_CLAIMED', at, source: 'ONECALL', detail: pending.id },
+          ],
+        };
+        draft.calls.push(call);
+        return ok({ action: 'DIAL_TASK_CALLEE', callId: call.id, taskId: pending.id, taskMatch: 'CLAIMED', progress: 'CLAIMED', maskedCallee: pending.maskedCallee, calleeConfirmation: 'NONE', taskPath: true });
+      }
+      // directAllowed only gates the no-task path; a valid task is claimed above.
+      if (input.directAllowed !== true) {
+        return ok({ action: 'GUIDE_PURCHASE', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
+      }
+      const call = {
+        id: input.callId,
+        taskId: null,
+        taskMatch: 'NONE',
+        action: 'ENTER_CALLEE',
+        taskPath: false,
+        normalizedCaller,
+        expectedCallerMasked: null,
+        maskedCaller: binding.maskedCaller,
+        maskedCallee: null,
+        calleeConfirmation: 'DTMF_REQUIRED',
+        progress: 'WAITING_CALLEE_INPUT',
+        endReason: null,
+        recordingSeconds: 0,
+        uploadStatus: 'NOT_STARTED',
+        evidenceStatus: 'NOT_CREATED',
+        events: [{ eventId: `${input.callId}-INBOUND`, type: 'INBOUND_RECEIVED', at: iso(now), source: 'IVR', detail: '' }],
+      };
+      draft.calls.push(call);
+      return ok({ action: 'ENTER_CALLEE', callId: call.id, taskId: null, taskMatch: 'NONE', progress: 'WAITING_CALLEE_INPUT', maskedCallee: null, calleeConfirmation: 'DTMF_REQUIRED', taskPath: false });
+    });
+  }
+
+  function confirmDirectCallee(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.callId) || !textBetween(input.normalizedCaller, 1, 20) || !textBetween(input.maskedCallee, 1, 40) || !id(input.eventId)) return fail('INVALID_TRANSITION');
+      if (input.taskId !== undefined && input.taskId !== null) return fail('INVALID_TRANSITION');
+      const call = one(draft.calls, item => item.id === input.callId);
+      if (!call) return fail('NOT_FOUND');
+      if (call.normalizedCaller !== input.normalizedCaller) return fail('INVALID_TRANSITION');
+      const existing = findCallEvent(draft, input.eventId);
+      if (existing) {
+        if (existing.call.id !== input.callId || existing.event.type !== 'DTMF_CALLEE_CONFIRMED' || existing.event.detail !== input.maskedCallee) return fail('INVALID_TRANSITION');
+        return duplicate({ callId: call.id, maskedCallee: call.maskedCallee, progress: 'CALLEE_CONFIRMED', calleeConfirmation: 'DTMF_CONFIRMED', taskPath: false });
+      }
+      if (call.action !== 'ENTER_CALLEE' || call.taskId !== null || call.taskPath !== false) return fail('INVALID_TRANSITION');
+      if (call.progress !== 'WAITING_CALLEE_INPUT' || call.calleeConfirmation !== 'DTMF_REQUIRED') return fail('INVALID_TRANSITION');
+      const last = call.events[call.events.length - 1];
+      if (toMs(now) < Date.parse(last.at)) return fail('INVALID_TRANSITION');
+      call.events.push({ eventId: input.eventId, type: 'DTMF_CALLEE_CONFIRMED', at: iso(now), source: 'IVR', detail: input.maskedCallee });
+      call.maskedCallee = input.maskedCallee;
+      call.calleeConfirmation = 'DTMF_CONFIRMED';
+      call.progress = 'CALLEE_CONFIRMED';
+      return ok({ callId: call.id, maskedCallee: call.maskedCallee, progress: 'CALLEE_CONFIRMED', calleeConfirmation: 'DTMF_CONFIRMED', taskPath: false });
+    });
+  }
+
+  function recordCallFact(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.callId) || !id(input.eventId) || !CALL_TASK_ENUMS.eventType.has(input.type)) return fail('INVALID_TRANSITION');
+      const call = one(draft.calls, item => item.id === input.callId);
+      if (!call) return fail('NOT_FOUND');
+      const at = input.at === undefined ? iso(now) : input.at;
+      if (!date(at)) return fail('INVALID_TRANSITION');
+      const detail = input.detail === undefined ? '' : input.detail;
+      if (typeof detail !== 'string' || detail.length > 120) return fail('INVALID_TRANSITION');
+      if (input.recordingSeconds !== undefined && !safeBetween(input.recordingSeconds, 0, 86400)) return fail('INVALID_TRANSITION');
+      const existing = findCallEvent(draft, input.eventId);
+      if (existing) {
+        if (existing.call.id !== input.callId || existing.event.type !== input.type || existing.event.detail !== detail || existing.event.at !== at) return fail('INVALID_TRANSITION');
+        return duplicate({ callId: call.id, eventId: input.eventId, type: input.type, at: existing.event.at, detail });
+      }
+      const last = call.events[call.events.length - 1];
+      if (toMs(at) < Date.parse(last.at)) return fail('INVALID_TRANSITION');
+      if (!allowedNextCallEvents(call).includes(input.type)) return fail('INVALID_TRANSITION');
+      if (input.type === 'CALL_FAILED' && !CALL_TASK_FAILURE_REASONS.has(detail)) return fail('INVALID_TRANSITION');
+      if (input.type === 'TASK_CLAIMED') return fail('INVALID_TRANSITION');
+      if (input.type === 'DTMF_CALLEE_CONFIRMED') return fail('INVALID_TRANSITION');
+      if (input.type === 'INBOUND_RECEIVED') return fail('INVALID_TRANSITION');
+      const event = { eventId: input.eventId, type: input.type, at, source: input.type === 'CALL_FAILED' ? 'IVR' : CALL_TASK_EVENT_SOURCE[input.type], detail };
+      call.events.push(event);
+      const beforeBridge = ['INBOUND_RECEIVED', 'TASK_CLAIMED', 'DTMF_CALLEE_CONFIRMED', 'OUTBOUND_STARTED', 'RINGING'].includes(last.type);
+      if (input.type === 'CALL_ENDED') {
+        call.recordingSeconds = input.recordingSeconds === undefined ? call.recordingSeconds : input.recordingSeconds;
+        call.progress = 'ENDED';
+      } else if (input.type === 'CALL_FAILED') {
+        call.recordingSeconds = beforeBridge ? 0 : (input.recordingSeconds || 0);
+        call.endReason = detail;
+        call.progress = 'FAILED';
+      } else if (input.type === 'RECORDING_RECEIVED') {
+        call.uploadStatus = 'RECEIVED';
+        call.progress = 'RECORDING_RECEIVED';
+      } else if (input.type === 'EVIDENCE_PROCESSING') {
+        call.evidenceStatus = 'PROCESSING';
+        call.progress = 'EVIDENCE_PROCESSING';
+      } else if (input.type === 'EVIDENCE_READY') {
+        call.evidenceStatus = 'AVAILABLE';
+        call.progress = 'EVIDENCE_READY';
+      } else {
+        call.progress = CALL_TASK_EVENT_PROGRESS[input.type];
+      }
+      const task = call.taskId ? one(draft.tasks, item => item.id === call.taskId) : null;
+      if (task && task.claimedCallId === call.id) {
+        if (input.type === 'CALL_ENDED' && task.status === 'CLAIMED') {
+          task.status = 'COMPLETED';
+          task.reasonCode = null;
+          task.revision += 1;
+        }
+        if (input.type === 'CALL_FAILED' && task.status === 'CLAIMED') {
+          task.status = 'FAILED';
+          task.reasonCode = detail;
+          task.revision += 1;
+        }
+      }
+      return ok({ callId: call.id, eventId: event.eventId, type: event.type, at: event.at, detail: event.detail, progress: call.progress });
+    });
+  }
+
+  function callTaskSnapshot(state) {
+    const validation = validateCallTask(state);
+    return validation.ok ? ok(clone(pickCallTask(state))) : validation;
+  }
+
+  function loadCallTaskSnapshot(state, candidate) {
+    if (!plain(state)) return fail('INVALID_CALL_TASK');
+    const validation = validateCallTask(candidate);
+    if (!validation.ok) return validation;
+    const copied = clone(pickCallTask(candidate));
+    replaceCallTask(state, copied);
+    return ok(clone(copied));
+  }
+
+  function uniqueCallerBinding(state, normalizedCaller) {
+    if (!plain(state) || !Array.isArray(state.callerBindings) || typeof normalizedCaller !== 'string') return null;
+    const matches = state.callerBindings.filter(item => item && item.active === true && item.normalizedCaller === normalizedCaller);
+    return matches.length === 1 ? clone(matches[0]) : null;
+  }
+
+  function callTaskMutate(state, action) {
+    if (!plain(state)) return fail('INVALID_CALL_TASK');
+    let draft;
+    try { draft = clone(pickCallTask(state)); } catch (_) { return fail('INVALID_CALL_TASK'); }
+    let result;
+    try { result = action(draft); } catch (_) { return fail('INVALID_CALL_TASK'); }
+    if (!result) return fail('INVALID_CALL_TASK');
+    if (!result.ok) return result;
+    // Duplicate and guide outcomes can carry a deterministic expiry reaping
+    // side effect, so the validated draft (identical otherwise) replaces state.
+    const validation = validateCallTask(draft);
+    if (!validation.ok) return validation;
+    replaceCallTask(state, draft);
+    if (result.code === 'DUPLICATE') return duplicate(result.value);
+    return ok(clone(result.value), result.code);
+  }
+
+  function pickCallTask(state) {
+    const output = {};
+    for (const key of CALL_TASK_FIELDS) output[key] = state[key];
+    return output;
+  }
+
+  function replaceCallTask(state, source) {
+    for (const key of CALL_TASK_FIELDS) state[key] = source[key];
+  }
+
+  function nextCallTaskId(state, prefix) {
+    const collection = prefix === 'CT' ? state.tasks : state.calls;
+    const used = new Set(collection.map(item => item.id));
+    let sequence = state.sequence;
+    let candidate;
+    do {
+      if (sequence >= Number.MAX_SAFE_INTEGER) throw new Error('Call-task ID sequence exhausted');
+      sequence += 1;
+      candidate = `${prefix}-${sequence}`;
+    } while (used.has(candidate));
+    state.sequence = sequence;
+    return candidate;
+  }
+
+  function reapExpiredCallTasks(draft, normalizedCaller, now) {
+    const time = toMs(now);
+    for (const task of draft.tasks) {
+      if (task.normalizedCaller === normalizedCaller && task.status === 'PENDING' && time >= Date.parse(task.expiresAt)) {
+        task.status = 'EXPIRED';
+        task.reasonCode = 'TTL_EXPIRED';
+        task.revision += 1;
+      }
+    }
+  }
+
+  function decisionForCall(call) {
+    return {
+      action: call.action,
+      callId: call.id,
+      taskId: call.taskId,
+      taskMatch: call.taskMatch,
+      progress: call.progress,
+      maskedCallee: call.maskedCallee,
+      calleeConfirmation: call.calleeConfirmation,
+      taskPath: call.taskPath,
+    };
+  }
+
+  function findCallEvent(state, eventId) {
+    for (const call of state.calls) {
+      for (const event of call.events) {
+        if (event.eventId === eventId) return { call, event };
+      }
+    }
+    return null;
+  }
+
+  function allowedNextCallEvents(call) {
+    const last = call.events.length ? call.events[call.events.length - 1].type : null;
+    if (last === 'INBOUND_RECEIVED') return call.taskPath ? ['TASK_CLAIMED', 'CALL_FAILED'] : ['DTMF_CALLEE_CONFIRMED', 'CALL_FAILED'];
+    if (last === 'TASK_CLAIMED' || last === 'DTMF_CALLEE_CONFIRMED') return ['OUTBOUND_STARTED', 'CALL_FAILED'];
+    if (last === 'OUTBOUND_STARTED') return ['RINGING', 'CALL_FAILED'];
+    if (last === 'RINGING') return ['ANSWERED', 'CALL_FAILED'];
+    if (last === 'ANSWERED') return ['BRIDGED', 'CALL_FAILED'];
+    if (last === 'BRIDGED') return ['RECORDING_STARTED', 'CALL_FAILED'];
+    if (last === 'RECORDING_STARTED') return ['CALL_ENDED', 'CALL_FAILED'];
+    if (last === 'CALL_ENDED') return ['RECORDING_RECEIVED'];
+    if (last === 'RECORDING_RECEIVED') return ['EVIDENCE_PROCESSING'];
+    if (last === 'EVIDENCE_PROCESSING') return ['EVIDENCE_READY'];
+    return [];
+  }
+
+  function validateCallTask(candidate) {
+    if (!safeData(candidate) || !plain(candidate)) return fail('INVALID_CALL_TASK');
+    const keys = Object.keys(candidate).sort();
+    const allowed = [...CALL_TASK_FIELDS].sort();
+    if (keys.length !== allowed.length || keys.some((key, index) => key !== allowed[index])) return fail('INVALID_CALL_TASK');
+    if (candidate.schemaVersion !== CALL_TASK_SCHEMA_VERSION || candidate.ttlSeconds !== CALL_TASK_TTL_SECONDS) return fail('INVALID_CALL_TASK');
+    if (!safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER)) return fail('INVALID_CALL_TASK');
+    if (!Array.isArray(candidate.callerBindings) || !Array.isArray(candidate.tasks) || !Array.isArray(candidate.calls)) return fail('INVALID_CALL_TASK');
+    if (!unique(candidate.callerBindings) || !unique(candidate.tasks) || !unique(candidate.tasks, 'idempotencyKey') || !unique(candidate.calls)) return fail('INVALID_CALL_TASK');
+    for (const binding of candidate.callerBindings) if (!validCallerBinding(binding)) return fail('INVALID_CALL_TASK');
+    const bindingsById = new Map(candidate.callerBindings.map(item => [item.id, item]));
+    const tasksById = new Map(candidate.tasks.map(item => [item.id, item]));
+    const callsById = new Map(candidate.calls.map(item => [item.id, item]));
+    for (const task of candidate.tasks) {
+      if (!validCallTask(task, bindingsById)) return fail('INVALID_CALL_TASK');
+    }
+    const eventIds = new Set();
+    for (const call of candidate.calls) {
+      if (!validCall(call, tasksById, candidate.callerBindings, eventIds)) return fail('INVALID_CALL_TASK');
+    }
+    const nonterminalByCaller = new Map();
+    for (const task of candidate.tasks) {
+      if (!CALL_TASK_NONTERMINAL.has(task.status)) continue;
+      if (nonterminalByCaller.has(task.normalizedCaller)) return fail('INVALID_CALL_TASK');
+      nonterminalByCaller.set(task.normalizedCaller, task.id);
+    }
+    const activeByCaller = new Map();
+    for (const call of candidate.calls) {
+      if (!CALL_TASK_ACTIVE_PROGRESS.has(call.progress)) continue;
+      if (activeByCaller.has(call.normalizedCaller)) return fail('INVALID_CALL_TASK');
+      activeByCaller.set(call.normalizedCaller, call.id);
+    }
+    for (const task of candidate.tasks) {
+      if (['CLAIMED', 'COMPLETED', 'FAILED'].includes(task.status)) {
+        const call = callsById.get(task.claimedCallId);
+        if (!call || call.taskId !== task.id) return fail('INVALID_CALL_TASK');
+        if (task.status === 'CLAIMED' && !CALL_TASK_ACTIVE_PROGRESS.has(call.progress)) return fail('INVALID_CALL_TASK');
+        if (task.status === 'COMPLETED' && !['ENDED', 'RECORDING_RECEIVED', 'EVIDENCE_PROCESSING', 'EVIDENCE_READY'].includes(call.progress)) return fail('INVALID_CALL_TASK');
+        if (task.status === 'FAILED' && call.progress !== 'FAILED') return fail('INVALID_CALL_TASK');
+      }
+    }
+    return ok(true);
+  }
+
+  function validCallerBinding(binding) {
+    if (!exactKeys(binding, ['id', 'ownerType', 'ownerId', 'workspaceId', 'maskedCaller', 'normalizedCaller', 'numberType', 'active'])) return false;
+    if (!id(binding.id) || !CALL_TASK_ENUMS.ownerType.has(binding.ownerType) || !id(binding.ownerId) || !id(binding.workspaceId) || !textBetween(binding.maskedCaller, 1, 40) || !textBetween(binding.normalizedCaller, 1, 20) || !CALL_TASK_ENUMS.numberType.has(binding.numberType) || typeof binding.active !== 'boolean') return false;
+    if (binding.ownerType === 'PERSONAL_ACCOUNT' && binding.workspaceId !== `personal:${binding.ownerId}`) return false;
+    if (binding.ownerType === 'ORGANIZATION' && binding.workspaceId !== `organization:${binding.ownerId}`) return false;
+    return true;
+  }
+
+  function validCallTask(task, bindingsById) {
+    if (!exactKeys(task, ['id', 'callerBindingId', 'normalizedCaller', 'maskedCaller', 'maskedCallee', 'ownerType', 'ownerId', 'workspaceId', 'createdByAccountId', 'businessType', 'status', 'reasonCode', 'ttlSeconds', 'createdAt', 'expiresAt', 'dialerLaunchedAt', 'claimedCallId', 'claimedAt', 'idempotencyKey', 'revision'])) return false;
+    if (!id(task.id) || !id(task.callerBindingId) || !textBetween(task.normalizedCaller, 1, 20) || !textBetween(task.maskedCaller, 1, 40) || !textBetween(task.maskedCallee, 1, 40)) return false;
+    if (!CALL_TASK_ENUMS.ownerType.has(task.ownerType) || !id(task.ownerId) || !id(task.workspaceId) || !id(task.createdByAccountId)) return false;
+    if (!CALL_TASK_ENUMS.businessType.has(task.businessType) || !CALL_TASK_ENUMS.taskStatus.has(task.status)) return false;
+    if (task.reasonCode !== null && !CALL_TASK_REASONS.has(task.reasonCode)) return false;
+    if (task.ttlSeconds !== CALL_TASK_TTL_SECONDS) return false;
+    if (!date(task.createdAt) || !date(task.expiresAt) || Date.parse(task.expiresAt) - Date.parse(task.createdAt) !== CALL_TASK_TTL_SECONDS * 1000) return false;
+    if (task.dialerLaunchedAt !== null && !date(task.dialerLaunchedAt)) return false;
+    if (!id(task.idempotencyKey) || !safePositive(task.revision)) return false;
+    const binding = bindingsById.get(task.callerBindingId);
+    if (!binding || binding.normalizedCaller !== task.normalizedCaller || binding.maskedCaller !== task.maskedCaller || binding.ownerType !== task.ownerType || binding.ownerId !== task.ownerId || binding.workspaceId !== task.workspaceId) return false;
+    if (task.status === 'PENDING') {
+      if (task.reasonCode !== null || task.claimedCallId !== null || task.claimedAt !== null) return false;
+    } else if (task.status === 'CLAIMED') {
+      if (task.reasonCode !== null || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else if (task.status === 'COMPLETED') {
+      if (task.reasonCode !== null || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else if (task.status === 'FAILED') {
+      if (!CALL_TASK_FAILURE_REASONS.has(task.reasonCode) || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else {
+      if (task.claimedCallId !== null || task.claimedAt !== null) return false;
+      if (task.status === 'EXPIRED' && task.reasonCode !== 'TTL_EXPIRED') return false;
+      if (task.status === 'REPLACED' && task.reasonCode !== 'REPLACED') return false;
+      if (task.status === 'CANCELLED' && task.reasonCode !== 'CANCELLED') return false;
+      if (task.status === 'REJECTED' && !['SUSPENDED', 'CALLER_MISMATCH'].includes(task.reasonCode)) return false;
+    }
+    if (task.claimedAt !== null && (Date.parse(task.claimedAt) < Date.parse(task.createdAt) || Date.parse(task.claimedAt) >= Date.parse(task.expiresAt))) return false;
+    return true;
+  }
+
+  function validCall(call, tasksById, callerBindings, eventIds) {
+    if (!exactKeys(call, ['id', 'taskId', 'taskMatch', 'action', 'taskPath', 'normalizedCaller', 'expectedCallerMasked', 'maskedCaller', 'maskedCallee', 'calleeConfirmation', 'progress', 'endReason', 'recordingSeconds', 'uploadStatus', 'evidenceStatus', 'events'])) return false;
+    if (!id(call.id) || !textBetween(call.normalizedCaller, 1, 20) || !textBetween(call.maskedCaller, 1, 40)) return false;
+    if (call.expectedCallerMasked !== null && !textBetween(call.expectedCallerMasked, 1, 40)) return false;
+    if (call.maskedCallee !== null && !textBetween(call.maskedCallee, 1, 40)) return false;
+    if (!CALL_TASK_ENUMS.callAction.has(call.action) || !CALL_TASK_ENUMS.taskMatch.has(call.taskMatch) || !CALL_TASK_ENUMS.calleeConfirmation.has(call.calleeConfirmation)) return false;
+    if (!CALL_TASK_ENUMS.callProgress.has(call.progress) || !CALL_TASK_ENUMS.upload.has(call.uploadStatus) || !CALL_TASK_ENUMS.evidence.has(call.evidenceStatus)) return false;
+    if (typeof call.taskPath !== 'boolean' || !safeBetween(call.recordingSeconds, 0, 86400)) return false;
+    if (call.endReason !== null && !CALL_TASK_REASONS.has(call.endReason)) return false;
+    if (call.taskId !== null && !id(call.taskId)) return false;
+    if (call.taskPath !== (call.taskId !== null)) return false;
+    if (!Array.isArray(call.events) || !call.events.length) return false;
+    for (const [index, event] of call.events.entries()) {
+      if (!exactKeys(event, ['eventId', 'type', 'at', 'source', 'detail']) || !id(event.eventId) || !CALL_TASK_ENUMS.eventType.has(event.type) || !date(event.at) || !CALL_TASK_ENUMS.eventSource.has(event.source) || typeof event.detail !== 'string' || event.detail.length > 120) return false;
+      if (eventIds.has(event.eventId)) return false;
+      eventIds.add(event.eventId);
+      if (index === 0) {
+        if (event.type !== 'INBOUND_RECEIVED' || event.source !== 'IVR') return false;
+        continue;
+      }
+      if (!allowedNextCallEvents({ events: call.events.slice(0, index), taskPath: call.taskPath }).includes(event.type)) return false;
+      if (Date.parse(event.at) < Date.parse(call.events[index - 1].at)) return false;
+      if (event.type === 'CALL_FAILED') {
+        if (!CALL_TASK_FAILURE_REASONS.has(event.detail)) return false;
+        if (event.source !== 'IVR' && event.source !== 'ONECALL') return false;
+      } else if (CALL_TASK_EVENT_SOURCE[event.type] !== event.source) return false;
+    }
+    const has = type => call.events.some(event => event.type === type);
+    const last = call.events[call.events.length - 1];
+    const derivedProgress = last.type === 'INBOUND_RECEIVED' ? (call.action === 'ENTER_CALLEE' ? 'WAITING_CALLEE_INPUT' : 'WAITING_INBOUND') : CALL_TASK_EVENT_PROGRESS[last.type];
+    if (call.progress !== derivedProgress) return false;
+    const derivedUpload = has('RECORDING_RECEIVED') ? 'RECEIVED' : 'NOT_STARTED';
+    const derivedEvidence = has('EVIDENCE_READY') ? 'AVAILABLE' : has('EVIDENCE_PROCESSING') ? 'PROCESSING' : 'NOT_CREATED';
+    if (call.uploadStatus !== derivedUpload || call.evidenceStatus !== derivedEvidence) return false;
+    if (call.action === 'DIAL_TASK_CALLEE') {
+      if (!call.taskPath || call.taskMatch !== 'CLAIMED' || call.calleeConfirmation !== 'NONE' || !call.maskedCallee) return false;
+      const task = tasksById.get(call.taskId);
+      if (!task || task.claimedCallId !== call.id || task.normalizedCaller !== call.normalizedCaller || task.maskedCallee !== call.maskedCallee || task.maskedCaller !== call.expectedCallerMasked) return false;
+      if (!has('TASK_CLAIMED') || !call.events.some(event => event.type === 'TASK_CLAIMED' && event.at === task.claimedAt)) return false;
+    } else if (call.action === 'ENTER_CALLEE') {
+      if (call.taskPath || call.taskMatch !== 'NONE' || call.taskId !== null || call.expectedCallerMasked !== null) return false;
+      if (call.calleeConfirmation === 'DTMF_REQUIRED') {
+        if (call.progress !== 'WAITING_CALLEE_INPUT' || has('DTMF_CALLEE_CONFIRMED') || call.maskedCallee !== null) return false;
+      } else if (call.calleeConfirmation === 'DTMF_CONFIRMED') {
+        if (call.progress === 'WAITING_CALLEE_INPUT' || !has('DTMF_CALLEE_CONFIRMED') || !call.maskedCallee) return false;
+      } else return false;
+    } else {
+      if (call.progress !== 'FAILED' || call.calleeConfirmation !== 'NOT_APPLICABLE' || call.maskedCallee !== null || !call.endReason) return false;
+      if (call.taskId !== null) {
+        const task = tasksById.get(call.taskId);
+        if (!task || call.taskMatch !== 'MISMATCH' || task.claimedCallId === call.id) return false;
+        if (call.expectedCallerMasked === null || call.expectedCallerMasked === call.maskedCaller) return false;
+      } else if (call.taskMatch !== 'NONE') return false;
+    }
+    if (call.progress === 'FAILED') {
+      if (!has('CALL_FAILED') || call.endReason !== last.detail) return false;
+      const failureIndex = call.events.findIndex(event => event.type === 'CALL_FAILED');
+      const beforeBridge = !call.events.slice(0, failureIndex).some(event => event.type === 'BRIDGED');
+      if (beforeBridge && (call.recordingSeconds !== 0 || call.uploadStatus !== 'NOT_STARTED' || call.evidenceStatus !== 'NOT_CREATED')) return false;
+    } else if (call.endReason !== null) return false;
+    if (has('CALL_ENDED')) {
+      if (!has('RECORDING_STARTED')) return false;
+      if (call.uploadStatus === 'RECEIVED' && call.recordingSeconds <= 0) return false;
+    } else if (call.recordingSeconds !== 0) return false;
+    if (has('EVIDENCE_READY') && !has('EVIDENCE_PROCESSING')) return false;
+    if (has('EVIDENCE_PROCESSING') && call.uploadStatus !== 'RECEIVED') return false;
+    if (has('RECORDING_RECEIVED') && !has('CALL_ENDED')) return false;
+    const binding = uniqueBindingFromList(callerBindings, call.normalizedCaller);
+    if (binding && binding.maskedCaller !== call.maskedCaller) return false;
+    return true;
+  }
+
+  function uniqueBindingFromList(callerBindings, normalizedCaller) {
+    const matches = callerBindings.filter(item => item.active === true && item.normalizedCaller === normalizedCaller);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
   function validateState(candidate) {
     if (!safeData(candidate) || !plain(candidate)) return fail('INVALID_TRANSITION');
     const keys = Object.keys(candidate).sort();
@@ -1776,6 +2439,18 @@
     trialStatus,
     snapshot,
     loadReviewSnapshot,
+    CALL_TASK_TTL_SECONDS,
+    createCallTaskDemoState,
+    createCallTask,
+    cancelCallTask,
+    recordDialerLaunch,
+    resolveIvrInbound,
+    confirmDirectCallee,
+    recordCallFact,
+    callTaskSnapshot,
+    loadCallTaskSnapshot,
+    validateCallTask,
+    uniqueCallerBinding,
   });
 });
 </script>
@@ -1842,13 +2517,13 @@
     ];
 
     const evidence = [
-      { id:'OC-E1042', type:'call', name:'与王经理｜设备款支付确认', source:'运营商电话', time:'今天 10:26', size:'08:42', status:'已存证', ai:'已生成', matter:'设备采购争议', owner:'李晓', dept:'采购部' },
+      { id:'OC-E1042', type:'call', name:'与王经理｜设备款支付确认', source:'IVR 通话录音', time:'今天 10:26', size:'08:42', status:'已存证', ai:'已生成', matter:'设备采购争议', owner:'李晓', dept:'采购部' },
       { id:'OC-E1041', type:'photo', name:'设备到货外包装照片', source:'现场拍照', time:'今天 09:18', size:'4.8 MB', status:'已存证', ai:'未处理', matter:'设备采购争议', owner:'陈雨', dept:'采购部' },
       { id:'OC-E1040', type:'video', name:'开箱及设备损坏录像', source:'现场录像', time:'昨天 17:43', size:'124 MB', status:'已存证', ai:'处理中', matter:'设备采购争议', owner:'陈雨', dept:'采购部' },
       { id:'OC-E1039', type:'audio', name:'现场交付沟通录音', source:'现场录音', time:'昨天 16:20', size:'12:16', status:'已存证', ai:'已生成', matter:'设备采购争议', owner:'李晓', dept:'法务部' },
       { id:'OC-E1038', type:'file', name:'采购合同及补充协议.pdf', source:'微信文件', time:'10 月 18 日 14:02', size:'2.1 MB', status:'已存证', ai:'未处理', matter:'设备采购争议', owner:'李晓', dept:'法务部' },
       { id:'OC-E1037', type:'screenshot', name:'交付日期确认聊天截图', source:'聊天截图', time:'10 月 18 日 11:35', size:'1.6 MB', status:'存证重试中', ai:'未处理', matter:'设备采购争议', owner:'陈雨', dept:'采购部' },
-      { id:'OC-E1036', type:'call', name:'与供应商｜换货送达时间确认', source:'运营商电话', time:'10 月 17 日 15:08', size:'12:24', status:'已存证', ai:'已生成', matter:'设备采购争议', owner:'陈雨', dept:'采购部' }
+      { id:'OC-E1036', type:'call', name:'与供应商｜换货送达时间确认', source:'IVR 通话录音', time:'10 月 17 日 15:08', size:'12:24', status:'已存证', ai:'已生成', matter:'设备采购争议', owner:'陈雨', dept:'采购部' }
     ];
 
     const calls = [
@@ -1916,6 +2591,7 @@
     ];
     const B=window.OnecallBusiness, cloneBusiness=value=>JSON.parse(JSON.stringify(value));
     const business=B.createDemoState(new Date());
+    const callTaskState=B.createCallTaskDemoState(new Date());
     function seedWebNumber(id,maskedNumber,numberType,accountId,at){
       business.subjects.push({id,maskedNumber,numberType,source:'WEB',accountId,identity:'VERIFIED',activation:'INACTIVE',revision:1,claimRisk:'NONE'});
       const result=B.activateService(business,{subjectId:id,channel:'WEB',verified:true,consentVersion:B.labels.consentVersion,confirmed:true,eventId:'WEB-SEED-ACTIVATE-'+id},new Date(at));
@@ -1975,9 +2651,9 @@
       {id:'auth-6208',number:'138 **** 6208',type:'手机号',space:'personal',subjectId:'WEB-ACCOUNT-001',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-01 08:56:12',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261001-0087',activationRecord:webAccountActivation.id,activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
       {id:'auth-7812',number:'139 **** 7812',type:'手机号',space:'enterprise',subjectId:'WEB-MEMBER-1397812',version:'ONECALL-SERVICE-2026.09',consentedAt:'2026-09-03 09:42:28',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'陈雨 · 华启科技',device:'iPhone 16 · 微信小程序',ip:'运营商网络 · 已脱敏',requestId:'REQ-AUTH-20260903-0412',activationRecord:webMember7812Activation.id,activationStatus:'已开通',requiresReconfirm:true,consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
       {id:'auth-3360',number:'186 **** 3360',type:'手机号',space:'enterprise',subjectId:'WEB-MEMBER-1863360',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-02 10:20:44',scope:'敏感个人信息处理、内部录音服务、必要数据共享',account:'周宁 · 华启科技',device:'iPhone 15 · 微信小程序',ip:'运营商网络 · 已脱敏',requestId:'REQ-AUTH-20261002-0158',activationRecord:webMember3360Activation.id,activationStatus:'已开通',consentItems:['身份与号码信息用于验证、录音、固证和公证资格核验','授权一通话提供录音取证、固证及存证服务','允许向运营商和公证处存证平台共享完成服务所需数据']},
-      {id:'auth-6688',number:'010 **** 6688',type:'独立固话',space:'enterprise',subjectId:'WEB-LANDLINE-0106688',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0921',activationRecord:webLandline6688Activation.id,activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
-      ,{id:'auth-personal-6688',number:'010 **** 6688',type:'独立固话',space:'personal',subjectId:'WEB-LANDLINE-0106688',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'号码实际使用确认、真实主叫校验、内部录音服务和必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0920',activationRecord:webLandline6688Activation.id,activationStatus:'已开通',consentItems:['确认绑定号码由本人实际使用','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
-      ,{id:'auth-9056',number:'021 **** 9056',type:'独立固话',space:'enterprise',subjectId:'WEB-LANDLINE-0219056',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-06 09:36:21',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261006-0176',activationRecord:webLandline9056Activation.id,activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权运营商校验真实主叫并在通信网络侧生成录音','允许向运营商和公证处存证平台共享完成服务所需数据']}
+      {id:'auth-6688',number:'010 **** 6688',type:'独立固话',space:'enterprise',subjectId:'WEB-LANDLINE-0106688',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0921',activationRecord:webLandline6688Activation.id,activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权自研 IVR 读取经运营商线路传递的可信主叫并完成录音与上传','允许向运营商和公证处存证平台共享完成服务所需数据']}
+      ,{id:'auth-personal-6688',number:'010 **** 6688',type:'独立固话',space:'personal',subjectId:'WEB-LANDLINE-0106688',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-05 16:08:03',scope:'号码实际使用确认、真实主叫校验、内部录音服务和必要数据共享',account:'李晓 · 个人账户',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261005-0920',activationRecord:webLandline6688Activation.id,activationStatus:'已开通',consentItems:['确认绑定号码由本人实际使用','授权自研 IVR 读取经运营商线路传递的可信主叫并完成录音与上传','允许向运营商和公证处存证平台共享完成服务所需数据']}
+      ,{id:'auth-9056',number:'021 **** 9056',type:'独立固话',space:'enterprise',subjectId:'WEB-LANDLINE-0219056',version:'ONECALL-SERVICE-2026.10',consentedAt:'2026-10-06 09:36:21',scope:'合法使用声明、真实主叫校验、内部录音服务和必要数据共享',account:'华启科技有限公司',device:'Windows 11 · Edge 128',ip:'180.166.24.***',requestId:'REQ-AUTH-20261006-0176',activationRecord:webLandline9056Activation.id,activationStatus:'已开通',consentItems:['确认组织对该独立固话号码具有合法使用权','授权自研 IVR 读取经运营商线路传递的可信主叫并完成录音与上传','允许向运营商和公证处存证平台共享完成服务所需数据']}
     ];
     const authorizationEvents=[];
     const exportJobs=[
@@ -2011,6 +2687,61 @@
       if(isEnterpriseMember()) return calls.filter(item=>item.owner===enterpriseProfile().name);
       if(isEvidenceManager()) return calls.filter(item=>item.dept===enterpriseProfile().dept);
       return [];
+    }
+    function taskDiagnosticVisible(task){
+      if(!hasWorkspaceDemoData()||!task)return false;
+      if(isEnterprise()) return task.workspaceId===state.currentWorkspaceId;
+      return task.ownerType==='PERSONAL_ACCOUNT'&&task.ownerId===state.accountId&&task.workspaceId==='personal:'+state.accountId;
+    }
+    function callDiagnosticVisible(call){
+      if(!hasWorkspaceDemoData()||!call)return false;
+      const binding=B.uniqueCallerBinding(callTaskState,call.normalizedCaller);
+      if(!binding||binding.active!==true)return false;
+      if(isEnterprise()){
+        if(binding.workspaceId!==state.currentWorkspaceId)return false;
+        // Diagnostics obey the same role/dept visibility as the historical call table.
+        return !!visibleCalls().find(item=>item.id===call.id);
+      }
+      return binding.ownerType==='PERSONAL_ACCOUNT'&&binding.ownerId===state.accountId&&binding.workspaceId==='personal:'+state.accountId;
+    }
+    function visibleTaskDiagnostics(){ return callTaskState.tasks.filter(taskDiagnosticVisible); }
+    function visibleCallDiagnostics(){ return callTaskState.calls.filter(callDiagnosticVisible); }
+    function callDiagnostic(callId){ return callTaskState.calls.find(item=>item.id===callId)||null; }
+    function taskStatusTone(task){ return task.status==='COMPLETED'?'success':task.status==='FAILED'||task.status==='EXPIRED'?'error':task.status==='CLAIMED'?'info':'neutral'; }
+    function callProgressTone(call){ return call.progress==='EVIDENCE_READY'?'success':call.progress==='FAILED'?'error':call.progress==='CLAIMED'?'info':'neutral'; }
+    function callDecisionLine(callId){
+      const diag=callDiagnostic(callId);
+      if(!diag||!callDiagnosticVisible(diag))return '<div class="micro">本地任务诊断不可见</div>';
+      if(diag.action==='DIAL_TASK_CALLEE'&&diag.progress==='FAILED'&&diag.endReason==='NO_ANSWER')return '<div class="micro">'+diag.taskId+' · 已领取 · 被叫未接 · 未形成证据</div>';
+      if(diag.action==='DIAL_TASK_CALLEE'&&diag.progress==='FAILED')return '<div class="micro">'+diag.taskId+' · 已领取 · 通话失败 · 未形成证据</div>';
+      if(diag.action==='DIAL_TASK_CALLEE')return '<div class="micro">'+diag.taskId+' · 已领取 · 自动外呼（无需确认被叫）</div>';
+      if(diag.taskMatch==='MISMATCH')return '<div class="micro">任务过期 · 未外呼 · 主叫不一致</div>';
+      if(diag.action==='ENTER_CALLEE')return '<div class="micro">无任务 · DTMF 输入并确认被叫</div>';
+      return '<div class="micro">'+B.labels.ivrAction[diag.action]+'</div>';
+    }
+    function callEventLabel(type){
+      return {INBOUND_RECEIVED:'自研 IVR 接听呼入',TASK_CLAIMED:'ONECALL 原子领取任务',DTMF_CALLEE_CONFIRMED:'自研 IVR 收到 DTMF 被叫确认',OUTBOUND_STARTED:'自研 IVR 启动 B 路外呼（无需确认被叫）',RINGING:'被叫振铃',ANSWERED:'被叫接听',BRIDGED:'A/B 桥接',RECORDING_STARTED:'自研 IVR 开始录音',CALL_ENDED:'通话结束',RECORDING_RECEIVED:'ONECALL 接收录音上传',EVIDENCE_PROCESSING:'ONECALL 证据处理中',EVIDENCE_READY:'ONECALL 证据可用',CALL_FAILED:'通话失败'}[type]||type;
+    }
+    function callEventSourceLabel(source){ return {MINI:'小程序',IVR:'自研 IVR',ONECALL:'ONECALL'}[source]||source; }
+    function callFailureLine(diag){
+      if(!diag||diag.progress!=='FAILED')return '';
+      const reason=diag.endReason||'';
+      const text=reason==='TTL_EXPIRED'?'任务过期 · 未领取 · 未外呼 · 未形成证据':reason==='CALLER_MISMATCH'?'主叫不一致 · 未领取任务 · 未外呼 · 未形成证据 · 未扣录音额度':reason==='NO_ANSWER'?'被叫未接 · 未形成证据 · 未扣录音额度':'通话失败 · 未形成证据 · 未扣录音额度';
+      return '<div class="notice" style="margin-top:12px">'+icon('phone-off')+'<span>'+text+'</span></div>';
+    }
+    function callDiagnosticsHtml(diag){
+      if(!diag||!callDiagnosticVisible(diag))return '';
+      const task=diag.taskId?callTaskState.tasks.find(item=>item.id===diag.taskId):null;
+      const pathCopy=diag.taskPath?B.labels.callPath.task:B.labels.callPath.noTask;
+      const taskBlock=task?'<div class="meta-list">'+meta('任务 ID',task.id)+meta('任务状态',B.labels.taskStatus[task.status])+meta('冻结 / 到期',task.ttlSeconds+' 秒 · '+task.expiresAt.replace('T',' ').slice(0,19))+meta('领取 callId',task.claimedCallId||'未领取')+meta('小程序拨号盘',task.dialerLaunchedAt?'已打开（仅客户端）':'未打开')+'</div>':'<div class="meta-list">'+meta('任务','无任务')+meta('确认方式','DTMF 输入并确认被叫')+'</div>';
+      return '<section class="panel" id="call-task-diagnostics" data-readonly="true"><div class="panel-head"><div><h2>任务与 IVR 诊断（只读）</h2><p>本地评审 fixture；不连接真实线路、媒体引擎或后台。</p></div>'+status('只读','info','lock-keyhole')+'</div><div class="panel-body">'+taskBlock+'<div class="meta-list">'+meta('决策 / 匹配',B.labels.ivrAction[diag.action]+' · '+B.labels.taskMatch[diag.taskMatch])+meta('呼叫进度',B.labels.callProgress[diag.progress])+meta('被叫确认',diag.calleeConfirmation==='NONE'?'无需确认被叫（任务自动外呼）':diag.calleeConfirmation==='DTMF_CONFIRMED'?'已通过 DTMF 确认':diag.calleeConfirmation==='DTMF_REQUIRED'?'等待 DTMF 输入':'不适用')+meta('IVR 可信主叫（线路传递）',diag.maskedCaller)+meta('IVR 权威录音时长',diag.recordingSeconds+' 秒')+meta('录音上传',B.labels.uploadStatus[diag.uploadStatus])+meta('ONECALL 证据处理',B.labels.evidenceStatus[diag.evidenceStatus])+'</div><div class="notice" style="margin-top:12px">'+icon('route')+'<span>'+pathCopy+'</span></div>'+callFailureLine(diag)+'<p class="micro" style="margin-top:12px">呼叫级证据状态仅为诊断投影；权威证据列表来自业务 evidence。</p><div class="notice">'+icon('info')+'<span>'+B.labels.ownership+'</span></div></div></section>';
+    }
+    function callTaskPanelHtml(){
+      const tasks=visibleTaskDiagnostics();
+      const calls=visibleCallDiagnostics();
+      const taskTable=tasks.length?'<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>主叫</th><th>归属 / 空间</th><th>状态</th><th>冻结</th><th>到期</th><th>领取 callId</th><th>小程序拨号盘</th></tr></thead><tbody>'+tasks.map(task=>'<tr data-call-path="task" data-callee-confirmation="NONE"><td class="mono">'+task.id+'</td><td>'+task.maskedCaller+'</td><td class="micro">'+task.ownerType+' · '+task.workspaceId+'</td><td>'+status(B.labels.taskStatus[task.status],taskStatusTone(task),'circle-check')+'</td><td class="mono">30 秒</td><td class="mono">'+task.expiresAt.replace('T',' ').slice(0,19)+'</td><td class="mono">'+(task.claimedCallId||'—')+'</td><td class="mono">'+(task.dialerLaunchedAt?'已打开':'未打开')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">当前账户/空间没有可见的待拨任务诊断记录。</p>';
+      const callTable=calls.length?'<div class="table-wrap"><table><thead><tr><th>callId</th><th>任务 / 无任务</th><th>决策 / 匹配</th><th>进度</th><th>录音秒</th><th>录音上传</th><th>证据处理</th><th>结束原因</th></tr></thead><tbody>'+calls.map(call=>'<tr data-call-path="'+(call.taskPath?'task':'no-task')+'" data-callee-confirmation="'+call.calleeConfirmation+'"><td class="mono">'+call.id+'</td><td>'+(call.taskId||'无任务')+'</td><td>'+B.labels.ivrAction[call.action]+'<div class="micro">'+B.labels.taskMatch[call.taskMatch]+'</div></td><td>'+status(B.labels.callProgress[call.progress],callProgressTone(call),call.progress==='FAILED'?'circle-x':'circle-check')+'</td><td class="mono">'+call.recordingSeconds+'</td><td>'+B.labels.uploadStatus[call.uploadStatus]+'</td><td>'+B.labels.evidenceStatus[call.evidenceStatus]+'</td><td>'+(call.endReason||'—')+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">当前账户/空间没有可见的呼叫诊断记录。</p>';
+      return '<section class="panel" id="call-diagnostics" data-readonly="true"><div class="panel-head"><div><h2>任务与 IVR 诊断（只读）</h2><p>本地评审 fixture；不连接真实线路、媒体引擎或后台。每个任务创建时冻结 30 秒，过期不可领取或外呼。</p></div>'+status('只读','info','lock-keyhole')+'</div><div class="panel-body"><div class="notice" data-call-path="task" data-callee-confirmation="NONE">'+icon('route')+'<span>DIAL_TASK_CALLEE · 任务自动外呼；无需确认被叫。'+B.labels.callPath.task+'</span></div><div class="notice" data-call-path="no-task" data-callee-confirmation="DTMF_REQUIRED">'+icon('route')+'<span>ENTER_CALLEE · 无任务路径使用 DTMF 输入并确认被叫。'+B.labels.callPath.noTask+'</span></div><h3 class="setting-title" style="margin-top:16px">任务诊断</h3>'+taskTable+'<h3 class="setting-title" style="margin-top:16px">呼叫 / IVR / 证据诊断</h3>'+callTable+'<div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+B.labels.ownership+'</span></div><p class="micro">本面板只读，不提供浏览器拨号、任务编辑、重试上传或标记证据完成。</p></div></section>';
     }
     function showsOrganizationOwner(){ return isEnterpriseAdmin()||isEvidenceManager(); }
     function canShareCall(call){
@@ -2226,7 +2957,7 @@
       const models={
         photo:{file:'IMG_20261019_091812.jpg',format:'JPEG · 4032 × 3024',formed:'2026-10-19 09:18:12',received:'2026-10-19 09:18:46',extra:['位置状态','用户未授权位置'],note:'该照片由小程序现场拍摄流程产生；平台不对画面内容或人物身份作真实性判断。',preview:'<div class="media-preview"><div class="media-preview-inner photo-scene"></div></div>',derived:'图片 OCR 尚未正式开放。当前仅保留原始图片和固证信息，不展示模拟识别结果。',event:'现场拍摄完成',eventDetail:'由小程序相机生成原始 JPEG 文件'},
         video:{file:'VID_20261018_174302.mp4',format:'MP4 · H.264 · 1920 × 1080',formed:'2026-10-18 17:43:02',received:'2026-10-18 17:45:31',extra:['视频时长','02:36'],note:'预览使用转码副本；原始视频、声音轨和容器信息保持不可变。',preview:'<div class="media-preview video-frame"><div class="media-preview-inner"><button class="play-button" aria-label="播放视频预览">'+icon('play')+'</button><strong>开箱及设备损坏录像</strong><span>预览副本 · 02:36 · 720p</span></div></div>',derived:'视频关键帧正在提取，AI 状态为“处理中”；处理失败不会影响原始视频和固证记录。',event:'现场录像完成',eventDetail:'小程序相机生成原始 MP4 文件'},
-        audio:{file:'AUD_20261018_162011.m4a',format:'M4A · AAC · 48 kHz',formed:'2026-10-18 16:20:11',received:'2026-10-18 16:32:48',extra:['录音时长','12:16'],note:'现场录音来自小程序本地录制，不是运营商网络侧通话录音。',preview:'<div class="media-preview"><div class="media-preview-inner">'+icon('mic-2')+'<strong>现场交付沟通录音</strong><span>播放副本 · 12:16 · 1.0×</span><div class="audio-track" style="width:80%;margin-top:22px"><div class="audio-progress" style="width:24%"></div></div></div></div>',derived:'已生成现场录音逐字稿 v1，共识别 2 位说话人；AI 原结果不可覆盖，纠错将作为新注释保存。',event:'现场录音结束',eventDetail:'小程序录音组件生成原始 M4A 文件'},
+        audio:{file:'AUD_20261018_162011.m4a',format:'M4A · AAC · 48 kHz',formed:'2026-10-18 16:20:11',received:'2026-10-18 16:32:48',extra:['录音时长','12:16'],note:'现场录音来自小程序本地录制，不是自研 IVR 通话录音。',preview:'<div class="media-preview"><div class="media-preview-inner">'+icon('mic-2')+'<strong>现场交付沟通录音</strong><span>播放副本 · 12:16 · 1.0×</span><div class="audio-track" style="width:80%;margin-top:22px"><div class="audio-progress" style="width:24%"></div></div></div></div>',derived:'已生成现场录音逐字稿 v1，共识别 2 位说话人；AI 原结果不可覆盖，纠错将作为新注释保存。',event:'现场录音结束',eventDetail:'小程序录音组件生成原始 M4A 文件'},
         file:{file:'采购合同及补充协议.pdf',format:'PDF/A · 18 页',formed:'2026-10-18 14:02:16',received:'2026-10-18 14:03:04',extra:['来源说明','微信会话文件导出'],note:'文件来源由用户陈述；平台保存接收记录与哈希，不把来源说明标记为已核验事实。',preview:'<article class="document-preview"><h3>采购合同及补充协议</h3><p>甲方：华启科技有限公司</p><p>乙方：设备供应商</p><p>本补充协议用于明确交付、验收、换货与尾款支付条件。</p><p class="signature">第 1 / 18 页</p></article>',derived:'文档文本提取未启用；页面不展示未经真实处理生成的模拟 OCR 或摘要。',event:'文件导入完成',eventDetail:'用户从微信会话选择原始 PDF 文件'},
         screenshot:{file:'WX_Chat_20261018_1135.png',format:'PNG · 1170 × 2532',formed:'2026-10-18 11:35:09',received:'2026-10-18 11:36:22',extra:['来源说明','用户从原会话截取'],note:'聊天截图只反映画面内容，不证明账号身份或完整会话上下文；出证时可要求补充原设备或其他材料。',preview:'<div class="media-preview"><div class="media-preview-inner chat-preview"><div class="chat-bubble">替换设备预计什么时候送到？</div><div class="chat-bubble mine">请在 10 月 25 日前完成。</div><div class="chat-bubble">好的，我们按这个时间安排。</div></div></div>',derived:'当前未对聊天截图执行 OCR 或联系人识别；避免把截图中的昵称自动认定为真实身份。',event:'聊天截图导入',eventDetail:'用户确认来源并上传 PNG 文件'}
       };
@@ -2254,12 +2985,13 @@
     function callsPage() {
       const enterprise=showsOrganizationOwner();
       const title=isEnterpriseMember()?'我的通话录音':isEvidenceManager()?'授权部门录音':'通话录音与呼叫记录';
-      const description=isEvidenceManager()?'仅展示法务部授权范围内的呼叫记录；实际主叫以运营商结果为准。':isEnterpriseMember()?'只展示本人发起且归属可确认的呼叫记录。':'有效录音和未形成证据的呼叫分开标记，实际主叫以运营商结果为准。';
+      const description=isEvidenceManager()?'仅展示法务部授权范围内的呼叫记录；可信主叫来自自研 IVR 的线路传递结果。':isEnterpriseMember()?'只展示本人发起且归属可确认的呼叫记录；可信主叫来自自研 IVR 的线路传递结果。':'有效录音和未形成证据的呼叫分开标记；可信主叫来自自研 IVR 的线路传递结果。';
       return head(title,description,button('导出筛选结果','download','data-action="toast" data-message="导出任务已创建，将按当前权限范围生成脱敏清单"')+button('管理主叫号码','contact','data-route="numbers"','primary'))+
+        callTaskPanelHtml()+
         '<div class="toolbar"><label class="search-field">'+icon('search')+'<input class="input" id="call-search" placeholder="搜索主叫、被叫或会话编号"></label><select class="select"><option>全部呼叫结果</option><option>已形成证据</option><option>未接通</option><option>主叫校验失败</option></select><select class="select"><option>全部接入方式</option><option>小程序拨号</option><option>声讯短号</option></select>'+(isEnterpriseAdmin()?'<select class="select"><option>全部部门</option><option>采购部</option><option>法务部</option><option>销售部</option></select>':'')+'</div>'+callTable(visibleCalls(),enterprise);
     }
 
-    function callTable(rows,enterprise){ return '<div class="table-wrap"><table><thead><tr><th>呼叫时间</th><th>实际主叫</th><th>被叫</th><th>号码/接入</th>'+(enterprise?'<th>部门/成员</th>':'')+'<th>录音时长</th><th>呼叫结果</th><th>AI</th><th>会话编号</th><th></th></tr></thead><tbody>'+rows.map(c=>'<tr><td class="mono">'+c.time+'</td><td><strong>'+c.caller+'</strong>'+(c.selected!=='—'&&c.selected!==c.caller?'<div class="micro">所选 '+c.selected+'</div>':'')+'</td><td>'+c.callee+'</td><td>'+c.type+'<div class="micro">'+c.access+'</div></td>'+(enterprise?'<td>'+c.dept+'<div class="micro">'+c.owner+'</div></td>':'')+'<td class="mono">'+c.duration+'</td><td>'+status(c.result,c.result==='已形成证据'?'success':c.result==='主叫不一致'?'error':'neutral',c.result==='已形成证据'?'circle-check':c.result==='主叫不一致'?'circle-x':'phone-missed')+'</td><td>'+(c.ai==='已生成'?status(c.ai,'info','sparkles'):'<span class="muted">—</span>')+'</td><td class="mono">'+c.id+'</td><td><button class="icon-button" data-call-id="'+c.id+'" aria-label="查看呼叫详情">'+icon('chevron-right')+'</button></td></tr>').join('')+'</tbody></table></div>'; }
+    function callTable(rows,enterprise){ return '<div class="table-wrap"><table><thead><tr><th>呼叫时间</th><th>实际主叫</th><th>被叫</th><th>号码/接入</th>'+(enterprise?'<th>部门/成员</th>':'')+'<th>录音时长</th><th>呼叫结果</th><th>AI</th><th>会话编号</th><th></th></tr></thead><tbody>'+rows.map(c=>'<tr><td class="mono">'+c.time+'</td><td><strong>'+c.caller+'</strong>'+(c.selected!=='—'&&c.selected!==c.caller?'<div class="micro">所选 '+c.selected+'</div>':'')+'</td><td>'+c.callee+'</td><td>'+c.type+'<div class="micro">'+c.access+'</div></td>'+(enterprise?'<td>'+c.dept+'<div class="micro">'+c.owner+'</div></td>':'')+'<td class="mono">'+c.duration+'</td><td>'+status(c.result,c.result==='已形成证据'?'success':c.result==='主叫不一致'?'error':'neutral',c.result==='已形成证据'?'circle-check':c.result==='主叫不一致'?'circle-x':'phone-missed')+callDecisionLine(c.id)+'</td><td>'+(c.ai==='已生成'?status(c.ai,'info','sparkles'):'<span class="muted">—</span>')+'</td><td class="mono">'+c.id+'</td><td><button class="icon-button" data-call-id="'+c.id+'" aria-label="查看呼叫详情">'+icon('chevron-right')+'</button></td></tr>').join('')+'</tbody></table></div>'; }
 
     function aiDetailBody(c,valid){
       if(!valid) return '<section class="panel empty">'+icon('audio-lines')+'<div><h3>本次呼叫没有形成录音</h3><p>'+c.result+'，未扣录音额度，也未生成证据。</p></div></section>';
@@ -2283,9 +3015,9 @@
       const tabs=[['ai','录音与 AI'],['callinfo','呼叫信息'],['proof','证据与存证'],['timeline','处理记录']];
       let body='';
       if(state.callTab==='ai') body=aiDetailBody(c,valid);
-      if(state.callTab==='callinfo') body='<section class="panel"><div class="panel-body"><div class="meta-list">'+meta('运营商会话号',c.id+'-CMCC')+meta('接入方式',c.access)+meta('号码类型',c.type)+meta('用户所选主叫',c.selected)+meta('运营商实际主叫',c.caller)+meta('被叫号码',c.callee)+meta('呼叫时间','2026-10-19 10:26:08')+meta('接通时间',valid?'2026-10-19 10:26:17':'—')+meta('结束时间',valid?'2026-10-19 10:34:59':'2026-10-19 10:26:26')+meta('有效录音时长',c.duration)+meta('结束原因',valid?'主叫正常挂断':c.result)+meta('权益扣减',valid?'8 分 42 秒':'0 秒')+'</div></div></section>';
+      if(state.callTab==='callinfo') { const diag=callDiagnostic(c.id); body='<section class="panel"><div class="panel-body"><div class="meta-list">'+meta('IVR callId',c.id)+meta('接入方式',c.access)+meta('号码类型',c.type)+meta('用户所选主叫',c.selected)+meta('IVR 可信主叫（线路传递）',c.caller)+meta('被叫号码',c.callee)+meta('呼叫时间','2026-10-19 10:26:08')+meta('接通时间',valid?'2026-10-19 10:26:17':'—')+meta('结束时间',valid?'2026-10-19 10:34:59':'2026-10-19 10:26:26')+meta('IVR 权威录音时长',c.duration)+meta('结束原因',valid?'主叫正常挂断':c.result)+meta('ONECALL 结算扣减',valid?'8 分 42 秒':'0 秒')+'</div></div></section>'+callDiagnosticsHtml(diag); }
       if(state.callTab==='proof') body=valid?'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>原始录音与完整性</h2></div><div class="panel-body"><div class="meta-list">'+meta('证据编号',evidenceId)+meta('原始文件',originalFile)+meta('文件大小',c.id==='OC-C2034'?'23.4 MB':'16.8 MB')+meta('SHA-256','9c62dd6cb2a4a81053f0a4484cbeccbe93b836b10f2d9b88077a44f67f172e5e','hash')+meta('内部固证时间',c.id==='OC-C2034'?'2026-10-17 15:21:08':'2026-10-19 10:35:28')+'</div></div></section><section class="panel"><div class="panel-head"><h2>公证处存证</h2></div><div class="panel-body"><div class="meta-list">'+meta('存证状态',status('已完成','success'))+meta('存证记录号',c.id==='OC-C2034'?'YUZHANG-6D19':'YUZHANG-7F2A')+meta('提交时间',c.id==='OC-C2034'?'2026-10-17 15:21:22':'2026-10-19 10:35:42')+meta('验证报告','可申请')+'</div><div style="margin-top:14px">'+button('申请存证验证报告','file-badge','data-route="certificates"','primary')+'</div></div></section></div>':'<section class="panel empty">'+icon('shield-x')+'<div><h3>未形成证据与存证记录</h3><p>失败呼叫只保留脱敏安全审计。</p></div></section>';
-      if(state.callTab==='timeline') body='<section class="panel"><div class="panel-body">'+timeline(valid?[["10:26:08","取证会话已创建","录音权益预占成功"],["10:26:11","打开系统拨号盘","预期主叫 138 **** 6208"],["10:26:17","运营商主叫校验通过","实际主叫与所选号码一致"],["10:34:59","通话结束","运营商确认有效录音 08:42"],["10:35:18","原始录音已接收","格式、病毒和会话一致性检查通过"],["10:35:28","内部固证完成","生成完整性清单和可信时间信息"],["10:35:42","公证处存证完成","取得记录号 YUZHANG-7F2A"],["10:36:03","AI 处理完成","逐字稿和摘要 v2 已发布"]]:[[c.time,'呼叫请求已创建','预占录音权益'],[c.time,c.result,'运营商接通前阻止本次取证'],[c.time,'会话已关闭','预占全部释放，未生成证据']])+'</div></section>';
+      if(state.callTab==='timeline') { const diag=callDiagnostic(c.id); let rows; if(diag&&callDiagnosticVisible(diag)){ const task=diag.taskId?callTaskState.tasks.find(item=>item.id===diag.taskId):null; rows=diag.events.map(event=>[event.at.slice(11,19),callEventLabel(event.type),callEventSourceLabel(event.source)+(event.detail?' · '+event.detail:'')]); rows.unshift(task&&task.dialerLaunchedAt?[task.dialerLaunchedAt.slice(11,19),'小程序创建任务并打开系统拨号盘（客户端）','仅客户端事实，不代表接通或领取']:['—','小程序创建任务（客户端）','等待 IVR 呼入']); } else { rows=valid?[["10:26:08","取证会话已创建","本地演示预占"],["10:26:11","打开系统拨号盘","仅客户端事实"],["10:26:17","自研 IVR 取得可信主叫","经运营商线路传递"],["10:34:59","通话结束","自研 IVR 权威录音 08:42"],["10:35:18","录音上传已接收","ONECALL 接收录音"],["10:35:28","ONECALL 证据处理中","独立于上传"],["10:35:42","ONECALL 证据可用","证据处理完成"],["10:36:03","AI 处理完成","逐字稿和摘要 v2 已发布"]]:[[c.time,'呼叫请求已创建','本地演示预占'],[c.time,c.result,'自研 IVR 在接通前阻止本次取证'],[c.time,'会话已关闭','未生成证据']]; } body='<section class="panel"><div class="panel-body">'+timeline(rows)+callFailureLine(diag)+'</div></section>'; }
       const shareAction=canShareCall(c)?button('分享录音','link-2','data-route="share-create"'):'';
       return head('呼叫详情',c.caller+' → '+c.callee+' · '+c.time,button('加入事情','folder-plus','data-action="toast" data-message="已打开事情选择器"')+shareAction+(valid?button('申请出证','badge-check','data-route="certificates"','primary'):''))+'<div class="type-tabs" role="tablist">'+tabs.map(t=>'<button class="type-tab '+(state.callTab===t[0]?'active':'')+'" data-call-tab="'+t[0]+'">'+t[1]+'</button>').join('')+'</div>'+body;
     }
@@ -2462,10 +3194,10 @@
 
     function numberRecords(){
       if(isEnterprise()&&!isHuaqiWorkspace())return [];
-      let cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'默认手机主叫',usage:'5.7 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'归属待公证前核验',usage:'17.3 分钟',eligibility:'未核验',authorized:'已开通'}];
+      let cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'默认手机主叫',usage:'5.7 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'IVR 线路可信主叫验证',access:'声讯短号',owner:'归属待公证前核验',usage:'17.3 分钟',eligibility:'未核验',authorized:'已开通'}];
       if(!isEnterprise()&&!isFixturePersonalWorkspace())cards=business.subjects.filter(item=>item.accountId===state.accountId).map((item,index)=>({id:'account-number-'+index,subjectId:item.id,accountId:state.accountId,number:item.maskedNumber,type:item.numberType==='LANDLINE'?'独立固话直线':'手机号',verify:item.numberType==='LANDLINE'?'主叫挑战':'号码持有验证',access:'业务使用',owner:accountProfile().name,usage:'暂无用量',eligibility:item.identity==='VERIFIED'?'已匹配':'未核验',authorized:B.labels.activation[item.activation]}));
       if(!isEnterprise()&&state.addedNumbers.length) cards=cards.concat(state.addedNumbers);
-      if(isEnterpriseAdmin()) cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'李晓 · 采购部',usage:'426 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'法务部',usage:'512 分钟',eligibility:'未核验',authorized:'已开通'},{id:'fixed-9056',number:'021 **** 9056',type:'独立固话直线',verify:'运营商主叫验证',access:'声讯短号',owner:'客服部',usage:'346 分钟',eligibility:'未核验',authorized:'已开通'}];
+      if(isEnterpriseAdmin()) cards=[{id:'phone-6208',subjectId:'WEB-ACCOUNT-001',number:'138 **** 6208',type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:'李晓 · 采购部',usage:'426 分钟',eligibility:'已匹配',authorized:'已开通'},{id:'fixed-6688',number:'010 **** 6688',type:'独立固话直线',verify:'IVR 线路可信主叫验证',access:'声讯短号',owner:'法务部',usage:'512 分钟',eligibility:'未核验',authorized:'已开通'},{id:'fixed-9056',number:'021 **** 9056',type:'独立固话直线',verify:'IVR 线路可信主叫验证',access:'声讯短号',owner:'客服部',usage:'346 分钟',eligibility:'未核验',authorized:'已开通'}];
       if(isEnterpriseAdmin()&&state.addedNumbers.length) cards=cards.concat(state.addedNumbers);
       else if(isEnterprise()&&!isEnterpriseAdmin()){const profile=enterpriseProfile(),subject=business.subjects.find(item=>item.accountId===state.accountId&&item.numberType==='MOBILE');cards=[{id:'member-phone',subjectId:subject?.id,accountId:state.accountId,number:profile.phone,type:'手机号',verify:'微信平台验证',access:'小程序拨号',owner:profile.name+' · '+profile.dept,usage:isEvidenceManager()?'87 分钟':'118 分钟',eligibility:'已匹配',authorized:'已开通'}];}
       return cards.filter(item=>!state.deletedNumbers.includes(item.id));
@@ -2502,7 +3234,7 @@
         title='我的主叫号码';action=button('在小程序管理号码','smartphone','data-action="toast" data-message="手机号验证、授权与开通需在本人微信小程序中完成"','primary');ownerLabel='使用人';
       }
       const quota=!isEnterprise()?'<div class="notice" style="margin-bottom:14px">'+icon('contact-round')+'<span>有效主叫号码 '+cards.length+' / 3。停用并删除号码后可释放名额；历史录音、证据和用量流水不会随号码删除。</span></div>':'';
-      return head(title,'管理当前权限范围内的手机号与独立固话；录音按运营商确认的实际主叫统计。',action)+quota+'<div class="number-grid">'+cards.map(n=>{const disabled=numberDisabled(n);return '<article class="number-card"><div class="number-top"><span class="number-value">'+n.number+'</span>'+status(disabled?'已停用':'可取证',disabled?'neutral':'success',disabled?'ban':'circle-check')+'</div><div class="meta-list" style="margin-top:13px">'+meta('号码类型',n.type)+meta('验证方式',n.verify)+meta('接入方式',n.access)+meta(ownerLabel,n.owner)+meta('本账期录音',n.usage)+'</div><div class="tag-row"><span class="tag">套餐额度共享</span>'+(n.type==='独立固话直线'?'<span class="tag">不支持 PBX/分机</span>':'')+'</div><div class="workflow-actions">'+button('查看详情','chevron-right','data-number-id="'+n.id+'"')+'</div></article>';}).join('')+'</div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+(isEnterpriseAdmin()?'组织固话名额与成员个人号码上限分开；成员手机号仍由本人实名、验证和授权。':isEnterprise()?'普通成员和证据管理员只能管理本人手机号，不能查看或操作其他成员及组织固话。':'个人账户手机号与固话合计最多三个。号码验证不直接代表运营商实名或号码产权一致。')+'</span></div>';
+      return head(title,'管理当前权限范围内的手机号与独立固话；录音按自研 IVR 从线路传递结果确认的可信主叫统计。',action)+quota+'<div class="number-grid">'+cards.map(n=>{const disabled=numberDisabled(n);return '<article class="number-card"><div class="number-top"><span class="number-value">'+n.number+'</span>'+status(disabled?'已停用':'可取证',disabled?'neutral':'success',disabled?'ban':'circle-check')+'</div><div class="meta-list" style="margin-top:13px">'+meta('号码类型',n.type)+meta('验证方式',n.verify)+meta('接入方式',n.access)+meta(ownerLabel,n.owner)+meta('本账期录音',n.usage)+'</div><div class="tag-row"><span class="tag">套餐额度共享</span>'+(n.type==='独立固话直线'?'<span class="tag">不支持 PBX/分机</span>':'')+'</div><div class="workflow-actions">'+button('查看详情','chevron-right','data-number-id="'+n.id+'"')+'</div></article>';}).join('')+'</div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+(isEnterpriseAdmin()?'组织固话名额与成员个人号码上限分开；成员手机号仍由本人实名、验证和授权。':isEnterprise()?'普通成员和证据管理员只能管理本人手机号，不能查看或操作其他成员及组织固话。':'个人账户手机号与固话合计最多三个。号码验证不直接代表运营商实名或号码产权一致。')+'</span></div>';
     }
 
     function numberAddPage(){
@@ -2516,7 +3248,7 @@
         body='<div class="share-option-grid">'+shareChoice('numberAddType','mobile','smartphone','手机号','支持微信平台手机号验证或短信验证码')+shareChoice('numberAddType','fixed','phone','独立固话直线','使用待绑定座机拨打声讯验证短号')+'</div>'+(full?'<div class="notice warning" style="margin-top:14px">'+icon('circle-alert')+'<span>个人账户已有 3 个有效主叫号码。请先停用并删除不再使用的号码，释放名额后再新增。</span></div>':'<div class="notice" style="margin-top:14px">'+icon('info')+'<span>每个号码都要独立验证、授权和开通，不会复用其他号码的授权记录。</span></div>');
       }else{
         const mobile=state.numberAddType==='mobile';
-        body=mobile?'<div class="field"><label for="number-mobile">手机号</label><input id="number-mobile" class="input" value="186 0000 4471" inputmode="numeric"></div><div class="setting-group"><h3 class="setting-title">验证方式</h3><div class="segmented"><button class="'+(state.numberAddVerify==='wechat'?'active':'')+'" data-number-add-verify="wechat">微信授权手机号</button><button class="'+(state.numberAddVerify==='sms'?'active':'')+'" data-number-add-verify="sms">短信验证码</button></div></div>'+(state.numberAddVerify==='sms'?'<div class="form-grid" style="margin-top:14px"><div class="field"><label for="number-code">短信验证码</label><input id="number-code" class="input" value="482916"></div><div class="field"><label>验证结果</label><div class="input" style="display:flex;align-items:center;color:var(--green)">'+(state.numberAddVerified?'已验证当前可接收短信':'待验证')+'</div></div></div>':'<div class="notice" style="margin-top:14px">'+icon('message-circle-check')+'<span>微信返回的手机号只证明本次授权取得该号码，不等于运营商实名登记人与账户身份一致。</span></div>')+'<div class="workflow-actions">'+button(state.numberAddVerified?'手机号已验证':'验证当前手机号',state.numberAddVerify==='wechat'?'message-circle-check':'messages-square','data-action="number-add-verify" '+(state.numberAddVerified?'disabled':''))+'</div>':'<div class="field"><label for="fixed-number">独立固话号码</label><input id="fixed-number" class="input" value="020 8888 7816"></div><div class="credential-block"><span class="credential-label">主叫验证</span><div class="credential-line"><span class="credential-value">请使用待绑定座机拨打 95013，并输入验证短码</span><strong class="share-code">6294</strong></div></div><div class="notice" style="margin-top:14px">'+icon('phone-forwarded')+'<span>运营商将返回真实主叫完成匹配。企业总机、PBX、分机和无法返回唯一真实主叫的线路暂不支持。</span></div><div class="workflow-actions">'+button(state.numberAddVerified?'运营商已确认主叫':'模拟完成主叫验证','phone-forwarded','data-action="number-add-verify" '+(state.numberAddVerified?'disabled':''))+'</div>';
+        body=mobile?'<div class="field"><label for="number-mobile">手机号</label><input id="number-mobile" class="input" value="186 0000 4471" inputmode="numeric"></div><div class="setting-group"><h3 class="setting-title">验证方式</h3><div class="segmented"><button class="'+(state.numberAddVerify==='wechat'?'active':'')+'" data-number-add-verify="wechat">微信授权手机号</button><button class="'+(state.numberAddVerify==='sms'?'active':'')+'" data-number-add-verify="sms">短信验证码</button></div></div>'+(state.numberAddVerify==='sms'?'<div class="form-grid" style="margin-top:14px"><div class="field"><label for="number-code">短信验证码</label><input id="number-code" class="input" value="482916"></div><div class="field"><label>验证结果</label><div class="input" style="display:flex;align-items:center;color:var(--green)">'+(state.numberAddVerified?'已验证当前可接收短信':'待验证')+'</div></div></div>':'<div class="notice" style="margin-top:14px">'+icon('message-circle-check')+'<span>微信返回的手机号只证明本次授权取得该号码，不等于运营商实名登记人与账户身份一致。</span></div>')+'<div class="workflow-actions">'+button(state.numberAddVerified?'手机号已验证':'验证当前手机号',state.numberAddVerify==='wechat'?'message-circle-check':'messages-square','data-action="number-add-verify" '+(state.numberAddVerified?'disabled':''))+'</div>':'<div class="field"><label for="fixed-number">独立固话号码</label><input id="fixed-number" class="input" value="020 8888 7816"></div><div class="credential-block"><span class="credential-label">主叫验证</span><div class="credential-line"><span class="credential-value">请使用待绑定座机拨打 95013，并输入验证短码</span><strong class="share-code">6294</strong></div></div><div class="notice" style="margin-top:14px">'+icon('phone-forwarded')+'<span>自研 IVR 将取得经运营商线路传递的可信主叫并完成匹配。企业总机、PBX、分机和无法传递唯一可信主叫的线路暂不支持。</span></div><div class="workflow-actions">'+button(state.numberAddVerified?'IVR 已确认线路可信主叫':'模拟完成主叫验证','phone-forwarded','data-action="number-add-verify" '+(state.numberAddVerified?'disabled':''))+'</div>';
         const agreementCopy=enterprise&&state.numberAddType==='fixed'?'我已阅读并同意以上全部授权内容，确认本组织对绑定号码具有合法使用权，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。':'我已阅读并同意以上全部授权内容，确认绑定号码由本人实际使用，并同意按上述范围处理敏感个人信息、开通一通话内部录音服务及进行必要的数据共享。';
         body+='<div class="setting-group"><h3 class="setting-title">授权内容</h3><div class="proof-list"><div class="proof-item">'+icon('fingerprint')+'<div><strong>敏感个人信息处理</strong><span>用于号码验证、内部录音、固证和出证资格核验</span></div>'+status('待同意','pending')+'</div><div class="proof-item">'+icon('radio-tower')+'<div><strong>ONECALL 内部录音服务</strong><span>按已验证实际主叫生成录音并同步固证</span></div>'+status('待同意','pending')+'</div><div class="proof-item">'+icon('share-2')+'<div><strong>必要的数据共享</strong><span>向通信服务方及公证处存证平台提供完成服务所需数据</span></div>'+status('待同意','pending')+'</div></div></div><label class="check-line"><input id="number-add-agree" type="checkbox" '+(state.numberAddAgreed?'checked':'')+'><span>'+agreementCopy+'</span></label>';
       }
@@ -2548,11 +3280,11 @@
       if(isEnterprise()&&!isEnterpriseAdmin()) return memberRightsPage();
       const enterprise=isEnterpriseAdmin(); return head(enterprise?'共享权益与用量':'套餐与权益','权益余额来自不可变流水，手机号与固话按适用范围共享。',button('导出用量','download','data-action="toast" data-message="用量明细导出任务已创建"')+button(enterprise?'查看企业方案':'订购套餐 / 加量包','shopping-bag','data-route="plans"','primary'))+'<section class="kpi-grid">'+(enterprise?[
       ['当前方案','企业旗舰版','有效至 2027-09-30','building-2'],['活动坐席','18 / 20','2 个可分配','users'],['独立固话','2 / 30','28 个可绑定','phone'],['本月录音','1,284 / 6,000','所有实际主叫合计','audio-lines']
-    ]:[['当前套餐','个人进阶','包年 · 第 2 / 12 期','wallet-cards'],['录音分钟','277 分钟','本期剩余','audio-lines'],['AI 分钟','282 分钟','本期剩余','sparkles'],['存储空间','19.2 GB','可用空间','hard-drive']]).map(k=>'<article class="kpi"><div class="kpi-head"><span>'+k[0]+'</span>'+icon(k[3])+'</div><div class="kpi-value" style="font-size:22px">'+k[1]+'</div><div class="kpi-note">'+k[2]+'</div></article>').join('')+'</section><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>全部主叫号码用量</h2><p>按运营商确认的实际主叫归集</p></div></div><div class="panel-body">'+progress('手机号录音',enterprise?'426 / 6,000 分钟':'5.7 / 300 分钟',enterprise?7:2,'')+progress('独立固话录音',enterprise?'858 / 6,000 分钟':'17.3 / 300 分钟',enterprise?14:6,'green')+progress('AI 转写摘要',enterprise?'876 / 6,000 分钟':'18 / 300 分钟',enterprise?15:6,'amber')+'</div></section><section class="panel"><div class="panel-head"><h2>最近用量流水</h2></div><div class="panel-body"><div class="quick-list">'+quick('phone','固话取证通话确认','010 **** 6688 · 声讯短号 · -17.3 分钟','calls')+quick('smartphone','手机取证通话确认','138 **** 6208 · 小程序拨号 · -5.7 分钟','calls')+quick('sparkles','AI 转写与摘要','证据 OC-E1042 · -8.7 分钟','evidence')+'</div></div></section></div>'; }
+    ]:[['当前套餐','个人进阶','包年 · 第 2 / 12 期','wallet-cards'],['录音分钟','277 分钟','本期剩余','audio-lines'],['AI 分钟','282 分钟','本期剩余','sparkles'],['存储空间','19.2 GB','可用空间','hard-drive']]).map(k=>'<article class="kpi"><div class="kpi-head"><span>'+k[0]+'</span>'+icon(k[3])+'</div><div class="kpi-value" style="font-size:22px">'+k[1]+'</div><div class="kpi-note">'+k[2]+'</div></article>').join('')+'</section><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>全部主叫号码用量</h2><p>按自研 IVR 从线路传递结果确认的可信主叫归集</p></div></div><div class="panel-body">'+progress('手机号录音',enterprise?'426 / 6,000 分钟':'5.7 / 300 分钟',enterprise?7:2,'')+progress('独立固话录音',enterprise?'858 / 6,000 分钟':'17.3 / 300 分钟',enterprise?14:6,'green')+progress('AI 转写摘要',enterprise?'876 / 6,000 分钟':'18 / 300 分钟',enterprise?15:6,'amber')+'</div></section><section class="panel"><div class="panel-head"><h2>最近用量流水</h2></div><div class="panel-body"><div class="quick-list">'+quick('phone','固话取证通话确认','010 **** 6688 · 声讯短号 · -17.3 分钟','calls')+quick('smartphone','手机取证通话确认','138 **** 6208 · 小程序拨号 · -5.7 分钟','calls')+quick('sparkles','AI 转写与摘要','证据 OC-E1042 · -8.7 分钟','evidence')+'</div></div></section></div>'; }
 
     function memberRightsPage(){
       const profile=enterpriseProfile();const recording=isEvidenceManager()?87:118;const ai=isEvidenceManager()?64:96;
-      return head('我的权益用量','你正在使用华启科技的组织共享权益；组织总余额、价格和其他成员用量不可见。',button('导出我的用量','download','data-action="toast" data-message="将按当前成员范围导出个人用量流水"'))+'<section class="kpi-grid"><article class="kpi"><div class="kpi-head"><span>坐席状态</span>'+icon('armchair')+'</div><div class="kpi-value" style="font-size:22px">已分配</div><div class="kpi-note">可使用组织共享权益</div></article><article class="kpi"><div class="kpi-head"><span>本月录音</span>'+icon('audio-lines')+'</div><div class="kpi-value">'+recording+'</div><div class="kpi-note">分钟 · 本人实际主叫</div></article><article class="kpi"><div class="kpi-head"><span>本月 AI</span>'+icon('sparkles')+'</div><div class="kpi-value">'+ai+'</div><div class="kpi-note">分钟</div></article><article class="kpi"><div class="kpi-head"><span>新增证据</span>'+icon('archive')+'</div><div class="kpi-value">'+visibleEvidence().length+'</div><div class="kpi-note">当前可见范围</div></article></section><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>本人用量</h2><p>按运营商确认的实际主叫归集</p></div></div><div class="panel-body">'+progress('手机号录音',recording+' 分钟',24,'')+progress('AI 转写摘要',ai+' 分钟',19,'green')+progress('证据存储','1.8 GB',10,'amber')+'</div></section><aside class="panel"><div class="panel-head"><h2>权益边界</h2></div><div class="panel-body">'+quickRule('eye-off','不展示组织总余额','成员不能查看组织价格和其他成员用量')+quickRule('phone','按实际主叫记账','仅归集运营商确认属于本人的通话')+quickRule('shield-check','组织策略控制能力','套餐到期或策略停用时停止新增使用')+'</div></aside></div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+profile.name+' 的用量不会与其他成员合并展示；企业管理员只能通过组织用量报表查看必要的汇总和审计字段。</span></div>';
+      return head('我的权益用量','你正在使用华启科技的组织共享权益；组织总余额、价格和其他成员用量不可见。',button('导出我的用量','download','data-action="toast" data-message="将按当前成员范围导出个人用量流水"'))+'<section class="kpi-grid"><article class="kpi"><div class="kpi-head"><span>坐席状态</span>'+icon('armchair')+'</div><div class="kpi-value" style="font-size:22px">已分配</div><div class="kpi-note">可使用组织共享权益</div></article><article class="kpi"><div class="kpi-head"><span>本月录音</span>'+icon('audio-lines')+'</div><div class="kpi-value">'+recording+'</div><div class="kpi-note">分钟 · 本人实际主叫</div></article><article class="kpi"><div class="kpi-head"><span>本月 AI</span>'+icon('sparkles')+'</div><div class="kpi-value">'+ai+'</div><div class="kpi-note">分钟</div></article><article class="kpi"><div class="kpi-head"><span>新增证据</span>'+icon('archive')+'</div><div class="kpi-value">'+visibleEvidence().length+'</div><div class="kpi-note">当前可见范围</div></article></section><div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>本人用量</h2><p>按自研 IVR 从线路传递结果确认的可信主叫归集</p></div></div><div class="panel-body">'+progress('手机号录音',recording+' 分钟',24,'')+progress('AI 转写摘要',ai+' 分钟',19,'green')+progress('证据存储','1.8 GB',10,'amber')+'</div></section><aside class="panel"><div class="panel-head"><h2>权益边界</h2></div><div class="panel-body">'+quickRule('eye-off','不展示组织总余额','成员不能查看组织价格和其他成员用量')+quickRule('phone','按实际主叫记账','仅归集自研 IVR 从线路传递结果确认属于本人的通话')+quickRule('shield-check','组织策略控制能力','套餐到期或策略停用时停止新增使用')+'</div></aside></div><div class="notice" style="margin-top:14px">'+icon('info')+'<span>'+profile.name+' 的用量不会与其他成员合并展示；企业管理员只能通过组织用量报表查看必要的汇总和审计字段。</span></div>';
     }
 
     function workflowSteps(labels,current){
@@ -2712,11 +3444,11 @@
 
     function accessPage(){ return head('部门与权限','角色只授予完成工作所需的最小权限；证据正文与录音播放单独控制。',button('新建角色','shield-plus','data-action="toast" data-message="自定义角色将在权限矩阵中配置"','primary'))+'<div class="table-wrap"><table class="permission-matrix"><thead><tr><th>角色</th><th>使用组织权益</th><th>查看本人证据</th><th>查看部门证据</th><th>播放部门录音</th><th>管理成员/坐席</th><th>查看组织审计</th></tr></thead><tbody>'+[['普通成员',1,1,0,0,0,0],['证据管理员',1,1,1,1,0,0],['企业管理员',1,1,1,0,1,1],['企业审计员',0,0,0,0,0,1]].map(r=>'<tr><td><strong>'+r[0]+'</strong></td>'+r.slice(1).map(v=>'<td class="'+(v?'permission-check':'permission-off')+'">'+icon(v?'check':'minus')+'</td>').join('')+'</tr>').join('')+'</tbody></table></div><div class="notice" style="margin-top:14px">'+icon('shield-alert')+'<span>企业管理员默认不能无条件播放所有录音或查看全部证据正文；需要由证据访问范围或审批单独授权。</span></div>'; }
 
-    function organizationPage(){ return head('企业设置与审计','管理组织基础信息、数据策略和企业范围内的操作记录。',button('导出审计记录','download','data-action="toast" data-message="审计导出将经过权限和目的校验"'))+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>组织信息</h2></div><div class="panel-body"><div class="meta-list">'+meta('企业名称','华启科技有限公司')+meta('统一社会信用代码','9131**********8F')+meta('当前方案','企业旗舰版')+meta('组织管理员','李晓、王璐')+meta('数据区域','中国大陆')+meta('合同有效期','2026-10-01 至 2027-09-30')+'</div><div style="margin-top:14px">'+button('编辑组织信息','pencil','data-action="toast" data-message="企业认证信息变更需要重新审核"')+'</div></div></section><section class="panel"><div class="panel-head"><h2>最近组织审计</h2></div><div class="panel-body">'+timeline([['今天 11:08','成员权限调整','李晓将周宁设为证据管理员'],['昨天 16:22','组织固话绑定成功','010 **** 6688 完成运营商主叫验证'],['10 月 17 日 09:14','导出用量报表','王璐导出 10 月组织用量明细'],['10 月 15 日 14:36','坐席分配','为陈雨分配企业坐席']])+'</div></section></div><div class="notice" style="margin-top:16px">'+icon('circle-help')+'<span>首发仅支持手机号和能够返回唯一真实主叫的独立固话直线；企业总机、PBX、分机归属、统一外呼号拆分和坐席 PIN 不在本次范围。</span></div>'; }
+    function organizationPage(){ return head('企业设置与审计','管理组织基础信息、数据策略和企业范围内的操作记录。',button('导出审计记录','download','data-action="toast" data-message="审计导出将经过权限和目的校验"'))+'<div class="dashboard-grid"><section class="panel"><div class="panel-head"><h2>组织信息</h2></div><div class="panel-body"><div class="meta-list">'+meta('企业名称','华启科技有限公司')+meta('统一社会信用代码','9131**********8F')+meta('当前方案','企业旗舰版')+meta('组织管理员','李晓、王璐')+meta('数据区域','中国大陆')+meta('合同有效期','2026-10-01 至 2027-09-30')+'</div><div style="margin-top:14px">'+button('编辑组织信息','pencil','data-action="toast" data-message="企业认证信息变更需要重新审核"')+'</div></div></section><section class="panel"><div class="panel-head"><h2>最近组织审计</h2></div><div class="panel-body">'+timeline([['今天 11:08','成员权限调整','李晓将周宁设为证据管理员'],['昨天 16:22','组织固话绑定成功','010 **** 6688 完成IVR 线路可信主叫验证'],['10 月 17 日 09:14','导出用量报表','王璐导出 10 月组织用量明细'],['10 月 15 日 14:36','坐席分配','为陈雨分配企业坐席']])+'</div></section></div><div class="notice" style="margin-top:16px">'+icon('circle-help')+'<span>首发仅支持手机号和能够返回唯一真实主叫的独立固话直线；企业总机、PBX、分机归属、统一外呼号拆分和坐席 PIN 不在本次范围。</span></div>'; }
 
     function auditCenterPage(){
       const scope=isEnterpriseAuditor()?'组织全部脱敏审计事件':isEnterpriseAdmin()?'组织审计事件':isEvidenceManager()?'法务部及本人操作':'仅本人操作';
-      const rows=[['AUD-20918','今天 11:08','权限变更','李晓','成员角色范围调整','企业成员','成功'],['AUD-20917','今天 10:42','录音访问','周宁','完成二次验证后播放','OC-E1039','成功'],['AUD-20913','今天 09:56','清单导出','李晓','导出 12 条脱敏记录','采购部','成功'],['AUD-20904','今天 09:18','证据导入','陈雨','上传原始文件并提交固证','OC-E1041','成功'],['AUD-20896','昨天 16:22','号码验证','系统','运营商确认真实主叫','010 **** 6688','成功']];
+      const rows=[['AUD-20918','今天 11:08','权限变更','李晓','成员角色范围调整','企业成员','成功'],['AUD-20917','今天 10:42','录音访问','周宁','完成二次验证后播放','OC-E1039','成功'],['AUD-20913','今天 09:56','清单导出','李晓','导出 12 条脱敏记录','采购部','成功'],['AUD-20904','今天 09:18','证据导入','陈雨','上传原始文件并提交固证','OC-E1041','成功'],['AUD-20896','昨天 16:22','号码验证','系统','自研 IVR 取得线路可信主叫','010 **** 6688','成功']];
       const visible=isEnterpriseMember()?rows.filter(row=>row[3]===enterpriseProfile().name):isEvidenceManager()?rows.filter(row=>row[3]===enterpriseProfile().name||row[5]==='OC-E1039'):rows;
       return head(isEnterpriseAuditor()?'组织审计记录':'数据访问记录','当前范围：'+scope+'。事件记录不可由前端修改。',button('导出当前结果','download','data-action="toast" data-message="导出需填写用途，文件将按当前角色范围脱敏"','primary'))+'<div class="toolbar"><label class="search-field">'+icon('search')+'<input class="input" placeholder="搜索事件编号、操作类型或对象"></label><select class="select"><option>全部操作类型</option><option>权限变更</option><option>录音访问</option><option>证据导出</option><option>号码验证</option></select><select class="select"><option>最近 7 天</option><option>最近 30 天</option></select></div><div class="table-wrap"><table><thead><tr><th>事件编号</th><th>时间</th><th>操作类型</th><th>操作人</th><th>行为</th><th>对象</th><th>结果</th></tr></thead><tbody>'+visible.map(row=>'<tr><td class="mono">'+row[0]+'</td><td>'+row[1]+'</td><td>'+row[2]+'</td><td>'+row[3]+'</td><td>'+row[4]+'</td><td class="mono">'+row[5]+'</td><td>'+status(row[6],'success')+'</td></tr>').join('')+'</tbody></table></div><div class="notice" style="margin-top:14px">'+icon('eye-off')+'<span>审计事件只说明谁在何时执行了什么操作，不向审计员开放证据正文、身份证件或录音内容。</span></div>';
     }
@@ -2907,7 +3639,7 @@
         if(!valid){showToast(mobile?'请输入有效的大陆手机号':'请输入有效的独立固话号码');return;}
         if(mobile&&state.numberAddVerify==='sms'&&code!=='482916'){showToast('短信验证码错误，暂未验证号码');return;}
         state.numberAddPhone=document.getElementById(mobile?'number-mobile':'fixed-number').value.trim();
-        state.numberAddVerified=true;showToast(mobile?'号码当前持有验证已完成':'运营商已确认该固话的真实主叫');render();return;
+        state.numberAddVerified=true;showToast(mobile?'号码当前持有验证已完成':'自研 IVR 已从线路取得该固话的可信主叫');render();return;
       }
       if(action.dataset.action==='number-add-submit'){
         if(!state.numberAddAgreed||!state.numberAddVerified){showToast('请先完成号码验证并确认授权内容');return;}
@@ -2915,7 +3647,7 @@
         const raw=(document.getElementById(mobile?'number-mobile':'fixed-number')?.value||state.numberAddPhone).replace(/\D/g,'');
         const masked=raw.slice(0,3)+' **** '+raw.slice(-4);
         const id=mobile?'phone-4471':'fixed-new-'+String(state.addedNumbers.length+1).padStart(2,'0');
-        const number={id,number:masked,type:mobile?'手机号':'独立固话直线',verify:mobile?state.numberAddVerify==='wechat'?'微信授权手机号':'短信验证码验证':'运营商真实主叫验证',access:mobile?'小程序拨号':'声讯短号',owner:isEnterprise()?'华启科技有限公司':'新绑定主叫号码',usage:'0 分钟',eligibility:'未核验',authorized:'已开通'};
+        const number={id,number:masked,type:mobile?'手机号':'独立固话直线',verify:mobile?state.numberAddVerify==='wechat'?'微信授权手机号':'短信验证码验证':'IVR 线路可信主叫验证',access:mobile?'小程序拨号':'声讯短号',owner:isEnterprise()?'华启科技有限公司':'新绑定主叫号码',usage:'0 分钟',eligibility:'未核验',authorized:'已开通'};
         const target=purchaseSubject();if(!target||target.identity!=='VERIFIED'){showToast('请先完成身份核验');return;}
         const candidate=B.snapshot(business).value,subjectId='WEB-NUMBER-'+business.sequence+'-'+state.addedNumbers.length;
         candidate.subjects.push({id:subjectId,maskedNumber:masked,numberType:mobile?'MOBILE':'LANDLINE',source:'WEB',accountId:target.accountId,identity:'VERIFIED',activation:'INACTIVE',revision:1,claimRisk:'NONE'});
@@ -3084,7 +3816,7 @@
     function stopAudio(){if(state.audioTimer){clearInterval(state.audioTimer);state.audioTimer=null;}}
     const initialShareId=new URLSearchParams(window.location.search).get('share');
     if(initialShareId){state.session='signedOut';state.route='share-access';state.activeShare=initialShareId;state.shareAccessState='entry';state.sharePlaybackId='';state.audioPlaying=false;state.audioSeconds=0;}
-    window.__onecallWeb={businessSnapshot(){const r=B.snapshot(business);if(!r.ok)throw Error(r.code);return r.value;},accountContext(){return cloneBusiness({accountId:state.accountId,workspace:selectedWorkspace(),identities:accountIdentities(),workspaces:accountWorkspaces()});},recipientDemoUrl,recipientDemoShareId:RECIPIENT_DEMO_SHARE_ID,expireSession(route){return expireSession(route);},loadReviewSnapshot(candidate){const r=B.loadReviewSnapshot(business,candidate);if(r.ok){const linked=business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source==='IVR')||business.subjects.find(item=>item.accountId===businessReview.accountId);businessReview.subjectId=linked?.id||null;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;if(!business.orders.some(item=>item.id===businessReview.orderId))businessReview.orderId=null;render();}return cloneBusiness(r);},setReviewScenario:setBusinessScenario,setClaimRequestId(requestId){businessReview.claimRequestId=requestId;return {ok:true};},applyActivationStatus(input){const r=B.setActivationStatus(business,input,new Date());if(r.ok)render();return cloneBusiness(r);},navigate(route){if(!Object.hasOwn(pageTitles,route))return {ok:false,code:'NOT_FOUND'};go(route);return {ok:true,route};},currentRoute(){return state.route;}};
+    window.__onecallWeb={businessSnapshot(){const r=B.snapshot(business);if(!r.ok)throw Error(r.code);return r.value;},callTaskSnapshot(){const r=B.callTaskSnapshot(callTaskState);if(!r.ok)throw Error(r.code);return r.value;},loadCallTaskSnapshot(candidate){const r=B.loadCallTaskSnapshot(callTaskState,candidate);if(r.ok)render();return cloneBusiness(r);},selectCallDiagnostic(callId){const call=callDiagnostic(callId);if(!call||!callDiagnosticVisible(call))return {ok:false,code:'NOT_FOUND'};state.activeCall=callId;state.callTab='callinfo';go('callDetail');return {ok:true,callId:callId};},accountContext(){return cloneBusiness({accountId:state.accountId,workspace:selectedWorkspace(),identities:accountIdentities(),workspaces:accountWorkspaces()});},recipientDemoUrl,recipientDemoShareId:RECIPIENT_DEMO_SHARE_ID,expireSession(route){return expireSession(route);},loadReviewSnapshot(candidate){const r=B.loadReviewSnapshot(business,candidate);if(r.ok){const linked=business.subjects.find(item=>item.accountId===businessReview.accountId&&item.source==='IVR')||business.subjects.find(item=>item.accountId===businessReview.accountId);businessReview.subjectId=linked?.id||null;businessReview.verified=false;businessReview.claimCode='';businessReview.claimRequestId=null;if(!business.orders.some(item=>item.id===businessReview.orderId))businessReview.orderId=null;render();}return cloneBusiness(r);},setReviewScenario:setBusinessScenario,setClaimRequestId(requestId){businessReview.claimRequestId=requestId;return {ok:true};},applyActivationStatus(input){const r=B.setActivationStatus(business,input,new Date());if(r.ok)render();return cloneBusiness(r);},navigate(route){if(!Object.hasOwn(pageTitles,route))return {ok:false,code:'NOT_FOUND'};go(route);return {ok:true,route};},currentRoute(){return state.route;}};
     window.addEventListener('beforeunload',stopAudio);
     render();
   </script>

@@ -9,7 +9,7 @@ const previewUrl = pathToFileURL(path.join(prototypeRoot, 'preview.html')).href;
 const newPages = [
   'phoneWechatConfirm', 'phoneWechatIssue', 'phoneWechatConflict', 'phoneSms', 'landlineBind', 'landlineVerify', 'landlineReady',
   'ivrReturn', 'claimVerify', 'claimResult', 'claimBlocked', 'trialHome', 'trialCall', 'trialLimit', 'freeEvidenceLimit',
-  'callerSelect', 'dialHandoff', 'landlineCall', 'callerMismatch', 'callerUnavailable',
+  'callerSelect', 'dialHandoff', 'callStatus', 'landlineCall', 'callerMismatch', 'callerUnavailable',
   'evidenceBox', 'evidenceEmpty', 'matterCreate', 'aiCorrection',
   'usageDetail', 'enterprisePlans', 'productDetail', 'purchaseConfirm', 'paymentSuccess', 'paymentIssue', 'revokeAuth', 'evidenceSelect',
   'documentCenter', 'orders', 'accountSecurity', 'tips', 'privacy', 'support',
@@ -26,6 +26,12 @@ async function getFrame(page) {
 async function openPage(frame, pageId) {
   await frame.locator(`[data-page="${pageId}"]`).click();
   await frame.waitForTimeout(50);
+}
+
+async function shotAt(page, name, width = 393, height = 852) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(80);
+  await page.screenshot({ path: path.join(screenshotRoot, name), fullPage: true });
 }
 
 async function assertNoOverflow(frame, label) {
@@ -59,7 +65,7 @@ async function assertNoOverflow(frame, label) {
   const frame = await getFrame(page);
 
   const count = await frame.locator('.index-button').count();
-  if (count !== 62) throw new Error(`Expected 62 visible pages, got ${count}`);
+  if (count !== 63) throw new Error(`Expected 63 visible pages, got ${count}`);
   if (await frame.locator('[data-page="consent"], [data-go="consent"]').count()) {
     throw new Error('Standalone authorization page is still reachable');
   }
@@ -207,7 +213,7 @@ async function assertNoOverflow(frame, label) {
   if (await landlineSubmit.isDisabled()) throw new Error('Landline confirmation did not unlock verification');
   await landlineSubmit.click();
   const landlineVerifyText = await frame.locator('#oc-screen').innerText();
-  if (!landlineVerifyText.includes('95XXX') || !landlineVerifyText.includes('483 621') || !landlineVerifyText.includes('真实主叫')) throw new Error('Landline caller verification instructions are incomplete');
+  if (!landlineVerifyText.includes('95XXX') || !landlineVerifyText.includes('483 621') || !landlineVerifyText.includes('自研 IVR') || !landlineVerifyText.includes('线路传递') || !landlineVerifyText.includes('可信主叫')) throw new Error('Landline caller verification instructions are incomplete');
   const beforeLandline=await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
   await openPage(frame,'landlineReady');
   assert.ok(!(await frame.locator('#oc-screen').innerText()).includes('固话已验证并开通'));
@@ -316,9 +322,12 @@ async function assertNoOverflow(frame, label) {
   const supportText=await frame.locator('#oc-screen').innerText();
   if(!supportText.includes('人工客服联系方式待配置')||await frame.locator('#oc-screen input, #oc-screen textarea, [data-action="support-start"]').count()||/CS20|INV-|400-/.test(supportText))throw Error('Offline support must not accept submissions');
 
+  const callTaskBusinessBefore = await frame.evaluate(()=>window.__onecallMini.businessSnapshot());
   await openPage(frame, 'call');
   const callText = await frame.locator('#oc-screen').innerText();
-  if (!callText.includes('小程序不能指定双卡手机') || !callText.includes('小程序拨号 · 仅支持手机号') || !callText.includes('186 **** 4471')) throw new Error('Call preparation lacks the activated mobile or dual-SIM boundary');
+  for (const phrase of ['创建待拨任务','30 秒','系统拨号只打开系统拨号盘','小程序不能指定双卡手机','186 **** 4471']) {
+    if (!callText.includes(phrase)) throw new Error('Call preparation is missing '+phrase);
+  }
   await frame.locator('[data-go="callerSelect"]').click();
   if (await frame.locator('.caller-option').count() !== 2) throw new Error('Mini Program caller selector must show only the two mobile numbers');
   if (!(await frame.locator('#oc-screen').innerText()).includes('固话号码不会出现在这里')) throw new Error('Mobile caller selector does not explain the landline path');
@@ -330,10 +339,51 @@ async function assertNoOverflow(frame, label) {
   await frame.locator('.primary-action[data-go="call"]').click();
   if (!(await frame.locator('#oc-screen').innerText()).includes('186 **** 4471')) throw new Error('Selected caller did not return to call preparation');
   await frame.locator('[data-go="dialHandoff"]').click();
+  if ((await frame.evaluate(()=>window.__onecallMini.currentPage())) !== 'dialHandoff') throw new Error('Dial handoff must open the pending task page');
   const handoffText = await frame.locator('#oc-screen').innerText();
-  if (!handoffText.includes('尾号 4471') || !handoffText.includes('只有与所选号码完全一致')) throw new Error('System dialer handoff is incomplete');
-  await frame.locator('.primary-action[data-go="solidified"]').click();
-  if (!(await frame.locator('#oc-screen').innerText()).includes('实际主叫\n186 **** 4471')) throw new Error('Verified actual caller missing from evidence result');
+  for (const phrase of ['CT-','待呼入','到期']) if (!handoffText.includes(phrase)) throw new Error('Pending task page is missing '+phrase);
+  assert.equal(await frame.locator('[data-task-ttl]').getAttribute('data-task-ttl'),'30');
+  const frozenTask = await frame.evaluate(()=>window.__onecallMini.callTaskSnapshot());
+  assert.equal(frozenTask.ttlSeconds,30);
+  assert.equal(frozenTask.tasks.filter(item=>item.normalizedCaller==='18600004471'&&['PENDING','CLAIMED'].includes(item.status)).length,1,'One nonterminal task per normalized caller');
+  await shotAt(page,'alignment-call-task-393.png');
+  await assertNoOverflow(frame,'callTask@393');
+  await frame.locator('[data-action="launch-dialer"]').click();
+  if ((await frame.evaluate(()=>window.__onecallMini.currentPage())) !== 'callStatus') throw new Error('Launch must open call status');
+  const waitingText = await frame.locator('#oc-screen').innerText();
+  if (!waitingText.includes('系统拨号盘已打开') || !waitingText.includes('尚未接通') || waitingText.includes('证据已固化')) throw new Error('Waiting status must separate dialer launch from connection');
+  assert.equal(await frame.locator('[data-call-path]').getAttribute('data-call-path'),'task');
+  assert.equal(await frame.locator('[data-callee-confirmation]').getAttribute('data-callee-confirmation'),'NONE');
+  await shotAt(page,'alignment-call-status-waiting-393.png');
+  await assertNoOverflow(frame,'callStatus waiting@393');
+  const setState = async name => { const result=await frame.evaluate(value=>window.__onecallMini.setCallDemoState(value),name); assert.equal(result.ok,true,name); return frame.locator('#oc-screen').innerText(); };
+  const claimedText = await setState('claimed');
+  for (const phrase of ['已领取','自动外呼','不会要求确认被叫']) if (!claimedText.includes(phrase)) throw new Error('Claimed state is missing '+phrase);
+  if (claimedText.includes('DTMF')) throw new Error('Task path must not expose DTMF vocabulary');
+  await assertNoOverflow(frame,'callStatus claimed@393');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-call-status-claimed-393.png'),fullPage:true});
+  const recordingText = await setState('recording');
+  if (!recordingText.includes('桥接') || !recordingText.includes('录音中')) throw new Error('Recording state is incomplete');
+  await assertNoOverflow(frame,'callStatus recording@393');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-call-status-recording-393.png'),fullPage:true});
+  const evidenceText = await setState('evidence');
+  if (!evidenceText.includes('证据可用')) throw new Error('Evidence state is missing');
+  await assertNoOverflow(frame,'callStatus evidence@393');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-call-status-evidence-393.png'),fullPage:true});
+  await frame.locator('[data-go="solidified"]').click();
+  const solidifiedText = await frame.locator('#oc-screen').innerText();
+  if (!solidifiedText.includes('自研 IVR') || !solidifiedText.includes('ONECALL 证据处理')) throw new Error('Evidence result attribution is incomplete');
+  const expiredText = await setState('failed-expired');
+  for (const phrase of ['任务已过期','未领取','未外呼','未生成证据']) if (!expiredText.includes(phrase)) throw new Error('Expired failure is missing '+phrase);
+  const mismatchStateText = await setState('failed-mismatch');
+  for (const phrase of ['主叫不一致','未领取任务','未扣']) if (!mismatchStateText.includes(phrase)) throw new Error('Mismatch failure is missing '+phrase);
+  const noAnswerText = await setState('failed-no-answer');
+  if (!noAnswerText.includes('被叫未接') || !noAnswerText.includes('未形成证据')) throw new Error('No-answer failure is incomplete');
+  await assertNoOverflow(frame,'callStatus failed@393');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-call-status-failed-393.png'),fullPage:true});
+  const failurePageText = await frame.locator('#oc-screen').innerText();
+  if (failurePageText.includes('CT-DEMO-0201') || failurePageText.includes('137 **** 2240')) throw new Error('Foreign-account task must not render in Mini');
+  assert.deepEqual(await frame.evaluate(()=>window.__onecallMini.businessSnapshot()),callTaskBusinessBefore,'Call-task actions must not change the business snapshot');
 
   await openPage(frame, 'callerMismatch');
   const mismatchText = await frame.locator('#oc-screen').innerText();
@@ -343,11 +393,16 @@ async function assertNoOverflow(frame, label) {
 
   await openPage(frame, 'landlineCall');
   const landlineCallText = await frame.locator('#oc-screen').innerText();
+  if (!landlineCallText.includes('无待拨任务') || !landlineCallText.includes('DTMF') || !landlineCallText.includes('确认被叫') || landlineCallText.includes('自动外呼')) throw new Error('Landline no-task DTMF path is incomplete or confused with task auto-dial');
   if (!landlineCallText.includes('取证声讯短号') || !landlineCallText.includes('010 **** 6688') || !landlineCallText.includes('不录音、不扣额度、不生成证据')) throw new Error('Landline short-code call flow is incomplete');
+  assert.equal(await frame.locator('[data-call-path]').getAttribute('data-call-path'),'no-task');
+  await assertNoOverflow(frame,'landline no-task@393');
+  await page.screenshot({path:path.join(screenshotRoot,'alignment-landline-no-task-dtmf-393.png'),fullPage:true});
+  await page.setViewportSize({width:760,height:1100});
 
   await openPage(frame, 'usageDetail');
   const usageText = await frame.locator('#oc-screen').innerText();
-  if (!usageText.includes('全部主叫号码用量') || !usageText.includes('固话 010 **** 6688') || !usageText.includes('手机 138 **** 6208') || !usageText.includes('实际主叫号码统计')) throw new Error('Usage detail does not aggregate all actual caller numbers');
+  if (!usageText.includes('全部主叫号码用量') || !usageText.includes('固话 010 **** 6688') || !usageText.includes('手机 138 **** 6208') || !usageText.includes('可信主叫号码统计')) throw new Error('Usage detail does not aggregate all trusted caller numbers');
 
   await page.setViewportSize({ width: 320, height: 1000 });
   const visiblePageIds = await frame.locator('.index-button').evaluateAll((buttons) => buttons.map((button) => button.dataset.page));
@@ -355,6 +410,9 @@ async function assertNoOverflow(frame, label) {
     await openPage(frame, pageId);
     await assertNoOverflow(frame, `${pageId}@320`);
   }
+  await openPage(frame, 'callStatus');
+  await assertNoOverflow(frame, 'callStatus@320');
+  await page.screenshot({ path: path.join(screenshotRoot, 'alignment-call-status-320.png'), fullPage: true });
   await openPage(frame, 'evidenceBox');
   await page.screenshot({ path: path.join(screenshotRoot, 'alignment-evidence-320.png'), fullPage: true });
   await openPage(frame, 'trialHome');
@@ -373,6 +431,7 @@ async function assertNoOverflow(frame, label) {
   await page.screenshot({ path: path.join(screenshotRoot, 'alignment-phone-sms-authorization-320.png'), fullPage: true });
   await frame.locator('#oc-screen').evaluate((screen) => { screen.scrollTop = screen.scrollHeight; });
   await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-phone-sms-authorization-bottom-320.png') });
+  assert.equal((await frame.evaluate(()=>window.__onecallMini.setCallDemoState('waiting'))).ok,true);
   await openPage(frame, 'dialHandoff');
   await page.screenshot({ path: path.join(screenshotRoot, 'alignment-dial-handoff-320.png'), fullPage: true });
   await openPage(frame, 'landlineCall');
@@ -481,7 +540,7 @@ async function assertNoOverflow(frame, label) {
   await frame.locator('.phone').screenshot({ path: path.join(screenshotRoot, 'alignment-profile-760.png'), animations: 'disabled' });
 
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log('PASS: 62-page navigation, account/login identity separation, mobile and independent-landline caller flows, configurable catalog checkout, IVR trial, account scope, and responsive layout verified.');
+  console.log('PASS: 63-page navigation, account/login identity separation, 30-second pending task, dialer-launch vs claim/connection, task auto-dial and no-task DTMF, recording/evidence/failure states, IVR/ONECALL ownership, account scope, and responsive layout verified.');
   } finally { await browser.close(); }
 })().catch((error) => {
   console.error(error);

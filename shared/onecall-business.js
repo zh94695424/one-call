@@ -20,6 +20,42 @@
     'employees', 'employeeLoginSession', 'employeeCredentials', 'employeeRoles',
     'customerAuthSession', 'uiSession', 'widgetState', 'code',
   ]);
+  // The call-task domain is a separate local review fixture. It is never part of
+  // the strict business snapshot above and has its own schema and validator.
+  const CALL_TASK_SCHEMA_VERSION = 1;
+  const CALL_TASK_TTL_SECONDS = 30;
+  const CALL_TASK_FIELDS = ['schemaVersion', 'ttlSeconds', 'callerBindings', 'tasks', 'calls', 'sequence'];
+  const CALL_TASK_REASONS = new Set(['TTL_EXPIRED', 'CALLER_MISMATCH', 'NO_ANSWER', 'BUSY', 'OUTBOUND_FAILED', 'REPLACED', 'CANCELLED', 'SUSPENDED']);
+  const CALL_TASK_FAILURE_REASONS = new Set(['TTL_EXPIRED', 'CALLER_MISMATCH', 'NO_ANSWER', 'BUSY', 'OUTBOUND_FAILED', 'SUSPENDED']);
+  const CALL_TASK_NONTERMINAL = new Set(['PENDING', 'CLAIMED']);
+  const CALL_TASK_ACTIVE_PROGRESS = new Set(['WAITING_CALLEE_INPUT', 'CALLEE_CONFIRMED', 'CLAIMED', 'OUTBOUND_STARTED', 'RINGING', 'ANSWERED', 'BRIDGED', 'RECORDING']);
+  const CALL_TASK_ENUMS = {
+    ownerType: new Set(['PERSONAL_ACCOUNT', 'ORGANIZATION']),
+    numberType: new Set(['MOBILE', 'LANDLINE']),
+    businessType: new Set(['EVIDENCE_CALL']),
+    taskStatus: new Set(['PENDING', 'CLAIMED', 'COMPLETED', 'FAILED', 'EXPIRED', 'REPLACED', 'CANCELLED', 'REJECTED']),
+    ivrAction: new Set(['DIAL_TASK_CALLEE', 'ENTER_CALLEE', 'GUIDE_ACTIVATION', 'GUIDE_PURCHASE', 'REJECT', 'REJECT_CALL_IN_PROGRESS', 'REJECT_SUSPENDED']),
+    callAction: new Set(['DIAL_TASK_CALLEE', 'ENTER_CALLEE', 'REJECT']),
+    taskMatch: new Set(['CLAIMED', 'NONE', 'MISMATCH', 'EXPIRED', 'REJECTED', 'CONFLICT']),
+    callProgress: new Set(['WAITING_INBOUND', 'WAITING_CALLEE_INPUT', 'CALLEE_CONFIRMED', 'CLAIMED', 'OUTBOUND_STARTED', 'RINGING', 'ANSWERED', 'BRIDGED', 'RECORDING', 'ENDED', 'RECORDING_RECEIVED', 'EVIDENCE_PROCESSING', 'EVIDENCE_READY', 'FAILED']),
+    calleeConfirmation: new Set(['NONE', 'DTMF_REQUIRED', 'DTMF_CONFIRMED', 'NOT_APPLICABLE']),
+    upload: new Set(['NOT_STARTED', 'UPLOADING', 'RECEIVED', 'FAILED']),
+    evidence: new Set(['NOT_CREATED', 'PROCESSING', 'AVAILABLE', 'FAILED']),
+    eventType: new Set(['INBOUND_RECEIVED', 'TASK_CLAIMED', 'DTMF_CALLEE_CONFIRMED', 'OUTBOUND_STARTED', 'RINGING', 'ANSWERED', 'BRIDGED', 'RECORDING_STARTED', 'CALL_ENDED', 'RECORDING_RECEIVED', 'EVIDENCE_PROCESSING', 'EVIDENCE_READY', 'CALL_FAILED']),
+    eventSource: new Set(['MINI', 'IVR', 'ONECALL']),
+    callerState: new Set(['ACTIVE', 'INACTIVE', 'SUSPENDED', 'UNREGISTERED']),
+  };
+  const CALL_TASK_EVENT_SOURCE = {
+    INBOUND_RECEIVED: 'IVR', TASK_CLAIMED: 'ONECALL', DTMF_CALLEE_CONFIRMED: 'IVR',
+    OUTBOUND_STARTED: 'IVR', RINGING: 'IVR', ANSWERED: 'IVR', BRIDGED: 'IVR', RECORDING_STARTED: 'IVR',
+    CALL_ENDED: 'IVR', RECORDING_RECEIVED: 'ONECALL', EVIDENCE_PROCESSING: 'ONECALL', EVIDENCE_READY: 'ONECALL',
+  };
+  const CALL_TASK_EVENT_PROGRESS = {
+    TASK_CLAIMED: 'CLAIMED', DTMF_CALLEE_CONFIRMED: 'CALLEE_CONFIRMED', OUTBOUND_STARTED: 'OUTBOUND_STARTED',
+    RINGING: 'RINGING', ANSWERED: 'ANSWERED', BRIDGED: 'BRIDGED', RECORDING_STARTED: 'RECORDING',
+    CALL_ENDED: 'ENDED', RECORDING_RECEIVED: 'RECORDING_RECEIVED', EVIDENCE_PROCESSING: 'EVIDENCE_PROCESSING',
+    EVIDENCE_READY: 'EVIDENCE_READY', CALL_FAILED: 'FAILED',
+  };
   const ENUMS = {
     numberType: new Set(['MOBILE', 'LANDLINE']),
     identity: new Set(['UNVERIFIED', 'VERIFIED']),
@@ -107,6 +143,19 @@
     payment: { UNPAID: '待支付', UNKNOWN: '支付结果待确认', PAID: '支付成功', CLOSED: '已关闭' },
     entitlement: { NOT_ISSUED: '未发放', PENDING: '待发放', ISSUED: '已到账', FAILED: '发放失败' },
     catalog: { DRAFT: '草稿', ACTIVE: '在售', OFFSALE: '已下架' },
+    taskStatus: { PENDING: '待呼入', CLAIMED: '已领取', COMPLETED: '已完成', FAILED: '失败', EXPIRED: '已过期', REPLACED: '已替换', CANCELLED: '已取消', REJECTED: '已拒绝' },
+    ivrAction: { DIAL_TASK_CALLEE: '任务自动外呼', ENTER_CALLEE: '无任务 DTMF 输入', GUIDE_ACTIVATION: '引导开通', GUIDE_PURCHASE: '引导购买', REJECT: '拒绝', REJECT_CALL_IN_PROGRESS: '呼叫处理中', REJECT_SUSPENDED: '业务已停用' },
+    taskMatch: { CLAIMED: '已领取', NONE: '无任务', MISMATCH: '主叫不匹配', EXPIRED: '已过期', REJECTED: '已拒绝', CONFLICT: '数据冲突' },
+    callProgress: { WAITING_INBOUND: '等待呼入', WAITING_CALLEE_INPUT: '等待被叫输入', CALLEE_CONFIRMED: '被叫已确认', CLAIMED: '任务已领取', OUTBOUND_STARTED: '已启动 B 路外呼', RINGING: '被叫振铃', ANSWERED: '被叫已接听', BRIDGED: '已桥接', RECORDING: '录音中', ENDED: '通话已结束', RECORDING_RECEIVED: '录音已接收', EVIDENCE_PROCESSING: '证据处理中', EVIDENCE_READY: '证据可用', FAILED: '通话失败' },
+    uploadStatus: { NOT_STARTED: '未上传', UPLOADING: '上传中', RECEIVED: '已接收', FAILED: '上传失败' },
+    evidenceStatus: { NOT_CREATED: '未创建', PROCESSING: '处理中', AVAILABLE: '可用', FAILED: '处理失败' },
+    ownership: '运营商提供号码、线路和通信承载；自研 IVR 负责呼入接听、B 路外呼、双向桥接、录音、限时挂断及通话/录音上传；ONECALL 负责业务开通、待拨任务、权益与证据处理。',
+    callPath: {
+      task: '任务路径：IVR 原子领取后按冻结被叫自动外呼，电话中不要求确认被叫号码。',
+      noTask: '无任务路径：只有没有有效待拨任务时，IVR 才引导主叫通过 DTMF 输入并确认被叫；不读取或猜测历史任务被叫。',
+      launch: '系统拨号盘已打开仅表示客户端调用了系统拨号能力，不代表已接通、已领取或正在录音。',
+      localFixture: '本地演示/评审状态，不连接真实线路、媒体引擎、对象存储或后台。',
+    },
   });
 
   const support = deepFreeze({
@@ -642,6 +691,620 @@
     return ok(clone(copied));
   }
 
+  // ---------------------------------------------------------------------------
+  // Call-task demo domain (separate from the strict business snapshot)
+  // ---------------------------------------------------------------------------
+
+  function createCallTaskDemoState(now) {
+    const base = toMs(now);
+    const offset = ms => new Date(ms).toISOString();
+    const event = (callId, index, type, at, detail) => ({
+      eventId: `${callId}-EV${String(index).padStart(2, '0')}`,
+      type,
+      at: offset(at),
+      source: type === 'CALL_FAILED' ? 'IVR' : (CALL_TASK_EVENT_SOURCE[type] || 'IVR'),
+      detail: detail || '',
+    });
+    const successEvents = (callId, start, seconds) => [
+      event(callId, 1, 'INBOUND_RECEIVED', start),
+      event(callId, 2, 'TASK_CLAIMED', start + 1000),
+      event(callId, 3, 'OUTBOUND_STARTED', start + 2000),
+      event(callId, 4, 'RINGING', start + 4000),
+      event(callId, 5, 'ANSWERED', start + 8000),
+      event(callId, 6, 'BRIDGED', start + 8000),
+      event(callId, 7, 'RECORDING_STARTED', start + 9000),
+      event(callId, 8, 'CALL_ENDED', start + 9000 + seconds * 1000),
+      event(callId, 9, 'RECORDING_RECEIVED', start + 9000 + seconds * 1000 + 12000),
+      event(callId, 10, 'EVIDENCE_PROCESSING', start + 9000 + seconds * 1000 + 22000),
+      event(callId, 11, 'EVIDENCE_READY', start + 9000 + seconds * 1000 + 32000),
+    ];
+    const directEvents = (callId, start, seconds) => {
+      const events = successEvents(callId, start, seconds);
+      events[1] = event(callId, 2, 'DTMF_CALLEE_CONFIRMED', start + 1000, '021 **** 9056');
+      return events;
+    };
+    const callerBindings = [
+      { id: 'CB-PERSONAL-6208', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', maskedCaller: '138 **** 6208', normalizedCaller: '13800006208', numberType: 'MOBILE', active: true },
+      { id: 'CB-PERSONAL-4471', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', maskedCaller: '186 **** 4471', normalizedCaller: '18600004471', numberType: 'MOBILE', active: true },
+      { id: 'CB-ORG-6688', ownerType: 'ORGANIZATION', ownerId: 'ORG-HUAQI-001', workspaceId: 'organization:ORG-HUAQI-001', maskedCaller: '010 **** 6688', normalizedCaller: '01088886688', numberType: 'LANDLINE', active: true },
+      { id: 'CB-PERSONAL-7812', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-002', workspaceId: 'personal:ACCOUNT-DEMO-002', maskedCaller: '139 **** 7812', normalizedCaller: '13900007812', numberType: 'MOBILE', active: true },
+    ];
+    const t101 = base - 10 * 60 * 1000;
+    const t103 = base - 25 * 60 * 1000;
+    const t104 = base - 2 * DAY_MS;
+    const tNoTask = base - 20 * 60 * 1000;
+    const tMismatch = base - 15 * 60 * 1000;
+    const tasks = [
+      { id: 'CT-DEMO-0101', callerBindingId: 'CB-PERSONAL-6208', normalizedCaller: '13800006208', maskedCaller: '138 **** 6208', maskedCallee: '139 **** 3816', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', createdByAccountId: 'ACCOUNT-DEMO-001', businessType: 'EVIDENCE_CALL', status: 'COMPLETED', reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t101), expiresAt: offset(t101 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t101 + 2000), claimedCallId: 'OC-C2038', claimedAt: offset(t101 + 5000), idempotencyKey: 'IDEM-CT-DEMO-0101', revision: 2 },
+      { id: 'CT-DEMO-0102', callerBindingId: 'CB-PERSONAL-6208', normalizedCaller: '13800006208', maskedCaller: '138 **** 6208', maskedCallee: '138 **** 7720', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', createdByAccountId: 'ACCOUNT-DEMO-001', businessType: 'EVIDENCE_CALL', status: 'EXPIRED', reasonCode: 'TTL_EXPIRED', ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(base - 40 * 60 * 1000), expiresAt: offset(base - 40 * 60 * 1000 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: null, claimedCallId: null, claimedAt: null, idempotencyKey: 'IDEM-CT-DEMO-0102', revision: 2 },
+      { id: 'CT-DEMO-0103', callerBindingId: 'CB-PERSONAL-6208', normalizedCaller: '13800006208', maskedCaller: '138 **** 6208', maskedCallee: '135 **** 7781', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-001', workspaceId: 'personal:ACCOUNT-DEMO-001', createdByAccountId: 'ACCOUNT-DEMO-001', businessType: 'EVIDENCE_CALL', status: 'FAILED', reasonCode: 'NO_ANSWER', ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t103), expiresAt: offset(t103 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t103 + 2000), claimedCallId: 'OC-C2035', claimedAt: offset(t103 + 4000), idempotencyKey: 'IDEM-CT-DEMO-0103', revision: 2 },
+      { id: 'CT-DEMO-0104', callerBindingId: 'CB-PERSONAL-7812', normalizedCaller: '13900007812', maskedCaller: '139 **** 7812', maskedCallee: '137 **** 2240', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-002', workspaceId: 'personal:ACCOUNT-DEMO-002', createdByAccountId: 'ACCOUNT-DEMO-002', businessType: 'EVIDENCE_CALL', status: 'COMPLETED', reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(t104), expiresAt: offset(t104 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: offset(t104 + 2000), claimedCallId: 'OC-C2034', claimedAt: offset(t104 + 5000), idempotencyKey: 'IDEM-CT-DEMO-0104', revision: 2 },
+      { id: 'CT-DEMO-0201', callerBindingId: 'CB-PERSONAL-7812', normalizedCaller: '13900007812', maskedCaller: '139 **** 7812', maskedCallee: '137 **** 2240', ownerType: 'PERSONAL_ACCOUNT', ownerId: 'ACCOUNT-DEMO-002', workspaceId: 'personal:ACCOUNT-DEMO-002', createdByAccountId: 'ACCOUNT-DEMO-002', businessType: 'EVIDENCE_CALL', status: 'PENDING', reasonCode: null, ttlSeconds: CALL_TASK_TTL_SECONDS, createdAt: offset(base - 10000), expiresAt: offset(base - 10000 + CALL_TASK_TTL_SECONDS * 1000), dialerLaunchedAt: null, claimedCallId: null, claimedAt: null, idempotencyKey: 'IDEM-CT-DEMO-0201', revision: 1 },
+    ];
+    const calls = [
+      { id: 'OC-C2038', taskId: 'CT-DEMO-0101', taskMatch: 'CLAIMED', action: 'DIAL_TASK_CALLEE', taskPath: true, normalizedCaller: '13800006208', expectedCallerMasked: '138 **** 6208', maskedCaller: '138 **** 6208', maskedCallee: '139 **** 3816', calleeConfirmation: 'NONE', progress: 'EVIDENCE_READY', endReason: null, recordingSeconds: 522, uploadStatus: 'RECEIVED', evidenceStatus: 'AVAILABLE', events: successEvents('OC-C2038', t101 + 4000, 522) },
+      { id: 'OC-C2037', taskId: null, taskMatch: 'NONE', action: 'ENTER_CALLEE', taskPath: false, normalizedCaller: '01088886688', expectedCallerMasked: null, maskedCaller: '010 **** 6688', maskedCallee: '021 **** 9056', calleeConfirmation: 'DTMF_CONFIRMED', progress: 'EVIDENCE_READY', endReason: null, recordingSeconds: 1038, uploadStatus: 'RECEIVED', evidenceStatus: 'AVAILABLE', events: directEvents('OC-C2037', tNoTask, 1038) },
+      { id: 'OC-C2036', taskId: 'CT-DEMO-0102', taskMatch: 'MISMATCH', action: 'REJECT', taskPath: true, normalizedCaller: '18600004471', expectedCallerMasked: '138 **** 6208', maskedCaller: '186 **** 4471', maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', progress: 'FAILED', endReason: 'CALLER_MISMATCH', recordingSeconds: 0, uploadStatus: 'NOT_STARTED', evidenceStatus: 'NOT_CREATED', events: [event('OC-C2036', 1, 'INBOUND_RECEIVED', tMismatch), event('OC-C2036', 2, 'CALL_FAILED', tMismatch + 2000, 'CALLER_MISMATCH')] },
+      { id: 'OC-C2035', taskId: 'CT-DEMO-0103', taskMatch: 'CLAIMED', action: 'DIAL_TASK_CALLEE', taskPath: true, normalizedCaller: '13800006208', expectedCallerMasked: '138 **** 6208', maskedCaller: '138 **** 6208', maskedCallee: '135 **** 7781', calleeConfirmation: 'NONE', progress: 'FAILED', endReason: 'NO_ANSWER', recordingSeconds: 0, uploadStatus: 'NOT_STARTED', evidenceStatus: 'NOT_CREATED', events: [event('OC-C2035', 1, 'INBOUND_RECEIVED', t103 + 4000), event('OC-C2035', 2, 'TASK_CLAIMED', t103 + 4000), event('OC-C2035', 3, 'OUTBOUND_STARTED', t103 + 6000), event('OC-C2035', 4, 'RINGING', t103 + 8000), event('OC-C2035', 5, 'CALL_FAILED', t103 + 30000, 'NO_ANSWER')] },
+      { id: 'OC-C2034', taskId: 'CT-DEMO-0104', taskMatch: 'CLAIMED', action: 'DIAL_TASK_CALLEE', taskPath: true, normalizedCaller: '13900007812', expectedCallerMasked: '139 **** 7812', maskedCaller: '139 **** 7812', maskedCallee: '137 **** 2240', calleeConfirmation: 'NONE', progress: 'EVIDENCE_READY', endReason: null, recordingSeconds: 744, uploadStatus: 'RECEIVED', evidenceStatus: 'AVAILABLE', events: successEvents('OC-C2034', t104 + 4000, 744) },
+    ];
+    const state = { schemaVersion: CALL_TASK_SCHEMA_VERSION, ttlSeconds: CALL_TASK_TTL_SECONDS, callerBindings, tasks, calls, sequence: 2000 };
+    if (!validateCallTask(state).ok) throw new Error('Invalid call-task demo fixture');
+    return state;
+  }
+
+  function createCallTask(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input)) return fail('INVALID_TRANSITION');
+      const allowed = ['callerBindingId', 'maskedCallee', 'businessType', 'idempotencyKey', 'replacePending'];
+      if (Object.keys(input).some(key => !allowed.includes(key))) return fail('INVALID_TRANSITION');
+      if (!id(input.callerBindingId) || !textBetween(input.maskedCallee, 1, 40) || !id(input.idempotencyKey)) return fail('INVALID_TRANSITION');
+      if (input.businessType !== undefined && input.businessType !== 'EVIDENCE_CALL') return fail('INVALID_TRANSITION');
+      if (input.replacePending !== undefined && typeof input.replacePending !== 'boolean') return fail('INVALID_TRANSITION');
+      const binding = one(draft.callerBindings, item => item.id === input.callerBindingId);
+      if (!binding) return fail('NOT_FOUND');
+      if (!binding.active) return fail('CALLER_BINDING_INACTIVE');
+      const time = toMs(now);
+      const sameKey = one(draft.tasks, item => item.idempotencyKey === input.idempotencyKey);
+      const sameFingerprint = sameKey && sameKey.callerBindingId === binding.id && sameKey.maskedCallee === input.maskedCallee && sameKey.businessType === 'EVIDENCE_CALL';
+      if (sameKey && !sameFingerprint) return fail('INVALID_TRANSITION');
+      reapExpiredCallTasks(draft, binding.normalizedCaller, now);
+      if (sameKey) return duplicate(sameKey);
+      const activeCall = draft.calls.find(item => item.normalizedCaller === binding.normalizedCaller && CALL_TASK_ACTIVE_PROGRESS.has(item.progress));
+      if (activeCall) return fail('CALL_IN_PROGRESS');
+      const pending = one(draft.tasks, item => item.normalizedCaller === binding.normalizedCaller && CALL_TASK_NONTERMINAL.has(item.status));
+      if (pending && pending.status === 'CLAIMED') return fail('CALL_IN_PROGRESS');
+      if (pending) {
+        const sameOwner = pending.ownerType === binding.ownerType && pending.ownerId === binding.ownerId && pending.workspaceId === binding.workspaceId;
+        if (!sameOwner) return fail('CALLER_BUSY');
+        if (pending.maskedCallee === input.maskedCallee) return duplicate(pending);
+        if (input.replacePending !== true) return fail('PENDING_TASK_EXISTS');
+        pending.status = 'REPLACED';
+        pending.reasonCode = 'REPLACED';
+        pending.revision += 1;
+      }
+      const task = {
+        id: nextCallTaskId(draft, 'CT'),
+        callerBindingId: binding.id,
+        normalizedCaller: binding.normalizedCaller,
+        maskedCaller: binding.maskedCaller,
+        maskedCallee: input.maskedCallee,
+        ownerType: binding.ownerType,
+        ownerId: binding.ownerId,
+        workspaceId: binding.workspaceId,
+        createdByAccountId: binding.ownerId,
+        businessType: 'EVIDENCE_CALL',
+        status: 'PENDING',
+        reasonCode: null,
+        ttlSeconds: CALL_TASK_TTL_SECONDS,
+        createdAt: iso(now),
+        expiresAt: new Date(time + CALL_TASK_TTL_SECONDS * 1000).toISOString(),
+        dialerLaunchedAt: null,
+        claimedCallId: null,
+        claimedAt: null,
+        idempotencyKey: input.idempotencyKey,
+        revision: 1,
+      };
+      draft.tasks.push(task);
+      return ok(task);
+    });
+  }
+
+  function cancelCallTask(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.taskId) || !id(input.accountId) || !id(input.workspaceId)) return fail('INVALID_TRANSITION');
+      const task = one(draft.tasks, item => item.id === input.taskId);
+      if (!task) return fail('NOT_FOUND');
+      if (task.ownerType !== 'PERSONAL_ACCOUNT' || task.ownerId !== input.accountId || task.workspaceId !== input.workspaceId) return fail('NOT_FOUND');
+      if (task.status !== 'PENDING') return fail('INVALID_TRANSITION');
+      if (toMs(now) >= Date.parse(task.expiresAt)) return fail('TASK_EXPIRED');
+      task.status = 'CANCELLED';
+      task.reasonCode = 'CANCELLED';
+      task.revision += 1;
+      return ok(task);
+    });
+  }
+
+  function recordDialerLaunch(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.taskId) || !id(input.accountId) || !id(input.workspaceId)) return fail('INVALID_TRANSITION');
+      const task = one(draft.tasks, item => item.id === input.taskId);
+      if (!task) return fail('NOT_FOUND');
+      if (task.ownerType !== 'PERSONAL_ACCOUNT' || task.ownerId !== input.accountId || task.workspaceId !== input.workspaceId) return fail('NOT_FOUND');
+      if (task.status !== 'PENDING') return fail('INVALID_TRANSITION');
+      if (toMs(now) >= Date.parse(task.expiresAt)) return fail('TASK_EXPIRED');
+      if (task.dialerLaunchedAt) return duplicate({ taskId: task.id, dialerLaunchedAt: task.dialerLaunchedAt });
+      task.dialerLaunchedAt = iso(now);
+      task.revision += 1;
+      return ok({ taskId: task.id, dialerLaunchedAt: task.dialerLaunchedAt });
+    });
+  }
+
+  function resolveIvrInbound(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.callId) || !textBetween(input.normalizedCaller, 1, 20)) return fail('INVALID_TRANSITION');
+      if (typeof input.callerTrusted !== 'boolean' || !CALL_TASK_ENUMS.callerState.has(input.callerState)) return fail('INVALID_TRANSITION');
+      if (!safeBetween(input.availableSeconds, 0, 86400) || typeof input.directAllowed !== 'boolean') return fail('INVALID_TRANSITION');
+      const existing = one(draft.calls, item => item.id === input.callId);
+      if (existing) {
+        if (existing.normalizedCaller !== input.normalizedCaller) return fail('INVALID_TRANSITION');
+        return duplicate(decisionForCall(existing));
+      }
+      if (!input.callerTrusted) return fail('REJECT');
+      const normalizedCaller = input.normalizedCaller;
+      // Ownership is resolved from the unique active caller binding before any
+      // branch that writes a task or creates a call. Missing or ambiguous
+      // ownership fails closed.
+      const binding = uniqueCallerBinding(draft, normalizedCaller);
+      if (input.callerState === 'SUSPENDED') {
+        if (!binding) return fail('REJECT');
+        let rejectedTask = false;
+        for (const task of draft.tasks) {
+          if (task.status === 'PENDING'
+            && task.normalizedCaller === normalizedCaller
+            && task.callerBindingId === binding.id
+            && task.ownerType === binding.ownerType
+            && task.ownerId === binding.ownerId
+            && task.workspaceId === binding.workspaceId) {
+            task.status = 'REJECTED';
+            task.reasonCode = 'SUSPENDED';
+            task.revision += 1;
+            rejectedTask = true;
+          }
+        }
+        return ok({ action: 'REJECT_SUSPENDED', callId: null, taskId: null, taskMatch: 'REJECTED', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false, taskRejected: rejectedTask }, 'REJECT_SUSPENDED');
+      }
+      const activeCall = draft.calls.find(item => item.normalizedCaller === normalizedCaller && CALL_TASK_ACTIVE_PROGRESS.has(item.progress));
+      if (activeCall) return fail('REJECT_CALL_IN_PROGRESS');
+      reapExpiredCallTasks(draft, normalizedCaller, now);
+      if (!binding) return fail('REJECT');
+      if (input.callerState === 'INACTIVE' || input.callerState === 'UNREGISTERED') {
+        return ok({ action: 'GUIDE_ACTIVATION', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
+      }
+      if (input.availableSeconds <= 0) {
+        return ok({ action: 'GUIDE_PURCHASE', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
+      }
+      const callerPending = draft.tasks.filter(item => item.normalizedCaller === normalizedCaller && item.status === 'PENDING');
+      // Claiming is ownership-scoped exactly like the SUSPENDED branch: the
+      // task must belong to the unique active binding resolved above. A
+      // same-caller pending task owned by another scope must not be claimable
+      // and must not fall through to the no-task DTMF path.
+      const pending = callerPending.find(item => item.callerBindingId === binding.id
+        && item.ownerType === binding.ownerType
+        && item.ownerId === binding.ownerId
+        && item.workspaceId === binding.workspaceId);
+      if (!pending && callerPending.length) return fail('REJECT');
+      if (pending && toMs(now) < Date.parse(pending.expiresAt)) {
+        const at = iso(now);
+        pending.status = 'CLAIMED';
+        pending.claimedCallId = input.callId;
+        pending.claimedAt = at;
+        pending.revision += 1;
+        const call = {
+          id: input.callId,
+          taskId: pending.id,
+          taskMatch: 'CLAIMED',
+          action: 'DIAL_TASK_CALLEE',
+          taskPath: true,
+          normalizedCaller,
+          expectedCallerMasked: pending.maskedCaller,
+          maskedCaller: pending.maskedCaller,
+          maskedCallee: pending.maskedCallee,
+          calleeConfirmation: 'NONE',
+          progress: 'CLAIMED',
+          endReason: null,
+          recordingSeconds: 0,
+          uploadStatus: 'NOT_STARTED',
+          evidenceStatus: 'NOT_CREATED',
+          events: [
+            { eventId: `${input.callId}-INBOUND`, type: 'INBOUND_RECEIVED', at, source: 'IVR', detail: '' },
+            { eventId: `${input.callId}-CLAIM`, type: 'TASK_CLAIMED', at, source: 'ONECALL', detail: pending.id },
+          ],
+        };
+        draft.calls.push(call);
+        return ok({ action: 'DIAL_TASK_CALLEE', callId: call.id, taskId: pending.id, taskMatch: 'CLAIMED', progress: 'CLAIMED', maskedCallee: pending.maskedCallee, calleeConfirmation: 'NONE', taskPath: true });
+      }
+      // directAllowed only gates the no-task path; a valid task is claimed above.
+      if (input.directAllowed !== true) {
+        return ok({ action: 'GUIDE_PURCHASE', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
+      }
+      const call = {
+        id: input.callId,
+        taskId: null,
+        taskMatch: 'NONE',
+        action: 'ENTER_CALLEE',
+        taskPath: false,
+        normalizedCaller,
+        expectedCallerMasked: null,
+        maskedCaller: binding.maskedCaller,
+        maskedCallee: null,
+        calleeConfirmation: 'DTMF_REQUIRED',
+        progress: 'WAITING_CALLEE_INPUT',
+        endReason: null,
+        recordingSeconds: 0,
+        uploadStatus: 'NOT_STARTED',
+        evidenceStatus: 'NOT_CREATED',
+        events: [{ eventId: `${input.callId}-INBOUND`, type: 'INBOUND_RECEIVED', at: iso(now), source: 'IVR', detail: '' }],
+      };
+      draft.calls.push(call);
+      return ok({ action: 'ENTER_CALLEE', callId: call.id, taskId: null, taskMatch: 'NONE', progress: 'WAITING_CALLEE_INPUT', maskedCallee: null, calleeConfirmation: 'DTMF_REQUIRED', taskPath: false });
+    });
+  }
+
+  function confirmDirectCallee(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.callId) || !textBetween(input.normalizedCaller, 1, 20) || !textBetween(input.maskedCallee, 1, 40) || !id(input.eventId)) return fail('INVALID_TRANSITION');
+      if (input.taskId !== undefined && input.taskId !== null) return fail('INVALID_TRANSITION');
+      const call = one(draft.calls, item => item.id === input.callId);
+      if (!call) return fail('NOT_FOUND');
+      if (call.normalizedCaller !== input.normalizedCaller) return fail('INVALID_TRANSITION');
+      const existing = findCallEvent(draft, input.eventId);
+      if (existing) {
+        if (existing.call.id !== input.callId || existing.event.type !== 'DTMF_CALLEE_CONFIRMED' || existing.event.detail !== input.maskedCallee) return fail('INVALID_TRANSITION');
+        return duplicate({ callId: call.id, maskedCallee: call.maskedCallee, progress: 'CALLEE_CONFIRMED', calleeConfirmation: 'DTMF_CONFIRMED', taskPath: false });
+      }
+      if (call.action !== 'ENTER_CALLEE' || call.taskId !== null || call.taskPath !== false) return fail('INVALID_TRANSITION');
+      if (call.progress !== 'WAITING_CALLEE_INPUT' || call.calleeConfirmation !== 'DTMF_REQUIRED') return fail('INVALID_TRANSITION');
+      const last = call.events[call.events.length - 1];
+      if (toMs(now) < Date.parse(last.at)) return fail('INVALID_TRANSITION');
+      call.events.push({ eventId: input.eventId, type: 'DTMF_CALLEE_CONFIRMED', at: iso(now), source: 'IVR', detail: input.maskedCallee });
+      call.maskedCallee = input.maskedCallee;
+      call.calleeConfirmation = 'DTMF_CONFIRMED';
+      call.progress = 'CALLEE_CONFIRMED';
+      return ok({ callId: call.id, maskedCallee: call.maskedCallee, progress: 'CALLEE_CONFIRMED', calleeConfirmation: 'DTMF_CONFIRMED', taskPath: false });
+    });
+  }
+
+  function recordCallFact(state, input, now) {
+    return callTaskMutate(state, draft => {
+      if (!plain(input) || !id(input.callId) || !id(input.eventId) || !CALL_TASK_ENUMS.eventType.has(input.type)) return fail('INVALID_TRANSITION');
+      const call = one(draft.calls, item => item.id === input.callId);
+      if (!call) return fail('NOT_FOUND');
+      const at = input.at === undefined ? iso(now) : input.at;
+      if (!date(at)) return fail('INVALID_TRANSITION');
+      const detail = input.detail === undefined ? '' : input.detail;
+      if (typeof detail !== 'string' || detail.length > 120) return fail('INVALID_TRANSITION');
+      if (input.recordingSeconds !== undefined && !safeBetween(input.recordingSeconds, 0, 86400)) return fail('INVALID_TRANSITION');
+      const existing = findCallEvent(draft, input.eventId);
+      if (existing) {
+        if (existing.call.id !== input.callId || existing.event.type !== input.type || existing.event.detail !== detail || existing.event.at !== at) return fail('INVALID_TRANSITION');
+        return duplicate({ callId: call.id, eventId: input.eventId, type: input.type, at: existing.event.at, detail });
+      }
+      const last = call.events[call.events.length - 1];
+      if (toMs(at) < Date.parse(last.at)) return fail('INVALID_TRANSITION');
+      if (!allowedNextCallEvents(call).includes(input.type)) return fail('INVALID_TRANSITION');
+      if (input.type === 'CALL_FAILED' && !CALL_TASK_FAILURE_REASONS.has(detail)) return fail('INVALID_TRANSITION');
+      if (input.type === 'TASK_CLAIMED') return fail('INVALID_TRANSITION');
+      if (input.type === 'DTMF_CALLEE_CONFIRMED') return fail('INVALID_TRANSITION');
+      if (input.type === 'INBOUND_RECEIVED') return fail('INVALID_TRANSITION');
+      const event = { eventId: input.eventId, type: input.type, at, source: input.type === 'CALL_FAILED' ? 'IVR' : CALL_TASK_EVENT_SOURCE[input.type], detail };
+      call.events.push(event);
+      const beforeBridge = ['INBOUND_RECEIVED', 'TASK_CLAIMED', 'DTMF_CALLEE_CONFIRMED', 'OUTBOUND_STARTED', 'RINGING'].includes(last.type);
+      if (input.type === 'CALL_ENDED') {
+        call.recordingSeconds = input.recordingSeconds === undefined ? call.recordingSeconds : input.recordingSeconds;
+        call.progress = 'ENDED';
+      } else if (input.type === 'CALL_FAILED') {
+        call.recordingSeconds = beforeBridge ? 0 : (input.recordingSeconds || 0);
+        call.endReason = detail;
+        call.progress = 'FAILED';
+      } else if (input.type === 'RECORDING_RECEIVED') {
+        call.uploadStatus = 'RECEIVED';
+        call.progress = 'RECORDING_RECEIVED';
+      } else if (input.type === 'EVIDENCE_PROCESSING') {
+        call.evidenceStatus = 'PROCESSING';
+        call.progress = 'EVIDENCE_PROCESSING';
+      } else if (input.type === 'EVIDENCE_READY') {
+        call.evidenceStatus = 'AVAILABLE';
+        call.progress = 'EVIDENCE_READY';
+      } else {
+        call.progress = CALL_TASK_EVENT_PROGRESS[input.type];
+      }
+      const task = call.taskId ? one(draft.tasks, item => item.id === call.taskId) : null;
+      if (task && task.claimedCallId === call.id) {
+        if (input.type === 'CALL_ENDED' && task.status === 'CLAIMED') {
+          task.status = 'COMPLETED';
+          task.reasonCode = null;
+          task.revision += 1;
+        }
+        if (input.type === 'CALL_FAILED' && task.status === 'CLAIMED') {
+          task.status = 'FAILED';
+          task.reasonCode = detail;
+          task.revision += 1;
+        }
+      }
+      return ok({ callId: call.id, eventId: event.eventId, type: event.type, at: event.at, detail: event.detail, progress: call.progress });
+    });
+  }
+
+  function callTaskSnapshot(state) {
+    const validation = validateCallTask(state);
+    return validation.ok ? ok(clone(pickCallTask(state))) : validation;
+  }
+
+  function loadCallTaskSnapshot(state, candidate) {
+    if (!plain(state)) return fail('INVALID_CALL_TASK');
+    const validation = validateCallTask(candidate);
+    if (!validation.ok) return validation;
+    const copied = clone(pickCallTask(candidate));
+    replaceCallTask(state, copied);
+    return ok(clone(copied));
+  }
+
+  function uniqueCallerBinding(state, normalizedCaller) {
+    if (!plain(state) || !Array.isArray(state.callerBindings) || typeof normalizedCaller !== 'string') return null;
+    const matches = state.callerBindings.filter(item => item && item.active === true && item.normalizedCaller === normalizedCaller);
+    return matches.length === 1 ? clone(matches[0]) : null;
+  }
+
+  function callTaskMutate(state, action) {
+    if (!plain(state)) return fail('INVALID_CALL_TASK');
+    let draft;
+    try { draft = clone(pickCallTask(state)); } catch (_) { return fail('INVALID_CALL_TASK'); }
+    let result;
+    try { result = action(draft); } catch (_) { return fail('INVALID_CALL_TASK'); }
+    if (!result) return fail('INVALID_CALL_TASK');
+    if (!result.ok) return result;
+    // Duplicate and guide outcomes can carry a deterministic expiry reaping
+    // side effect, so the validated draft (identical otherwise) replaces state.
+    const validation = validateCallTask(draft);
+    if (!validation.ok) return validation;
+    replaceCallTask(state, draft);
+    if (result.code === 'DUPLICATE') return duplicate(result.value);
+    return ok(clone(result.value), result.code);
+  }
+
+  function pickCallTask(state) {
+    const output = {};
+    for (const key of CALL_TASK_FIELDS) output[key] = state[key];
+    return output;
+  }
+
+  function replaceCallTask(state, source) {
+    for (const key of CALL_TASK_FIELDS) state[key] = source[key];
+  }
+
+  function nextCallTaskId(state, prefix) {
+    const collection = prefix === 'CT' ? state.tasks : state.calls;
+    const used = new Set(collection.map(item => item.id));
+    let sequence = state.sequence;
+    let candidate;
+    do {
+      if (sequence >= Number.MAX_SAFE_INTEGER) throw new Error('Call-task ID sequence exhausted');
+      sequence += 1;
+      candidate = `${prefix}-${sequence}`;
+    } while (used.has(candidate));
+    state.sequence = sequence;
+    return candidate;
+  }
+
+  function reapExpiredCallTasks(draft, normalizedCaller, now) {
+    const time = toMs(now);
+    for (const task of draft.tasks) {
+      if (task.normalizedCaller === normalizedCaller && task.status === 'PENDING' && time >= Date.parse(task.expiresAt)) {
+        task.status = 'EXPIRED';
+        task.reasonCode = 'TTL_EXPIRED';
+        task.revision += 1;
+      }
+    }
+  }
+
+  function decisionForCall(call) {
+    return {
+      action: call.action,
+      callId: call.id,
+      taskId: call.taskId,
+      taskMatch: call.taskMatch,
+      progress: call.progress,
+      maskedCallee: call.maskedCallee,
+      calleeConfirmation: call.calleeConfirmation,
+      taskPath: call.taskPath,
+    };
+  }
+
+  function findCallEvent(state, eventId) {
+    for (const call of state.calls) {
+      for (const event of call.events) {
+        if (event.eventId === eventId) return { call, event };
+      }
+    }
+    return null;
+  }
+
+  function allowedNextCallEvents(call) {
+    const last = call.events.length ? call.events[call.events.length - 1].type : null;
+    if (last === 'INBOUND_RECEIVED') return call.taskPath ? ['TASK_CLAIMED', 'CALL_FAILED'] : ['DTMF_CALLEE_CONFIRMED', 'CALL_FAILED'];
+    if (last === 'TASK_CLAIMED' || last === 'DTMF_CALLEE_CONFIRMED') return ['OUTBOUND_STARTED', 'CALL_FAILED'];
+    if (last === 'OUTBOUND_STARTED') return ['RINGING', 'CALL_FAILED'];
+    if (last === 'RINGING') return ['ANSWERED', 'CALL_FAILED'];
+    if (last === 'ANSWERED') return ['BRIDGED', 'CALL_FAILED'];
+    if (last === 'BRIDGED') return ['RECORDING_STARTED', 'CALL_FAILED'];
+    if (last === 'RECORDING_STARTED') return ['CALL_ENDED', 'CALL_FAILED'];
+    if (last === 'CALL_ENDED') return ['RECORDING_RECEIVED'];
+    if (last === 'RECORDING_RECEIVED') return ['EVIDENCE_PROCESSING'];
+    if (last === 'EVIDENCE_PROCESSING') return ['EVIDENCE_READY'];
+    return [];
+  }
+
+  function validateCallTask(candidate) {
+    if (!safeData(candidate) || !plain(candidate)) return fail('INVALID_CALL_TASK');
+    const keys = Object.keys(candidate).sort();
+    const allowed = [...CALL_TASK_FIELDS].sort();
+    if (keys.length !== allowed.length || keys.some((key, index) => key !== allowed[index])) return fail('INVALID_CALL_TASK');
+    if (candidate.schemaVersion !== CALL_TASK_SCHEMA_VERSION || candidate.ttlSeconds !== CALL_TASK_TTL_SECONDS) return fail('INVALID_CALL_TASK');
+    if (!safeBetween(candidate.sequence, 0, Number.MAX_SAFE_INTEGER)) return fail('INVALID_CALL_TASK');
+    if (!Array.isArray(candidate.callerBindings) || !Array.isArray(candidate.tasks) || !Array.isArray(candidate.calls)) return fail('INVALID_CALL_TASK');
+    if (!unique(candidate.callerBindings) || !unique(candidate.tasks) || !unique(candidate.tasks, 'idempotencyKey') || !unique(candidate.calls)) return fail('INVALID_CALL_TASK');
+    for (const binding of candidate.callerBindings) if (!validCallerBinding(binding)) return fail('INVALID_CALL_TASK');
+    const bindingsById = new Map(candidate.callerBindings.map(item => [item.id, item]));
+    const tasksById = new Map(candidate.tasks.map(item => [item.id, item]));
+    const callsById = new Map(candidate.calls.map(item => [item.id, item]));
+    for (const task of candidate.tasks) {
+      if (!validCallTask(task, bindingsById)) return fail('INVALID_CALL_TASK');
+    }
+    const eventIds = new Set();
+    for (const call of candidate.calls) {
+      if (!validCall(call, tasksById, candidate.callerBindings, eventIds)) return fail('INVALID_CALL_TASK');
+    }
+    const nonterminalByCaller = new Map();
+    for (const task of candidate.tasks) {
+      if (!CALL_TASK_NONTERMINAL.has(task.status)) continue;
+      if (nonterminalByCaller.has(task.normalizedCaller)) return fail('INVALID_CALL_TASK');
+      nonterminalByCaller.set(task.normalizedCaller, task.id);
+    }
+    const activeByCaller = new Map();
+    for (const call of candidate.calls) {
+      if (!CALL_TASK_ACTIVE_PROGRESS.has(call.progress)) continue;
+      if (activeByCaller.has(call.normalizedCaller)) return fail('INVALID_CALL_TASK');
+      activeByCaller.set(call.normalizedCaller, call.id);
+    }
+    for (const task of candidate.tasks) {
+      if (['CLAIMED', 'COMPLETED', 'FAILED'].includes(task.status)) {
+        const call = callsById.get(task.claimedCallId);
+        if (!call || call.taskId !== task.id) return fail('INVALID_CALL_TASK');
+        if (task.status === 'CLAIMED' && !CALL_TASK_ACTIVE_PROGRESS.has(call.progress)) return fail('INVALID_CALL_TASK');
+        if (task.status === 'COMPLETED' && !['ENDED', 'RECORDING_RECEIVED', 'EVIDENCE_PROCESSING', 'EVIDENCE_READY'].includes(call.progress)) return fail('INVALID_CALL_TASK');
+        if (task.status === 'FAILED' && call.progress !== 'FAILED') return fail('INVALID_CALL_TASK');
+      }
+    }
+    return ok(true);
+  }
+
+  function validCallerBinding(binding) {
+    if (!exactKeys(binding, ['id', 'ownerType', 'ownerId', 'workspaceId', 'maskedCaller', 'normalizedCaller', 'numberType', 'active'])) return false;
+    if (!id(binding.id) || !CALL_TASK_ENUMS.ownerType.has(binding.ownerType) || !id(binding.ownerId) || !id(binding.workspaceId) || !textBetween(binding.maskedCaller, 1, 40) || !textBetween(binding.normalizedCaller, 1, 20) || !CALL_TASK_ENUMS.numberType.has(binding.numberType) || typeof binding.active !== 'boolean') return false;
+    if (binding.ownerType === 'PERSONAL_ACCOUNT' && binding.workspaceId !== `personal:${binding.ownerId}`) return false;
+    if (binding.ownerType === 'ORGANIZATION' && binding.workspaceId !== `organization:${binding.ownerId}`) return false;
+    return true;
+  }
+
+  function validCallTask(task, bindingsById) {
+    if (!exactKeys(task, ['id', 'callerBindingId', 'normalizedCaller', 'maskedCaller', 'maskedCallee', 'ownerType', 'ownerId', 'workspaceId', 'createdByAccountId', 'businessType', 'status', 'reasonCode', 'ttlSeconds', 'createdAt', 'expiresAt', 'dialerLaunchedAt', 'claimedCallId', 'claimedAt', 'idempotencyKey', 'revision'])) return false;
+    if (!id(task.id) || !id(task.callerBindingId) || !textBetween(task.normalizedCaller, 1, 20) || !textBetween(task.maskedCaller, 1, 40) || !textBetween(task.maskedCallee, 1, 40)) return false;
+    if (!CALL_TASK_ENUMS.ownerType.has(task.ownerType) || !id(task.ownerId) || !id(task.workspaceId) || !id(task.createdByAccountId)) return false;
+    if (!CALL_TASK_ENUMS.businessType.has(task.businessType) || !CALL_TASK_ENUMS.taskStatus.has(task.status)) return false;
+    if (task.reasonCode !== null && !CALL_TASK_REASONS.has(task.reasonCode)) return false;
+    if (task.ttlSeconds !== CALL_TASK_TTL_SECONDS) return false;
+    if (!date(task.createdAt) || !date(task.expiresAt) || Date.parse(task.expiresAt) - Date.parse(task.createdAt) !== CALL_TASK_TTL_SECONDS * 1000) return false;
+    if (task.dialerLaunchedAt !== null && !date(task.dialerLaunchedAt)) return false;
+    if (!id(task.idempotencyKey) || !safePositive(task.revision)) return false;
+    const binding = bindingsById.get(task.callerBindingId);
+    if (!binding || binding.normalizedCaller !== task.normalizedCaller || binding.maskedCaller !== task.maskedCaller || binding.ownerType !== task.ownerType || binding.ownerId !== task.ownerId || binding.workspaceId !== task.workspaceId) return false;
+    if (task.status === 'PENDING') {
+      if (task.reasonCode !== null || task.claimedCallId !== null || task.claimedAt !== null) return false;
+    } else if (task.status === 'CLAIMED') {
+      if (task.reasonCode !== null || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else if (task.status === 'COMPLETED') {
+      if (task.reasonCode !== null || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else if (task.status === 'FAILED') {
+      if (!CALL_TASK_FAILURE_REASONS.has(task.reasonCode) || !id(task.claimedCallId) || !date(task.claimedAt)) return false;
+    } else {
+      if (task.claimedCallId !== null || task.claimedAt !== null) return false;
+      if (task.status === 'EXPIRED' && task.reasonCode !== 'TTL_EXPIRED') return false;
+      if (task.status === 'REPLACED' && task.reasonCode !== 'REPLACED') return false;
+      if (task.status === 'CANCELLED' && task.reasonCode !== 'CANCELLED') return false;
+      if (task.status === 'REJECTED' && !['SUSPENDED', 'CALLER_MISMATCH'].includes(task.reasonCode)) return false;
+    }
+    if (task.claimedAt !== null && (Date.parse(task.claimedAt) < Date.parse(task.createdAt) || Date.parse(task.claimedAt) >= Date.parse(task.expiresAt))) return false;
+    return true;
+  }
+
+  function validCall(call, tasksById, callerBindings, eventIds) {
+    if (!exactKeys(call, ['id', 'taskId', 'taskMatch', 'action', 'taskPath', 'normalizedCaller', 'expectedCallerMasked', 'maskedCaller', 'maskedCallee', 'calleeConfirmation', 'progress', 'endReason', 'recordingSeconds', 'uploadStatus', 'evidenceStatus', 'events'])) return false;
+    if (!id(call.id) || !textBetween(call.normalizedCaller, 1, 20) || !textBetween(call.maskedCaller, 1, 40)) return false;
+    if (call.expectedCallerMasked !== null && !textBetween(call.expectedCallerMasked, 1, 40)) return false;
+    if (call.maskedCallee !== null && !textBetween(call.maskedCallee, 1, 40)) return false;
+    if (!CALL_TASK_ENUMS.callAction.has(call.action) || !CALL_TASK_ENUMS.taskMatch.has(call.taskMatch) || !CALL_TASK_ENUMS.calleeConfirmation.has(call.calleeConfirmation)) return false;
+    if (!CALL_TASK_ENUMS.callProgress.has(call.progress) || !CALL_TASK_ENUMS.upload.has(call.uploadStatus) || !CALL_TASK_ENUMS.evidence.has(call.evidenceStatus)) return false;
+    if (typeof call.taskPath !== 'boolean' || !safeBetween(call.recordingSeconds, 0, 86400)) return false;
+    if (call.endReason !== null && !CALL_TASK_REASONS.has(call.endReason)) return false;
+    if (call.taskId !== null && !id(call.taskId)) return false;
+    if (call.taskPath !== (call.taskId !== null)) return false;
+    if (!Array.isArray(call.events) || !call.events.length) return false;
+    for (const [index, event] of call.events.entries()) {
+      if (!exactKeys(event, ['eventId', 'type', 'at', 'source', 'detail']) || !id(event.eventId) || !CALL_TASK_ENUMS.eventType.has(event.type) || !date(event.at) || !CALL_TASK_ENUMS.eventSource.has(event.source) || typeof event.detail !== 'string' || event.detail.length > 120) return false;
+      if (eventIds.has(event.eventId)) return false;
+      eventIds.add(event.eventId);
+      if (index === 0) {
+        if (event.type !== 'INBOUND_RECEIVED' || event.source !== 'IVR') return false;
+        continue;
+      }
+      if (!allowedNextCallEvents({ events: call.events.slice(0, index), taskPath: call.taskPath }).includes(event.type)) return false;
+      if (Date.parse(event.at) < Date.parse(call.events[index - 1].at)) return false;
+      if (event.type === 'CALL_FAILED') {
+        if (!CALL_TASK_FAILURE_REASONS.has(event.detail)) return false;
+        if (event.source !== 'IVR' && event.source !== 'ONECALL') return false;
+      } else if (CALL_TASK_EVENT_SOURCE[event.type] !== event.source) return false;
+    }
+    const has = type => call.events.some(event => event.type === type);
+    const last = call.events[call.events.length - 1];
+    const derivedProgress = last.type === 'INBOUND_RECEIVED' ? (call.action === 'ENTER_CALLEE' ? 'WAITING_CALLEE_INPUT' : 'WAITING_INBOUND') : CALL_TASK_EVENT_PROGRESS[last.type];
+    if (call.progress !== derivedProgress) return false;
+    const derivedUpload = has('RECORDING_RECEIVED') ? 'RECEIVED' : 'NOT_STARTED';
+    const derivedEvidence = has('EVIDENCE_READY') ? 'AVAILABLE' : has('EVIDENCE_PROCESSING') ? 'PROCESSING' : 'NOT_CREATED';
+    if (call.uploadStatus !== derivedUpload || call.evidenceStatus !== derivedEvidence) return false;
+    if (call.action === 'DIAL_TASK_CALLEE') {
+      if (!call.taskPath || call.taskMatch !== 'CLAIMED' || call.calleeConfirmation !== 'NONE' || !call.maskedCallee) return false;
+      const task = tasksById.get(call.taskId);
+      if (!task || task.claimedCallId !== call.id || task.normalizedCaller !== call.normalizedCaller || task.maskedCallee !== call.maskedCallee || task.maskedCaller !== call.expectedCallerMasked) return false;
+      if (!has('TASK_CLAIMED') || !call.events.some(event => event.type === 'TASK_CLAIMED' && event.at === task.claimedAt)) return false;
+    } else if (call.action === 'ENTER_CALLEE') {
+      if (call.taskPath || call.taskMatch !== 'NONE' || call.taskId !== null || call.expectedCallerMasked !== null) return false;
+      if (call.calleeConfirmation === 'DTMF_REQUIRED') {
+        if (call.progress !== 'WAITING_CALLEE_INPUT' || has('DTMF_CALLEE_CONFIRMED') || call.maskedCallee !== null) return false;
+      } else if (call.calleeConfirmation === 'DTMF_CONFIRMED') {
+        if (call.progress === 'WAITING_CALLEE_INPUT' || !has('DTMF_CALLEE_CONFIRMED') || !call.maskedCallee) return false;
+      } else return false;
+    } else {
+      if (call.progress !== 'FAILED' || call.calleeConfirmation !== 'NOT_APPLICABLE' || call.maskedCallee !== null || !call.endReason) return false;
+      if (call.taskId !== null) {
+        const task = tasksById.get(call.taskId);
+        if (!task || call.taskMatch !== 'MISMATCH' || task.claimedCallId === call.id) return false;
+        if (call.expectedCallerMasked === null || call.expectedCallerMasked === call.maskedCaller) return false;
+      } else if (call.taskMatch !== 'NONE') return false;
+    }
+    if (call.progress === 'FAILED') {
+      if (!has('CALL_FAILED') || call.endReason !== last.detail) return false;
+      const failureIndex = call.events.findIndex(event => event.type === 'CALL_FAILED');
+      const beforeBridge = !call.events.slice(0, failureIndex).some(event => event.type === 'BRIDGED');
+      if (beforeBridge && (call.recordingSeconds !== 0 || call.uploadStatus !== 'NOT_STARTED' || call.evidenceStatus !== 'NOT_CREATED')) return false;
+    } else if (call.endReason !== null) return false;
+    if (has('CALL_ENDED')) {
+      if (!has('RECORDING_STARTED')) return false;
+      if (call.uploadStatus === 'RECEIVED' && call.recordingSeconds <= 0) return false;
+    } else if (call.recordingSeconds !== 0) return false;
+    if (has('EVIDENCE_READY') && !has('EVIDENCE_PROCESSING')) return false;
+    if (has('EVIDENCE_PROCESSING') && call.uploadStatus !== 'RECEIVED') return false;
+    if (has('RECORDING_RECEIVED') && !has('CALL_ENDED')) return false;
+    const binding = uniqueBindingFromList(callerBindings, call.normalizedCaller);
+    if (binding && binding.maskedCaller !== call.maskedCaller) return false;
+    return true;
+  }
+
+  function uniqueBindingFromList(callerBindings, normalizedCaller) {
+    const matches = callerBindings.filter(item => item.active === true && item.normalizedCaller === normalizedCaller);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
   function validateState(candidate) {
     if (!safeData(candidate) || !plain(candidate)) return fail('INVALID_TRANSITION');
     const keys = Object.keys(candidate).sort();
@@ -1133,5 +1796,17 @@
     trialStatus,
     snapshot,
     loadReviewSnapshot,
+    CALL_TASK_TTL_SECONDS,
+    createCallTaskDemoState,
+    createCallTask,
+    cancelCallTask,
+    recordDialerLaunch,
+    resolveIvrInbound,
+    confirmDirectCallee,
+    recordCallFact,
+    callTaskSnapshot,
+    loadCallTaskSnapshot,
+    validateCallTask,
+    uniqueCallerBinding,
   });
 });

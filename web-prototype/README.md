@@ -40,9 +40,17 @@ powershell -ExecutionPolicy Bypass -File .\web-prototype\qa\run.ps1
 
 个人套餐与加量包来自共享已发布版本。目录、确认和历史订单展示每期权益、发放间隔及总期数；确认页冻结版本、token、价格、权益、发放周期与有效期，历史详情读取订单快照。目录改价、下架或移除 WEB 渠道后不能用旧确认页新下单。UNKNOWN 查询原订单；支付成功先为权益 PENDING，FAILED 与 ISSUED 分别展示，独立发放幂等。订单和权益明细/计数按当前账户聚合，包含本账户不同号码，排除其他账户。企业正式价格/权益待确认，历史合同样例只读。成员变更、下载导出等既有功能仍保留，不改写原始证据。
 
-自动化 QA 已通过登录/会话、六类证据、号码生命周期、授权、下载导出、分享、AI、事情、出证、消息、成员、企业角色、共享购买与线下客服回归，以及 1440/1280/1024/720px 无 document overflow。`invoice-apply` 旧路由仅显示线下指南，无在线开票提交或成功回执。新截图均为 `alignment-*`，历史截图保留。套餐全部标记 DEMO_NOT_APPROVED。
+自动化 QA 覆盖登录/会话、六类证据、号码生命周期、授权、下载导出、分享、AI、事情、出证、消息、成员、企业角色、共享购买、任务/IVR 只读诊断与线下客服回归，以及 1440/1280/1024/720px 无 document overflow；本轮新增任务的执行状态与阻塞见 `docs/gateflow/ivr-three-surface-prototype-sync-implementation.md`。`invoice-apply` 旧路由仅显示线下指南，无在线开票提交或成功回执。新截图均为 `alignment-*`，历史截图保留。套餐全部标记 DEMO_NOT_APPROVED。
 
 共享生成段由 `node shared/build-prototypes.js` 维护，runner 生成 preview 后执行 QA；禁止手改生成段。`window.__onecallWeb` 提供 `businessSnapshot()`、`loadReviewSnapshot(data)`、`setReviewScenario(name)`、`navigate(route)`、`currentRoute()`，仅用于经校验的本地 fixture 交接，不含员工、凭据、登录或 UI 状态。不是实时同步或生产 API；上线构建须关闭 hooks。三端验收运行 `node shared/qa/cross-channel.js`，执行证据和目视截图清单见 `docs/gateflow/cross-channel-alignment-s3-implementation.md`。
+
+## 任务与 IVR 只读诊断
+
+“通话录音”页顶部新增只读“任务与 IVR 诊断”面板：任务表展示任务 ID、脱敏主叫、账户/空间、状态、冻结 30 秒、到期、领取 `callId` 与小程序拨号盘事实；呼叫表展示任务/无任务、决策/匹配、进度、录音秒数、录音上传、证据处理与结束原因。面板明确任务路径（`DIAL_TASK_CALLEE`，自动外呼、无需确认被叫）与无任务路径（`ENTER_CALLEE`，DTMF 输入并确认被叫），并渲染三端统一所有权文案。
+
+呼叫详情“呼叫信息”页增加同一 `callId` 的任务/决策/IVR 事实诊断块：任务状态、冻结到期、领取、拨号盘事件、决策与匹配、`IVR 可信主叫（线路传递）`、`IVR 权威录音时长`、`录音上传`、`ONECALL 证据处理` 分开显示；失败/不一致/未接显示“未形成证据、未扣录音额度”。`处理记录` 页按小程序拨号盘（仅客户端）→ IVR 呼入 → ONECALL 领取 → IVR B 路外呼/振铃/接听/桥接/录音 → 上传 → 证据处理的顺序展示。
+
+Web 保持只读：面板和详情没有任何输入、任务编辑、重试上传、标记证据完成或浏览器拨号控件，也不新增路由；审计员仍无通话录音路由。无任务呼叫的账户/空间只通过唯一主叫绑定派生，缺失或歧义绑定失败关闭。任务级 `evidenceStatus` 只是诊断投影，`business.evidence` 仍是权威证据列表。`callTaskSnapshot()`、`loadCallTaskSnapshot(data)` 与 `selectCallDiagnostic(callId)` 仅用于本地评审；任务导入不改变业务、登录或工作空间状态。所有数据为本地 fixture，不代表生产并发、线路、媒体或持久化。
 
 角色由当前自然人账户的有效成员关系派生，界面只读；已移除任意角色切换。空间下拉框只展示该账户可进入的个人及企业空间。会话过期重新登录会重建账户与成员权限，不继承前一人的管理员角色。云拓与未配置个人样例的账户显示明确空态，不显示华启或李晓的业务记录。
 

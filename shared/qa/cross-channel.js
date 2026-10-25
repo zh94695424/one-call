@@ -223,6 +223,95 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
       if(count===0){await text(mini,'#oc-screen','当前没有共享业务订单');await text(web,'#content','0 笔已到账');}
       if(count===2){await mgo('profile');await shot(miniPage,'prototype','account-scope-profile-393');await shot(web,'web-prototype','account-scope-rights-1280');}
     }
+
+    // Call-task/IVR diagnostics: frozen 30-second expiry, atomic claim, no-task DTMF,
+    // task-versus-no-task vocabulary and account/workspace isolation.
+    const callTaskSnapshot = s => s.frame.evaluate(h=>window[h].callTaskSnapshot(),s.hook);
+    const loadCallTask = async (s,data) => {const r=await s.frame.evaluate(({h,data})=>window[h].loadCallTaskSnapshot(data),{h:s.hook,data});assert.equal(r.ok,true,JSON.stringify(r));assert.deepEqual(await callTaskSnapshot(s),data);};
+    await mgo('callerSelect');
+    await mini.locator('[data-action="select-caller"][data-caller-id="phone-4471"]').click();
+    await mini.locator('.primary-action[data-go="call"]').click();
+    await mini.locator('[data-go="dialHandoff"]').click();
+    assert.equal(await mini.evaluate(()=>window.__onecallMini.currentPage()),'dialHandoff');
+    const miniCreatedState=await callTaskSnapshot(m);
+    assert.equal(miniCreatedState.ttlSeconds,30);
+    const miniCreatedTask=miniCreatedState.tasks.find(task=>task.normalizedCaller==='18600004471'&&['PENDING','CLAIMED'].includes(task.status));
+    assert.ok(miniCreatedTask,'Mini UI must create one pending task');
+    assert.equal(Date.parse(miniCreatedTask.expiresAt)-Date.parse(miniCreatedTask.createdAt),30000);
+    await text(mini,'#oc-screen',miniCreatedTask.id);
+    await text(mini,'#oc-screen','待呼入');
+    assert.equal(await mini.locator('[data-task-ttl]').getAttribute('data-task-ttl'),'30');
+
+    const claimBase=Date.now();
+    const claimedTaskState=copy(miniCreatedState);
+    const claimedAt=claimBase+1000;
+    const resolution=B.resolveIvrInbound(claimedTaskState,{callId:'CALL-QA-TASK-01',normalizedCaller:'18600004471',callerTrusted:true,callerState:'ACTIVE',availableSeconds:300,directAllowed:true},new Date(claimedAt));
+    assert.equal(resolution.ok,true,JSON.stringify(resolution));
+    assert.equal(resolution.value.action,'DIAL_TASK_CALLEE');
+    assert.equal(resolution.value.calleeConfirmation,'NONE');
+    assert.equal(claimedTaskState.tasks.find(task=>task.id===miniCreatedTask.id).status,'CLAIMED');
+    assert.equal(claimedTaskState.tasks.find(task=>task.id===miniCreatedTask.id).claimedCallId,'CALL-QA-TASK-01');
+    const competing=B.resolveIvrInbound(copy(claimedTaskState),{callId:'CALL-QA-TASK-02',normalizedCaller:'18600004471',callerTrusted:true,callerState:'ACTIVE',availableSeconds:300,directAllowed:true},new Date(claimedAt+1000));
+    assert.equal(competing.ok,false);assert.equal(competing.code,'REJECT_CALL_IN_PROGRESS');
+    const replay=B.resolveIvrInbound(copy(claimedTaskState),{callId:'CALL-QA-TASK-01',normalizedCaller:'18600004471',callerTrusted:true,callerState:'ACTIVE',availableSeconds:300,directAllowed:true},new Date(claimedAt+1000));
+    assert.equal(replay.code,'DUPLICATE');
+    assert.equal(replay.value.action,'DIAL_TASK_CALLEE');
+    assert.equal(claimedTaskState.tasks.filter(task=>task.normalizedCaller==='18600004471'&&['PENDING','CLAIMED'].includes(task.status)).length,1);
+    assert.equal(claimedTaskState.calls.filter(call=>call.id==='CALL-QA-TASK-01').length,1);
+    const callFacts=[['OUTBOUND_STARTED',2000],['RINGING',3000],['ANSWERED',4000],['BRIDGED',5000],['RECORDING_STARTED',6000],['CALL_ENDED',10000,{recordingSeconds:45}],['RECORDING_RECEIVED',11000],['EVIDENCE_PROCESSING',12000],['EVIDENCE_READY',13000]];
+    for(const [type,offset,extra] of callFacts){const input=Object.assign({callId:'CALL-QA-TASK-01',eventId:'CALL-QA-TASK-01-'+type,type,at:new Date(claimBase+offset).toISOString()},extra||{});const recorded=B.recordCallFact(claimedTaskState,input,new Date(claimBase+offset));assert.equal(recorded.ok,true,type+' '+JSON.stringify(recorded));}
+    const claimedCall=claimedTaskState.calls.find(call=>call.id==='CALL-QA-TASK-01');
+    assert.equal(claimedCall.progress,'EVIDENCE_READY');assert.equal(claimedCall.uploadStatus,'RECEIVED');assert.equal(claimedCall.evidenceStatus,'AVAILABLE');
+    assert.equal(claimedTaskState.tasks.find(task=>task.id===miniCreatedTask.id).status,'COMPLETED');
+    assert.equal(claimedTaskState.tasks.filter(task=>task.normalizedCaller==='18600004471'&&['PENDING','CLAIMED'].includes(task.status)).length,0);
+
+    const businessBeforeTask={a:await snapshot(a),m:await snapshot(m),w:await snapshot(w)};
+    const webContextBeforeTask=await web.evaluate(()=>window.__onecallWeb.accountContext());
+    for(const s of surfaces)await loadCallTask(s,claimedTaskState);
+    assert.deepEqual(await callTaskSnapshot(a),claimedTaskState);assert.deepEqual(await callTaskSnapshot(m),claimedTaskState);assert.deepEqual(await callTaskSnapshot(w),claimedTaskState);
+    assert.deepEqual(await snapshot(a),businessBeforeTask.a);assert.deepEqual(await snapshot(m),businessBeforeTask.m);assert.deepEqual(await snapshot(w),businessBeforeTask.w);
+    assert.deepEqual(await web.evaluate(()=>window.__onecallWeb.accountContext()),webContextBeforeTask);
+    await mgo('callStatus');await text(mini,'#oc-screen',miniCreatedTask.id);await text(mini,'#oc-screen','CALL-QA-TASK-01');await text(mini,'#oc-screen','证据可用');await text(mini,'#oc-screen','任务自动外呼');
+    // The imported evidence-ready call was never launched from this client, so
+    // the heading must not claim the system dialer was opened while the task
+    // fact row truthfully reports it was not.
+    const unlaunchedEvidenceText=await mini.locator('#oc-screen').innerText();
+    assert.ok(unlaunchedEvidenceText.includes('证据可用'),'Unlaunched evidence-ready Mini status must include 证据可用');
+    assert.ok(!unlaunchedEvidenceText.includes('系统拨号盘已打开'),'Unlaunched evidence-ready Mini heading must not claim the dialer was opened');
+    const dialerFact=mini.locator('#oc-screen .meta-item').filter({hasText:'系统拨号盘'});
+    assert.equal(await dialerFact.count(),1,'Mini status must render one system dialer task fact');
+    assert.equal((await dialerFact.locator('strong').innerText()).trim(),'未打开','Unlaunched evidence-ready task fact must remain 未打开');
+    assert.ok(!(await mini.locator('#oc-screen').innerText()).includes('CT-DEMO-0201'),'Mini must not render a foreign-account task');
+    await wgo('calls');await text(web,'#content',miniCreatedTask.id);await text(web,'#content','CALL-QA-TASK-01');await text(web,'#content','证据可用');await text(web,'#content','任务自动外呼');
+    assert.ok(!(await web.locator('#content').innerText()).includes('CT-DEMO-0201'),'Web must not render a foreign-account task');
+    await ago('/ivr-sessions');await text(admin,'#content',miniCreatedTask.id);await text(admin,'#content','CALL-QA-TASK-01');await text(admin,'#content','任务自动外呼');
+    assert.ok((await admin.locator('#content').innerText()).includes('CT-DEMO-0201'),'Operations must see the foreign-account task');
+    // Let the application-owned toast lifecycle finish, including the opacity
+    // transition, so an earlier authorization toast cannot cover the task-parity
+    // evidence screenshot.
+    await web.waitForFunction(()=>{const toast=document.getElementById('toast');return !toast||getComputedStyle(toast).opacity==='0';});
+    await shot(miniPage,'prototype','call-task-393');await shot(web,'web-prototype','call-task-1280');await shot(admin,'operations-prototype','ivr-task-1440');
+
+    const expiryState=B.createCallTaskDemoState(new Date(claimBase));
+    const expiryTask=B.createCallTask(expiryState,{callerBindingId:'CB-PERSONAL-4471',maskedCallee:'135 **** 1111',businessType:'EVIDENCE_CALL',idempotencyKey:'QA-EXPIRY-TASK',replacePending:false},new Date(claimBase));
+    assert.equal(expiryTask.ok,true,JSON.stringify(expiryTask));
+    const expired=B.resolveIvrInbound(expiryState,{callId:'CALL-QA-EXPIRED',normalizedCaller:'18600004471',callerTrusted:true,callerState:'ACTIVE',availableSeconds:300,directAllowed:true},new Date(claimBase+30000));
+    assert.equal(expired.ok,true);assert.equal(expired.value.action,'ENTER_CALLEE');assert.equal(expired.value.maskedCallee,null);
+    assert.equal(expiryState.tasks.find(task=>task.id===expiryTask.value.id).status,'EXPIRED');
+    assert.equal(expiryState.calls.find(call=>call.id==='CALL-QA-EXPIRED').taskId,null);
+
+    const directState=B.createCallTaskDemoState(new Date(claimBase));
+    const directTaskCount=directState.tasks.length;
+    const direct=B.resolveIvrInbound(directState,{callId:'CALL-QA-DIRECT',normalizedCaller:'01088886688',callerTrusted:true,callerState:'ACTIVE',availableSeconds:300,directAllowed:true},new Date(claimBase));
+    assert.equal(direct.ok,true);assert.equal(direct.value.action,'ENTER_CALLEE');assert.equal(direct.value.taskPath,false);
+    const directConfirmed=B.confirmDirectCallee(directState,{callId:'CALL-QA-DIRECT',normalizedCaller:'01088886688',maskedCallee:'139 **** 3816',eventId:'CALL-QA-DIRECT-DTMF',taskId:null},new Date(claimBase+1000));
+    assert.equal(directConfirmed.ok,true);assert.equal(directConfirmed.value.taskPath,false);assert.equal(directConfirmed.value.calleeConfirmation,'DTMF_CONFIRMED');
+    assert.equal(directState.calls.find(call=>call.id==='CALL-QA-DIRECT').taskId,null);assert.equal(directState.tasks.length,directTaskCount);
+
+    for(const s of surfaces){const before=await callTaskSnapshot(s);for(const key of ['employees','customerAuthSession','code']){const r=await s.frame.evaluate(({h,data})=>window[h].loadCallTaskSnapshot(data),{h:s.hook,data:Object.assign(copy(before),{[key]:{}})});assert.equal(r.ok,false,s.hook+':'+key);assert.deepEqual(await callTaskSnapshot(s),before);}}
+    const taskBeforeBusinessImport={a:await callTaskSnapshot(a),m:await callTaskSnapshot(m),w:await callTaskSnapshot(w)};
+    for(const s of surfaces)await load(s,s===a?businessBeforeTask.a:s===m?businessBeforeTask.m:businessBeforeTask.w);
+    assert.deepEqual(await callTaskSnapshot(a),taskBeforeBusinessImport.a);assert.deepEqual(await callTaskSnapshot(m),taskBeforeBusinessImport.m);assert.deepEqual(await callTaskSnapshot(w),taskBeforeBusinessImport.w);
     // Visible enterprise authorization revocations must survive actual cross-channel imports.
     for(const item of [
       {id:'auth-6688',number:'010 **** 6688',owner:'ACCOUNT-DEMO-001'},
@@ -267,6 +356,6 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     assert.deepEqual(B.demoAccountDirectory,identityDirectory);
     for(const s of [m,w])assert.deepEqual(await s.frame.evaluate(()=>OnecallBusiness.demoAccountDirectory),identityDirectory);
     assert.ok(hashes[0]);assert.equal(new Set(hashes).size,1);assert.deepEqual(errors,[]);
-    console.log('PASS: admin publication -> both clients; frozen stale/off-sale/channel checkout; dynamic IVR claim/recording/trial continuity; WEB + MINIAPP UNKNOWN/PAID/PENDING/FAILED/ISSUED; all event replays; fixed/conflict/recycled; forbidden imports and five reference tamper cases; account-owned orders/rights (empty, one, two subjects) exclude other accounts; four enterprise admin authorization revocations import into Operations and Mini; support and generated hash equality; no browser errors.');
+    console.log('PASS: admin publication -> both clients; frozen stale/off-sale/channel checkout; dynamic IVR claim/recording/trial continuity; WEB + MINIAPP UNKNOWN/PAID/PENDING/FAILED/ISSUED; all event replays; fixed/conflict/recycled; forbidden imports and five reference tamper cases; account-owned orders/rights (empty, one, two subjects) exclude other accounts; Mini task creation with frozen 30-second expiry, atomic shared claim, task auto-dial and no-task DTMF, recording/upload/evidence separation, parity across all three surfaces, foreign-account task isolation and bidirectional call-task/business import independence; four enterprise admin authorization revocations import into Operations and Mini; support and generated hash equality; no browser errors.');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error.stack||error);process.exitCode=1;});
