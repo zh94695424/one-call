@@ -324,9 +324,9 @@ Audience registry（5 个领域 audience + 1 个 upload 签发侧分类 + 4 个�
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | C01 customerSession | customer | onecall:customer-session:v1 | Redis session record + account state | Q1/Q19 | customer API only | logout, account disable or expiry revokes the session | bearer and Authorization header always removed |
 | C02 employeeSession | employee | onecall:employee-session:v1 | Redis session record + employee state | Q1 | operations API only | role change, disable or credential reset revokes the session | bearer and Authorization header always removed |
-| C03 ivrMtls | ivr-service | onecall:ivr-request:v1 | mTLS certificate store | Q7/Q15 | IVR mTLS identity only | certificate overlap and rotation per Q7 | certificate and private key never logged |
+| C03 ivrMtls | ivr-service | onecall:ivr-request:v1 | mTLS certificate store | Q7 | IVR mTLS identity only | certificate overlap and rotation per Q7 | certificate and private key never logged |
 | C04 ivrSignature | ivr-service | onecall:ivr-request:v1 | Secret Manager K17 | Q25 window | per-request signature | keyId overlap; old key VERIFY_ONLY until retirement | signature and nonce always removed |
-| C05 providerCallbackMtls | provider | onecall:provider-callback:v1 | mTLS certificate store | Q6/Q15 | provider callback only | provider certificate rotation per Q6 | certificate never logged |
+| C05 providerCallbackMtls | provider | onecall:provider-callback:v1 | mTLS certificate store | Q6 | provider callback only | provider certificate rotation per Q6 | certificate never logged |
 | C06 providerCallbackSignature | provider | onecall:provider-callback:v1 | Secret Manager or certificate store K18 | Q6 | per-callback signature | provider rotation per Q6 | signature and nonce always removed |
 | C07 publicShareCapabilityToken | public-capability | onecall:share-capability:v1 | DB SHA-256 digest only | share expiresAt / Q12 | path capability; created once | revoke or generation change; not rebuildable | capability token always removed and return-once |
 | C08 extractionCode | public-capability | onecall:share-capability:v1 | per-grant salt + slow KDF digest | Q12 | EXTRACTION_CODE | code_generation rotation | code and OTP always removed and return-once |
@@ -363,7 +363,7 @@ Audience registry（5 个领域 audience + 1 个 upload 签发侧分类 + 4 个�
 
 适用 `POST /api/v1/callbacks/payment-events`，必须同时具备 `providerCallbackMtls` 与 `providerCallbackSignature`。
 
-- Header：`X-ONECALL-CALLBACK-SIGNATURE`、`X-ONECALL-TIMESTAMP`、`X-ONECALL-NONCE`；TIMESTAMP 1-64、NONCE 1-128 沿用 A1。vendor signature 算法、canonicalization、payload 字段与窗口全部 Q6/Q15 typed deferred；本文件不发明。
+- Header：`X-ONECALL-CALLBACK-SIGNATURE`、`X-ONECALL-TIMESTAMP`、`X-ONECALL-NONCE`；TIMESTAMP 1-64、NONCE 1-128 沿用 A1。vendor signature 算法、canonicalization、payload 字段与窗口全部 Q6 typed deferred；本文件不发明。
 - 验证顺序：provider mTLS identity → header → provider profile（Q6）→ timestamp window → constant-time signature verify → exact duplicate event/payload fingerprint 检查（命中即 200 duplicate 早退，不消费 nonce）→ nonce `SET NX`（新事件或 changed payload）→ changed payload 冲突检查（仅在 nonce 检查成功后返回 409 `PAYMENT_EVENT_CONFLICT`）→ 支付处理。
 - exact duplicate 是零副作用的幂等结果，不要求消费 nonce；新事件或 changed payload 必须先通过 nonce 检查。依赖不可用返回 503，不推进支付。
 - 失败映射：签名/证书/时间窗/nonce replay → `401 CALLBACK_SIGNATURE_INVALID`；同 event 不同 payload → `409 PAYMENT_EVENT_CONFLICT`；依赖不可用 → `503 CALLBACK_RETRY_LATER`；重复同 event/同 fingerprint → `200 {accepted:true,duplicate:true}`。
@@ -521,7 +521,7 @@ Upload 的签发侧应用校验 `callId`/`recordingId`/`purpose` 并推导 hidde
 
 ## 18. 确定性脱敏与 fail-closed 矩阵（S3）
 
-统一 redaction pipeline 必须在任何 emit 前执行：结构化 allow-list → 任意深度递归 deny-list → credential/header/URL pattern controls → destination policy → emit。deny-list 大小写不敏感、任意深度，固定包含 A0 §10.7 全部键 `phone,mobile,callerNumber,calleeNumber,providerSubject,identityNumber,idNumber,legalName,shareCode,otp,objectKey,objectVersionId,bucket,providerTransactionId,providerEventId,secret,token,password,hmac,ciphertext,keyRef,kmsKey`，并追加 `credential,capabilityToken,extractionCode,authorization,cookie,signature,nonce,accessNumberHmac`。masked 变体（如 `calleeNumberMasked`）允许，但不得把 encrypted envelope 当普通日志字段。固定 token 形如 `[REDACTED:<CLASS>]`；同一输入在相同出口必须产生相同 token，禁止随机值。
+统一 redaction pipeline 必须在任何 emit 前执行：结构化 allow-list → 任意深度递归 deny-list → credential/header/URL pattern controls → destination policy → emit。deny-list 大小写不敏感、任意深度，固定包含 A0 §10.7 全部键 `phone,mobile,callerNumber,calleeNumber,providerSubject,identityNumber,idNumber,legalName,shareCode,otp,objectKey,objectVersionId,bucket,providerTransactionId,providerEventId,secret,token,password,hmac,ciphertext,keyRef,kmsKey`，并追加 `credential,capabilityToken,extractionCode,authorization,cookie,signature,nonce,accessNumberHmac`。masked display 仅允许 safe-class `PHONE`、`IDENTITY_NUMBER`、`LEGAL_NAME` 三类（如 `calleeNumberMasked`）；任何其他或未知的 `*Masked` key 一律按未知字段 fail-closed（block/drop），不得仅凭后缀信任。不得把 encrypted envelope 当普通日志字段。固定 token 形如 `[REDACTED:<CLASS>]`；同一输入在相同出口必须产生相同 token，禁止随机值。
 
 | class token | 覆盖字段 |
 | --- | --- |
@@ -675,7 +675,7 @@ S3 fixtures（8，恰 3 个显式负例）：
 | `sec-s3-03-cos-private-policy` | 匿名读/写/list、public URL、key/bucket/version 泄漏、WORM 声称 | 全部 deny；SSE-KMS/versioning/私有/TLS-only 固定；WORM/object-lock/region/SKU 不声称 |
 | `sec-s3-04-audit-access-denied` | 负例：customer/ivr/public/provider 读 audit；employee 读；UPDATE/DELETE/TRUNCATE | 非 employee 拒绝；employee 只 redacted projection；access_event route；无递归 append_fact；39 行 persistence 精确 2+37 |
 | `sec-s3-05-high-risk-controls` | 10 个员工 mutation 的 role/state/reason/audit | 合法通过；坏 role/state/reason 拒绝；audit 失败回滚；registry 中无 last-admin 移除或角色创建操作；UI 二次确认不作断言 |
-| `sec-s3-06-redaction-deterministic` | 递归 deny-list、masked、credential/header/path pattern、未知字段 | 固定 `[REDACTED:*]`；masked 允许；未知字段 block；确定性；无原文 |
+| `sec-s3-06-redaction-deterministic` | 递归 deny-list、masked、credential/header/path pattern、未知字段 | 固定 `[REDACTED:*]`；masked 仅 PHONE/IDENTITY_NUMBER/LEGAL_NAME safe-class 允许；未知字段 block；确定性；无原文 |
 | `sec-s3-07-credential-url-leak` | 负例：capabilityToken path、upload/playback credential、signature/nonce、Authorization/Cookie | 所有出口无 secret；public 只 masked/ID；analytics/support 无 playback |
 | `sec-s3-08-end-to-end-security` | IVR media + share playback + audit + provider callback | 全链路身份/凭证/审计/脱敏/fail-closed；complete 不固化 evidence；累计计数正确 |
 
@@ -697,8 +697,8 @@ validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算
 | `R-A3-NO-WORM` | 不声称 COS WORM/object-lock；未来需 Q11 验证 | Infrastructure/Security；storage policy |
 | `R-A3-REGION-SKU` | 不选 region/SKU/price/capacity | Infrastructure/Security；capacity/deployment |
 | `R-A3-A2-AUTH-OUTBOX` | IVR outbox 401/403 本地策略已冻结，但 Q8/Q13/Q25 的 retry/backoff/alert 数值与真实 Redis/IVR 集成未验证 | IVR/Backend；A2/IVR integration review |
-| `R-A3-MTLS-CAPABILITY` | 真实 mTLS 证书签发、pinning、时钟同步与 IVR 线路身份未验证（Q7/Q15） | Telephony/IVR/Security；line integration |
-| `R-A3-PROVIDER-VERIFY` | vendor signature 算法/canonicalization/payload/window 未冻结（Q6/Q15） | Payments/Backend；payment adapter |
+| `R-A3-MTLS-CAPABILITY` | 真实 mTLS 证书签发、pinning、时钟同步与 IVR 线路身份未验证（Q7） | Telephony/IVR/Security；line integration |
+| `R-A3-PROVIDER-VERIFY` | vendor signature 算法/canonicalization/payload/window 未冻结（Q6） | Payments/Backend；payment adapter |
 | `R-A3-SESSION-LIFECYCLE` | 真实 session/OTP/WeChat 登录、员工 MFA 与 TTL 未验证（Q1/Q19） | Identity/Backend；authentication design |
 | `R-A3-NONCE-STORE` | 真实 Redis `SET NX` 原子性、TTL 与故障切换未验证（Q25） | Security/Backend；production readiness |
 | `R-A3-A1-EMPLOYEE-REASON-PROJECTION` | `ACTION_DERIVED` 只是 A0 `reason_code` 技术投影，不是员工动机；语义 operation-reason 缺口与 UI 二次确认 runtime 控制未在静态层证明 | Product/Operations + API governance；未来 A1/UI refinement |

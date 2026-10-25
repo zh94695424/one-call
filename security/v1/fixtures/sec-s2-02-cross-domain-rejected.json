@@ -114,9 +114,7 @@
         "credentialClasses": 10,
         "signatureProfiles": 2,
         "invariants": 11,
-        "futureInvariantIds": 0,
         "futureFixtureIds": 0,
-        "s2s3Sections": 0,
         "a2Events": 0
       },
       "expected": { "status": "OK", "mismatches": [] }

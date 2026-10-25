@@ -105,9 +105,7 @@
       "action": "assert",
       "checks": {
         "invariants": 11,
-        "futureInvariantIds": 0,
         "futureFixtureIds": 0,
-        "s2s3Sections": 0,
         "a2Messages": 12,
         "a2EventTypes": 11,
         "a2Identities": 22,

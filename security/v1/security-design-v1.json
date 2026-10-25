@@ -353,7 +353,7 @@
       "domain": "ivr-service",
       "audience": "onecall:ivr-request:v1",
       "storage": "mTLS certificate store",
-      "ttlInput": "Q7/Q15",
+      "ttlInput": "Q7",
       "scope": "IVR mTLS identity only",
       "rotationRevocation": "certificate overlap and rotation per Q7",
       "redaction": "certificate and private key never logged"
@@ -375,7 +375,7 @@
       "domain": "provider",
       "audience": "onecall:provider-callback:v1",
       "storage": "mTLS certificate store",
-      "ttlInput": "Q6/Q15",
+      "ttlInput": "Q6",
       "scope": "provider callback only",
       "rotationRevocation": "provider certificate rotation per Q6",
       "redaction": "certificate never logged"
@@ -521,10 +521,10 @@
         "nonceMax": 128,
         "signatureLengthFrozen": false
       },
-      "vendorAlgorithm": "deferred Q6/Q15",
-      "vendorCanonicalization": "deferred Q6/Q15",
-      "vendorPayload": "deferred Q6/Q15",
-      "vendorWindow": "deferred Q6/Q15",
+      "vendorAlgorithm": "deferred Q6",
+      "vendorCanonicalization": "deferred Q6",
+      "vendorPayload": "deferred Q6",
+      "vendorWindow": "deferred Q6",
       "verificationOrder": [
         "provider mTLS identity",
         "headers",
@@ -1899,6 +1899,7 @@
     "matchMode": "case-insensitive key match at any depth",
     "denyList": ["phone", "mobile", "callerNumber", "calleeNumber", "providerSubject", "identityNumber", "idNumber", "legalName", "shareCode", "otp", "objectKey", "objectVersionId", "bucket", "providerTransactionId", "providerEventId", "secret", "token", "password", "hmac", "ciphertext", "keyRef", "kmsKey", "credential", "capabilityToken", "extractionCode", "authorization", "cookie", "signature", "nonce", "accessNumberHmac"],
     "maskedVariantsAllowed": true,
+    "maskedDisplaySafeClasses": ["PHONE", "IDENTITY_NUMBER", "LEGAL_NAME"],
     "tokenFormat": "[REDACTED:<CLASS>]",
     "tokenClasses": ["PHONE", "PROVIDER_SUBJECT", "IDENTITY_NUMBER", "LEGAL_NAME", "SHARE_CODE", "OTP", "OBJECT_KEY", "OBJECT_VERSION", "BUCKET", "PROVIDER_TRANSACTION_ID", "PROVIDER_EVENT_ID", "SECRET", "TOKEN", "PASSWORD", "HMAC", "CIPHERTEXT", "KEY_REF", "KMS_KEY", "CREDENTIAL", "CAPABILITY_TOKEN", "EXTRACTION_CODE", "AUTHORIZATION", "COOKIE", "SIGNATURE", "NONCE", "ACCESS_NUMBER_HMAC", "PAYLOAD", "URL"],
     "determinism": "the same input at the same destination always yields the same token; random tokens are forbidden",

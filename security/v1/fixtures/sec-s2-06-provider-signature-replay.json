@@ -171,9 +171,7 @@
       "action": "assert",
       "checks": {
         "invariants": 11,
-        "futureInvariantIds": 0,
         "futureFixtureIds": 0,
-        "s2s3Sections": 0,
         "payments": 1,
         "entitlements": 1,
         "providerEvents": 1,

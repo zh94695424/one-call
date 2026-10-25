@@ -83,9 +83,7 @@
         "deferredQ": 18,
         "deferredCv": 5,
         "invariants": 6,
-        "futureInvariantIds": 0,
-        "futureFixtureIds": 0,
-        "s2s3Sections": 0
+        "futureFixtureIds": 0
       },
       "expected": {
         "status": "OK",
@@ -95,9 +93,7 @@
         "deferredQ": 18,
         "deferredCv": 5,
         "invariants": 6,
-        "futureInvariantIds": 0,
         "futureFixtureIds": 0,
-        "s2s3Sections": 0,
         "mismatches": []
       }
     }

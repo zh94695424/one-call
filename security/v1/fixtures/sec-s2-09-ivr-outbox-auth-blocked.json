@@ -285,9 +285,7 @@
       "action": "assert",
       "checks": {
         "invariants": 11,
-        "futureInvariantIds": 0,
         "futureFixtureIds": 0,
-        "s2s3Sections": 0,
         "outboxEntries": 2,
         "securityBlockedEntries": 1,
         "a2Events": 0,

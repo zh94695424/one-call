@@ -8,6 +8,8 @@ const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 const EXPECTED_EVENT_DIGEST = 'c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9';
 const EXPECTED_A0_ENVELOPE_REGEX = '^v1\\.[A-Za-z0-9._:/-]+\\..+$';
 const EXPECTED_HMAC_REGEX = '^[0-9a-f]{64}$';
+const MASKED_DISPLAY_SAFE_CLASSES_LIST = ['PHONE', 'IDENTITY_NUMBER', 'LEGAL_NAME'];
+const MASKED_DISPLAY_SAFE_CLASSES = new Set(MASKED_DISPLAY_SAFE_CLASSES_LIST);
 
 const S1_MODEL_SECTIONS = [
   'modelVersion',
@@ -51,10 +53,8 @@ const STAGE_CONFIG = {
     required: S1_MODEL_SECTIONS,
     s2Sections: 'optional',
     s3Sections: 'optional',
-    forbidden: [],
     invariantCount: 6,
     invariantCounts: [6, 11, 21],
-    futureInvariantPattern: /$^/,
     fixtureSlices: ['s1'],
     laterFixtureSlices: ['s2', 's3'],
     evaluateSlices: ['s1']
@@ -63,10 +63,8 @@ const STAGE_CONFIG = {
     required: [...S1_MODEL_SECTIONS, ...S2_MODEL_SECTIONS],
     s2Sections: 'required',
     s3Sections: 'optional',
-    forbidden: [],
     invariantCount: 11,
     invariantCounts: [11, 21],
-    futureInvariantPattern: /$^/,
     fixtureSlices: ['s1', 's2'],
     laterFixtureSlices: ['s3'],
     evaluateSlices: ['s1', 's2']
@@ -75,10 +73,8 @@ const STAGE_CONFIG = {
     required: [...S1_MODEL_SECTIONS, ...S2_MODEL_SECTIONS, ...S3_MODEL_SECTIONS],
     s2Sections: 'required',
     s3Sections: 'required',
-    forbidden: [],
     invariantCount: 21,
     invariantCounts: [21],
-    futureInvariantPattern: /$^/,
     fixtureSlices: ['s1', 's2', 's3'],
     laterFixtureSlices: [],
     evaluateSlices: ['s1', 's2', 's3']
@@ -239,9 +235,9 @@ const EXPECTED_SERVICE_IDENTITIES = [
 const EXPECTED_CREDENTIAL_CLASSES = [
   { credentialClass: 'C01 customerSession', credentialId: 'C01', domain: 'customer', audience: 'onecall:customer-session:v1', storage: 'Redis session record + account state', ttlInput: 'Q1/Q19', scope: 'customer API only', rotationRevocation: 'logout, account disable or expiry revokes the session', redaction: 'bearer and Authorization header always removed' },
   { credentialClass: 'C02 employeeSession', credentialId: 'C02', domain: 'employee', audience: 'onecall:employee-session:v1', storage: 'Redis session record + employee state', ttlInput: 'Q1', scope: 'operations API only', rotationRevocation: 'role change, disable or credential reset revokes the session', redaction: 'bearer and Authorization header always removed' },
-  { credentialClass: 'C03 ivrMtls', credentialId: 'C03', domain: 'ivr-service', audience: 'onecall:ivr-request:v1', storage: 'mTLS certificate store', ttlInput: 'Q7/Q15', scope: 'IVR mTLS identity only', rotationRevocation: 'certificate overlap and rotation per Q7', redaction: 'certificate and private key never logged' },
+  { credentialClass: 'C03 ivrMtls', credentialId: 'C03', domain: 'ivr-service', audience: 'onecall:ivr-request:v1', storage: 'mTLS certificate store', ttlInput: 'Q7', scope: 'IVR mTLS identity only', rotationRevocation: 'certificate overlap and rotation per Q7', redaction: 'certificate and private key never logged' },
   { credentialClass: 'C04 ivrSignature', credentialId: 'C04', domain: 'ivr-service', audience: 'onecall:ivr-request:v1', storage: 'Secret Manager K17', ttlInput: 'Q25 window', scope: 'per-request signature', rotationRevocation: 'keyId overlap; old key VERIFY_ONLY until retirement', redaction: 'signature and nonce always removed' },
-  { credentialClass: 'C05 providerCallbackMtls', credentialId: 'C05', domain: 'provider', audience: 'onecall:provider-callback:v1', storage: 'mTLS certificate store', ttlInput: 'Q6/Q15', scope: 'provider callback only', rotationRevocation: 'provider certificate rotation per Q6', redaction: 'certificate never logged' },
+  { credentialClass: 'C05 providerCallbackMtls', credentialId: 'C05', domain: 'provider', audience: 'onecall:provider-callback:v1', storage: 'mTLS certificate store', ttlInput: 'Q6', scope: 'provider callback only', rotationRevocation: 'provider certificate rotation per Q6', redaction: 'certificate never logged' },
   { credentialClass: 'C06 providerCallbackSignature', credentialId: 'C06', domain: 'provider', audience: 'onecall:provider-callback:v1', storage: 'Secret Manager or certificate store K18', ttlInput: 'Q6', scope: 'per-callback signature', rotationRevocation: 'provider rotation per Q6', redaction: 'signature and nonce always removed' },
   { credentialClass: 'C07 publicShareCapabilityToken', credentialId: 'C07', domain: 'public-capability', audience: 'onecall:share-capability:v1', storage: 'DB SHA-256 digest only', ttlInput: 'share expiresAt / Q12', scope: 'path capability; created once', rotationRevocation: 'revoke or generation change; not rebuildable', redaction: 'capability token always removed and return-once' },
   { credentialClass: 'C08 extractionCode', credentialId: 'C08', domain: 'public-capability', audience: 'onecall:share-capability:v1', storage: 'per-grant salt + slow KDF digest', ttlInput: 'Q12', scope: 'EXTRACTION_CODE', rotationRevocation: 'code_generation rotation', redaction: 'code and OTP always removed and return-once' },
@@ -284,10 +280,10 @@ const EXPECTED_SIGNATURE_PROFILES = [
     securitySchemes: ['providerCallbackMtls', 'providerCallbackSignature'],
     headers: { signature: 'X-ONECALL-CALLBACK-SIGNATURE', timestamp: 'X-ONECALL-TIMESTAMP', nonce: 'X-ONECALL-NONCE' },
     headerLengths: { timestampMin: 1, timestampMax: 64, nonceMin: 1, nonceMax: 128, signatureLengthFrozen: false },
-    vendorAlgorithm: 'deferred Q6/Q15',
-    vendorCanonicalization: 'deferred Q6/Q15',
-    vendorPayload: 'deferred Q6/Q15',
-    vendorWindow: 'deferred Q6/Q15',
+    vendorAlgorithm: 'deferred Q6',
+    vendorCanonicalization: 'deferred Q6',
+    vendorPayload: 'deferred Q6',
+    vendorWindow: 'deferred Q6',
     verificationOrder: ['provider mTLS identity', 'headers', 'provider profile Q6', 'timestamp window', 'constant-time signature verify', 'exact-duplicate event and payload fingerprint check (200 early exit; no nonce consumption)', 'nonce SET NX for a new event or changed payload', 'changed-payload conflict 409 PAYMENT_EVENT_CONFLICT after the nonce check', 'payment processing'],
     duplicate: 'same event and same fingerprint returns 200 accepted true duplicate true with no side effect and without requiring nonce consumption',
     conflict: 'same event with a different payload returns 409 PAYMENT_EVENT_CONFLICT after the nonce check',
@@ -454,6 +450,7 @@ const EXPECTED_REDACTION_POLICY = {
   matchMode: 'case-insensitive key match at any depth',
   denyList: ['phone', 'mobile', 'callerNumber', 'calleeNumber', 'providerSubject', 'identityNumber', 'idNumber', 'legalName', 'shareCode', 'otp', 'objectKey', 'objectVersionId', 'bucket', 'providerTransactionId', 'providerEventId', 'secret', 'token', 'password', 'hmac', 'ciphertext', 'keyRef', 'kmsKey', 'credential', 'capabilityToken', 'extractionCode', 'authorization', 'cookie', 'signature', 'nonce', 'accessNumberHmac'],
   maskedVariantsAllowed: true,
+  maskedDisplaySafeClasses: MASKED_DISPLAY_SAFE_CLASSES_LIST,
   tokenFormat: '[REDACTED:<CLASS>]',
   tokenClasses: ['PHONE', 'PROVIDER_SUBJECT', 'IDENTITY_NUMBER', 'LEGAL_NAME', 'SHARE_CODE', 'OTP', 'OBJECT_KEY', 'OBJECT_VERSION', 'BUCKET', 'PROVIDER_TRANSACTION_ID', 'PROVIDER_EVENT_ID', 'SECRET', 'TOKEN', 'PASSWORD', 'HMAC', 'CIPHERTEXT', 'KEY_REF', 'KMS_KEY', 'CREDENTIAL', 'CAPABILITY_TOKEN', 'EXTRACTION_CODE', 'AUTHORIZATION', 'COOKIE', 'SIGNATURE', 'NONCE', 'ACCESS_NUMBER_HMAC', 'PAYLOAD', 'URL'],
   determinism: 'the same input at the same destination always yields the same token; random tokens are forbidden',
@@ -933,9 +930,8 @@ const REDACTION_CLASS_BY_KEY = {
 // explicitly recognized sensitive class that is safe to surface masked. Credential,
 // auth, secret, token, signature, nonce, object-key, bucket, ciphertext, HMAC,
 // key-ref and KMS classes are never display-safe masked variants; unknown bases
-// follow the unknown-field fail-closed path.
-const MASKED_DISPLAY_SAFE_CLASSES = new Set(['PHONE', 'IDENTITY_NUMBER', 'LEGAL_NAME']);
-
+// follow the unknown-field fail-closed path. The safe-class list is frozen in
+// EXPECTED_REDACTION_POLICY and validated against the model.
 function maskedDisplayClass(key) {
   const name = String(key);
   if (!/masked$/i.test(name)) {
@@ -1784,10 +1780,11 @@ function createMachine(model, stage = 's1') {
         if (step.nonceStore !== 'AVAILABLE') {
           return { ...base, signatureVerified: true, status: 'DENIED', statusCode: 503, problemCode: 'CALLBACK_RETRY_LATER', reason: 'NONCE_STORE_UNAVAILABLE' };
         }
-        if (state.providerNonces.has(nonceValue)) {
+        const providerNonceKey = `${mtls.serviceIdentity}:${nonceValue}`;
+        if (state.providerNonces.has(providerNonceKey)) {
           return { ...base, signatureVerified: true, status: 'DENIED', statusCode: 401, problemCode: 'CALLBACK_SIGNATURE_INVALID', reason: 'NONCE_REPLAY' };
         }
-        state.providerNonces.add(nonceValue);
+        state.providerNonces.add(providerNonceKey);
         if (existing !== undefined && existing !== step.payloadFingerprint) {
           return {
             ...base, status: 'DENIED', statusCode: 409, problemCode: 'PAYMENT_EVENT_CONFLICT',
@@ -2652,17 +2649,9 @@ function createMachine(model, stage = 's1') {
 
   function machineSummary() {
     const projected = projectedModel();
-    const config = STAGE_CONFIG[stage] || STAGE_CONFIG.s1;
     const projectedStrings = collectStrings(projected, []);
-    const futureInvariant = projectedStrings.filter((text) => config.futureInvariantPattern.test(text)).length;
     const futureFixturePattern = stage === 's3' ? /sec-s4-/ : /sec-s3-/;
     const futureFixtures = projectedStrings.filter((text) => futureFixturePattern.test(text)).length;
-    let forbiddenSections = 0;
-    walkKeys(projected, (key) => {
-      if (config.forbidden.includes(key)) {
-        forbiddenSections += 1;
-      }
-    });
     const auditEvents = Array.isArray(projected.auditEvents) ? projected.auditEvents : [];
     return {
       keyClasses: projected.keyClasses.length,
@@ -2671,9 +2660,7 @@ function createMachine(model, stage = 's1') {
       deferredQ: projected.deferredInputs.filter((row) => /^Q[0-9]+$/.test(row.inputId)).length,
       deferredCv: projected.deferredInputs.filter((row) => /^CV-[0-9]+$/.test(row.inputId)).length,
       invariants: projected.invariants.length,
-      futureInvariantIds: futureInvariant,
       futureFixtureIds: futureFixtures,
-      s2s3Sections: forbiddenSections,
       trustSurfaces: (projected.trustSurfaces || []).length,
       authDomains: (projected.authDomains || []).length,
       trustBoundaries: (projected.trustBoundaries || []).length,
@@ -3411,6 +3398,10 @@ function validateS3Model(model, counters, issues) {
   if (model.redactionPolicy?.maskedVariantsAllowed !== true) {
     counters.stage_field_missing += 1;
     issues.push('redaction policy must allow explicit masked variants');
+  }
+  if (!deepEqual(model.redactionPolicy?.maskedDisplaySafeClasses, MASKED_DISPLAY_SAFE_CLASSES_LIST)) {
+    counters.stage_field_missing += 1;
+    issues.push('redaction policy maskedDisplaySafeClasses must be exactly PHONE, IDENTITY_NUMBER and LEGAL_NAME');
   }
   if (!String(model.redactionPolicy?.failurePolicy || '').includes('never emit first')) {
     counters.stage_field_missing += 1;
