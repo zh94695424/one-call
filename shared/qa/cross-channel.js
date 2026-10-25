@@ -272,6 +272,15 @@ const forbidden = ['employees','employeeLoginSession','employeeCredentials','emp
     assert.deepEqual(await snapshot(a),businessBeforeTask.a);assert.deepEqual(await snapshot(m),businessBeforeTask.m);assert.deepEqual(await snapshot(w),businessBeforeTask.w);
     assert.deepEqual(await web.evaluate(()=>window.__onecallWeb.accountContext()),webContextBeforeTask);
     await mgo('callStatus');await text(mini,'#oc-screen',miniCreatedTask.id);await text(mini,'#oc-screen','CALL-QA-TASK-01');await text(mini,'#oc-screen','证据可用');await text(mini,'#oc-screen','任务自动外呼');
+    // The imported evidence-ready call was never launched from this client, so
+    // the heading must not claim the system dialer was opened while the task
+    // fact row truthfully reports it was not.
+    const unlaunchedEvidenceText=await mini.locator('#oc-screen').innerText();
+    assert.ok(unlaunchedEvidenceText.includes('证据可用'),'Unlaunched evidence-ready Mini status must include 证据可用');
+    assert.ok(!unlaunchedEvidenceText.includes('系统拨号盘已打开'),'Unlaunched evidence-ready Mini heading must not claim the dialer was opened');
+    const dialerFact=mini.locator('#oc-screen .meta-item').filter({hasText:'系统拨号盘'});
+    assert.equal(await dialerFact.count(),1,'Mini status must render one system dialer task fact');
+    assert.equal((await dialerFact.locator('strong').innerText()).trim(),'未打开','Unlaunched evidence-ready task fact must remain 未打开');
     assert.ok(!(await mini.locator('#oc-screen').innerText()).includes('CT-DEMO-0201'),'Mini must not render a foreign-account task');
     await wgo('calls');await text(web,'#content',miniCreatedTask.id);await text(web,'#content','CALL-QA-TASK-01');await text(web,'#content','证据可用');await text(web,'#content','任务自动外呼');
     assert.ok(!(await web.locator('#content').innerText()).includes('CT-DEMO-0201'),'Web must not render a foreign-account task');

@@ -402,6 +402,52 @@ test('SUSPENDED resolves unique ownership before rejecting a pending task', () =
   assert.equal(noTaskState.calls.some(item => item.id === 'CALL-QA-SUSPENDED-NO-TASK'), false);
 });
 
+test('ordinary claim is ownership-scoped to the unique active binding', () => {
+  const state = B.createCallTaskDemoState(NOW);
+  state.callerBindings.push({
+    id: 'CB-SECOND-4471',
+    ownerType: 'PERSONAL_ACCOUNT',
+    ownerId: 'ACCOUNT-DEMO-002',
+    workspaceId: 'personal:ACCOUNT-DEMO-002',
+    maskedCaller: '186 **** 4471',
+    normalizedCaller: '18600004471',
+    numberType: 'MOBILE',
+    active: true,
+  });
+  assert.equal(B.callTaskSnapshot(state).ok, true);
+  const foreign = B.createCallTask(state, {
+    callerBindingId: 'CB-SECOND-4471',
+    maskedCallee: '136 **** 8899',
+    businessType: 'EVIDENCE_CALL',
+    idempotencyKey: 'QA-TASK-FOREIGN-BINDING',
+    replacePending: false,
+  }, NOW);
+  assert.equal(foreign.ok, true, JSON.stringify(foreign));
+  assert.equal(foreign.value.ownerId, 'ACCOUNT-DEMO-002');
+  assert.equal(foreign.value.workspaceId, 'personal:ACCOUNT-DEMO-002');
+  state.callerBindings.find(item => item.id === 'CB-SECOND-4471').active = false;
+  assert.equal(B.uniqueCallerBinding(state, '18600004471').id, CALLER_4471, 'only the original binding remains active');
+
+  assert.equal(B.callTaskSnapshot(state).ok, true, 'a snapshot with an inactive second binding must validate');
+  const candidate = B.callTaskSnapshot(state).value;
+  const target = B.createCallTaskDemoState(NOW);
+  assert.equal(B.loadCallTaskSnapshot(target, candidate).ok, true);
+
+  const before = raw(target);
+  const callsBefore = target.calls.length;
+  const result = B.resolveIvrInbound(target, {
+    callId: 'CALL-QA-FOREIGN-PENDING', normalizedCaller: '18600004471', callerTrusted: true,
+    callerState: 'ACTIVE', availableSeconds: 300, directAllowed: true,
+  }, at(1));
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'REJECT');
+  assert.equal(result.value, undefined, 'ownership conflict must not expose a task or callee');
+  assert.deepEqual(target, before, 'ownership conflict must be byte-identical');
+  assert.equal(target.tasks.find(item => item.id === foreign.value.id).status, 'PENDING');
+  assert.equal(target.calls.length, callsBefore);
+  assert.equal(target.calls.some(item => item.id === 'CALL-QA-FOREIGN-PENDING'), false, 'ownership conflict must not create a call');
+});
+
 test('no-task path requires direct DTMF allowance and creates no call when disabled', () => {
   const state = B.createCallTaskDemoState(NOW);
   const before = raw(state);

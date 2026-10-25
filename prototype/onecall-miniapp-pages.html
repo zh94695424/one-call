@@ -3137,7 +3137,7 @@
   </div>
 
   <!-- ONECALL_BUSINESS:START -->
-<script data-onecall-business-sha256="7bb678ab703483586126aa632a5a02b8aa2b6d896fd562a53ff884a9026f7560">
+<script data-onecall-business-sha256="83d3ac242d6c7bf725493c6a69783badb2d63995b27eec68b302103ed6d2899c">
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -4024,7 +4024,16 @@
       if (input.availableSeconds <= 0) {
         return ok({ action: 'GUIDE_PURCHASE', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
       }
-      const pending = one(draft.tasks, item => item.normalizedCaller === normalizedCaller && item.status === 'PENDING');
+      const callerPending = draft.tasks.filter(item => item.normalizedCaller === normalizedCaller && item.status === 'PENDING');
+      // Claiming is ownership-scoped exactly like the SUSPENDED branch: the
+      // task must belong to the unique active binding resolved above. A
+      // same-caller pending task owned by another scope must not be claimable
+      // and must not fall through to the no-task DTMF path.
+      const pending = callerPending.find(item => item.callerBindingId === binding.id
+        && item.ownerType === binding.ownerType
+        && item.ownerId === binding.ownerId
+        && item.workspaceId === binding.workspaceId);
+      if (!pending && callerPending.length) return fail('REJECT');
       if (pending && toMs(now) < Date.parse(pending.expiresAt)) {
         const at = iso(now);
         pending.status = 'CLAIMED';
@@ -5499,7 +5508,7 @@
         const launched = !!(task && task.dialerLaunchedAt);
         const connected = ["ANSWERED", "BRIDGED", "RECORDING", "ENDED", "RECORDING_RECEIVED", "EVIDENCE_PROCESSING", "EVIDENCE_READY"].indexOf(progress) > -1;
         const evidenceReady = progress === "EVIDENCE_READY";
-        const headerLine = evidenceReady ? "系统拨号盘已打开 · 证据可用" : launched ? ("系统拨号盘已打开 · " + (connected ? "已接通" : "尚未接通")) : (connected ? "已接通" : "尚未接通");
+        const headerLine = evidenceReady ? (launched ? "系统拨号盘已打开 · 证据可用" : "证据可用") : launched ? ("系统拨号盘已打开 · " + (connected ? "已接通" : "尚未接通")) : (connected ? "已接通" : "尚未接通");
         const taskRows = task
           ? '<h4 class="section-title">待拨任务事实</h4><div class="record-card"><div class="record-top"><span class="record-label">' + task.id + '</span>' + renderSourceBadge("MINI") + '</div><div class="meta-grid"><div class="meta-item"><span>任务状态</span><strong>' + callTaskStatusText(task) + '</strong></div><div class="meta-item"><span>冻结</span><strong>' + task.ttlSeconds + ' 秒</strong></div><div class="meta-item"><span>到期</span><strong>' + task.expiresAt.replace("T", " ").slice(0, 19) + '</strong></div><div class="meta-item"><span>系统拨号盘</span><strong>' + (task.dialerLaunchedAt ? "已打开（仅客户端）" : "未打开") + '</strong></div><div class="meta-item"><span>领取</span><strong>' + (task.claimedCallId ? "已领取 · " + task.claimedCallId : "未领取") + '</strong></div><div class="meta-item"><span>被叫</span><strong>' + (call && call.maskedCallee ? call.maskedCallee : task.maskedCallee) + '</strong></div></div></div>'
           : '';

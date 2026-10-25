@@ -4925,7 +4925,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;/div&gt;
 
   &lt;!-- ONECALL_BUSINESS:START --&gt;
-&lt;script data-onecall-business-sha256=&quot;7bb678ab703483586126aa632a5a02b8aa2b6d896fd562a53ff884a9026f7560&quot;&gt;
+&lt;script data-onecall-business-sha256=&quot;83d3ac242d6c7bf725493c6a69783badb2d63995b27eec68b302103ed6d2899c&quot;&gt;
 (function (root, factory) {
   const api = factory();
   if (typeof module === &#x27;object&#x27; &amp;&amp; module.exports) module.exports = api;
@@ -5812,7 +5812,16 @@ html&gt;body{padding:0}&lt;/style&gt;
       if (input.availableSeconds &lt;= 0) {
         return ok({ action: &#x27;GUIDE_PURCHASE&#x27;, callId: null, taskId: null, taskMatch: &#x27;NONE&#x27;, progress: null, maskedCallee: null, calleeConfirmation: &#x27;NOT_APPLICABLE&#x27;, taskPath: false }, &#x27;GUIDE&#x27;);
       }
-      const pending = one(draft.tasks, item =&gt; item.normalizedCaller === normalizedCaller &amp;&amp; item.status === &#x27;PENDING&#x27;);
+      const callerPending = draft.tasks.filter(item =&gt; item.normalizedCaller === normalizedCaller &amp;&amp; item.status === &#x27;PENDING&#x27;);
+      // Claiming is ownership-scoped exactly like the SUSPENDED branch: the
+      // task must belong to the unique active binding resolved above. A
+      // same-caller pending task owned by another scope must not be claimable
+      // and must not fall through to the no-task DTMF path.
+      const pending = callerPending.find(item =&gt; item.callerBindingId === binding.id
+        &amp;&amp; item.ownerType === binding.ownerType
+        &amp;&amp; item.ownerId === binding.ownerId
+        &amp;&amp; item.workspaceId === binding.workspaceId);
+      if (!pending &amp;&amp; callerPending.length) return fail(&#x27;REJECT&#x27;);
       if (pending &amp;&amp; toMs(now) &lt; Date.parse(pending.expiresAt)) {
         const at = iso(now);
         pending.status = &#x27;CLAIMED&#x27;;
@@ -7287,7 +7296,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         const launched = !!(task &amp;&amp; task.dialerLaunchedAt);
         const connected = [&quot;ANSWERED&quot;, &quot;BRIDGED&quot;, &quot;RECORDING&quot;, &quot;ENDED&quot;, &quot;RECORDING_RECEIVED&quot;, &quot;EVIDENCE_PROCESSING&quot;, &quot;EVIDENCE_READY&quot;].indexOf(progress) &gt; -1;
         const evidenceReady = progress === &quot;EVIDENCE_READY&quot;;
-        const headerLine = evidenceReady ? &quot;系统拨号盘已打开 · 证据可用&quot; : launched ? (&quot;系统拨号盘已打开 · &quot; + (connected ? &quot;已接通&quot; : &quot;尚未接通&quot;)) : (connected ? &quot;已接通&quot; : &quot;尚未接通&quot;);
+        const headerLine = evidenceReady ? (launched ? &quot;系统拨号盘已打开 · 证据可用&quot; : &quot;证据可用&quot;) : launched ? (&quot;系统拨号盘已打开 · &quot; + (connected ? &quot;已接通&quot; : &quot;尚未接通&quot;)) : (connected ? &quot;已接通&quot; : &quot;尚未接通&quot;);
         const taskRows = task
           ? &#x27;&lt;h4 class=&quot;section-title&quot;&gt;待拨任务事实&lt;/h4&gt;&lt;div class=&quot;record-card&quot;&gt;&lt;div class=&quot;record-top&quot;&gt;&lt;span class=&quot;record-label&quot;&gt;&#x27; + task.id + &#x27;&lt;/span&gt;&#x27; + renderSourceBadge(&quot;MINI&quot;) + &#x27;&lt;/div&gt;&lt;div class=&quot;meta-grid&quot;&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;任务状态&lt;/span&gt;&lt;strong&gt;&#x27; + callTaskStatusText(task) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;冻结&lt;/span&gt;&lt;strong&gt;&#x27; + task.ttlSeconds + &#x27; 秒&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;到期&lt;/span&gt;&lt;strong&gt;&#x27; + task.expiresAt.replace(&quot;T&quot;, &quot; &quot;).slice(0, 19) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;系统拨号盘&lt;/span&gt;&lt;strong&gt;&#x27; + (task.dialerLaunchedAt ? &quot;已打开（仅客户端）&quot; : &quot;未打开&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;领取&lt;/span&gt;&lt;strong&gt;&#x27; + (task.claimedCallId ? &quot;已领取 · &quot; + task.claimedCallId : &quot;未领取&quot;) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;meta-item&quot;&gt;&lt;span&gt;被叫&lt;/span&gt;&lt;strong&gt;&#x27; + (call &amp;&amp; call.maskedCallee ? call.maskedCallee : task.maskedCallee) + &#x27;&lt;/strong&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&#x27;
           : &#x27;&#x27;;

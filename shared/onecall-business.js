@@ -884,7 +884,16 @@
       if (input.availableSeconds <= 0) {
         return ok({ action: 'GUIDE_PURCHASE', callId: null, taskId: null, taskMatch: 'NONE', progress: null, maskedCallee: null, calleeConfirmation: 'NOT_APPLICABLE', taskPath: false }, 'GUIDE');
       }
-      const pending = one(draft.tasks, item => item.normalizedCaller === normalizedCaller && item.status === 'PENDING');
+      const callerPending = draft.tasks.filter(item => item.normalizedCaller === normalizedCaller && item.status === 'PENDING');
+      // Claiming is ownership-scoped exactly like the SUSPENDED branch: the
+      // task must belong to the unique active binding resolved above. A
+      // same-caller pending task owned by another scope must not be claimable
+      // and must not fall through to the no-task DTMF path.
+      const pending = callerPending.find(item => item.callerBindingId === binding.id
+        && item.ownerType === binding.ownerType
+        && item.ownerId === binding.ownerId
+        && item.workspaceId === binding.workspaceId);
+      if (!pending && callerPending.length) return fail('REJECT');
       if (pending && toMs(now) < Date.parse(pending.expiresAt)) {
         const at = iso(now);
         pending.status = 'CLAIMED';

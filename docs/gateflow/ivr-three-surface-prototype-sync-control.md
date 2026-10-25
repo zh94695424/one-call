@@ -7,7 +7,7 @@
 - Status: active.
 - Base: `origin/main` at `754b7dfc53c277e79c5d63e24d578a93fa557cda`.
 - Branch: `codex/ivr-prototype-sync` in an isolated managed worktree.
-- Current gate / next entry point: `aggregate deepreview`; accepted slice commit `42409af` exists, but the fresh MiMo 2.6 Flash aggregate reviewer did not start because the runner rejected its root permission mode before model execution.
+- Current gate / next entry point: `accepted deepreview commit`; aggregate findings AR-01 and AR-02 are closed by independent re-review.
 - Dispatch protocol: `sub-agents`; DeepSeek authors implementation, fresh MiMo 2.6 Flash reviews.
 
 ## Binding goal confirmation
@@ -44,12 +44,29 @@
 | fix | passed (fifth bounded return) | DeepSeek task `ivr-prototype-sync-fix5-ds-20261025-01`, exit 0, structured success, empty stderr; implementation artifact `Controller validation fix 5`; controller observed call-task 15/15, aggregate 46/46, all three surface runners, cross-channel, build equality, syntax and diff checks pass; Web 1440/1024/720 and cross-channel 1280 inspected clean | independent re-review of CF-09/CF-10 |
 | re-review | passed | `docs/reviews/code-review-20261025-112537.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-rereview5-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no findings; CF-09 and CF-10 verified closed | accepted slice commit |
 | accepted slice commit | passed | `42409af`, `gateflow: accept IVR prototype sync slice`; 50 implementation, QA, documentation, review and workflow-owned screenshot files; pre-commit syntax, 46/46 shared tests, generated equality and diff checks passed | aggregate deepreview |
-| aggregate deepreview | blocked before model execution | MiMo 2.6 Flash dispatch `ivr-prototype-sync-deepreview-mimo26flash-20261025-01` and its single retry both exited 1 with empty JSON and stderr `--dangerously-skip-permissions cannot be used with root/sudo privileges`; run dirs `/tmp/sub-agents.ivr-prototype-deepreview.KCdG5V` and `/tmp/sub-agents.ivr-prototype-deepreview.mN6SBr` | repair runner permission-mode configuration, then start a fresh compliant aggregate reviewer |
+| aggregate deepreview | failed; findings accepted | `docs/reviews/code-review-20261025-121229.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-deepreview-mimo26flash-20261025-02`, exit 0, structured success, empty stderr; verdict `fail` with AR-01 medium and AR-02 low | DeepSeek bounded fix, then fresh MiMo re-review |
+| fix | passed (aggregate return 1) | DeepSeek task `ivr-prototype-sync-aggregate-fix-ds-20261025-01`, exit 0, structured success, empty stderr; implementation artifact `Aggregate deepreview fix 1`; controller observed syntax, 47/47 shared tests, all three full runners, cross-channel, generated equality and visual inspection pass | fresh MiMo re-review of AR-01/AR-02 |
+| re-review | passed | `docs/reviews/code-review-20261025-122653.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-aggregate-rereview-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no findings; AR-01 and AR-02 verified closed | accepted deepreview commit |
 
 ## Residual risks
 
 - Prototype behavior is local fixture evidence and does not prove production concurrency, telephony, persistence or cloud integration.
 - Formal prompt wording and legal consent copy remain owned by Product/Legal.
+
+## Aggregate deepreview adjudication
+
+- Dispatch recovery: the two earlier launches never reached model execution because root rejected `bypassPermissions`; the resumed task used `acceptEdits` and completed normally in `/tmp/sub-agents.ivr-prototype-deepreview.0MeLOy`.
+- AR-01 `accepted-medium`: `callStatusHtml()` unconditionally prefixes the evidence-ready heading with `系统拨号盘已打开`, even when the task's `dialerLaunchedAt` is null; the same screen then says `系统拨号盘 未打开`. Make the prefix conditional on the frozen client launch fact and add a regression assertion for the cross-channel evidence-ready path.
+- AR-02 `accepted-low`: the ordinary claim branch selects a pending task by normalized caller and status only, unlike the ownership-scoped suspended branch. A validated snapshot with one active current binding and another inactive binding's pending task can therefore claim and expose the old owner's frozen callee. Require the full binding/owner/workspace match. If a same-caller pending task exists but does not belong to the unique active binding, fail closed with `REJECT`, no mutation, no call and no callee exposure; do not treat this ownership conflict as the no-task DTMF path.
+- Validation note: the reviewer could not execute Node/Git because of its WSL permission/metadata boundary; controller validation remains authoritative and must rerun syntax, 46 shared tests plus new cases, builder equality, affected surface/cross-channel QA, visual inspection and diff checks after the fix.
+
+## Aggregate re-review adjudication
+
+- Artifact: `docs/reviews/code-review-20261025-122653.md`.
+- Verdict accepted: `pass`; no material findings were reported for the bounded fix.
+- AR-01 `closed`: the evidence-ready heading reads the client-owned dialer launch fact, and the real cross-channel unlaunched path is protected by a semantic assertion and inspected screenshot.
+- AR-02 `closed`: ordinary task claim now uses the same ownership tuple as the suspended rejection path; a same-caller foreign pending task fails `REJECT` atomically before claim or DTMF with no task/callee exposure.
+- Gate decision: create the accepted deepreview commit, then evaluate `ready-to-open-draft-PR`.
 
 ## Plan return notes
 

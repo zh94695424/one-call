@@ -386,3 +386,45 @@ In `shared/onecall-business.js::resolveIvrInbound`:
 | `git status --porcelain && git diff --stat` | FAILED — `fatal: not a git repository: .../D:/codex-call/.git/worktrees/codex-call` (known WSL metadata limitation; controller-side Windows Git remains authoritative) |
 
 No surface runner or cross-channel suite was run, as instructed. Program execution remains denied in this session, so no syntax or PASS result is claimed. The controller must rerun the four `node --check` commands and `node --test shared/qa/call-task.test.js`, regenerate the Web/cross-channel screenshots, and inspect the at-original-size results.
+
+## Aggregate deepreview fix 1
+
+- Task label: `ivr-prototype-sync-aggregate-fix-ds-20261025-01`. Bounded fix of accepted AR-01 and AR-02 only. No control/review/spec/README/production/config/credential change, no staging, commit, push, PR, merge or gate advancement.
+- Findings source: `docs/reviews/code-review-20261025-121229.md` and the adjudication in `docs/gateflow/ivr-three-surface-prototype-sync-control.md`.
+
+### AR-01 — truthful Mini evidence-ready heading
+
+- `prototype/onecall-miniapp-pages.html::callStatusHtml`: the evidence-ready arm of `headerLine` now gates the dialer prefix on the client-owned `launched` fact (`task.dialerLaunchedAt`): `launched ? "系统拨号盘已打开 · 证据可用" : "证据可用"`. A launched evidence-ready call keeps the previous heading; every other progress branch and the task fact row are unchanged, so an unlaunched call no longer claims the dialer was opened while the same screen reports `系统拨号盘 未打开`.
+- `shared/qa/cross-channel.js`: on the existing unlaunched evidence-ready import path (Mini creates a task and stops at `dialHandoff`, never clicks `launch-dialer`; the shared state is claimed and advanced to `EVIDENCE_READY`, then imported to all three surfaces), the Mini `callStatus` render now asserts the status contains `证据可用`, the full rendered text does not contain `系统拨号盘已打开`, and the single `系统拨号盘` task fact row's value is `未打开`. All pre-existing assertions were retained.
+
+### AR-02 — ownership-scoped ordinary claim
+
+- `shared/onecall-business.js::resolveIvrInbound`: branch order is preserved — same-call duplicate replay, untrusted caller, `SUSPENDED`, active-call rejection, expiry reaping, binding failure, activation/purchase guidance, owned task claim, then no-task `directAllowed`/DTMF. The claim lookup now collects same-caller `PENDING` tasks and claims only one whose `normalizedCaller`, `callerBindingId`, `ownerType`, `ownerId` and `workspaceId` all match the unique active binding resolved earlier (the same invariant as the `SUSPENDED` branch). If a same-caller `PENDING` task exists but none belongs to that binding, the call fails closed with the existing `REJECT` style before any claim or no-task DTMF handling. `callTaskMutate` discards the failed draft, so no task mutation, call, task id or frozen callee is exposed.
+- `shared/qa/call-task.test.js`: added a sixteenth test, `ordinary claim is ownership-scoped to the unique active binding`. It creates a second binding B for `18600004471` owned by `ACCOUNT-DEMO-002`, creates a valid `PENDING` task through the API while B is active, then sets B inactive so the original binding A is the only active binding. It proves the mixed snapshot passes `callTaskSnapshot` validation and `loadCallTaskSnapshot`, then resolves an ACTIVE/entitled inbound and asserts `REJECT` with no `value`, byte-identical state, the foreign task still `PENDING`, and no call created for the conflicting inbound. All 15 existing tests and assertions are retained.
+
+### Commands observed
+
+| Command | Result |
+| --- | --- |
+| `node --check shared/onecall-business.js` | NOT EXECUTED — `This command requires approval` |
+| `node --check shared/qa/call-task.test.js` | NOT EXECUTED — `This command requires approval` |
+| `node --check shared/qa/cross-channel.js` | NOT EXECUTED — `This command requires approval` |
+| `node --test shared/qa/call-task.test.js` | NOT EXECUTED — `This command requires approval` |
+| `node --test shared/qa/business.test.js shared/qa/call-task.test.js shared/qa/runner-exit.test.js` | NOT EXECUTED — `This command requires approval` |
+| `node shared/build-prototypes.js` / `--check` | NOT EXECUTED — `This command requires approval` |
+| `git diff --check` | FAILED — `fatal: not a git repository: .../D:/codex-call/.git/worktrees/codex-call` (known WSL metadata limitation; controller-side Windows Git remains authoritative) |
+| Static test count | `16` test declarations in `shared/qa/call-task.test.js` |
+| Static hash comparison | module `shared/onecall-business.js` = `83d3ac242d6c7bf725493c6a69783badb2d63995b27eec68b302103ed6d2899c`; all three maintained source HTML blocks still carry `7bb678ab...` — generated blocks and previews are stale pending the controller build |
+
+Program execution is denied in this session, so no syntax, unit, cross-channel, builder or screenshot PASS result is claimed. The controller must run `node shared/build-prototypes.js`, regenerate the previews, run the six validation commands, rerun the affected surface/cross-channel suites, and inspect the regenerated evidence. No surface runner, screenshot suite or PNG file was touched.
+
+### Controller validation after aggregate fix 1
+
+- `node shared/build-prototypes.js` regenerated all three maintained shared blocks; the three surface runners regenerated their previews.
+- Six affected JavaScript syntax checks passed.
+- `node --test shared/qa/business.test.js shared/qa/call-task.test.js shared/qa/runner-exit.test.js` passed 47/47, including the new ownership-conflict regression.
+- Mini, Web and Operations full runners passed; `node shared/qa/cross-channel.js` passed with the new unlaunched evidence-ready assertion.
+- `node shared/build-prototypes.js --check` passed. The first aggregate test attempt had only the expected stale-preview hash failure before the surface runners regenerated previews; the serial rerun passed 47/47.
+- Original-resolution inspection of `prototype/qa/screenshots/alignment-cross-call-task-393.png` confirmed the heading is `证据可用`, the task fact is `系统拨号盘 未打开`, and there is no clipping, overlap or false dialer-launch claim.
+- Runner-generated unrelated screenshot churn was restored; only the workflow-owned cross-channel Mini screenshot changed for AR-01.
+- `git diff --check` initially found one trailing blank line in this implementation artifact; the formatting issue was removed before re-review.
