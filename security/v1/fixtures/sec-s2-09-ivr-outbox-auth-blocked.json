@@ -25,16 +25,12 @@
         "sameEventId": true,
         "samePayload": true,
         "securityBlocked": true,
-        "hotRetryPerformed": false,
         "retried": false,
         "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED",
         "alertRedacted": true,
         "credentialExposed": false,
         "signatureLogged": false,
         "nonceLogged": false,
-        "identityChanges": 0,
-        "payloadChanges": 0,
-        "a2BusinessSideEffects": 0,
         "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
       }
     },
@@ -44,7 +40,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "hotRetryRequested": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "HOT_RETRY_FORBIDDEN", "outboxState": "PENDING", "hotRetryPerformed": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "HOT_RETRY_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "identity-mutation-denied",
@@ -52,7 +48,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "mutateEventId": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "identityChanges": 0, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "payload-mutation-denied",
@@ -60,7 +56,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "mutatePayload": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "PAYLOAD_MUTATION_FORBIDDEN", "outboxState": "PENDING", "payloadChanges": 0, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "PAYLOAD_MUTATION_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "redial-denied",
@@ -68,7 +64,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "redial": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "REDIAL_FORBIDDEN", "outboxState": "PENDING", "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "REDIAL_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "re-resolve-denied",
@@ -76,7 +72,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "reResolve": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "RERESOLVE_FORBIDDEN", "outboxState": "PENDING", "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "RERESOLVE_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "reservation-denied",
@@ -84,7 +80,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "reservation": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "RESERVATION_FORBIDDEN", "outboxState": "PENDING", "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "RESERVATION_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "settlement-denied",
@@ -92,7 +88,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
       "settlement": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "SETTLEMENT_FORBIDDEN", "outboxState": "PENDING", "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "SETTLEMENT_FORBIDDEN", "outboxState": "PENDING" }
     },
     {
       "id": "observe-403",
@@ -110,13 +106,11 @@
         "reason": "OBSERVED_FORBIDDEN",
         "outboxState": "PENDING",
         "securityBlocked": true,
-        "hotRetryPerformed": false,
         "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED",
         "alertRedacted": true,
         "credentialExposed": false,
         "signatureLogged": false,
-        "nonceLogged": false,
-        "a2BusinessSideEffects": 0
+        "nonceLogged": false
       }
     },
     {
@@ -140,11 +134,7 @@
         "retryAllowed": true,
         "retried": true,
         "freshTransport": true,
-        "hotRetryPerformed": false,
-        "alertSignal": null,
-        "identityChanges": 0,
-        "payloadChanges": 0,
-        "a2BusinessSideEffects": 0
+        "alertSignal": null
       }
     },
     {
@@ -156,7 +146,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0902",
       "transportTimestamp": "1700000100",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true }
     },
     {
       "id": "omitted-transport-denied",
@@ -165,7 +155,7 @@
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
       "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
       "recoverySignal": "KEY_ROTATED",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
     },
     {
       "id": "null-transport-denied",
@@ -176,7 +166,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": null,
       "transportTimestamp": null,
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
     },
     {
       "id": "empty-transport-denied",
@@ -187,7 +177,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "",
       "transportTimestamp": "",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
     },
     {
       "id": "malformed-transport-denied",
@@ -198,7 +188,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST ONLY OUTBOX NONCE",
       "transportTimestamp": "17000001O0",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
     },
     {
       "id": "partially-reused-transport-denied",
@@ -209,7 +199,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0904",
       "transportTimestamp": "1700000100",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
     },
     {
       "id": "omitted-recovery-identity-denied",
@@ -219,7 +209,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0905",
       "transportTimestamp": "1700000300",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true, "identityChanges": 0, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true }
     },
     {
       "id": "empty-recovery-identity-denied",
@@ -230,7 +220,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0906",
       "transportTimestamp": "1700000400",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true, "identityChanges": 0, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true }
     },
     {
       "id": "mismatched-recovery-identity-denied",
@@ -241,7 +231,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0907",
       "transportTimestamp": "1700000500",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true, "identityChanges": 0, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true }
     },
     {
       "id": "recovery-403-accepted",
@@ -252,7 +242,7 @@
       "recoverySignal": "KEY_ROTATED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0908",
       "transportTimestamp": "1700000600",
-      "expected": { "status": "OK", "statusCode": 200, "problemCode": null, "reason": "RETRY_AFTER_RECOVERY", "outboxState": "PENDING", "securityBlocked": false, "retryAllowed": true, "retried": true, "freshTransport": true, "identityChanges": 0, "payloadChanges": 0, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "OK", "statusCode": 200, "problemCode": null, "reason": "RETRY_AFTER_RECOVERY", "outboxState": "PENDING", "securityBlocked": false, "retryAllowed": true, "retried": true, "freshTransport": true }
     },
     {
       "id": "reblock-403",
@@ -261,7 +251,7 @@
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
       "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
       "observedStatus": 401,
-      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "OBSERVED_UNAUTHENTICATED", "outboxState": "PENDING", "securityBlocked": true, "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED", "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "OBSERVED_UNAUTHENTICATED", "outboxState": "PENDING", "securityBlocked": true, "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED" }
     },
     {
       "id": "reused-accepted-transport-denied",
@@ -272,7 +262,7 @@
       "recoverySignal": "SERVICE_AUTHORIZATION_RESTORED",
       "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0908",
       "transportTimestamp": "1700000600",
-      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false, "a2BusinessSideEffects": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
     },
     {
       "id": "initial-observation-transport-omitted-denied",
@@ -287,10 +277,7 @@
         "problemCode": "FORBIDDEN",
         "reason": "STALE_TRANSPORT",
         "outboxState": "PENDING",
-        "securityBlocked": false,
-        "identityChanges": 0,
-        "payloadChanges": 0,
-        "a2BusinessSideEffects": 0
+        "securityBlocked": false
       }
     },
     {
@@ -303,14 +290,7 @@
         "s2s3Sections": 0,
         "outboxEntries": 2,
         "securityBlockedEntries": 1,
-        "outboxIdentityChanges": 0,
-        "outboxPayloadChanges": 0,
         "a2Events": 0,
-        "a2Calls": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0,
-        "a2Redials": 0,
-        "a2ReResolves": 0,
         "payments": 0,
         "entitlements": 0
       },

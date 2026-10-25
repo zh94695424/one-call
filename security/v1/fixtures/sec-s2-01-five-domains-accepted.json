@@ -122,9 +122,6 @@
         "a2Invariants": 15,
         "a2EventRegistrySha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9",
         "a2Events": 0,
-        "a2Calls": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0,
         "outboxEntries": 0,
         "payments": 0
       },

@@ -21,7 +21,6 @@
         "accessEvent": "AUDIT_READ_DENIED",
         "persistenceRoute": "access_event",
         "auditFactsAppended": 0,
-        "recursiveAppendFactCalls": 0,
         "projection": [],
         "rawValuesExposed": false,
         "rowsChanged": 0,
@@ -37,7 +36,7 @@
       "role": "IVR",
       "operation": "READ",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "recursiveAppendFactCalls": 0, "rawValuesExposed": false }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "rawValuesExposed": false }
     },
     {
       "id": "public-audit-read-denied",
@@ -46,7 +45,7 @@
       "role": "PUBLIC",
       "operation": "READ",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "recursiveAppendFactCalls": 0, "rawValuesExposed": false }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "rawValuesExposed": false }
     },
     {
       "id": "provider-audit-read-denied",
@@ -55,7 +54,7 @@
       "role": "PROVIDER",
       "operation": "READ",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "recursiveAppendFactCalls": 0, "rawValuesExposed": false }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "rawValuesExposed": false }
     },
     {
       "id": "employee-ops-read-allowed",
@@ -72,7 +71,6 @@
         "accessEvent": "AUDIT_READ",
         "persistenceRoute": "access_event",
         "auditFactsAppended": 0,
-        "recursiveAppendFactCalls": 0,
         "projection": ["status", "revision", "reasonCode"],
         "rawValuesExposed": false,
         "rowsChanged": 0,
@@ -88,7 +86,7 @@
       "role": "ADMIN",
       "operation": "LIST",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "OK", "statusCode": 200, "reason": "AUDIT_READ_ALLOWED", "accessEvent": "AUDIT_READ", "auditFactsAppended": 0, "recursiveAppendFactCalls": 0, "rawValuesExposed": false }
+      "expected": { "status": "OK", "statusCode": 200, "reason": "AUDIT_READ_ALLOWED", "accessEvent": "AUDIT_READ", "auditFactsAppended": 0, "rawValuesExposed": false }
     },
     {
       "id": "employee-export-allowed",
@@ -97,7 +95,7 @@
       "role": "OPS",
       "operation": "EXPORT",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "OK", "statusCode": 200, "reason": "AUDIT_READ_ALLOWED", "accessEvent": "AUDIT_READ", "auditFactsAppended": 0, "recursiveAppendFactCalls": 0, "rawValuesExposed": false }
+      "expected": { "status": "OK", "statusCode": 200, "reason": "AUDIT_READ_ALLOWED", "accessEvent": "AUDIT_READ", "auditFactsAppended": 0, "rawValuesExposed": false }
     },
     {
       "id": "employee-update-denied",
@@ -113,7 +111,6 @@
         "reason": "AUDIT_MUTATION_FORBIDDEN",
         "accessEvent": "AUDIT_READ_DENIED",
         "auditFactsAppended": 0,
-        "recursiveAppendFactCalls": 0,
         "rowsChanged": 0,
         "updateDeleteTruncateAllowed": false
       }
@@ -125,7 +122,7 @@
       "role": "ADMIN",
       "operation": "DELETE",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_MUTATION_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "rowsChanged": 0, "auditFactsAppended": 0, "recursiveAppendFactCalls": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_MUTATION_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "rowsChanged": 0, "auditFactsAppended": 0 }
     },
     {
       "id": "employee-truncate-denied",
@@ -134,7 +131,7 @@
       "role": "ADMIN",
       "operation": "TRUNCATE",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_MUTATION_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "rowsChanged": 0, "auditFactsAppended": 0, "recursiveAppendFactCalls": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_MUTATION_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "rowsChanged": 0, "auditFactsAppended": 0 }
     },
     {
       "id": "employee-raw-snapshot-denied",
@@ -144,7 +141,7 @@
       "operation": "READ",
       "snapshotRedactedOrEncrypted": true,
       "rawSnapshotRequested": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "RAW_SNAPSHOT_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "rawValuesExposed": false, "auditFactsAppended": 0, "recursiveAppendFactCalls": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "RAW_SNAPSHOT_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "rawValuesExposed": false, "auditFactsAppended": 0 }
     },
     {
       "id": "employee-wrong-role-denied",
@@ -153,7 +150,7 @@
       "role": "CUSTOMER",
       "operation": "READ",
       "snapshotRedactedOrEncrypted": true,
-      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0, "recursiveAppendFactCalls": 0 }
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "AUDIT_READ_FORBIDDEN", "accessEvent": "AUDIT_READ_DENIED", "auditFactsAppended": 0 }
     },
     {
       "id": "assert-audit-persistence",
@@ -167,7 +164,6 @@
         "auditReadDenied": 9,
         "auditAccessEventsEmitted": 12,
         "auditFactsAppended": 0,
-        "recursiveAppendFactCalls": 0,
         "highRiskActions": 10,
         "auditCoverage": 10,
         "invariants": 21

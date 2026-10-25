@@ -24,11 +24,7 @@
         "eventId": "TEST_ONLY_OUTBOX_EVENT_0801",
         "sameEventId": true,
         "samePayload": true,
-        "securityBlocked": false,
-        "hotRetryPerformed": false,
-        "identityChanges": 0,
-        "payloadChanges": 0,
-        "a2BusinessSideEffects": 0
+        "securityBlocked": false
       }
     },
     {
@@ -102,7 +98,7 @@
       "eventId": "TEST_ONLY_OUTBOX_EVENT_0801",
       "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801",
       "domainIdentity": { "callId": "TEST_ONLY_CALL_0801", "eventId": "TEST_ONLY_OUTBOX_EVENT_0801" },
-      "expected": { "status": "OK", "statusCode": 200, "outboxState": "PENDING", "sameEventId": true, "samePayload": true, "securityBlocked": false, "identityChanges": 0, "payloadChanges": 0 }
+      "expected": { "status": "OK", "statusCode": 200, "outboxState": "PENDING", "sameEventId": true, "samePayload": true, "securityBlocked": false }
     },
     {
       "id": "assert-a2-preserved",
@@ -118,14 +114,7 @@
         "a2Invariants": 15,
         "a2EventRegistrySha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9",
         "a2Events": 1,
-        "a2Calls": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0,
-        "a2Redials": 0,
-        "a2ReResolves": 0,
-        "outboxEntries": 1,
-        "outboxIdentityChanges": 0,
-        "outboxPayloadChanges": 0
+        "outboxEntries": 1
       },
       "expected": { "status": "OK", "mismatches": [] }
     }

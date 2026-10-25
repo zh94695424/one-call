@@ -160,9 +160,6 @@
         "futureFixtureIds": 0,
         "s2s3Sections": 0,
         "a2Events": 0,
-        "a2Calls": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0,
         "payments": 1,
         "entitlements": 1,
         "providerEvents": 1

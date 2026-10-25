@@ -12,7 +12,7 @@
 >
 > Validator：`security/validate.mjs`（零第三方依赖，Node 22）
 >
-> Status：S3 author-complete（累计 S1+S2+S3）；等待独立 code review，不是 accepted checkpoint。
+> Status：S1/S2/S3 slice checkpoint 均已 accepted；live aggregate/PR Gateflow 状态仅以 `docs/gateflow/project-execution-control.md` 为权威。
 
 ## 1. 状态、来源关系与静态限制
 
@@ -364,7 +364,7 @@ Audience registry（5 个领域 audience + 1 个 upload 签发侧分类 + 4 个�
 适用 `POST /api/v1/callbacks/payment-events`，必须同时具备 `providerCallbackMtls` 与 `providerCallbackSignature`。
 
 - Header：`X-ONECALL-CALLBACK-SIGNATURE`、`X-ONECALL-TIMESTAMP`、`X-ONECALL-NONCE`；TIMESTAMP 1-64、NONCE 1-128 沿用 A1。vendor signature 算法、canonicalization、payload 字段与窗口全部 Q6/Q15 typed deferred；本文件不发明。
-- 验证顺序：provider mTLS identity → header → provider profile（Q6）→ timestamp window → constant-time signature verify → event identity/payload fingerprint（exact duplicate 返回 200 duplicate；同 event 异 payload 返回 409）→ nonce `SET NX` → 支付处理。
+- 验证顺序：provider mTLS identity → header → provider profile（Q6）→ timestamp window → constant-time signature verify → exact duplicate event/payload fingerprint 检查（命中即 200 duplicate 早退，不消费 nonce）→ nonce `SET NX`（新事件或 changed payload）→ changed payload 冲突检查（仅在 nonce 检查成功后返回 409 `PAYMENT_EVENT_CONFLICT`）→ 支付处理。
 - exact duplicate 是零副作用的幂等结果，不要求消费 nonce；新事件或 changed payload 必须先通过 nonce 检查。依赖不可用返回 503，不推进支付。
 - 失败映射：签名/证书/时间窗/nonce replay → `401 CALLBACK_SIGNATURE_INVALID`；同 event 不同 payload → `409 PAYMENT_EVENT_CONFLICT`；依赖不可用 → `503 CALLBACK_RETRY_LATER`；重复同 event/同 fingerprint → `200 {accepted:true,duplicate:true}`。
 - 原始 provider payload 由 adapter 加密留档（A0 `payment_event.payload_ciphertext`），不得明文日志、不得返回内部结果；响应只含 `accepted`/`duplicate`。
@@ -659,8 +659,8 @@ S2 fixtures（9，恰 5 个显式负例）：
 | `sec-s2-01-five-domains-accepted` | 五个域各自有效 credential | 仅本面 2xx；audience/operation 计数正确；零跨域与 A2 副作用 |
 | `sec-s2-02-cross-domain-rejected` | 负例：customer/employee/capability/ivr/provider token 交叉使用 | A1 既有 401/403/404；零 A2 状态写入 |
 | `sec-s2-03-service-identity-least-privilege` | 6 service identities allowed/denied calls | 仅 allowed calls；无 `*`；前端无 secret；拒绝 audit read |
-| `sec-s2-04-ivr-signature-invalid` | 负例：缺/坏 mTLS、坏签名、超窗、未知 keyId、坏 nonce、service identity 不允许 | 401/403；header 名与 TIMESTAMP 1-64/NONCE 1-128 精确，SIGNATURE 只断言名称+值格式（无长度断言）；零 session/call/decision/task/reservation/event |
-| `sec-s2-05-ivr-replay-rejected` | 负例：同 nonce replay；Redis 不可用；修复后同 eventId 新 nonce 重试 | 401/503；零副作用；重试后 A2 首次结果；无 redial/第二 reservation |
+| `sec-s2-04-ivr-signature-invalid` | 负例：缺/坏 mTLS、坏签名、超窗、超窗+坏签名组合（timestamp 先于 signature）、未知 keyId、坏 nonce、service identity 不允许 | 401/403；header 名与 TIMESTAMP 1-64/NONCE 1-128 精确，SIGNATURE 只断言名称+值格式（无长度断言）；组合步骤固定 `TIMESTAMP_OUT_OF_WINDOW`；零 session/call/decision/task/reservation/event |
+| `sec-s2-05-ivr-replay-rejected` | 负例：同 nonce replay；Redis 不可用；修复后同 eventId 新 nonce 重试 | 401/503；零副作用；重试后 A2 首次结果；无 redial/第二 reservation；成功请求独立固定六行 canonical string（lowercase method 归一化为 uppercase、percent-encoded raw path 不 decode、body lowercase hex SHA-256） |
 | `sec-s2-06-provider-signature-replay` | 负例：坏签名、nonce replay、duplicate、changed payload | 401 `CALLBACK_SIGNATURE_INVALID`；duplicate 200；changed 409 `PAYMENT_EVENT_CONFLICT`；无重复支付/权益 |
 | `sec-s2-07-signing-key-rotation` | IVR/provider key 新旧 overlap/retire | 旧 key `VERIFY_ONLY` 可验；retire 后 401；无 A2 状态副作用 |
 | `sec-s2-08-failclosed-dependency-preserves-a2` | SM/Redis 不可用；恢复后同 identity 重试 | 503；无 A2 写入；outbox 不改 eventId；A2 digest/状态不变 |
@@ -674,7 +674,7 @@ S3 fixtures（8，恰 3 个显式负例）：
 | `sec-s3-02-playback-credential-scope` | 负例：bearer presentation；跨对象/purpose/generation/过期/撤销/写/客户端 object 字段 | bearer 被验证且 credential redacted；无 COS URL/key/bucket/version；无写；无准入重计 |
 | `sec-s3-03-cos-private-policy` | 匿名读/写/list、public URL、key/bucket/version 泄漏、WORM 声称 | 全部 deny；SSE-KMS/versioning/私有/TLS-only 固定；WORM/object-lock/region/SKU 不声称 |
 | `sec-s3-04-audit-access-denied` | 负例：customer/ivr/public/provider 读 audit；employee 读；UPDATE/DELETE/TRUNCATE | 非 employee 拒绝；employee 只 redacted projection；access_event route；无递归 append_fact；39 行 persistence 精确 2+37 |
-| `sec-s3-05-high-risk-controls` | 10 个员工 mutation 的 role/state/reason/audit | 合法通过；坏 role/state/reason 拒绝；audit 失败回滚；last-admin 不变；UI 二次确认不作断言 |
+| `sec-s3-05-high-risk-controls` | 10 个员工 mutation 的 role/state/reason/audit | 合法通过；坏 role/state/reason 拒绝；audit 失败回滚；registry 中无 last-admin 移除或角色创建操作；UI 二次确认不作断言 |
 | `sec-s3-06-redaction-deterministic` | 递归 deny-list、masked、credential/header/path pattern、未知字段 | 固定 `[REDACTED:*]`；masked 允许；未知字段 block；确定性；无原文 |
 | `sec-s3-07-credential-url-leak` | 负例：capabilityToken path、upload/playback credential、signature/nonce、Authorization/Cookie | 所有出口无 secret；public 只 masked/ID；analytics/support 无 playback |
 | `sec-s3-08-end-to-end-security` | IVR media + share playback + audit + provider callback | 全链路身份/凭证/审计/脱敏/fail-closed；complete 不固化 evidence；累计计数正确 |
@@ -710,7 +710,7 @@ validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算
 
 S3 完成信号：2 media policies、私有 COS policy、39 audit/access events（2 `access_event` + 37 `append_fact`）、10 high-risk actions、10 call classes、确定性 redaction policy、14-row fail-closed matrix、21 cumulative invariants、23 fixtures（`6+9+8`，10 negatives）与 validator 均已落盘；S1/S2 的 registry/fixture/invariant 保持不变；A0/A1/A2 计数与 digest 由 validator 断言不变；没有新增表、列、状态、endpoint、header、Problem code、role 或生产数值。
 
-本文件与模型不声称任何运行时或云实现，也不声称真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR、gateway、日志平台、analytics 或支付供应商行为已被证明。S3 author completion 后停止；不进入 code review、checkpoint 或后续 Gate，不 stage、commit、push、创建/修改 PR 或 merge。
+本文件与模型不声称任何运行时或云实现，也不声称真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR、gateway、日志平台、analytics 或支付供应商行为已被证明。S1/S2/S3 slice checkpoint 均已 accepted；本文件不承载 live aggregate/PR/Gateflow 生命周期，该状态仅以 `docs/gateflow/project-execution-control.md` 为权威。
 
 ### Completion report template
 

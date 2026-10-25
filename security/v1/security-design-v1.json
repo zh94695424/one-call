@@ -531,8 +531,9 @@
         "provider profile Q6",
         "timestamp window",
         "constant-time signature verify",
-        "event identity and payload fingerprint",
+        "exact-duplicate event and payload fingerprint check (200 early exit; no nonce consumption)",
         "nonce SET NX for a new event or changed payload",
+        "changed-payload conflict 409 PAYMENT_EVENT_CONFLICT after the nonce check",
         "payment processing"
       ],
       "duplicate": "same event and same fingerprint returns 200 accepted true duplicate true with no side effect and without requiring nonce consumption",

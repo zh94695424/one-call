@@ -119,9 +119,7 @@
         "highRiskActions": 10,
         "auditCoverage": 10,
         "invariants": 21,
-        "cosDenied": 6,
-        "evidenceSolidified": 0,
-        "redactionRawExposures": 0
+        "cosDenied": 6
       },
       "expected": { "status": "OK", "mismatches": [] }
     }

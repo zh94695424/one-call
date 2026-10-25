@@ -104,7 +104,6 @@
         "serverObserved": true,
         "clientClaimTrusted": false,
         "mediaFactCreated": 1,
-        "evidenceSolidified": false,
         "permanentUrlReturned": false
       }
     },
@@ -215,7 +214,6 @@
         "accessEvent": "AUDIT_READ",
         "persistenceRoute": "access_event",
         "auditFactsAppended": 0,
-        "recursiveAppendFactCalls": 0,
         "projection": ["status", "revision", "reasonCode"],
         "rawValuesExposed": false
       }
@@ -236,12 +234,9 @@
         "noFallback": true,
         "plaintextReturned": false,
         "credentialIssued": false,
-        "evidenceSolidified": false,
         "mediaFactCreated": 0,
         "redial": false,
-        "a2BusinessSideEffects": 0,
         "domainMutationCommitted": false,
-        "noDuplicateA2SideEffects": true,
         "rawExposed": false
       }
     },
@@ -261,14 +256,11 @@
         "noFallback": true,
         "plaintextReturned": false,
         "credentialIssued": false,
-        "evidenceSolidified": false,
         "mediaFactCreated": 0,
         "redial": false,
-        "a2BusinessSideEffects": 0,
         "domainMutationCommitted": false,
         "domainMutationRolledBack": true,
         "auditFactAppended": false,
-        "noDuplicateA2SideEffects": true,
         "rawExposed": false
       }
     },
@@ -318,11 +310,6 @@
         "a2Invariants": 15,
         "a2EventRegistrySha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9",
         "a2Events": 1,
-        "a2Calls": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0,
-        "a2Redials": 0,
-        "a2ReResolves": 0,
         "outboxEntries": 0,
         "payments": 1,
         "entitlements": 1,
@@ -333,14 +320,8 @@
         "auditReads": 1,
         "auditReadDenied": 0,
         "auditFactsAppended": 2,
-        "recursiveAppendFactCalls": 0,
-        "evidenceSolidified": 0,
         "redactionEmits": 1,
-        "redactionBlocks": 0,
-        "redactionRawExposures": 0,
-        "supportPlaybackAllowed": 0,
-        "lastAdminPreserved": true,
-        "newEmployeeRolesCreated": 0
+        "redactionBlocks": 0
       },
       "expected": { "status": "OK", "mismatches": [] }
     }

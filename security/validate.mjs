@@ -288,7 +288,7 @@ const EXPECTED_SIGNATURE_PROFILES = [
     vendorCanonicalization: 'deferred Q6/Q15',
     vendorPayload: 'deferred Q6/Q15',
     vendorWindow: 'deferred Q6/Q15',
-    verificationOrder: ['provider mTLS identity', 'headers', 'provider profile Q6', 'timestamp window', 'constant-time signature verify', 'event identity and payload fingerprint', 'nonce SET NX for a new event or changed payload', 'payment processing'],
+    verificationOrder: ['provider mTLS identity', 'headers', 'provider profile Q6', 'timestamp window', 'constant-time signature verify', 'exact-duplicate event and payload fingerprint check (200 early exit; no nonce consumption)', 'nonce SET NX for a new event or changed payload', 'changed-payload conflict 409 PAYMENT_EVENT_CONFLICT after the nonce check', 'payment processing'],
     duplicate: 'same event and same fingerprint returns 200 accepted true duplicate true with no side effect and without requiring nonce consumption',
     conflict: 'same event with a different payload returns 409 PAYMENT_EVENT_CONFLICT after the nonce check',
     failureMapping: { signatureCertificateWindowOrNonceReplay: '401 CALLBACK_SIGNATURE_INVALID', changedPayload: '409 PAYMENT_EVENT_CONFLICT', dependencyUnavailable: '503 CALLBACK_RETRY_LATER', exactDuplicate: '200 accepted true duplicate true' },
@@ -1077,15 +1077,8 @@ function createMachine(model, stage = 's1') {
     providerEvents: new Map(),
     providerNonces: new Set(),
     outbox: new Map(),
-    outboxIdentityChanges: 0,
-    outboxPayloadChanges: 0,
     payments: 0,
     entitlements: 0,
-    a2Calls: 0,
-    a2Reservations: 0,
-    a2Settlements: 0,
-    a2Redials: 0,
-    a2ReResolves: 0,
     upload: null,
     uploadIssued: 0,
     uploadDenied: 0,
@@ -1097,15 +1090,11 @@ function createMachine(model, stage = 's1') {
     auditReadDenied: 0,
     auditFactsAppended: 0,
     auditAccessEventsEmitted: 0,
-    recursiveAppendFactCalls: 0,
     highRiskCommitted: 0,
     highRiskRolledBack: 0,
     highRiskDenied: 0,
     redactionEmits: 0,
-    redactionBlocks: 0,
-    redactionRawExposures: 0,
-    supportPlaybackAllowed: 0,
-    evidenceSolidified: 0
+    redactionBlocks: 0
   };
 
   function domainForPath(requestPath) {
@@ -1830,9 +1819,6 @@ function createMachine(model, stage = 's1') {
             eventId,
             outboxState: 'PENDING',
             securityBlocked: false,
-            identityChanges: 0,
-            payloadChanges: 0,
-            a2BusinessSideEffects: 0,
             sideEffects: sideEffectsZero()
           };
         }
@@ -1848,9 +1834,6 @@ function createMachine(model, stage = 's1') {
               eventId,
               outboxState: 'PENDING',
               securityBlocked: false,
-              identityChanges: 0,
-              payloadChanges: 0,
-              a2BusinessSideEffects: 0,
               sideEffects: sideEffectsZero()
             };
           }
@@ -1874,7 +1857,6 @@ function createMachine(model, stage = 's1') {
           sameEventId: entry.eventId === eventId,
           samePayload: entry.payloadFingerprint === step.payloadFingerprint,
           securityBlocked: entry.securityBlocked,
-          hotRetryPerformed: false,
           retried: false,
           retryAllowed: false,
           freshTransport: false,
@@ -1883,9 +1865,6 @@ function createMachine(model, stage = 's1') {
           credentialExposed: false,
           signatureLogged: false,
           nonceLogged: false,
-          identityChanges: 0,
-          payloadChanges: 0,
-          a2BusinessSideEffects: 0,
           sideEffects: sideEffectsZero()
         };
         if (!base.samePayload || step.mutatePayload === true) {
@@ -2010,7 +1989,6 @@ function createMachine(model, stage = 's1') {
           objectKeyReturned: false,
           bucketReturned: false,
           versionReturned: false,
-          evidenceSolidified: false,
           mediaFactCreated: 0,
           rowsWritten: 0,
           securityEvent: null,
@@ -2185,8 +2163,7 @@ function createMachine(model, stage = 's1') {
             sizeBinding: true,
             mimeBinding: true,
             durationBinding: true,
-            mediaFactCreated: 1,
-            evidenceSolidified: false
+            mediaFactCreated: 1
           };
         }
         return { status: 'FAILED', reason: 'UNSUPPORTED_UPLOAD_PHASE' };
@@ -2380,7 +2357,6 @@ function createMachine(model, stage = 's1') {
           accessEvent: 'AUDIT_READ_DENIED',
           persistenceRoute: 'access_event',
           auditFactsAppended: 0,
-          recursiveAppendFactCalls: 0,
           projection: [],
           rawValuesExposed: false,
           rowsChanged: 0,
@@ -2430,8 +2406,6 @@ function createMachine(model, stage = 's1') {
           auditFactsAppended: 0,
           sameTransaction: true,
           partialWrite: false,
-          lastAdminPreserved: true,
-          newEmployeeRolesCreated: 0,
           uiSecondConfirmationAsserted: false,
           runtimeUnverifiedControls: ['UI_SECOND_CONFIRMATION'],
           sideEffects: sideEffectsZero()
@@ -2603,8 +2577,8 @@ function createMachine(model, stage = 's1') {
           return {
             status: 'DENIED', failureId: row.failureId, statusCode: row.primaryStatus, problemCode: row.primaryProblem,
             reason: 'FALLBACK_FORBIDDEN', fallbackUsed: false, plaintextReturned: false,
-            credentialIssued: false, evidenceSolidified: false, redial: false,
-            a2BusinessSideEffects: 0, domainMutationCommitted: false, fallbackRejected: true,
+            credentialIssued: false, redial: false,
+            domainMutationCommitted: false, fallbackRejected: true,
             sideEffects: sideEffectsZero()
           };
         }
@@ -2620,10 +2594,8 @@ function createMachine(model, stage = 's1') {
           noFallback: true,
           plaintextReturned: false,
           credentialIssued: false,
-          evidenceSolidified: false,
           mediaFactCreated: 0,
           redial: false,
-          a2BusinessSideEffects: 0,
           domainMutationCommitted: false,
           domainMutationRolledBack: row.failureId === 'AUDIT_APPEND_FAILED',
           auditFactAppended: false,
@@ -2634,7 +2606,6 @@ function createMachine(model, stage = 's1') {
           emitted: false,
           rawExposed: false,
           alert: row.failureId === 'REDACTION_PIPELINE_FAILED',
-          noDuplicateA2SideEffects: true,
           sideEffects: sideEffectsZero()
         };
       }
@@ -2715,15 +2686,8 @@ function createMachine(model, stage = 's1') {
       a2Invariants: model.upstream?.a2?.invariants || 0,
       a2EventRegistrySha256: model.upstream?.a2?.eventRegistrySha256 || null,
       a2Events: state.a2Events.size,
-      a2Calls: state.a2Calls,
-      a2Reservations: state.a2Reservations,
-      a2Settlements: state.a2Settlements,
-      a2Redials: state.a2Redials,
-      a2ReResolves: state.a2ReResolves,
       outboxEntries: state.outbox.size,
       securityBlockedEntries: [...state.outbox.values()].filter((entry) => entry.securityBlocked).length,
-      outboxIdentityChanges: state.outboxIdentityChanges,
-      outboxPayloadChanges: state.outboxPayloadChanges,
       payments: state.payments,
       entitlements: state.entitlements,
       providerEvents: state.providerEvents.size,
@@ -2746,17 +2710,11 @@ function createMachine(model, stage = 's1') {
       auditReadDenied: state.auditReadDenied,
       auditFactsAppended: state.auditFactsAppended,
       auditAccessEventsEmitted: state.auditAccessEventsEmitted,
-      recursiveAppendFactCalls: state.recursiveAppendFactCalls,
       highRiskCommitted: state.highRiskCommitted,
       highRiskRolledBack: state.highRiskRolledBack,
       highRiskDenied: state.highRiskDenied,
       redactionEmits: state.redactionEmits,
-      redactionBlocks: state.redactionBlocks,
-      redactionRawExposures: state.redactionRawExposures,
-      supportPlaybackAllowed: state.supportPlaybackAllowed,
-      evidenceSolidified: state.evidenceSolidified,
-      lastAdminPreserved: true,
-      newEmployeeRolesCreated: 0
+      redactionBlocks: state.redactionBlocks
     };
   }
 

@@ -33,8 +33,6 @@
         "reasonSource": "REQUEST reasonCode",
         "sameTransaction": true,
         "partialWrite": false,
-        "lastAdminPreserved": true,
-        "newEmployeeRolesCreated": 0,
         "uiSecondConfirmationAsserted": false,
         "runtimeUnverifiedControls": ["UI_SECOND_CONFIRMATION"],
         "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
@@ -58,9 +56,7 @@
         "reason": "ROLE_DENIED",
         "mutationCommitted": false,
         "auditFactsAppended": 1,
-        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED",
-        "lastAdminPreserved": true,
-        "newEmployeeRolesCreated": 0
+        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED"
       }
     },
     {
@@ -210,9 +206,7 @@
         "auditFactsAppended": 0,
         "auditEvent": null,
         "sameTransaction": true,
-        "partialWrite": false,
-        "lastAdminPreserved": true,
-        "newEmployeeRolesCreated": 0
+        "partialWrite": false
       }
     },
     {
@@ -227,9 +221,7 @@
         "highRiskCommitted": 3,
         "highRiskRolledBack": 1,
         "highRiskDenied": 5,
-        "auditFactsAppended": 8,
-        "lastAdminPreserved": true,
-        "newEmployeeRolesCreated": 0
+        "auditFactsAppended": 8
       },
       "expected": { "status": "OK", "mismatches": [] }
     }

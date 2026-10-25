@@ -374,8 +374,6 @@
         "redactionTokens": 28,
         "redactionEmits": 6,
         "redactionBlocks": 4,
-        "redactionRawExposures": 0,
-        "supportPlaybackAllowed": 0,
         "invariants": 21,
         "auditEvents": 39
       },

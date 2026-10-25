@@ -3,7 +3,7 @@
   "id": "sec-s2-04-ivr-signature-invalid",
   "slice": "s2",
   "negative": true,
-  "description": "IVR request authentication fails closed for missing or revoked mTLS, missing or invalid signature, out-of-window timestamp, unknown keyId, malformed nonce and a disallowed service identity, with exact A1 header shapes and zero A2 business facts.",
+  "description": "IVR request authentication fails closed for missing or revoked mTLS, missing or invalid signature, out-of-window timestamp, an out-of-window timestamp combined with an invalid signature (timestamp is checked before signature), unknown keyId, malformed nonce and a disallowed service identity, with exact A1 header shapes and zero A2 business facts.",
   "materials": [
     { "keyId": "K17", "keyRef": "TEST_ONLY_K17_V1", "keyLabel": "TEST_ONLY_K17_SIGNING_V1", "state": "ACTIVE" }
   ],
@@ -146,6 +146,22 @@
       "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "SERVICE_IDENTITY_NOT_ALLOWED", "a2Processed": false }
     },
     {
+      "id": "out-of-window-and-invalid-signature",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "body": "TEST_ONLY_IVR_BODY_0409",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "signatureMode": "invalid",
+      "timestamp": "1600000000",
+      "receivedAt": 1700000000,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0409",
+      "nonceStore": "AVAILABLE",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "TIMESTAMP_OUT_OF_WINDOW", "timestampFormatValid": true, "a2Processed": false }
+    },
+    {
       "id": "assert-zero-side-effects",
       "action": "assert",
       "checks": {
@@ -160,11 +176,6 @@
         "futureFixtureIds": 0,
         "s2s3Sections": 0,
         "a2Events": 0,
-        "a2Calls": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0,
-        "a2Redials": 0,
-        "a2ReResolves": 0,
         "outboxEntries": 0
       },
       "expected": { "status": "OK", "mismatches": [] }

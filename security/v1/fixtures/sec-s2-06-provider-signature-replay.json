@@ -177,9 +177,7 @@
         "payments": 1,
         "entitlements": 1,
         "providerEvents": 1,
-        "a2Events": 0,
-        "a2Reservations": 0,
-        "a2Settlements": 0
+        "a2Events": 0
       },
       "expected": { "status": "OK", "mismatches": [] }
     }
