@@ -40,11 +40,19 @@ IVR 抽屉覆盖新手机、独立固话、重复主叫、超时、错误按键�
 
 ## 验证与维护
 
-qa/qa.js 已通过员工流程、旧码/停用拒绝、低权限伪造 DOM 和直达拒绝、最后管理员、自会话撤销、理由/取消/双提交/修订过期、审计身份、套餐草稿/发布/渠道/历史、试用及十二种 IVR 场景回归。1440、1280、1024、720 CSS 像素检查无 document overflow；表格容器允许横向滚动。三端验收另运行 `node shared/qa/cross-channel.js`。
+qa/qa.js 覆盖员工流程、旧码/停用拒绝、低权限伪造 DOM 和直达拒绝、最后管理员、自会话撤销、理由/取消/双提交/修订过期、审计身份、套餐草稿/发布/渠道/历史、试用、十二种 IVR 场景以及只读任务/呼叫诊断回归；本轮新增任务的执行状态与阻塞见 `docs/gateflow/ivr-three-surface-prototype-sync-implementation.md`。1440、1280、1024、720 CSS 像素检查无 document overflow；表格容器允许横向滚动。三端验收另运行 `node shared/qa/cross-channel.js`。
 
 qa/screenshots/alignment-*.png 为本轮 S2/S3 截图，包含登录、员工、套餐表单/历史、用户试用、IVR 额度耗尽与跨端支付/客服。lean-* 和更早截图保留历史，不覆盖。目视清单和执行证据见 `docs/gateflow/cross-channel-alignment-s3-implementation.md`。
 
 window.__onecallOps 仅供本地演示/评审：businessSnapshot() / loadReviewSnapshot() 显式转交经校验的业务 fixture，不携带员工、登录码、员工会话或 UI 状态，不是实时同步或生产 API。后台导入只允许当前启用管理员；运营评审快照也不返回员工记录。setReviewScenario() 只选择固定 IVR 抽屉场景；切换员工必须退出/登录。若未来发布真实客户端，后续构建/发布工作必须移除或关闭这些 hooks。
+
+## 只读任务 / IVR 诊断
+
+`/ivr-sessions` 在既有会话列表下方增加 `#call-diagnostics` 只读面板：任务表展示任务 ID、脱敏主叫、归属/空间、状态、冻结 30 秒、到期、领取 `callId` 与小程序拨号盘事实；呼叫表展示任务/无任务、决策/匹配、进度、录音秒数、录音上传、证据处理与结束原因。面板同时给出任务自动外呼（`DIAL_TASK_CALLEE`，无需确认被叫）与无任务 DTMF（`ENTER_CALLEE`）示例、三端所有权文案、无任务未注册/未实名可按 1 开通领取一次试用且不创建登录/实名身份的说明，以及“购买引导只记录 GUIDED、不创建订单/支付”的说明。
+
+面板内没有 `data-action`、按钮、输入或编辑/重试/改派控件；伪造 `edit-task` / `retry-upload` / `mark-evidence` 不改变任何事实。评审抽屉新增“任务自动外呼诊断”和“无任务 DTMF 诊断”两个只读选择器，只设置高亮场景并导航到既有 `/ivr-sessions`，不创建 IVR 会话、不修改任务/呼叫事实。既有十二种 IVR 流程演示、六个主入口、15 个业务路由（6 主 + 9 次）和只读通话事实保持不变；不新增路由。
+
+`callTaskSnapshot()` / `loadCallTaskSnapshot(data)` 与业务快照 hooks 分离，导入仍要求当前启用管理员和正常数据状态，且不改变业务事实；`setReviewCallScenario('task'|'no-task')` 只切换高亮。呼叫级证据状态只是诊断投影，权威证据列表仍是业务 `evidence`；所有数据为本地 fixture，不代表生产并发、线路、上传或持久化。
 
 只编辑源 HTML 的应用区，禁止手改共享生成段或 preview。变更导航和权限时同步 QA；写操作必须同时验证允许与拒绝路径。生产身份服务、后端权限、凭据投递、不可变审计、并发扣量、支付和持久化仍由对应生产服务工作单元承担。
 

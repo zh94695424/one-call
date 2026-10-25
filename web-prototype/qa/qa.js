@@ -485,15 +485,45 @@ async function loginByPhone(page, phone, workspaceId = null) {
     await screenshot(page, 'authorization-revoked-detail-1280.png', 1280);
 
     await openRoute(page, 'calls');
-    const callTableText = await page.locator('table').innerText();
+    const diagnosticsText = await page.locator('#call-diagnostics').innerText();
+    for (const phrase of ['任务与 IVR 诊断（只读）','CT-DEMO-0101','冻结 30 秒','DIAL_TASK_CALLEE','任务自动外呼','ENTER_CALLEE','DTMF','录音上传','证据处理']) {
+      expect(diagnosticsText.includes(phrase), `Call diagnostics is missing ${phrase}`);
+    }
+    expect(!diagnosticsText.includes('CT-DEMO-0201'), 'Foreign-account pending task must not appear in account 001 personal diagnostics');
+    expect(!diagnosticsText.includes('CT-DEMO-0104'), 'Other-account task must not appear in account 001 personal diagnostics');
+    expect(await page.locator('#call-diagnostics [data-action], #call-diagnostics input, #call-diagnostics button').count() === 0, 'Call diagnostics must be read-only');
+    // Let the earlier number-verification toast finish its application-owned
+    // lifecycle, including the opacity transition, so it cannot cover the task
+    // tables and details.
+    await page.waitForFunction(() => {
+      const toast = document.getElementById('toast');
+      return !toast || getComputedStyle(toast).opacity === '0';
+    });
+    await screenshot(page, 'call-task-diagnostics-1440.png', 1440, 960);
+    await screenshot(page, 'call-task-diagnostics-1024.png', 1024, 900);
+    await screenshot(page, 'call-task-diagnostics-720.png', 720, 900);
+    const callTableText = await page.locator('table').last().innerText();
     for (const heading of ['实际主叫', '被叫', '号码/接入', '呼叫结果']) {
       expect(callTableText.includes(heading), `Call list is missing ${heading}`);
     }
     expect(callTableText.includes('主叫不一致'), 'Call list must show the caller mismatch record');
+    expect(callTableText.includes('CT-DEMO-0101'), 'Task-backed call must show its task decision subline');
     await page.locator('[data-call-id="OC-C2036"]').click();
     await expectText(page, '#content', '未扣录音额度');
     await expectText(page, '#content', '也未生成证据');
+    await page.locator('[data-call-tab="callinfo"]').click();
+    for (const phrase of ['未领取任务', '未外呼', '未形成证据', '未扣录音额度']) {
+      await expectText(page, '#content', phrase);
+    }
     expect(await page.locator('[data-route="share-create"]').count() === 0, 'Failed or mismatched calls must not expose recording sharing');
+    expect(await page.locator('#content [data-route="certificates"]').count() === 0, 'Failed or mismatched calls must not expose an apply action');
+    await screenshot(page, 'call-task-failed-1280.png', 1280, 900);
+    await openRoute(page, 'calls');
+    await page.locator('[data-call-id="OC-C2035"]').click();
+    await page.locator('[data-call-tab="callinfo"]').click();
+    for (const phrase of ['被叫未接', '未形成证据', '未扣录音额度']) {
+      await expectText(page, '#content', phrase);
+    }
 
     await openRoute(page, 'calls');
     await page.locator('[data-call-id="OC-C2038"]').click();
@@ -501,6 +531,15 @@ async function loginByPhone(page, phone, workspaceId = null) {
     for (const tab of ['callinfo', 'proof', 'timeline']) {
       await page.locator(`[data-call-tab="${tab}"]`).click();
       expect(await page.locator(`[data-call-tab="${tab}"]`).getAttribute('class').then(v => v.includes('active')), `Call tab ${tab} did not activate`);
+      if (tab === 'callinfo') {
+        for (const phrase of ['任务与 IVR 诊断（只读）', 'CT-DEMO-0101', '无需确认被叫', 'IVR 可信主叫', 'IVR 权威录音时长', '证据可用', '录音上传', '证据处理']) {
+          await expectText(page, '#content', phrase);
+        }
+        const detailText = await page.locator('#content').innerText();
+        expect(!detailText.includes('运营商确认有效录音'), 'Call detail must not retain the stale carrier recording claim');
+        expect(!detailText.includes('运营商实际主叫'), 'Call detail must not attribute the caller fact to the carrier');
+        await screenshot(page, 'call-task-detail-1440.png', 1440, 980);
+      }
     }
     await page.locator('[data-call-tab="ai"]').click();
     await expectText(page, '#content', '智能要点摘要');
@@ -873,8 +912,8 @@ async function loginByPhone(page, phone, workspaceId = null) {
     await screenshot(page, 'enterprise-member-evidence-1280.png', 1280);
     await openRoute(page, 'calls');
     await expectText(page, '#content', '只展示本人发起且归属可确认的呼叫记录');
-    await expectText(page, 'table', '139 **** 7812');
-    expect(!(await page.locator('table').innerText()).includes('138 **** 6208'), 'Ordinary member calls must exclude another member caller');
+    expect((await page.locator('table').last().innerText()).includes('139 **** 7812'), 'Ordinary member call table is missing their call');
+    expect(!(await page.locator('table').last().innerText()).includes('138 **** 6208'), 'Ordinary member calls must exclude another member caller');
     await openRoute(page, 'rights');
     await expectText(page, '#content', '不展示组织总余额');
     expect(await page.locator('#side-nav [data-route="plans"]').count() === 0, 'Ordinary member must not see enterprise plan navigation');
@@ -901,7 +940,14 @@ async function loginByPhone(page, phone, workspaceId = null) {
     await screenshot(page, 'enterprise-evidence-manager-list-1280.png', 1280);
     await openRoute(page, 'calls');
     await expectText(page, '#content', '仅展示法务部授权范围内的呼叫记录');
-    await expectText(page, 'table', '010 **** 6688');
+    expect((await page.locator('table').last().innerText()).includes('010 **** 6688'), 'Evidence manager call table is missing the authorized landline call');
+    expect((await page.locator('#call-diagnostics').innerText()).includes('ENTER_CALLEE'), 'Evidence manager diagnostics must expose the no-task decision');
+    await page.locator('[data-call-id="OC-C2037"]').click();
+    await page.locator('[data-call-tab="callinfo"]').click();
+    for (const phrase of ['无任务', 'DTMF 输入并确认被叫', 'IVR 可信主叫']) {
+      await expectText(page, '#content', phrase);
+    }
+    await screenshot(page, 'call-no-task-dtmf-1280.png', 1280, 900);
 
     await loginByPhone(page,'13700004102','organization:ORG-HUAQI-001');
     expect((await page.evaluate(()=>__onecallWeb.accountContext())).accountId==='ACCOUNT-DEMO-004','Auditor login must resolve Wang account');

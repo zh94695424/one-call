@@ -35,6 +35,38 @@ fs.mkdirSync(screenshotDir, { recursive: true });
   await go('/employees');await shot('employees-list-1440');
   await go('/employees/EMP-002');await shot('employee-detail-1440');
 
+  // Read-only task/IVR diagnostics and review-only task/no-task selectors.
+  await go('/ivr-sessions');
+  const diagnosticsText=await page.locator('#call-diagnostics').innerText();
+  for(const phrase of ['任务与 IVR 诊断（只读）','DIAL_TASK_CALLEE','ENTER_CALLEE','冻结 30 秒','自动外呼','无需确认被叫','DTMF 输入并确认被叫','录音上传','证据处理','自研 IVR 负责呼入接听','ONECALL 负责业务开通','按 1 开通','不创建登录或实名身份','只记录 GUIDED','不创建订单'])assert.ok(diagnosticsText.includes(phrase),'IVR task diagnostics missing '+phrase);
+  assert.equal(await page.locator('#call-diagnostics [data-action], #call-diagnostics button, #call-diagnostics input').count(),0,'Task diagnostics must be read-only');
+  const taskSnapshot=await page.evaluate(()=>window.__onecallOps.callTaskSnapshot());
+  assert.equal(taskSnapshot.ttlSeconds,30);
+  assert.ok(taskSnapshot.tasks.some(task=>task.id==='CT-DEMO-0201'&&task.status==='PENDING'),'Operations fixture must include the foreign-account pending task');
+  const taskSnapshotBeforeForged=JSON.stringify(await page.evaluate(()=>window.__onecallOps.callTaskSnapshot()));
+  for(const actionName of ['edit-task','retry-upload','mark-evidence'])await forged(actionName,'CT-DEMO-0101');
+  assert.equal(await page.locator('.modal').count(),0);
+  assert.equal(JSON.stringify(await page.evaluate(()=>window.__onecallOps.callTaskSnapshot())),taskSnapshotBeforeForged,'Forged task actions must not change call-task facts');
+  await page.evaluate(()=>window.__onecallOps.setReviewCallScenario('no-task'));
+  assert.ok((await page.locator('#call-diagnostics').innerText()).includes('ENTER_CALLEE'));
+  // Let the application-owned toast lifecycle detach so it cannot cover the IVR diagnostics.
+  await page.locator('#toast-root .toast').waitFor({state:'detached'});
+  await shot('ivr-no-task-dtmf-1440');
+  await page.evaluate(()=>window.__onecallOps.setReviewCallScenario('task'));
+  await shot('ivr-task-diagnostics-1440');
+  await page.setViewportSize({width:1280,height:900});await shot('ivr-task-diagnostics-1280');
+  await page.setViewportSize({width:720,height:900});await overflow();await shot('ivr-task-diagnostics-720');
+  await page.setViewportSize({width:1440,height:960});
+  const callTaskBusinessBefore=await business();
+  const importedTask=await page.evaluate(()=>{const h=window.__onecallOps;const c=h.callTaskSnapshot();c.tasks.find(task=>task.id==='CT-DEMO-0101').revision+=1;return h.loadCallTaskSnapshot(c);});
+  assert.equal(importedTask.ok,true);
+  assert.ok((await page.evaluate(()=>window.__onecallOps.callTaskSnapshot())).tasks.some(task=>task.id==='CT-DEMO-0201'));
+  assert.deepEqual(await business(),callTaskBusinessBefore,'Call-task import must not change business facts');
+  const forbiddenCallTask=await page.evaluate(()=>{const h=window.__onecallOps;const c=h.callTaskSnapshot();c.employees=[];return h.loadCallTaskSnapshot(c);});
+  assert.equal(forbiddenCallTask.ok,false);
+  assert.ok((await page.evaluate(()=>window.__onecallOps.callTaskSnapshot())).tasks.some(task=>task.id==='CT-DEMO-0201'));
+  await page.evaluate(()=>window.__onecallOps.setReviewCallScenario('task'));
+
   // Employee create, normalization, cancel/focus, validation, immutable attribution.
   const startEmployees=(await state()).employees;
   await go('/employees');await action('create-employee');await page.fill('#employee-login','admin.lin');await page.fill('#employee-name','新员工');await confirm();await text('#modal-error','不能重复');await close();
@@ -181,6 +213,6 @@ fs.mkdirSync(screenshotDir, { recursive: true });
   // Disabled new grants use a fresh known caller; existing first-trial grants survive.
   await login();await go('/trial-settings');const existingGrants=(await business()).trialGrants;await action('edit-trial');await page.selectOption('#trial-enabled','false');await confirm();await demo('new');await action('demo-confirm');await text('#demo-outcome','新试用领取已关闭');assert.deepEqual((await business()).trialGrants,existingGrants);await action('demo-use');await text('#modal-error','剩余试用权益');await close();
   assert.deepEqual(errors,[]);
-  console.log('Alignment S3 operations QA passed: six primary entries; independent employee login/create/edit/enable/disable/reset; last admin and self session revocation; DOM/route guards; frozen stale/double/cancel confirmations; complete versioned canonical catalog and trial; historical snapshots; all twelve IVR cases, stable confirm/consume replay, bounded remaining usage; responsive 1440/1280/1024/720.');
+  console.log('Alignment S3 operations QA passed: six primary entries; independent employee login/create/edit/enable/disable/reset; last admin and self session revocation; DOM/route guards; frozen stale/double/cancel confirmations; complete versioned canonical catalog and trial; historical snapshots; all twelve IVR cases, stable confirm/consume replay, bounded remaining usage; read-only task/IVR diagnostics with 30-second frozen expiry, task auto-dial, no-task DTMF, upload/evidence separation, foreign-account task import, review-only highlight selectors and no signal-edit controls; responsive 1440/1280/1024/720.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e.stack||e);process.exit(1);});
