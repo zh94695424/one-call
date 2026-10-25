@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-01-five-domains-accepted",
+  "slice": "s2",
+  "negative": false,
+  "description": "Each of the five accepted authentication domains accepts its own credential and audience on its own prefix, reports the A1 operation count, and creates no cross-domain or A2 business side effect.",
+  "materials": [
+    { "keyId": "K17", "keyRef": "TEST_ONLY_K17_V1", "keyLabel": "TEST_ONLY_K17_SIGNING_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "customer-domain",
+      "action": "domain-request",
+      "path": "/api/v1/customer/me",
+      "credentialId": "C01",
+      "presentedAudience": "onecall:customer-session:v1",
+      "credentialStatus": "ACTIVE",
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "problemCode": null,
+        "reason": "ACCEPTED",
+        "accepted": true,
+        "domain": "customer",
+        "requiredAudience": "onecall:customer-session:v1",
+        "credentialDomain": "customer",
+        "crossDomainRejected": false,
+        "domainOperations": 18,
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "employee-domain",
+      "action": "domain-request",
+      "path": "/api/v1/operations/subjects",
+      "credentialId": "C02",
+      "presentedAudience": "onecall:employee-session:v1",
+      "credentialStatus": "ACTIVE",
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "accepted": true,
+        "domain": "employee",
+        "requiredAudience": "onecall:employee-session:v1",
+        "crossDomainRejected": false,
+        "domainOperations": 21
+      }
+    },
+    {
+      "id": "ivr-domain",
+      "action": "domain-request",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "credentialId": "C04",
+      "presentedAudience": "onecall:ivr-request:v1",
+      "credentialStatus": "ACTIVE",
+      "mtls": true,
+      "signatureValid": true,
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "accepted": true,
+        "domain": "ivr-service",
+        "requiredAudience": "onecall:ivr-request:v1",
+        "crossDomainRejected": false,
+        "domainOperations": 6
+      }
+    },
+    {
+      "id": "public-capability-domain",
+      "action": "domain-request",
+      "path": "/api/v1/public/shares/TEST_ONLY_CAPABILITY",
+      "credentialId": "C07",
+      "presentedAudience": "onecall:share-capability:v1",
+      "credentialStatus": "ACTIVE",
+      "capabilityKnown": true,
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "accepted": true,
+        "domain": "public-capability",
+        "requiredAudience": "onecall:share-capability:v1; onecall:media-playback:v1",
+        "crossDomainRejected": false,
+        "domainOperations": 3
+      }
+    },
+    {
+      "id": "provider-domain",
+      "action": "domain-request",
+      "path": "/api/v1/callbacks/payment-events",
+      "credentialId": "C06",
+      "presentedAudience": "onecall:provider-callback:v1",
+      "credentialStatus": "ACTIVE",
+      "mtls": true,
+      "signatureValid": true,
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "accepted": true,
+        "domain": "provider",
+        "requiredAudience": "onecall:provider-callback:v1",
+        "crossDomainRejected": false,
+        "domainOperations": 1
+      }
+    },
+    {
+      "id": "assert-cumulative-s2",
+      "action": "assert",
+      "checks": {
+        "trustSurfaces": 5,
+        "authDomains": 5,
+        "trustBoundaries": 7,
+        "serviceIdentities": 6,
+        "credentialClasses": 10,
+        "signatureProfiles": 2,
+        "invariants": 11,
+        "futureInvariantIds": 0,
+        "futureFixtureIds": 0,
+        "s2s3Sections": 0,
+        "a2Messages": 12,
+        "a2EventTypes": 11,
+        "a2Identities": 22,
+        "a2Invariants": 15,
+        "a2EventRegistrySha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9",
+        "a2Events": 0,
+        "a2Calls": 0,
+        "a2Reservations": 0,
+        "a2Settlements": 0,
+        "outboxEntries": 0,
+        "payments": 0
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

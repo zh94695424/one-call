@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-02-cross-domain-rejected",
+  "slice": "s2",
+  "negative": true,
+  "description": "A credential from one authentication domain is rejected on every other domain, and expired, wrong-audience, unknown-capability and role-denied cases map only to existing A1 problems with zero A2 side effects.",
+  "materials": [],
+  "steps": [
+    {
+      "id": "customer-token-on-operations",
+      "action": "domain-request",
+      "path": "/api/v1/operations/subjects",
+      "credentialId": "C01",
+      "presentedAudience": "onecall:customer-session:v1",
+      "credentialStatus": "ACTIVE",
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 401,
+        "problemCode": "UNAUTHENTICATED",
+        "reason": "CROSS_DOMAIN_TOKEN",
+        "accepted": false,
+        "domain": "employee",
+        "credentialDomain": "customer",
+        "crossDomainRejected": true,
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "employee-token-on-customer",
+      "action": "domain-request",
+      "path": "/api/v1/customer/me",
+      "credentialId": "C02",
+      "presentedAudience": "onecall:employee-session:v1",
+      "credentialStatus": "ACTIVE",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "CROSS_DOMAIN_TOKEN", "crossDomainRejected": true }
+    },
+    {
+      "id": "capability-token-on-operations",
+      "action": "domain-request",
+      "path": "/api/v1/operations/subjects",
+      "credentialId": "C07",
+      "presentedAudience": "onecall:share-capability:v1",
+      "credentialStatus": "ACTIVE",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "CROSS_DOMAIN_TOKEN", "crossDomainRejected": true }
+    },
+    {
+      "id": "ivr-credential-on-provider",
+      "action": "domain-request",
+      "path": "/api/v1/callbacks/payment-events",
+      "credentialId": "C04",
+      "presentedAudience": "onecall:ivr-request:v1",
+      "credentialStatus": "ACTIVE",
+      "mtls": true,
+      "signatureValid": true,
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "CALLBACK_SIGNATURE_INVALID", "reason": "CROSS_DOMAIN_TOKEN", "crossDomainRejected": true }
+    },
+    {
+      "id": "provider-credential-on-ivr",
+      "action": "domain-request",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "credentialId": "C06",
+      "presentedAudience": "onecall:provider-callback:v1",
+      "credentialStatus": "ACTIVE",
+      "mtls": true,
+      "signatureValid": true,
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "CROSS_DOMAIN_TOKEN", "crossDomainRejected": true }
+    },
+    {
+      "id": "expired-customer-session",
+      "action": "domain-request",
+      "path": "/api/v1/customer/me",
+      "credentialId": "C01",
+      "presentedAudience": "onecall:customer-session:v1",
+      "credentialStatus": "EXPIRED",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "CREDENTIAL_EXPIRED_OR_REVOKED", "crossDomainRejected": false, "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 } }
+    },
+    {
+      "id": "wrong-audience-same-domain",
+      "action": "domain-request",
+      "path": "/api/v1/customer/me",
+      "credentialId": "C01",
+      "presentedAudience": "onecall:provider-callback:v1",
+      "credentialStatus": "ACTIVE",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "AUDIENCE_MISMATCH", "crossDomainRejected": false }
+    },
+    {
+      "id": "unknown-capability",
+      "action": "domain-request",
+      "path": "/api/v1/public/shares/TEST_ONLY_CAPABILITY",
+      "credentialId": "C07",
+      "presentedAudience": "onecall:share-capability:v1",
+      "credentialStatus": "ACTIVE",
+      "capabilityKnown": false,
+      "expected": { "status": "DENIED", "statusCode": 404, "problemCode": "SHARE_TOKEN_INVALID", "reason": "CAPABILITY_UNKNOWN", "crossDomainRejected": false }
+    },
+    {
+      "id": "role-denied",
+      "action": "domain-request",
+      "path": "/api/v1/operations/subjects",
+      "credentialId": "C02",
+      "presentedAudience": "onecall:employee-session:v1",
+      "credentialStatus": "ACTIVE",
+      "roleAllowed": false,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "ROLE_OR_ACCESS_DENIED", "crossDomainRejected": false }
+    },
+    {
+      "id": "assert-no-a2-effects",
+      "action": "assert",
+      "checks": {
+        "trustSurfaces": 5,
+        "authDomains": 5,
+        "trustBoundaries": 7,
+        "serviceIdentities": 6,
+        "credentialClasses": 10,
+        "signatureProfiles": 2,
+        "invariants": 11,
+        "futureInvariantIds": 0,
+        "futureFixtureIds": 0,
+        "s2s3Sections": 0,
+        "a2Events": 0,
+        "a2Calls": 0,
+        "a2Reservations": 0,
+        "a2Settlements": 0,
+        "a2Redials": 0,
+        "a2ReResolves": 0
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

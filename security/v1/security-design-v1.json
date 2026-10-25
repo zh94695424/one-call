@@ -136,6 +136,510 @@
     "appendOnly": "frozen rows are never rewritten for rotation",
     "rotationWireImpact": "none on A1 wire, A2 semantic identity, response_sha256 or request_fingerprint inputs"
   },
+  "trustSurfaces": [
+    {
+      "surfaceId": "TS1",
+      "domain": "customer",
+      "prefix": "/api/v1/customer/",
+      "operations": 18,
+      "boundaries": ["TB1", "TB2"],
+      "authentication": "customerSession audience onecall:customer-session:v1"
+    },
+    {
+      "surfaceId": "TS2",
+      "domain": "employee",
+      "prefix": "/api/v1/operations/",
+      "operations": 21,
+      "boundaries": ["TB1", "TB2"],
+      "authentication": "employeeSession audience onecall:employee-session:v1 with fixed ADMIN/OPS"
+    },
+    {
+      "surfaceId": "TS3",
+      "domain": "ivr-service",
+      "prefix": "/api/v1/ivr/",
+      "operations": 6,
+      "boundaries": ["TB3"],
+      "authentication": "ivrMtls plus ivrSignature plus timestamp plus nonce"
+    },
+    {
+      "surfaceId": "TS4",
+      "domain": "public-capability",
+      "prefix": "/api/v1/public/shares/",
+      "operations": 3,
+      "boundaries": ["TB1", "TB2"],
+      "authentication": "capability credential C07 or C08; optional C01 only for ORGANIZATION_MEMBER; C10 media presentation"
+    },
+    {
+      "surfaceId": "TS5",
+      "domain": "provider",
+      "prefix": "/api/v1/callbacks/",
+      "operations": 1,
+      "boundaries": ["TB4"],
+      "authentication": "providerCallbackMtls plus providerCallbackSignature plus timestamp plus nonce"
+    }
+  ],
+  "authDomains": [
+    {
+      "domain": "customer",
+      "prefix": "/api/v1/customer/",
+      "operations": 18,
+      "credentialClasses": ["C01 customerSession"],
+      "storage": "Redis session record + account state",
+      "tokenAudience": "onecall:customer-session:v1",
+      "crossDomainRule": "reject any other domain token; gateway trust never bypasses the audience check",
+      "trustSurfaceId": "TS1"
+    },
+    {
+      "domain": "employee",
+      "prefix": "/api/v1/operations/",
+      "operations": 21,
+      "credentialClasses": ["C02 employeeSession"],
+      "storage": "Redis session record + employee state",
+      "tokenAudience": "onecall:employee-session:v1",
+      "crossDomainRule": "independent issuer; fixed ADMIN/OPS; never reused with the customer domain",
+      "trustSurfaceId": "TS2"
+    },
+    {
+      "domain": "ivr-service",
+      "prefix": "/api/v1/ivr/",
+      "operations": 6,
+      "credentialClasses": ["C03 ivrMtls", "C04 ivrSignature"],
+      "storage": "mTLS certificate store + Secret Manager HMAC key",
+      "tokenAudience": "onecall:ivr-request:v1",
+      "crossDomainRule": "accept mTLS plus signature only; never a session or capability token",
+      "trustSurfaceId": "TS3"
+    },
+    {
+      "domain": "public-capability",
+      "prefix": "/api/v1/public/shares/",
+      "operations": 3,
+      "credentialClasses": ["C07 publicShareCapabilityToken", "C08 extractionCode", "C01 customerSession (optional ORGANIZATION_MEMBER only)", "C10 playbackCredential"],
+      "storage": "DB SHA-256 digest + admission state + Redis ticket Q22",
+      "tokenAudience": "onecall:share-capability:v1; onecall:media-playback:v1",
+      "crossDomainRule": "capability token cannot be used on another surface; customer session cannot replace capability; C10 is presented to media-gateway only",
+      "trustSurfaceId": "TS4"
+    },
+    {
+      "domain": "provider",
+      "prefix": "/api/v1/callbacks/",
+      "operations": 1,
+      "credentialClasses": ["C05 providerCallbackMtls", "C06 providerCallbackSignature"],
+      "storage": "mTLS certificate store + Secret Manager vendor verification material",
+      "tokenAudience": "onecall:provider-callback:v1",
+      "crossDomainRule": "accept provider mTLS plus vendor signature only; never disclose an internal result",
+      "trustSurfaceId": "TS5"
+    }
+  ],
+  "trustBoundaries": [
+    {
+      "boundaryId": "TB1",
+      "boundary": "Internet and edge to customer, public-share and operations frontends",
+      "allowed": "TLS and WAF; customer, employee and capability domains",
+      "forbidden": "direct database, Redis, message queue or COS access"
+    },
+    {
+      "boundaryId": "TB2",
+      "boundary": "Edge to core-api customer, operations and public-share APIs",
+      "allowed": "matching session or capability credential with path and audience checks",
+      "forbidden": "cross-domain token and permanent object URL"
+    },
+    {
+      "boundaryId": "TB3",
+      "boundary": "Carrier premises and IVR network to core-api IVR API",
+      "allowed": "mTLS plus IVR signature plus timestamp plus nonce",
+      "forbidden": "direct database or message queue access; unsigned request"
+    },
+    {
+      "boundaryId": "TB4",
+      "boundary": "Internet and provider to callback API",
+      "allowed": "provider mTLS plus vendor signature plus timestamp plus nonce",
+      "forbidden": "internal result disclosure and order amount or payment success claims"
+    },
+    {
+      "boundaryId": "TB5",
+      "boundary": "core-api and workers to PostgreSQL, Redis and RabbitMQ",
+      "allowed": "NOLOGIN database role, Outbox and least privilege",
+      "forbidden": "cross-module writes, client direct access and bypassing the Outbox"
+    },
+    {
+      "boundaryId": "TB6",
+      "boundary": "core-api, workers and ivr-gateway to Tencent KMS, Secret Manager and COS",
+      "allowed": "CAM service role, short-lived upload credential and private bucket",
+      "forbidden": "static AccessKey, public object and permanent URL"
+    },
+    {
+      "boundaryId": "TB7",
+      "boundary": "Applications to logs, traces, metrics, analytics, support and public export",
+      "allowed": "redaction pipeline, masked value, internal ID, status and audit access",
+      "forbidden": "plaintext, secret, credential URL, HMAC or ciphertext"
+    }
+  ],
+  "serviceIdentities": [
+    {
+      "serviceIdentity": "core-api",
+      "mechanism": "Tencent CAM service role + DB NOLOGIN role",
+      "audience": "onecall:service:core:v1",
+      "allowedCalls": ["DB", "Redis", "Outbox", "KMS", "Secret Manager", "COS evidence metadata"],
+      "secretCustody": "Secret Manager or instance role; no static key",
+      "failClosedStatus": 503
+    },
+    {
+      "serviceIdentity": "async-worker",
+      "mechanism": "Tencent CAM service role + DB role",
+      "audience": "onecall:service:worker:v1",
+      "allowedCalls": ["DB", "MQ consumer", "KMS", "Secret Manager", "COS", "notary adapter", "AI adapter"],
+      "secretCustody": "Secret Manager or instance role",
+      "failClosedStatus": 503
+    },
+    {
+      "serviceIdentity": "scheduler",
+      "mechanism": "Tencent CAM service role + DB role",
+      "audience": "onecall:service:scheduler:v1",
+      "allowedCalls": ["DB lease", "expiry scan"],
+      "secretCustody": "minimal least privilege; no external provider key",
+      "failClosedStatus": 503
+    },
+    {
+      "serviceIdentity": "media-ai-worker",
+      "mechanism": "Tencent CAM service role",
+      "audience": "onecall:service:media-ai:v1",
+      "allowedCalls": ["MQ", "COS read", "COS write", "AI provider Secret Manager"],
+      "secretCustody": "Secret Manager; no business DB write",
+      "failClosedStatus": 503
+    },
+    {
+      "serviceIdentity": "ivr-gateway",
+      "mechanism": "mTLS client + Secret Manager",
+      "audience": "onecall:ivr-request:v1",
+      "allowedCalls": ["A1 IVR API", "controlled COS upload"],
+      "secretCustody": "C03 mTLS credential + C04 signing key",
+      "failClosedStatus": 503
+    },
+    {
+      "serviceIdentity": "media-gateway",
+      "mechanism": "mTLS or internal audience + Secret Manager",
+      "audience": "onecall:media-playback:v1",
+      "allowedCalls": ["C10 validation", "COS media read"],
+      "secretCustody": "C10 signing key; never issues upload credential",
+      "failClosedStatus": 503
+    }
+  ],
+  "credentialClasses": [
+    {
+      "credentialClass": "C01 customerSession",
+      "credentialId": "C01",
+      "domain": "customer",
+      "audience": "onecall:customer-session:v1",
+      "storage": "Redis session record + account state",
+      "ttlInput": "Q1/Q19",
+      "scope": "customer API only",
+      "rotationRevocation": "logout, account disable or expiry revokes the session",
+      "redaction": "bearer and Authorization header always removed"
+    },
+    {
+      "credentialClass": "C02 employeeSession",
+      "credentialId": "C02",
+      "domain": "employee",
+      "audience": "onecall:employee-session:v1",
+      "storage": "Redis session record + employee state",
+      "ttlInput": "Q1",
+      "scope": "operations API only",
+      "rotationRevocation": "role change, disable or credential reset revokes the session",
+      "redaction": "bearer and Authorization header always removed"
+    },
+    {
+      "credentialClass": "C03 ivrMtls",
+      "credentialId": "C03",
+      "domain": "ivr-service",
+      "audience": "onecall:ivr-request:v1",
+      "storage": "mTLS certificate store",
+      "ttlInput": "Q7/Q15",
+      "scope": "IVR mTLS identity only",
+      "rotationRevocation": "certificate overlap and rotation per Q7",
+      "redaction": "certificate and private key never logged"
+    },
+    {
+      "credentialClass": "C04 ivrSignature",
+      "credentialId": "C04",
+      "domain": "ivr-service",
+      "audience": "onecall:ivr-request:v1",
+      "storage": "Secret Manager K17",
+      "ttlInput": "Q25 window",
+      "scope": "per-request signature",
+      "rotationRevocation": "keyId overlap; old key VERIFY_ONLY until retirement",
+      "redaction": "signature and nonce always removed"
+    },
+    {
+      "credentialClass": "C05 providerCallbackMtls",
+      "credentialId": "C05",
+      "domain": "provider",
+      "audience": "onecall:provider-callback:v1",
+      "storage": "mTLS certificate store",
+      "ttlInput": "Q6/Q15",
+      "scope": "provider callback only",
+      "rotationRevocation": "provider certificate rotation per Q6",
+      "redaction": "certificate never logged"
+    },
+    {
+      "credentialClass": "C06 providerCallbackSignature",
+      "credentialId": "C06",
+      "domain": "provider",
+      "audience": "onecall:provider-callback:v1",
+      "storage": "Secret Manager or certificate store K18",
+      "ttlInput": "Q6",
+      "scope": "per-callback signature",
+      "rotationRevocation": "provider rotation per Q6",
+      "redaction": "signature and nonce always removed"
+    },
+    {
+      "credentialClass": "C07 publicShareCapabilityToken",
+      "credentialId": "C07",
+      "domain": "public-capability",
+      "audience": "onecall:share-capability:v1",
+      "storage": "DB SHA-256 digest only",
+      "ttlInput": "share expiresAt / Q12",
+      "scope": "path capability; created once",
+      "rotationRevocation": "revoke or generation change; not rebuildable",
+      "redaction": "capability token always removed and return-once"
+    },
+    {
+      "credentialClass": "C08 extractionCode",
+      "credentialId": "C08",
+      "domain": "public-capability",
+      "audience": "onecall:share-capability:v1",
+      "storage": "per-grant salt + slow KDF digest",
+      "ttlInput": "Q12",
+      "scope": "EXTRACTION_CODE",
+      "rotationRevocation": "code_generation rotation",
+      "redaction": "code and OTP always removed and return-once"
+    },
+    {
+      "credentialClass": "C09 uploadCredential",
+      "credentialId": "C09",
+      "domain": "ivr-service",
+      "audience": "onecall:evidence-upload:v1 (issuance-side policy classification only; not a COS embedded audience claim)",
+      "storage": "COS presign CV-4 verified or K19",
+      "ttlInput": "uploadExpiresAt",
+      "scope": "single-object COS presigned PUT only; fail closed and stop if CV-4 capability is unverified",
+      "rotationRevocation": "no renewal or re-sign; expiry only",
+      "redaction": "credential URL always removed"
+    },
+    {
+      "credentialClass": "C10 playbackCredential",
+      "credentialId": "C10",
+      "domain": "public-capability",
+      "audience": "onecall:media-playback:v1",
+      "storage": "media gateway K20",
+      "ttlInput": "Q22",
+      "scope": "Authorization Bearer to media-gateway; share, admission, generation, object and PLAYBACK/SEEK/RENEW",
+      "rotationRevocation": "issued credential is not recalled; expiry only",
+      "redaction": "credential URL and bearer value always removed"
+    }
+  ],
+  "signatureProfiles": [
+    {
+      "profileId": "ivr-request-v1",
+      "domain": "ivr-service",
+      "operationPrefix": "/api/v1/ivr/",
+      "operations": 6,
+      "securitySchemes": ["ivrMtls", "ivrSignature"],
+      "headers": {
+        "signature": "X-ONECALL-SIGNATURE",
+        "timestamp": "X-ONECALL-TIMESTAMP",
+        "nonce": "X-ONECALL-NONCE"
+      },
+      "headerLengths": {
+        "timestampMin": 1,
+        "timestampMax": 64,
+        "nonceMin": 1,
+        "nonceMax": 128,
+        "signatureLengthFrozen": false
+      },
+      "signatureValue": "v1.<keyId>.<base64url(HMAC-SHA-256(K17, canonicalString))>",
+      "signatureValuePattern": "^v1\\.[A-Za-z0-9_-]{1,64}\\.[A-Za-z0-9_-]+$",
+      "keyIdPattern": "^[A-Za-z0-9_-]{1,64}$",
+      "canonicalStringLines": [
+        "ONECALL-IVR-V1",
+        "uppercase HTTP method",
+        "raw request path without query, not decoded and not normalized",
+        "X-ONECALL-TIMESTAMP",
+        "X-ONECALL-NONCE",
+        "lowercase hex SHA-256 of the exact request body bytes; an empty body uses the empty-bytes hash"
+      ],
+      "canonicalStringSeparator": "LF with no trailing newline",
+      "algorithm": "HMAC-SHA-256",
+      "timestampFormat": "ASCII Unix epoch seconds matching ^[0-9]{1,12}$; backend receive time is authoritative",
+      "acceptanceWindow": "plus or minus W; W is deferred Q25",
+      "nonceFormat": "^[A-Za-z0-9_-]{1,128}$",
+      "nonceUniqueness": "(serviceIdentity, nonce)",
+      "nonceStore": "Redis SET NX",
+      "nonceTtl": "W plus skew; numeric value deferred Q25",
+      "verificationOrder": [
+        "mTLS client identity",
+        "required headers and lengths",
+        "timestamp parse and window",
+        "signature verify with active or verify-only keyId",
+        "nonce SET NX",
+        "A1 and A2 processing"
+      ],
+      "failureMapping": {
+        "missingOrBadMtls": "401 UNAUTHENTICATED",
+        "badSignature": "401 UNAUTHENTICATED",
+        "timestampOutOfWindow": "401 UNAUTHENTICATED",
+        "nonceReplay": "401 UNAUTHENTICATED",
+        "serviceIdentityNotAllowed": "403 FORBIDDEN",
+        "nonceOrKeyOrSecretManagerUnavailable": "503 SERVICE_UNAVAILABLE"
+      },
+      "zeroSideEffects": [
+        "no session",
+        "no call",
+        "no decision",
+        "no task claim",
+        "no reservation",
+        "no settlement",
+        "no business event",
+        "no redial"
+      ],
+      "retryTransport": "fresh timestamp and nonce; the same callId, eventId and immutable payload",
+      "rotation": "active plus verify-only overlap; retired key rejected; unknown keyId rejected without default fallback",
+      "numericInputsDeferred": ["Q25 acceptance window", "Q25 nonce TTL and clock skew"]
+    },
+    {
+      "profileId": "provider-callback-v1",
+      "domain": "provider",
+      "operation": "POST /api/v1/callbacks/payment-events",
+      "securitySchemes": ["providerCallbackMtls", "providerCallbackSignature"],
+      "headers": {
+        "signature": "X-ONECALL-CALLBACK-SIGNATURE",
+        "timestamp": "X-ONECALL-TIMESTAMP",
+        "nonce": "X-ONECALL-NONCE"
+      },
+      "headerLengths": {
+        "timestampMin": 1,
+        "timestampMax": 64,
+        "nonceMin": 1,
+        "nonceMax": 128,
+        "signatureLengthFrozen": false
+      },
+      "vendorAlgorithm": "deferred Q6/Q15",
+      "vendorCanonicalization": "deferred Q6/Q15",
+      "vendorPayload": "deferred Q6/Q15",
+      "vendorWindow": "deferred Q6/Q15",
+      "verificationOrder": [
+        "provider mTLS identity",
+        "headers",
+        "provider profile Q6",
+        "timestamp window",
+        "constant-time signature verify",
+        "event identity and payload fingerprint",
+        "nonce SET NX for a new event or changed payload",
+        "payment processing"
+      ],
+      "duplicate": "same event and same fingerprint returns 200 accepted true duplicate true with no side effect and without requiring nonce consumption",
+      "conflict": "same event with a different payload returns 409 PAYMENT_EVENT_CONFLICT after the nonce check",
+      "failureMapping": {
+        "signatureCertificateWindowOrNonceReplay": "401 CALLBACK_SIGNATURE_INVALID",
+        "changedPayload": "409 PAYMENT_EVENT_CONFLICT",
+        "dependencyUnavailable": "503 CALLBACK_RETRY_LATER",
+        "exactDuplicate": "200 accepted true duplicate true"
+      },
+      "payloadHandling": "the adapter encrypts the raw provider payload at rest; plaintext is never logged and internal results are never returned",
+      "a2Impact": "none; provider callbacks are outside the IVR call and event state machine",
+      "vendorRetryPolicy": "deferred Q6; A3 freezes fail-closed and event idempotency only"
+    }
+  ],
+  "noncePolicy": {
+    "transportScope": "transport replay protection only; never part of A2 domain identity",
+    "uniqueness": "(serviceIdentity, nonce)",
+    "store": "Redis SET NX",
+    "ttl": "acceptance window W plus skew; numeric values are deferred Q25",
+    "ivrNonceFormat": "^[A-Za-z0-9_-]{1,128}$",
+    "providerNonceFormat": "^[A-Za-z0-9_-]{1,128}$",
+    "a1Lengths": {
+      "timestampMin": 1,
+      "timestampMax": 64,
+      "nonceMin": 1,
+      "nonceMax": 128
+    },
+    "dependencyFailure": "503 fail closed before A1 or A2 processing",
+    "retry": "fresh timestamp and nonce with the same domain identity and immutable payload",
+    "numericInputsDeferred": ["Q25 window", "Q25 TTL", "Q25 clock skew"]
+  },
+  "audienceRegistry": [
+    {
+      "audience": "onecall:customer-session:v1",
+      "ownerDomain": "customer",
+      "credentialClasses": ["C01 customerSession"],
+      "verifier": "core-api"
+    },
+    {
+      "audience": "onecall:employee-session:v1",
+      "ownerDomain": "employee",
+      "credentialClasses": ["C02 employeeSession"],
+      "verifier": "core-api"
+    },
+    {
+      "audience": "onecall:ivr-request:v1",
+      "ownerDomain": "ivr-service",
+      "credentialClasses": ["C03 ivrMtls", "C04 ivrSignature"],
+      "verifier": "core-api",
+      "serviceIdentity": "ivr-gateway"
+    },
+    {
+      "audience": "onecall:share-capability:v1",
+      "ownerDomain": "public-capability",
+      "credentialClasses": ["C07 publicShareCapabilityToken", "C08 extractionCode"],
+      "verifier": "core-api"
+    },
+    {
+      "audience": "onecall:media-playback:v1",
+      "ownerDomain": "public-capability",
+      "credentialClasses": ["C10 playbackCredential"],
+      "verifier": "media-gateway",
+      "serviceIdentity": "media-gateway"
+    },
+    {
+      "audience": "onecall:provider-callback:v1",
+      "ownerDomain": "provider",
+      "credentialClasses": ["C05 providerCallbackMtls", "C06 providerCallbackSignature"],
+      "verifier": "core-api"
+    },
+    {
+      "audience": "onecall:evidence-upload:v1",
+      "ownerDomain": "ivr-service",
+      "credentialClasses": ["C09 uploadCredential"],
+      "verifier": "issuance-side policy classification only",
+      "serviceIdentity": "ivr-gateway"
+    },
+    {
+      "audience": "onecall:service:core:v1",
+      "ownerDomain": "internal",
+      "credentialClasses": [],
+      "verifier": "Tencent CAM service role",
+      "serviceIdentity": "core-api"
+    },
+    {
+      "audience": "onecall:service:worker:v1",
+      "ownerDomain": "internal",
+      "credentialClasses": [],
+      "verifier": "Tencent CAM service role",
+      "serviceIdentity": "async-worker"
+    },
+    {
+      "audience": "onecall:service:scheduler:v1",
+      "ownerDomain": "internal",
+      "credentialClasses": [],
+      "verifier": "Tencent CAM service role",
+      "serviceIdentity": "scheduler"
+    },
+    {
+      "audience": "onecall:service:media-ai:v1",
+      "ownerDomain": "internal",
+      "credentialClasses": [],
+      "verifier": "Tencent CAM service role",
+      "serviceIdentity": "media-ai-worker"
+    }
+  ],
   "keyClasses": [
     {
       "keyId": "K01",
@@ -910,6 +1414,26 @@
     {
       "id": "INV-A3-06",
       "statement": "Rotation never rewrites append-only or frozen rows; historical keys are retained until retention; A2 replay returns the same payload/decision without re-selection or a second reservation."
+    },
+    {
+      "id": "INV-A3-07",
+      "statement": "The five authentication domains never share a token, credential, audience or verifier; a request that crosses domains is rejected."
+    },
+    {
+      "id": "INV-A3-08",
+      "statement": "The six service identities use least privilege, independent CAM roles and rotation; no frontend holds a service secret and no policy grants a wildcard action or resource."
+    },
+    {
+      "id": "INV-A3-09",
+      "statement": "Every IVR request must pass mTLS, signature, timestamp and nonce verification; the verification order and canonical string are fixed."
+    },
+    {
+      "id": "INV-A3-10",
+      "statement": "Replay rejection occurs before any domain side effect; transport nonce and timestamp are refreshed on every retry while A2 eventId and payload stay unchanged."
+    },
+    {
+      "id": "INV-A3-11",
+      "statement": "Provider callbacks require mTLS, vendor signature, timestamp and nonce; the same event and fingerprint is idempotent while a changed payload is a conflict."
     }
   ]
 }

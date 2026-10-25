@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-08-failclosed-dependency-preserves-a2",
+  "slice": "s2",
+  "negative": false,
+  "description": "Unavailable Redis and Secret Manager dependencies fail closed with 503 before A2 processing; after recovery the same event identity and payload return the A2 first result and the local outbox eventId and payload are unchanged.",
+  "materials": [
+    { "keyId": "K17", "keyRef": "TEST_ONLY_K17_V1", "keyLabel": "TEST_ONLY_K17_SIGNING_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "outbox-baseline",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_0801",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_0801", "eventId": "TEST_ONLY_OUTBOX_EVENT_0801" },
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0801",
+      "transportTimestamp": "1700000000",
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "reason": "OUTBOX_UNCHANGED",
+        "outboxState": "PENDING",
+        "eventId": "TEST_ONLY_OUTBOX_EVENT_0801",
+        "sameEventId": true,
+        "samePayload": true,
+        "securityBlocked": false,
+        "hotRetryPerformed": false,
+        "identityChanges": 0,
+        "payloadChanges": 0,
+        "a2BusinessSideEffects": 0
+      }
+    },
+    {
+      "id": "first-request-accepted",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0801/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0801",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000000",
+      "receivedAt": 1700000000,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0801",
+      "nonceStore": "AVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_OUTBOX_EVENT_0801", "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801", "callId": "TEST_ONLY_CALL_0801" },
+      "expected": { "status": "OK", "statusCode": 200, "a2Processed": true, "a2FirstResultReused": false, "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 1, "redials": 0, "reResolves": 0 } }
+    },
+    {
+      "id": "redis-unavailable",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0801/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0801",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000100",
+      "receivedAt": 1700000100,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0802",
+      "nonceStore": "UNAVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_OUTBOX_EVENT_0801", "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801", "callId": "TEST_ONLY_CALL_0801" },
+      "expected": { "status": "DENIED", "statusCode": 503, "problemCode": "SERVICE_UNAVAILABLE", "reason": "NONCE_STORE_UNAVAILABLE", "a2Processed": false, "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 } }
+    },
+    {
+      "id": "secret-manager-unavailable",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0801/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0801",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000200",
+      "receivedAt": 1700000200,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0803",
+      "nonceStore": "AVAILABLE",
+      "secretManagerAvailable": false,
+      "a2": { "eventId": "TEST_ONLY_OUTBOX_EVENT_0801", "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801", "callId": "TEST_ONLY_CALL_0801" },
+      "expected": { "status": "DENIED", "statusCode": 503, "problemCode": "SERVICE_UNAVAILABLE", "reason": "SECRET_MANAGER_UNAVAILABLE", "a2Processed": false, "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 } }
+    },
+    {
+      "id": "recovery-same-identity-retry",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0801/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0801",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000300",
+      "receivedAt": 1700000300,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0804",
+      "nonceStore": "AVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_OUTBOX_EVENT_0801", "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801", "callId": "TEST_ONLY_CALL_0801" },
+      "expected": { "status": "OK", "statusCode": 200, "a2Processed": true, "a2FirstResultReused": true, "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 } }
+    },
+    {
+      "id": "outbox-inspection",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_0801",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_0801",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_0801", "eventId": "TEST_ONLY_OUTBOX_EVENT_0801" },
+      "expected": { "status": "OK", "statusCode": 200, "outboxState": "PENDING", "sameEventId": true, "samePayload": true, "securityBlocked": false, "identityChanges": 0, "payloadChanges": 0 }
+    },
+    {
+      "id": "assert-a2-preserved",
+      "action": "assert",
+      "checks": {
+        "invariants": 11,
+        "futureInvariantIds": 0,
+        "futureFixtureIds": 0,
+        "s2s3Sections": 0,
+        "a2Messages": 12,
+        "a2EventTypes": 11,
+        "a2Identities": 22,
+        "a2Invariants": 15,
+        "a2EventRegistrySha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9",
+        "a2Events": 1,
+        "a2Calls": 0,
+        "a2Reservations": 0,
+        "a2Settlements": 0,
+        "a2Redials": 0,
+        "a2ReResolves": 0,
+        "outboxEntries": 1,
+        "outboxIdentityChanges": 0,
+        "outboxPayloadChanges": 0
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

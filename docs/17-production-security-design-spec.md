@@ -1,22 +1,22 @@
-# 生产安全设计规范（S1：敏感数据保护与密钥生命周期）
+# 生产安全设计规范（S1+S2：敏感数据保护、认证域与服务身份）
 
 > Work unit：`A3-production-security-design-spec`
 >
-> Slice：S1 — 敏感数据保护、密钥层级、轮换/恢复与历史 replay 兼容
+> Slice：S1 — 敏感数据保护、密钥层级、轮换/恢复与历史 replay 兼容；S2 — 认证域、服务身份、凭据、签名与 replay 拒绝
 >
-> Task label：`a3-security-s1-impl-ds-20261025-01`
+> Task label：`a3-security-s2-impl-ds-20261025-01`
 >
-> Base：accepted plan checkpoint `0d77f7c9eaa5e41defab92cc32b8c02a1a376c0c`
+> Base：accepted S1 checkpoint `88079d208e90ebc176ab54a25734c38bbf7732aa`
 >
 > Machine model：`security/v1/security-design-v1.json`
 >
 > Validator：`security/validate.mjs`（零第三方依赖，Node 22）
 >
-> Status：S1 author-complete；S2 身份/签名与 S3 媒体/审计/脱敏未实现，也未在本文件中提前冻结。
+> Status：S2 author-complete；S3 媒体凭证/COS/审计/脱敏未实现，也未在本文件中提前冻结。
 
 ## 1. 状态、来源关系与静态限制
 
-本文件是 A3 安全语义的人类 canonical 规范；`security/v1/security-design-v1.json` 是同一语义的机器投影，二者由 `security/validate.mjs` 做双向一致性校验。S1 只冻结数据与密钥真相：哪些数据由哪个 purpose/key 保护、如何 envelope/HMAC、如何轮换/恢复、如何保持历史解密/查找与 A2 replay 兼容。
+本文件是 A3 安全语义的人类 canonical 规范；`security/v1/security-design-v1.json` 是同一语义的机器投影，二者由 `security/validate.mjs` 做双向一致性校验。S1 冻结数据与密钥真相：哪些数据由哪个 purpose/key 保护、如何 envelope/HMAC、如何轮换/恢复、如何保持历史解密/查找与 A2 replay 兼容。S2 在不改变 S1 语义的前提下冻结五个信任面/认证域、七个 trust boundary、六个内部服务身份、十个凭据类、两个签名 profile、audience/nonce 策略，以及 IVR/provider 的 mTLS + 签名 + timestamp + nonce/replay 确定性验证和失败零副作用语义。
 
 本文件与模型是静态设计产物，**不声称**任何运行时或云能力已经执行、验证或可用。没有真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR 线路、日志平台、analytics 或支付供应商调用发生。fixtures 只验证模型级确定性行为，不是生产验收矩阵、渗透测试或容量结论。
 
@@ -39,17 +39,29 @@ S1 冻结：
 - key states、purpose separation、rotation/recovery、历史解密/查找与 replay 兼容；
 - 恰好 6 个 S1 invariant `INV-A3-01` 至 `INV-A3-06`。
 
-S1 不包含、也不授权提前实现：认证域与 audience、service identity、请求签名、nonce/timestamp/replay 拒绝、媒体凭证、COS 私有策略、审计访问、高风险控制和脱敏。后续切片未在本文件中给出模型 section、fixture ID 或 invariant 文本；任何提前出现都必须被 validator 拒绝。
+S2 追加冻结（不改变 S1 语义）：
+
+- 恰好 5 个信任面/认证域，精确等于 A1 的 `customer`、`employee`、`ivr-service`、`public-capability`、`provider` 及 operation 计数 18/21/6/3/1；
+- 恰好 7 个 trust boundary `TB1` 至 `TB7`；
+- 恰好 6 个内部服务身份及其 allowed calls、CAM/DB 角色、secret custody、audience、fail-closed 与轮换边界；前端不持有 service secret；
+- 恰好 10 个凭据类 `C01` 至 `C10` 与 2 个签名 profile；
+- audience registry、session/credential/mTLS/signature key 生命周期和 nonce 策略，所有数值 TTL/window/backoff 仍为 typed deferred；
+- IVR 与 provider 的 mTLS + 签名 + timestamp + nonce/replay 验证顺序、错误映射与零 A2 副作用；
+- IVR-local outbox 在观测 401/403 时的同一 `PENDING` entry/security-blocked 策略与显式恢复重试；
+- 累计 invariant 恰好 11 个（新增 `INV-A3-07` 至 `INV-A3-11`）；
+- 恰好 9 个 S2 fixture，累计 15 个（6+9），其中 7 个显式负例。
+
+S3 不在本文件中提前冻结：媒体凭证、COS 私有策略、audit access、高风险控制和确定性脱敏的模型 section、fixture ID 或 invariant 文本都不得出现；validator 必须拒绝任何未来 stage 的 invariant、fixture 或 section 文本。
 
 ## 3. 上游权威与禁改边界
 
-| 上游 | 只读权威 | S1 使用方式 |
+| 上游 | 只读权威 | A3 使用方式 |
 | --- | --- | --- |
 | `docs/14` | 44 表 catalog、28 行敏感字段目录、envelope/HMAC 形状、audit 契约、28 个 open input | 逐行映射 data class、复刻 envelope/HMAC 形状、复制 18 个 Q row 的 input/owner/destination |
-| A1 bundle | 49 operation、6 security scheme、五个 `x-onecall-audience`、credential 字段 | 只做 drift 断言；不读取或新增模型 section |
-| A2 model | 12 messages、11 eventTypes、22 identities、15 invariants、event registry digest | 只做 drift 断言并保持 replay 语义不变 |
+| A1 bundle | 49 operation、6 security scheme、五个 `x-onecall-audience`、credential 字段和 IVR/provider header | S1/S2 只做 drift 与形状断言；五域/operation 数/audience/header 必须等于 A1；不新增 operation/header/schema/code |
+| A2 model | 12 messages、11 eventTypes、22 identities、15 invariants、event registry digest、outbox 四态 | 只做 drift 断言并保持 replay/exactly-once 语义不变；S2 只新增 security-layer 的 401/403 本地策略 |
 
-S1 不修改 `docs/12` 至 `docs/16`、A0/A1/A2 accepted 产物、OpenAPI source、prototype、screenshots、`shared/onecall-business.js`、controller 或历史 review。A2 event registry digest 保持 `c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9` 不变。
+S1/S2 不修改 `docs/12` 至 `docs/16`、A0/A1/A2 accepted 产物、OpenAPI source、prototype、screenshots、`shared/onecall-business.js`、controller 或历史 review。A2 event registry digest 保持 `c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9` 不变。
 
 ## 4. 密钥层级、用途分离与状态
 
@@ -223,7 +235,149 @@ S1 不修改 `docs/12` 至 `docs/16`、A0/A1/A2 accepted 产物、OpenAPI source
 
 不发明：region、SKU、价格、容量、WORM/object-lock 能力、MFA/IdP、法律留存期、生产 TTL/rate-limit/replay-window 数值、organization permission matrix 或 vendor-specific signature/payload/KDF 参数。所有此类值保持 typed deferred input，并附 owner 与 destination。
 
-## 10. S1 invariants（恰好 6）
+## 10. 信任面、认证域与 trust boundary（5 + 7）
+
+五个认证域精确来自 A1 `x-onecall-audience`，不新增、不合并；每个域有独立的 token/credential/verifier/失败映射。`customerSession` 与 `employeeSession` 是不透明 bearer，服务端解析 audience、账户/员工和 workspace/role；不得使用客户端可解码且无 audience 的 JWT。五个域的 signing/verification key、session store、audience 和失败映射互不复用。
+
+| trust surface | domain | prefix | operations | boundary |
+| --- | --- | --- | ---: | --- |
+| TS1 | customer | /api/v1/customer/ | 18 | TB1, TB2 |
+| TS2 | employee | /api/v1/operations/ | 21 | TB1, TB2 |
+| TS3 | ivr-service | /api/v1/ivr/ | 6 | TB3 |
+| TS4 | public-capability | /api/v1/public/shares/ | 3 | TB1, TB2 |
+| TS5 | provider | /api/v1/callbacks/ | 1 | TB4 |
+
+<!-- security-domain-map:start -->
+| domain | prefix | operations | credentialClasses | storage | tokenAudience | crossDomainRule |
+| --- | --- | --- | --- | --- | --- | --- |
+| customer | /api/v1/customer/ | 18 | C01 customerSession | Redis session record + account state | onecall:customer-session:v1 | reject any other domain token; gateway trust never bypasses the audience check |
+| employee | /api/v1/operations/ | 21 | C02 employeeSession | Redis session record + employee state | onecall:employee-session:v1 | independent issuer; fixed ADMIN/OPS; never reused with the customer domain |
+| ivr-service | /api/v1/ivr/ | 6 | C03 ivrMtls, C04 ivrSignature | mTLS certificate store + Secret Manager HMAC key | onecall:ivr-request:v1 | accept mTLS plus signature only; never a session or capability token |
+| public-capability | /api/v1/public/shares/ | 3 | C07 publicShareCapabilityToken, C08 extractionCode, C01 customerSession (optional ORGANIZATION_MEMBER only), C10 playbackCredential | DB SHA-256 digest + admission state + Redis ticket Q22 | onecall:share-capability:v1; onecall:media-playback:v1 | capability token cannot be used on another surface; customer session cannot replace capability; C10 is presented to media-gateway only |
+| provider | /api/v1/callbacks/ | 1 | C05 providerCallbackMtls, C06 providerCallbackSignature | mTLS certificate store + Secret Manager vendor verification material | onecall:provider-callback:v1 | accept provider mTLS plus vendor signature only; never disclose an internal result |
+<!-- security-domain-map:end -->
+
+七个固定 trust boundary：
+
+| ID | 边界 | 允许 | 禁止 |
+| --- | --- | --- | --- |
+| TB1 | Internet 与 edge → customer/public-share/operations 前端 | TLS/WAF；customer/employee/capability 域 | 直接访问 DB/Redis/MQ/COS |
+| TB2 | Edge → core-api 的 customer/operations/public-share API | 匹配的 session/capability credential 与 path/audience 校验 | 跨域 token、永久对象 URL |
+| TB3 | 运营商机房/IVR 网络 → core-api IVR API | mTLS + IVR 签名 + timestamp + nonce | DB/MQ 直连、无签名请求 |
+| TB4 | Internet/provider → callback API | provider mTLS + 厂商签名 + timestamp + nonce | 内部结果披露、订单金额/支付成功声明 |
+| TB5 | core-api/worker → PostgreSQL/Redis/RabbitMQ | NOLOGIN DB role、Outbox、最小权限 | 跨模块写、客户端直连、绕过 Outbox |
+| TB6 | core-api/worker/ivr-gateway → Tencent KMS/Secret Manager/COS | CAM service role、短时 upload credential、私有 bucket | 静态 AccessKey、公开对象、永久 URL |
+| TB7 | 应用 → logs/traces/metrics/analytics/support/public export | redaction pipeline、masked/ID/status、audit access | plaintext/secret/credential URL/HMAC/ciphertext |
+
+mTLS 只证明 service/provider 身份；IVR 仍必须每请求签名并校验 timestamp/nonce，provider 仍必须验厂商签名。运营读取只授予脱敏业务元数据；A1 没有 operations playback endpoint，A3 不新增。fail-closed 只映射 A1 既有 `UNAUTHENTICATED`、`FORBIDDEN`、`SERVICE_UNAVAILABLE`、`CALLBACK_SIGNATURE_INVALID`、`PAYMENT_EVENT_CONFLICT`、`CALLBACK_RETRY_LATER` 等 code，不新增 security-specific code。
+
+## 11. 服务身份与 token audience（6 + audience registry）
+
+六个内部服务身份映射既有 deployment unit，不新增拓扑；IVR/provider 外部身份不进入内部 service identity registry。每个 CAM role 只授予该服务必需的 action/resource；禁止 `*` action/resource、跨环境 role 复用和长期静态 AccessKey。前端 `customer-web`、`public-share-web`、`operations-web` 和小程序不持有 service credential、KMS/Secret Manager 访问权或永久 COS 凭证。
+
+<!-- security-service-map:start -->
+| serviceIdentity | mechanism | audience | allowedCalls | secretCustody |
+| --- | --- | --- | --- | --- |
+| core-api | Tencent CAM service role + DB NOLOGIN role | onecall:service:core:v1 | DB, Redis, Outbox, KMS, Secret Manager, COS evidence metadata | Secret Manager or instance role; no static key |
+| async-worker | Tencent CAM service role + DB role | onecall:service:worker:v1 | DB, MQ consumer, KMS, Secret Manager, COS, notary adapter, AI adapter | Secret Manager or instance role |
+| scheduler | Tencent CAM service role + DB role | onecall:service:scheduler:v1 | DB lease, expiry scan | minimal least privilege; no external provider key |
+| media-ai-worker | Tencent CAM service role | onecall:service:media-ai:v1 | MQ, COS read, COS write, AI provider Secret Manager | Secret Manager; no business DB write |
+| ivr-gateway | mTLS client + Secret Manager | onecall:ivr-request:v1 | A1 IVR API, controlled COS upload | C03 mTLS credential + C04 signing key |
+| media-gateway | mTLS or internal audience + Secret Manager | onecall:media-playback:v1 | C10 validation, COS media read | C10 signing key; never issues upload credential |
+<!-- security-service-map:end -->
+
+`media-gateway` 是逻辑校验点，部署在既有 core-api/edge 内，不是新部署单元。每个 service identity 的 CAM role/证书/密钥按 Q17/Q23/CV-3 轮换；轮换期间保留旧身份 verify-only/overlap，重叠后 disable；不得复用其他服务的 role。
+
+Audience registry（5 个领域 audience + 1 个 upload 签发侧分类 + 4 个内部服务 audience）：
+
+| audience | owner | credential/identity | verifier |
+| --- | --- | --- | --- |
+| onecall:customer-session:v1 | customer | C01 customerSession | core-api |
+| onecall:employee-session:v1 | employee | C02 employeeSession | core-api |
+| onecall:ivr-request:v1 | ivr-service | C03 ivrMtls, C04 ivrSignature, ivr-gateway | core-api |
+| onecall:share-capability:v1 | public-capability | C07 publicShareCapabilityToken, C08 extractionCode | core-api |
+| onecall:media-playback:v1 | public-capability | C10 playbackCredential, media-gateway | media-gateway |
+| onecall:provider-callback:v1 | provider | C05 providerCallbackMtls, C06 providerCallbackSignature | core-api |
+| onecall:evidence-upload:v1 | ivr-service | C09 uploadCredential (issuance-side policy classification only) | issuance policy |
+| onecall:service:core:v1 | internal | core-api | Tencent CAM service role |
+| onecall:service:worker:v1 | internal | async-worker | Tencent CAM service role |
+| onecall:service:scheduler:v1 | internal | scheduler | Tencent CAM service role |
+| onecall:service:media-ai:v1 | internal | media-ai-worker | Tencent CAM service role |
+
+一个域的有效 token 在另一个域必须按 audience/verifier 拒绝；不能因 gateway 信任、network position 或 IP allow-list 而放行。
+
+## 12. 凭据类与生命周期（10）
+
+<!-- security-credential-map:start -->
+| credentialClass | domain | audience | storage | ttlInput | scope | rotationRevocation | redaction |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| C01 customerSession | customer | onecall:customer-session:v1 | Redis session record + account state | Q1/Q19 | customer API only | logout, account disable or expiry revokes the session | bearer and Authorization header always removed |
+| C02 employeeSession | employee | onecall:employee-session:v1 | Redis session record + employee state | Q1 | operations API only | role change, disable or credential reset revokes the session | bearer and Authorization header always removed |
+| C03 ivrMtls | ivr-service | onecall:ivr-request:v1 | mTLS certificate store | Q7/Q15 | IVR mTLS identity only | certificate overlap and rotation per Q7 | certificate and private key never logged |
+| C04 ivrSignature | ivr-service | onecall:ivr-request:v1 | Secret Manager K17 | Q25 window | per-request signature | keyId overlap; old key VERIFY_ONLY until retirement | signature and nonce always removed |
+| C05 providerCallbackMtls | provider | onecall:provider-callback:v1 | mTLS certificate store | Q6/Q15 | provider callback only | provider certificate rotation per Q6 | certificate never logged |
+| C06 providerCallbackSignature | provider | onecall:provider-callback:v1 | Secret Manager or certificate store K18 | Q6 | per-callback signature | provider rotation per Q6 | signature and nonce always removed |
+| C07 publicShareCapabilityToken | public-capability | onecall:share-capability:v1 | DB SHA-256 digest only | share expiresAt / Q12 | path capability; created once | revoke or generation change; not rebuildable | capability token always removed and return-once |
+| C08 extractionCode | public-capability | onecall:share-capability:v1 | per-grant salt + slow KDF digest | Q12 | EXTRACTION_CODE | code_generation rotation | code and OTP always removed and return-once |
+| C09 uploadCredential | ivr-service | onecall:evidence-upload:v1 (issuance-side policy classification only; not a COS embedded audience claim) | COS presign CV-4 verified or K19 | uploadExpiresAt | single-object COS presigned PUT only; fail closed and stop if CV-4 capability is unverified | no renewal or re-sign; expiry only | credential URL always removed |
+| C10 playbackCredential | public-capability | onecall:media-playback:v1 | media gateway K20 | Q22 | Authorization Bearer to media-gateway; share, admission, generation, object and PLAYBACK/SEEK/RENEW | issued credential is not recalled; expiry only | credential URL and bearer value always removed |
+<!-- security-credential-map:end -->
+
+凭据生命周期固定为可观测的状态迁移：session `UNAUTHENTICATED → AUTHENTICATED → REVOKED/EXPIRED`；mTLS/signature key `ACTIVE → VERIFY_ONLY → DISABLED`；nonce `ABSENT → SEEN(TTL)`。这些是安全层状态，不是 A2 业务状态，不新增 A0 列/状态或 A2 event。所有 TTL/window/backoff 数值仍为 Q1/Q6/Q7/Q12/Q19/Q22/Q25 等 typed deferred；本文件不给出具体秒数或阈值。字段边界沿用 A1：`capabilityToken` 1-512，`extractionCode` 1-128，`upload.credential`/`mediaAuthorization.credential`/`MediaAuthorization.credential` 1-2048。
+
+## 13. 签名 profile、nonce/replay 与 A2 保持（2）
+
+### 13.1 IVR request profile（`ivr-request-v1`）
+
+适用 `/api/v1/ivr/**` 的 6 个 operation，必须同时具备 `ivrMtls` 与 `ivrSignature`。
+
+- Header 名称为 A1 已冻结的 `X-ONECALL-SIGNATURE`、`X-ONECALL-TIMESTAMP`、`X-ONECALL-NONCE`。A1 冻结 TIMESTAMP 长度 1-64、NONCE 长度 1-128；A1 **没有**冻结 SIGNATURE header 长度，A3 只冻结其值格式，不引入长度断言。
+- 签名值：`v1.<keyId>.<base64url(HMAC-SHA-256(K17, canonicalString))>`；`keyId` 是 Secret Manager version label，匹配 `[A-Za-z0-9_-]{1,64}`；比较必须 constant-time。
+- Timestamp：ASCII Unix epoch seconds，匹配 `^[0-9]{1,12}$`；接受窗口是 `±W`，`W` 是 Q25 deferred；以 backend receive time 为准，不使用客户端 `occurredAt`。
+- Nonce：匹配 `[A-Za-z0-9_-]{1,128}`；在 `(serviceIdentity, nonce)` 维度唯一；Redis `SET NX`；TTL 为 `W + skew`，数值 Q25 deferred。
+- Canonical string 固定为六行 UTF-8，行间 `\n`，末尾无额外换行：
+  1. 字面量 `ONECALL-IVR-V1`
+  2. uppercase HTTP method
+  3. raw request path（不含 query，不 decode、不归一化）
+  4. `X-ONECALL-TIMESTAMP`
+  5. `X-ONECALL-NONCE`
+  6. exact request body bytes 的 lowercase hex SHA-256（空 body 为空字节哈希）
+- 验证顺序固定为：mTLS client identity → 必需 header/长度 → timestamp 解析/窗口 → signature verify（keyId active/verify-only）→ nonce `SET NX` → A1/A2 processing。
+- 失败映射：缺/坏 mTLS、坏签名、超窗口、nonce replay → `401 UNAUTHENTICATED`；service identity 不允许 → `403 FORBIDDEN`；nonce/key/Secret Manager 不可用 → `503 SERVICE_UNAVAILABLE`。
+- 零副作用：认证失败发生在 session/call/decision/task/reservation/event 写入之前；不得返回 200 `IvrDecision`、不得领取任务、不得预占/结算、不得写 outbox 业务事实。
+- A2 保持：同一 `callId`/`eventId`/payload 的重试使用新的 timestamp/nonce；A2 idempotency 返回首次结果；不重拨、不新建 `callId`、不重复预占/结算。IVR 不得因 401/403 重新 resolve 获取新授权。
+- 轮换：新/旧 keyId 重叠验签；旧 key 只 `VERIFY_ONLY`；重叠结束旧 key 拒绝。未知 keyId 直接拒绝，不 fallback 到默认 key。
+
+### 13.2 Provider callback profile（`provider-callback-v1`）
+
+适用 `POST /api/v1/callbacks/payment-events`，必须同时具备 `providerCallbackMtls` 与 `providerCallbackSignature`。
+
+- Header：`X-ONECALL-CALLBACK-SIGNATURE`、`X-ONECALL-TIMESTAMP`、`X-ONECALL-NONCE`；TIMESTAMP 1-64、NONCE 1-128 沿用 A1。vendor signature 算法、canonicalization、payload 字段与窗口全部 Q6/Q15 typed deferred；本文件不发明。
+- 验证顺序：provider mTLS identity → header → provider profile（Q6）→ timestamp window → constant-time signature verify → event identity/payload fingerprint（exact duplicate 返回 200 duplicate；同 event 异 payload 返回 409）→ nonce `SET NX` → 支付处理。
+- exact duplicate 是零副作用的幂等结果，不要求消费 nonce；新事件或 changed payload 必须先通过 nonce 检查。依赖不可用返回 503，不推进支付。
+- 失败映射：签名/证书/时间窗/nonce replay → `401 CALLBACK_SIGNATURE_INVALID`；同 event 不同 payload → `409 PAYMENT_EVENT_CONFLICT`；依赖不可用 → `503 CALLBACK_RETRY_LATER`；重复同 event/同 fingerprint → `200 {accepted:true,duplicate:true}`。
+- 原始 provider payload 由 adapter 加密留档（A0 `payment_event.payload_ciphertext`），不得明文日志、不得返回内部结果；响应只含 `accepted`/`duplicate`。
+- provider nonce 是按 HTTP delivery 的 transport replay 保护；vendor 重试是否复用 nonce 属 vendor policy Q6。A3 冻结 fail-closed 与 event idempotency，不发明 vendor 重试行为。
+- A2 不受影响：provider callback 不参与 IVR call/event 状态机；无 redial/reservation/settlement 副作用。
+
+### 13.3 Nonce/replay 与 A2 exactly-once
+
+- Nonce 只用于 transport replay protection，不进入 A2 semantic identity；`eventId`/`payload` 不变，transport timestamp/nonce 每次重试更新。
+- 认证/签名/timestamp/nonce/replay 失败在 `resolve`、`confirm`、`direct`、`events`、`declare`、`complete` 的 A2 处理前返回；不得创建/复用 session、call、decision、task、reservation、call_event、recording、media_object、usage_fact。
+- 同一 `callId`/`eventId`/`recordingId`/`decisionId` 的身份规则不变；重试不得 mint 新身份。
+- A2 的 event registry digest、12 messages、22 identities、15 invariants、outbox 四态、终态吸收、UNKNOWN/reconciliation 和 settlement 规则不变。
+
+## 14. IVR outbox 401/403 本地安全策略
+
+A2 §6.6 outbox 分类未命名 `UNAUTHENTICATED`/`FORBIDDEN`（401/403）。S2 冻结 IVR-local security-layer policy，不修改 A2：
+
+- 观测到 401 或 403 时，同一 outbox entry 保持既有 `PENDING` 状态，并在本地 operational metadata 可用时逻辑标记 security-blocked。
+- 不得自动热重试、不得新增/改写 event identity、不得改 payload、不得重拨、不得 re-resolve、不得预占或结算、不得写 A2 业务事实。
+- 必须发出不含 credential/signature/nonce 的 alert/audit signal；固定 redaction token 为 `[REDACTED:CREDENTIAL]`、`[REDACTED:SIGNATURE]`、`[REDACTED:NONCE]`。
+- 只有在收到显式 credential/key/certificate 或 service-authorization recovery signal 后才允许重试；重试使用同一 domain identity（`callId`/`eventId`/`recordingId`/`decisionId`）与 immutable payload，并生成新的 timestamp/nonce。
+- 数值 retry/backoff/alert 值仍为 Q8/Q13/Q25 deferred。本策略不新增 A2 state/event/digest 或 server classification；`PENDING` 是 A2 既有四态之一。
+
+## 15. Invariants（累计 11）
 
 | ID | Statement |
 | --- | --- |
@@ -234,11 +388,17 @@ S1 不修改 `docs/12` 至 `docs/16`、A0/A1/A2 accepted 产物、OpenAPI source
 | INV-A3-05 | Every key and credential has an owner, custody, state, rotation and recovery path; secret material never enters a database, code, image or log. |
 | INV-A3-06 | Rotation never rewrites append-only or frozen rows; historical keys are retained until retention; A2 replay returns the same payload/decision without re-selection or a second reservation. |
 
-S1 不包含其他 invariant 的文本、ID 或断言。后续切片的行为、fixture 与 invariant 文本必须在各自 Gate 中单独冻结。
+| INV-A3-07 | The five authentication domains never share a token, credential, audience or verifier; a request that crosses domains is rejected. |
+| INV-A3-08 | The six service identities use least privilege, independent CAM roles and rotation; no frontend holds a service secret and no policy grants a wildcard action or resource. |
+| INV-A3-09 | Every IVR request must pass mTLS, signature, timestamp and nonce verification; the verification order and canonical string are fixed. |
+| INV-A3-10 | Replay rejection occurs before any domain side effect; transport nonce and timestamp are refreshed on every retry while A2 eventId and payload stay unchanged. |
+| INV-A3-11 | Provider callbacks require mTLS, vendor signature, timestamp and nonce; the same event and fingerprint is idempotent while a changed payload is a conflict. |
 
-## 11. 确定性验证、fixtures 与诚实限制
+S2 累计 invariant 恰好 11 个，不包含任何未来 stage 的 invariant 文本、ID 或断言。S3 的行为、fixture 与 invariant 文本必须在 S3 Gate 中单独冻结。
 
-验证命令（在 repo root）：
+## 16. 确定性验证、fixtures 与诚实限制
+
+验证命令（在 repo root，S2 使用与 S1 相同参数并切换 `--stage`）：
 
 ```bash
 cd api/openapi && npm ci && npm run check:s3
@@ -257,6 +417,20 @@ node security/validate.mjs --stage s1 \
   --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
   --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
   --a2-fixtures protocol/ivr/v1/fixtures
+node security/validate.mjs --stage s2 \
+  --model security/v1/security-design-v1.json \
+  --fixtures security/v1/fixtures \
+  --spec docs/17-production-security-design-spec.md \
+  --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+  --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
+  --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
+  --a2-fixtures protocol/ivr/v1/fixtures
+```
+
+S1 stage 必须继续在累计文件上通过并只评估 6 个 S1 fixture；S2 stage 评估累计 15 个 fixture（`6+9`），其中 7 个显式负例。S2 期望计数固定为：
+
+```text
+trust_surfaces=5 auth_domains=5 trust_boundaries=7 service_identities=6 credential_classes=10 signature_profiles=2 invariants=11 fixtures=15 passed=15 failed=0 negative=7 slice_fixtures=6+9
 ```
 
 S1 fixtures（6，恰 2 个显式负例）：
@@ -270,13 +444,27 @@ S1 fixtures（6，恰 2 个显式负例）：
 | `sec-s1-05-key-unavailable-failclosed` | 负例：unknown/disabled/destroyed key、依赖不可用、恢复 | 既有 503；无 plaintext fallback；audit event；无状态写入；destroyed 不可恢复 |
 | `sec-s1-06-append-only-rotation-safety` | frozen row 重写、retention 未定 retire、stage 边界 | 拒绝 UPDATE；旧 version `DECRYPT_ONLY`/`LOOKUP_ONLY`；无 A0 变更；23=18+5；6 invariants 且无未来文本 |
 
-fixtures 使用 `TEST_ONLY_*` 合成标签与固定 nonce；密钥字节由 label 的 SHA-256 确定性派生。它们不包含真实 secret、URL、credential、phone、identity 或 cloud identifier。
+S2 fixtures（9，恰 5 个显式负例）：
 
-validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算 fixture 行为；不读取 `expected` 来决定结果，也不存在脱离解析输入的成功打印。缺少/多余/重复/非法 row、错误 purpose/key/AAD、畸形 envelope/HMAC、错误 Q/CV 来源、unknown key/version/state、提前 stage 内容、fixture ID/slice 不匹配与上游 drift 都会失败。
+| Fixture | 场景 | 关键断言 |
+| --- | --- | --- |
+| `sec-s2-01-five-domains-accepted` | 五个域各自有效 credential | 仅本面 2xx；audience/operation 计数正确；零跨域与 A2 副作用 |
+| `sec-s2-02-cross-domain-rejected` | 负例：customer/employee/capability/ivr/provider token 交叉使用 | A1 既有 401/403/404；零 A2 状态写入 |
+| `sec-s2-03-service-identity-least-privilege` | 6 service identities allowed/denied calls | 仅 allowed calls；无 `*`；前端无 secret；拒绝 audit read |
+| `sec-s2-04-ivr-signature-invalid` | 负例：缺/坏 mTLS、坏签名、超窗、未知 keyId、坏 nonce、service identity 不允许 | 401/403；header 名与 TIMESTAMP 1-64/NONCE 1-128 精确，SIGNATURE 只断言名称+值格式（无长度断言）；零 session/call/decision/task/reservation/event |
+| `sec-s2-05-ivr-replay-rejected` | 负例：同 nonce replay；Redis 不可用；修复后同 eventId 新 nonce 重试 | 401/503；零副作用；重试后 A2 首次结果；无 redial/第二 reservation |
+| `sec-s2-06-provider-signature-replay` | 负例：坏签名、nonce replay、duplicate、changed payload | 401 `CALLBACK_SIGNATURE_INVALID`；duplicate 200；changed 409 `PAYMENT_EVENT_CONFLICT`；无重复支付/权益 |
+| `sec-s2-07-signing-key-rotation` | IVR/provider key 新旧 overlap/retire | 旧 key `VERIFY_ONLY` 可验；retire 后 401；无 A2 状态副作用 |
+| `sec-s2-08-failclosed-dependency-preserves-a2` | SM/Redis 不可用；恢复后同 identity 重试 | 503；无 A2 写入；outbox 不改 eventId；A2 digest/状态不变 |
+| `sec-s2-09-ivr-outbox-auth-blocked` | 负例：IVR outbox 分别观测 401 与 403；hot retry/identity/payload/redial/re-resolve/reservation/settlement 均被拒绝；显式 recovery 后重试 | 同一 entry 保持 `PENDING`/security-blocked；alert/audit 不含 credential；recovery 使用同一 domain identity + immutable payload + 新 timestamp/nonce；零 A2 业务副作用；`invariants=11` 且无未来文本 |
 
-诚实限制：没有运行真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR 线路、日志平台、analytics 或供应商；不能证明生产 nonce 的 CSPRNG、真实 envelope 解密、真实云 rotation/recovery、数据库 append-only trigger、审计事务回滚或媒体对象行为。fixtures 是安全模型级断言，不是生产验收或渗透测试。
+fixtures 使用 `TEST_ONLY_*` 合成标签与固定 nonce；密钥字节由 label 的 SHA-256 确定性派生。fixture 中的 window/TTL 输入只是确定性 evaluator 输入，不是生产 Q25 值。它们不包含真实 secret、URL、credential、phone、identity 或 cloud identifier。
 
-## 12. 残余风险与完成声明
+validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算 fixture 行为；不读取 `expected` 来决定结果，也不存在脱离解析输入的成功打印。缺少/多余/重复/非法 row、跨域 token、通配权限、前端 secret、畸形/缺失 header、时间戳格式/窗口、unknown/disabled key、坏签名、nonce replay/Redis 不可用、provider duplicate-vs-conflict 顺序、IVR outbox 违规重试/身份变更、提前 stage 内容、fixture ID/slice 不匹配与上游 drift 都会失败。
+
+诚实限制：没有运行真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR 线路、日志平台、analytics 或供应商；不能证明真实 mTLS 证书、真实 Redis `SET NX`、生产 nonce 的 CSPRNG、真实 envelope 解密、真实云 rotation/recovery、数据库 append-only trigger、审计事务回滚或媒体对象行为。fixtures 是安全模型级断言，不是生产验收或渗透测试。
+
+## 17. 残余风险与完成声明
 
 | ID | 内容 | Owner / Destination |
 | --- | --- | --- |
@@ -287,10 +475,15 @@ validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算
 | `R-A3-LEGAL-RETENTION` | retention/erasure/backup 未选（Q3） | Legal/Security；launch review |
 | `R-A3-NO-WORM` | 不声称 COS WORM/object-lock；未来需 Q11 验证 | Infrastructure/Security；storage policy |
 | `R-A3-REGION-SKU` | 不选 region/SKU/price/capacity | Infrastructure/Security；capacity/deployment |
+| `R-A3-A2-AUTH-OUTBOX` | IVR outbox 401/403 本地策略已冻结，但 Q8/Q13/Q25 的 retry/backoff/alert 数值与真实 Redis/IVR 集成未验证 | IVR/Backend；A2/IVR integration review |
+| `R-A3-MTLS-CAPABILITY` | 真实 mTLS 证书签发、pinning、时钟同步与 IVR 线路身份未验证（Q7/Q15） | Telephony/IVR/Security；line integration |
+| `R-A3-PROVIDER-VERIFY` | vendor signature 算法/canonicalization/payload/window 未冻结（Q6/Q15） | Payments/Backend；payment adapter |
+| `R-A3-SESSION-LIFECYCLE` | 真实 session/OTP/WeChat 登录、员工 MFA 与 TTL 未验证（Q1/Q19） | Identity/Backend；authentication design |
+| `R-A3-NONCE-STORE` | 真实 Redis `SET NX` 原子性、TTL 与故障切换未验证（Q25） | Security/Backend；production readiness |
 
-S1 完成信号：20 keys、28 data rows、23 deferred（18 Q + 5 CV）、envelope/HMAC 规则、rotation/recovery/replay 规则、6 invariants、6 fixtures 与 validator 均已落盘；A0/A1/A2 计数与 digest 由 validator 断言不变；没有新增表、列、状态、endpoint、header、Problem code、role 或生产数值。
+S2 完成信号：5 trust surfaces/auth domains、7 trust boundaries、6 service identities、10 credential classes、2 signature profiles、11 cumulative invariants、15 fixtures（6+9，7 negatives）与 validator 均已落盘；S1 的 20 keys/28 data/23 deferred/6 fixtures 保持不变；A0/A1/A2 计数与 digest 由 validator 断言不变；没有新增表、列、状态、endpoint、header、Problem code、role 或生产数值。
 
-本文件与模型不声称任何运行时或云实现。S1 author completion 后停止；不进入 S2/S3，不 stage、commit、push、创建/修改 PR 或 merge。
+本文件与模型不声称任何运行时或云实现。S2 author completion 后停止；不进入 S3，不 stage、commit、push、创建/修改 PR 或 merge。
 
 ### Completion report template
 

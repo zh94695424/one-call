@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-05-ivr-replay-rejected",
+  "slice": "s2",
+  "negative": true,
+  "description": "A replayed transport nonce and an unavailable Redis nonce store are rejected before A2 processing; after recovery the same eventId and payload with a fresh timestamp and nonce return the A2 first result without redial or a second reservation.",
+  "materials": [
+    { "keyId": "K17", "keyRef": "TEST_ONLY_K17_V1", "keyLabel": "TEST_ONLY_K17_SIGNING_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "first-accepted-request",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0001/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0001",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000000",
+      "receivedAt": 1700000100,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0501",
+      "nonceStore": "AVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_EVENT_0001", "payloadFingerprint": "TEST_ONLY_PAYLOAD_0001", "callId": "TEST_ONLY_CALL_0001" },
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "signatureVerified": true,
+        "nonceConsumed": true,
+        "a2Processed": true,
+        "a2FirstResultReused": false,
+        "a2EventId": "TEST_ONLY_EVENT_0001",
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 1, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "replay-same-nonce",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0001/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0001",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000000",
+      "receivedAt": 1700000100,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0501",
+      "nonceStore": "AVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_EVENT_0001", "payloadFingerprint": "TEST_ONLY_PAYLOAD_0001", "callId": "TEST_ONLY_CALL_0001" },
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 401,
+        "problemCode": "UNAUTHENTICATED",
+        "reason": "NONCE_REPLAY",
+        "signatureVerified": true,
+        "nonceConsumed": false,
+        "a2Processed": false,
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "nonce-store-unavailable",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0001/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0001",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000100",
+      "receivedAt": 1700000100,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0502",
+      "nonceStore": "UNAVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_EVENT_0001", "payloadFingerprint": "TEST_ONLY_PAYLOAD_0001", "callId": "TEST_ONLY_CALL_0001" },
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 503,
+        "problemCode": "SERVICE_UNAVAILABLE",
+        "reason": "NONCE_STORE_UNAVAILABLE",
+        "signatureVerified": true,
+        "nonceConsumed": false,
+        "a2Processed": false,
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "recovery-retry-same-event",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/calls/TEST_ONLY_CALL_0001/events",
+      "body": "TEST_ONLY_IVR_EVENT_BODY_0001",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000200",
+      "receivedAt": 1700000200,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0503",
+      "nonceStore": "AVAILABLE",
+      "a2": { "eventId": "TEST_ONLY_EVENT_0001", "payloadFingerprint": "TEST_ONLY_PAYLOAD_0001", "callId": "TEST_ONLY_CALL_0001" },
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "a2Processed": true,
+        "a2FirstResultReused": true,
+        "nonceConsumed": true,
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "assert-no-redial-or-second-reservation",
+      "action": "assert",
+      "checks": {
+        "invariants": 11,
+        "futureInvariantIds": 0,
+        "futureFixtureIds": 0,
+        "s2s3Sections": 0,
+        "a2Events": 1,
+        "a2Calls": 0,
+        "a2Reservations": 0,
+        "a2Settlements": 0,
+        "a2Redials": 0,
+        "a2ReResolves": 0
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}
