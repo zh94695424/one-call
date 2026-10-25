@@ -191,7 +191,7 @@
             {
               "eventId": "evt-s2-10a-terminal-2",
               "eventType": "CALL_TERMINATED",
-              "status": "PERMANENT_FAILURE"
+              "status": "ACKED"
             }
           ]
         },
@@ -201,7 +201,7 @@
           "terminalFactsAccepted": 1,
           "releases": 1,
           "usageFacts": 0,
-          "outboxPermanent": 1
+          "outboxPermanent": 0
         }
       }
     },

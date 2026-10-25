@@ -236,6 +236,62 @@
           "evidenceSolidified": 0
         }
       }
+    },
+    {
+      "id": "complete-changed-client-reference",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-01",
+        "recordingId": "rec-s3-01",
+        "clientReference": "ref-s3-01-changed"
+      },
+      "server": {
+        "now": "2026-10-25T10:04:00Z"
+      },
+      "expected": {
+        "status": 200,
+        "responseEqualsStep": "complete",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-01",
+              "status": "VALIDATED",
+              "revision": 3,
+              "completedAt": "2026-10-25T10:03:00Z",
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-01-1",
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "sizeBytes": 20480,
+                "mimeType": "audio/wav",
+                "durationSeconds": 120
+              },
+              "validated": {
+                "durationSeconds": 120,
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+              },
+              "evidenceCreated": false,
+              "evidenceSolidified": false
+            }
+          ],
+          "recordingConflictOutbox": []
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingDeclarations": 1,
+          "uploadObservations": 1,
+          "mediaObjectsCreated": 1,
+          "recordingValidations": 1,
+          "recordingQuarantines": 0,
+          "recordingCompletionReplays": 1,
+          "recordingConflictFacts": 0,
+          "recordingOutboxEntries": 2,
+          "recordingOutboxAcked": 2,
+          "recordingOutboxRetried": 1,
+          "evidenceRecordsCreated": 0,
+          "evidenceSolidified": 0
+        }
+      }
     }
   ]
 }

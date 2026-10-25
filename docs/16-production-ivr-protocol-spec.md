@@ -226,6 +226,8 @@ The S2 form is full-frozen, not a deferred identity list. Payload, envelope, pro
 
 `leg_type` and `direction` are never submitted on the wire. They are derived: `callerLeg*` maps to `CALLER`/`INBOUND`; `calleeLeg*` maps to `CALLEE`/`OUTBOUND`. The `IvrEventPayload` schema remains opaque in A1; A2 owns this closed payload vocabulary.
 
+Authorization and deadline judgement is owned by the backend-observed receive time of the request, never by the IVR-supplied `occurredAt`. The `OUTBOUND_NOT_STARTED` expiry decision in §6.3 is judged from that receive time; `occurredAt` remains only the telephony fact recorded as the call `ended_at`.
+
 ### 6.2 Closed payload definitions
 
 | eventType | Required payload fields | Optional payload fields | Backend effect |
@@ -260,7 +262,7 @@ Payload rules:
 - After a call is terminal, only `CALL_HEARTBEAT` is accepted (`IGNORED`). Any other event whose facts are fully consistent is `IGNORED`/`ALREADY_TERMINAL`; an event that would add or change a fact is `QUARANTINED`/`CALL_TERMINAL`.
 - `CALL_TERMINATED` on an `UNKNOWN` call is `QUARANTINED`/`USE_RECONCILIATION_EVENT`. Only `CALL_TERMINAL_RECONCILED` converges `UNKNOWN`.
 - Missing or foreign `resolvesUnknownEventId` is `400 IVR_ARGUMENT_INVALID` with no event write. `CALL_TERMINAL_RECONCILED` on a non-`UNKNOWN` call is `QUARANTINED`/`NOT_UNKNOWN`.
-- `OUTBOUND_NOT_STARTED` before the deadline is `QUARANTINED`/`AUTHORIZATION_NOT_EXPIRED`; after any outbound fact it is `QUARANTINED`/`OUTBOUND_ALREADY_STARTED`; with no reservation it is `400 IVR_ARGUMENT_INVALID`.
+- `OUTBOUND_NOT_STARTED` is judged against the deadline from the backend-observed receive time, not from `occurredAt`. Before the deadline it is `QUARANTINED`/`AUTHORIZATION_NOT_EXPIRED`; after any outbound fact it is `QUARANTINED`/`OUTBOUND_ALREADY_STARTED`; with no reservation it is `400 IVR_ARGUMENT_INVALID`; a missing or invalid backend receive time fails closed and can never authorize a release. On acceptance, `occurredAt` remains the call `ended_at`.
 - Event processing status uses only A0 `RECEIVED/APPLIED/IGNORED/QUARANTINED`; the first terminal is absorbed.
 - Quarantine and ignore reasons are written to `call_event.reason_code` and are not Problem codes. The exact 10-value registry is `LEG_UNKNOWN`, `SEQUENCE_CONFLICT`, `CONTRADICTORY_FACT`, `CALL_TERMINAL`, `ALREADY_TERMINAL`, `AUTHORIZATION_NOT_EXPIRED`, `OUTBOUND_ALREADY_STARTED`, `USE_RECONCILIATION_EVENT`, `NOT_UNKNOWN` and `HEARTBEAT_IGNORED`.
 
@@ -593,20 +595,20 @@ The S2 fixtures (cumulative 17, unchanged) are:
 | `s2-01-task-terminal-completed` | Task resolve, one B-leg, bridge/recording, `CALL_TERMINATED` | call `ENDED`; task `COMPLETED`; reservation `SETTLED`; one usage fact with the authoritative seconds; `lineAttemptCount=1` |
 | `s2-02-event-duplicate-replay` | Duplicate terminal and heartbeat with the same `eventId` | first receipt; no second settlement or usage fact; outbox remains `ACKED` |
 | `s2-03-event-out-of-order` | Complete terminal first, then consistent late leg facts with a sequence gap | facts applied once; legs/bridge/recording converge; late consistent events `IGNORED`; settlement once |
-| `s2-04-terminal-unknown-reconciliation` | `CALL_TERMINATION_UNKNOWN`, redial attempt, then `CALL_TERMINAL_RECONCILED` | UNKNOWN occupies call/reservation; no release/usage; redial blocked; reconciliation converges `ENDED`/`FAILED` and settles once |
-| `s2-05-response-loss-retry` | Committed resolve and terminal with lost responses, retried with identical identity | frozen resolve replay; first terminal receipt; no second B-leg/reservation/settlement; outbox `SENT→ACKED` |
+| `s2-04-terminal-unknown-reconciliation` | `CALL_TERMINATION_UNKNOWN`, redial attempt, then `CALL_TERMINAL_RECONCILED`; missing and foreign `resolvesUnknownEventId`, then reconciliation on the terminal call | UNKNOWN occupies call/reservation; no release/usage; redial blocked; reconciliation converges `ENDED`/`FAILED` and settles once; missing/foreign resolver is `400 IVR_ARGUMENT_INVALID` with no event or call mutation; non-UNKNOWN reconciliation is `QUARANTINED`/`NOT_UNKNOWN` with frozen terminal and settlement counts |
+| `s2-05-response-loss-retry` | Committed resolve and terminal with lost responses, retried with identical identity, then an ACKED response-loss retry | frozen resolve replay; first terminal receipt; no second B-leg/reservation/settlement; outbox `SENT→ACKED`; ACKED absorbs the later response loss with unchanged terminal counters |
 | `s2-06-ivr-restart-bleg-recovery` | Restart at `PREPARED` and `DISPATCH_UNKNOWN` | `PREPARED` dispatches once; `DISPATCH_UNKNOWN` reconciles to `DIALING` without redial; `lineAttemptCount<=1` per call |
-| `s2-07-authorization-expiry-not-started` | Before-deadline report, then deadline plus proof of no attempt | first report `QUARANTINED`/`AUTHORIZATION_NOT_EXPIRED`; `OUTBOUND_NOT_STARTED` yields `FAILED`, 0 seconds, task `FAILED`, `RELEASED`, no usage |
+| `s2-07-authorization-expiry-not-started` | Before-deadline report, then deadline plus proof of no attempt; backend receive time and `occurredAt` disagree on both sides of the deadline; post-deadline report without local expire | first report `QUARANTINED`/`AUTHORIZATION_NOT_EXPIRED`; `OUTBOUND_NOT_STARTED` yields `FAILED`, 0 seconds, task `FAILED`, `RELEASED`, no usage; deadline follows the backend receive time, not `occurredAt`; the report-only deadline release applies without a local expire while `endedAt` stays the telephony `occurredAt` |
 | `s2-08-redial-second-bleg-rejected` (negative) | Second B-leg, second dispatch/line outcome and duplicate direct authorization | local 409 for the second B-leg and dispatch; `409 SESSION_IDENTITY_MISMATCH` for changed direct semantics; one reservation and `lineAttemptCount<=1` |
 | `s2-09-heartbeat-and-terminal` | Heartbeat before and after a terminal | both `IGNORED`/`HEARTBEAT_IGNORED`; no release or settlement from heartbeat; the terminal is still absorbed once |
 | `s2-10-terminal-contradiction-quarantine` (negative) | Second terminal with different seconds; `CALL_TERMINATED` after `UNKNOWN` | `QUARANTINED`/`CONTRADICTORY_FACT` and `QUARANTINED`/`USE_RECONCILIATION_EVENT`; no reopen, second settlement or release |
-| `s2-11-resolve-never-committed-not-started` (negative) | Resolve never commits; local B-leg/line attempt absent; later `OUTBOUND_NOT_STARTED` | `404 CALL_UNKNOWN`; no call/task/reservation placeholder; no release or usage; outbox `PERMANENT_FAILURE` |
+| `s2-11-resolve-never-committed-not-started` (negative) | Resolve never commits; local B-leg/line attempt absent; later `OUTBOUND_NOT_STARTED`, then a response-lost retry | `404 CALL_UNKNOWN`; no call/task/reservation placeholder; no release or usage; outbox `PERMANENT_FAILURE`; the permanent entry absorbs the later response loss and no second terminal counter increments |
 
 The S3 fixtures (eight, cumulative 25, no new marked negative) are:
 
 | Fixture | Scenario | Assertions |
 | --- | --- | --- |
-| `s3-01-recording-validated` | Declare, server-local upload observation, complete | `VALIDATED`; one recording and one media object; server duration/hash; no object key, bucket or version exposed; client-supplied storage facts rejected |
+| `s3-01-recording-validated` | Declare, server-local upload observation, complete, then complete replay with a changed `clientReference` | `VALIDATED`; one recording and one media object; server duration/hash; no object key, bucket or version exposed; client-supplied storage facts rejected; the changed correlation hint returns the first result with unchanged revision, media and evidence counters |
 | `s3-02-declaration-replay` | Declaration response loss, then same identity retry | same first `201` snapshot; no new recording; no credential reissue; `uploadExpiresAt` not renewed; outbox `SENT` to `ACKED` |
 | `s3-03-upload-observation-required` | Complete before observation, then observe and retry the same identity | first `409 UPLOAD_OBSERVATION_REQUIRED` with no mutation; retry converges to `VALIDATED` |
 | `s3-04-upload-expired-quarantine` | First observation at `uploadExpiresAt`, then complete after expiry and repeat | `409 UPLOAD_EXPIRED`; still-`DECLARED` recording `QUARANTINED` once; no successful media fact; completion repeats the first expiry result and the outbox does not re-quarantine |

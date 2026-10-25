@@ -1362,6 +1362,9 @@ class ProtocolMachine {
   }
 
   finishOutbox(entry, httpStatus) {
+    if (entry.status === 'ACKED' || entry.status === 'PERMANENT_FAILURE') {
+      return;
+    }
     if (this.activeDelivery?.responseLost === true) {
       entry.status = 'SENT';
       return;
@@ -1449,7 +1452,7 @@ class ProtocolMachine {
         sequenceConflict = true;
       }
     }
-    const outcome = this.processEvent(call, body, sequenceConflict);
+    const outcome = this.processEvent(call, body, sequenceConflict, server);
     if (outcome.argument === true) {
       this.finishOutbox(outboxEntry, 400);
       return { status: 400, problem: { code: 'IVR_ARGUMENT_INVALID' } };
@@ -1480,7 +1483,7 @@ class ProtocolMachine {
     return { status: 200, response: receipt };
   }
 
-  processEvent(call, body, sequenceConflict) {
+  processEvent(call, body, sequenceConflict, server = {}) {
     if (sequenceConflict) {
       return { status: 'QUARANTINED', reasonCode: 'SEQUENCE_CONFLICT' };
     }
@@ -1504,7 +1507,7 @@ class ProtocolMachine {
       case 'CALL_TERMINAL_RECONCILED':
         return this.applyTerminalEvent(call, body, true);
       case 'OUTBOUND_NOT_STARTED':
-        return this.applyOutboundNotStarted(call, body);
+        return this.applyOutboundNotStarted(call, body, server);
       case 'CALL_HEARTBEAT':
         return { status: 'IGNORED', reasonCode: 'HEARTBEAT_IGNORED' };
       default:
@@ -1949,7 +1952,11 @@ class ProtocolMachine {
     return { status: 'APPLIED' };
   }
 
-  applyOutboundNotStarted(call, body) {
+  applyOutboundNotStarted(call, body, server = {}) {
+    const receivedAt = server.receivedAt;
+    if (typeof receivedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(receivedAt)) {
+      throw new Error('OUTBOUND_NOT_STARTED requires a server-observed receivedAt UTC date-time');
+    }
     if (call.terminalAccepted) {
       return { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
     }
@@ -1970,7 +1977,7 @@ class ProtocolMachine {
     if (calleeLeg || call.bridgedAt !== null || call.recordingStartedAt !== null || (call.bleg && call.bleg.lineAttemptCount > 0) || blegActive) {
       return { status: 'QUARANTINED', reasonCode: 'OUTBOUND_ALREADY_STARTED' };
     }
-    if (body.occurredAt < call.reservation.authorizationExpiresAt) {
+    if (receivedAt < call.reservation.authorizationExpiresAt) {
       return { status: 'QUARANTINED', reasonCode: 'AUTHORIZATION_NOT_EXPIRED' };
     }
     call.status = 'FAILED';

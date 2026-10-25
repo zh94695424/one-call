@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "s2-11-resolve-never-committed-not-started",
   "slice": "s2",
-  "description": "Resolve never commits and no local B-leg exists; a later OUTBOUND_NOT_STARTED is 404 CALL_UNKNOWN, creates no placeholder, releases nothing, produces no usage and leaves the outbox in PERMANENT_FAILURE.",
+  "description": "Resolve never commits and no local B-leg exists; a later OUTBOUND_NOT_STARTED is 404 CALL_UNKNOWN, creates no placeholder, releases nothing, produces no usage and leaves the outbox in PERMANENT_FAILURE; a response-lost retry keeps the permanent entry and does not add a second terminal counter.",
   "steps": [
     {
       "id": "resolve-never-commits",
@@ -189,6 +189,59 @@
           "outboxEntries": 1,
           "outboxAcked": 0,
           "outboxPermanent": 1
+        }
+      }
+    },
+    {
+      "id": "not-started-permanent-response-lost",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-11-notstarted",
+        "eventType": "OUTBOUND_NOT_STARTED",
+        "occurredAt": "2026-10-25T10:06:00Z",
+        "payload": {
+          "reasonCode": "AUTHORIZATION_EXPIRED",
+          "reservationId": "33333333-3333-5333-8333-333333333313"
+        }
+      },
+      "delivery": {
+        "responseLost": true
+      },
+      "server": {
+        "callId": "call-s2-11"
+      },
+      "expected": {
+        "status": 404,
+        "code": "CALL_UNKNOWN",
+        "persisted": {
+          "call": null,
+          "bleg": null,
+          "outbox": [
+            {
+              "eventId": "evt-s2-11-notstarted",
+              "eventType": "OUTBOUND_NOT_STARTED",
+              "status": "PERMANENT_FAILURE"
+            }
+          ]
+        },
+        "counts": {
+          "callsCreated": 0,
+          "sessionsCreated": 0,
+          "tasksClaimed": 0,
+          "reservationsCreated": 0,
+          "decisionsFrozen": 0,
+          "blegOperationsCreated": 0,
+          "lineAttempts": 0,
+          "terminalFactsAccepted": 0,
+          "settlements": 0,
+          "releases": 0,
+          "usageFacts": 0,
+          "eventsReceived": 0,
+          "outboxEntries": 1,
+          "outboxAcked": 0,
+          "outboxPermanent": 1,
+          "outboxRetried": 1
         }
       }
     }

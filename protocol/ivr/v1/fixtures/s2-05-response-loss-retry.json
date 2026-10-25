@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "s2-05-response-loss-retry",
   "slice": "s2",
-  "description": "The committed resolve and the terminal response are lost; identical retries return the first frozen decision and first terminal receipt while the outbox moves from SENT to ACKED without a second B-leg, reservation or settlement.",
+  "description": "The committed resolve and the terminal response are lost; identical retries return the first frozen decision and first terminal receipt while the outbox moves from SENT to ACKED without a second B-leg, reservation or settlement. A further response-loss retry leaves the ACKED entry absorbing with unchanged terminal counters.",
   "steps": [
     {
       "id": "resolve",
@@ -309,6 +309,66 @@
           "decisionsFrozen": 1,
           "blegOperationsCreated": 1,
           "lineAttempts": 1
+        }
+      }
+    },
+    {
+      "id": "terminal-acked-response-lost",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-05-terminal",
+        "eventType": "CALL_TERMINATED",
+        "occurredAt": "2026-10-25T10:01:00Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegAnsweredAt": "2026-10-25T10:00:00Z",
+          "callerLegOutcome": "ENDED",
+          "endReason": "CALLEE_BUSY",
+          "authoritativeRecordingSeconds": 0
+        }
+      },
+      "delivery": {
+        "responseLost": true
+      },
+      "server": {
+        "callId": "call-s2-05"
+      },
+      "expected": {
+        "status": 200,
+        "responseEqualsStep": "terminal-response-lost",
+        "persisted": {
+          "call": {
+            "status": "FAILED",
+            "task": {
+              "status": "FAILED"
+            },
+            "reservation": {
+              "status": "RELEASED"
+            }
+          },
+          "bleg": {
+            "phase": "FAILED",
+            "lineAttemptCount": 1
+          },
+          "outbox": [
+            {
+              "eventId": "evt-s2-05-terminal",
+              "eventType": "CALL_TERMINATED",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "eventsReplayed": 2,
+          "terminalFactsAccepted": 1,
+          "settlements": 0,
+          "releases": 1,
+          "usageFacts": 0,
+          "outboxEntries": 1,
+          "outboxAcked": 1,
+          "outboxPermanent": 0,
+          "outboxRetried": 2
         }
       }
     }

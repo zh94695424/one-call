@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "s2-04-terminal-unknown-reconciliation",
   "slice": "s2",
-  "description": "An unprovable line outcome occupies the call and reservation as UNKNOWN, refuses CALL_TERMINATED and redial, and converges only through an authoritative reconciliation that settles once.",
+  "description": "An unprovable line outcome occupies the call and reservation as UNKNOWN, refuses CALL_TERMINATED and redial, and converges only through an authoritative reconciliation that settles once. Missing or foreign resolvesUnknownEventId is rejected with no event or state mutation, and reconciliation on a non-UNKNOWN call is quarantined NOT_UNKNOWN with frozen terminal and settlement counts.",
   "steps": [
     {
       "id": "resolve",
@@ -453,6 +453,115 @@
       }
     },
     {
+      "id": "reconciled-missing-resolves",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-04-recon-missing",
+        "eventType": "CALL_TERMINAL_RECONCILED",
+        "occurredAt": "2026-10-25T10:02:20Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegOutcome": "ENDED",
+          "calleeLegId": "leg-b",
+          "calleeLegOutcome": "ENDED",
+          "endReason": "RECORDING_LIMIT_REACHED",
+          "authoritativeRecordingSeconds": 300
+        }
+      },
+      "server": {
+        "callId": "call-s2-04"
+      },
+      "expected": {
+        "status": 400,
+        "code": "IVR_ARGUMENT_INVALID",
+        "persisted": {
+          "call": {
+            "status": "UNKNOWN",
+            "task": {
+              "status": "CLAIMED"
+            },
+            "reservation": {
+              "status": "HELD"
+            },
+            "endedAt": null,
+            "terminalEventId": null,
+            "unknownEventId": "evt-s2-04-unknown"
+          },
+          "bleg": {
+            "phase": "DISPATCH_UNKNOWN",
+            "lineAttemptCount": 1
+          }
+        },
+        "counts": {
+          "eventsReceived": 8,
+          "eventsQuarantined": 1,
+          "terminalFactsAccepted": 0,
+          "settlements": 0,
+          "releases": 0,
+          "usageFacts": 0,
+          "reconciliations": 0,
+          "outboxEntries": 9,
+          "outboxPermanent": 1
+        }
+      }
+    },
+    {
+      "id": "reconciled-foreign-resolves",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-04-recon-foreign",
+        "eventType": "CALL_TERMINAL_RECONCILED",
+        "occurredAt": "2026-10-25T10:02:20Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegOutcome": "ENDED",
+          "calleeLegId": "leg-b",
+          "calleeLegOutcome": "ENDED",
+          "endReason": "RECORDING_LIMIT_REACHED",
+          "authoritativeRecordingSeconds": 300,
+          "resolvesUnknownEventId": "evt-s2-04-foreign"
+        }
+      },
+      "server": {
+        "callId": "call-s2-04"
+      },
+      "expected": {
+        "status": 400,
+        "code": "IVR_ARGUMENT_INVALID",
+        "persisted": {
+          "call": {
+            "status": "UNKNOWN",
+            "task": {
+              "status": "CLAIMED"
+            },
+            "reservation": {
+              "status": "HELD"
+            },
+            "endedAt": null,
+            "terminalEventId": null,
+            "unknownEventId": "evt-s2-04-unknown"
+          },
+          "bleg": {
+            "phase": "DISPATCH_UNKNOWN",
+            "lineAttemptCount": 1
+          }
+        },
+        "counts": {
+          "eventsReceived": 8,
+          "eventsQuarantined": 1,
+          "terminalFactsAccepted": 0,
+          "settlements": 0,
+          "releases": 0,
+          "usageFacts": 0,
+          "reconciliations": 0,
+          "outboxEntries": 10,
+          "outboxPermanent": 2
+        }
+      }
+    },
+    {
       "id": "reconciled",
       "action": "request",
       "operation": "ingestIvrCallEvent",
@@ -506,6 +615,68 @@
           "settlements": 1,
           "releases": 0,
           "usageFacts": 1
+        }
+      }
+    },
+    {
+      "id": "reconciled-not-unknown",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-04-recon-not-unknown",
+        "eventType": "CALL_TERMINAL_RECONCILED",
+        "occurredAt": "2026-10-25T10:02:21Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegOutcome": "ENDED",
+          "calleeLegId": "leg-b",
+          "calleeLegOutcome": "ENDED",
+          "endReason": "RECORDING_LIMIT_REACHED",
+          "authoritativeRecordingSeconds": 300,
+          "resolvesUnknownEventId": "evt-s2-04-unknown"
+        }
+      },
+      "server": {
+        "callId": "call-s2-04"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "eventId": "evt-s2-04-recon-not-unknown",
+          "processingStatus": "QUARANTINED",
+          "reasonCode": "NOT_UNKNOWN"
+        },
+        "persisted": {
+          "call": {
+            "status": "ENDED",
+            "task": {
+              "status": "COMPLETED"
+            },
+            "reservation": {
+              "status": "SETTLED"
+            },
+            "endedAt": "2026-10-25T10:02:20Z",
+            "authoritativeSeconds": 300,
+            "terminalEventId": "evt-s2-04-reconciled",
+            "reconciliationEventId": "evt-s2-04-reconciled",
+            "unknownEventId": "evt-s2-04-unknown"
+          },
+          "bleg": {
+            "phase": "ENDED",
+            "lineAttemptCount": 1
+          }
+        },
+        "counts": {
+          "eventsReceived": 10,
+          "eventsQuarantined": 2,
+          "reconciliations": 1,
+          "terminalFactsAccepted": 1,
+          "settlements": 1,
+          "releases": 0,
+          "usageFacts": 1,
+          "outboxEntries": 12,
+          "outboxAcked": 10,
+          "outboxPermanent": 2
         }
       }
     }
