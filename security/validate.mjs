@@ -50,20 +50,38 @@ const STAGE_CONFIG = {
   s1: {
     required: S1_MODEL_SECTIONS,
     s2Sections: 'optional',
-    forbidden: S3_MODEL_SECTIONS,
-    invariantCounts: [6, 11],
-    futureInvariantPattern: /INV-A3-(1[2-9]|2[01])\b/,
+    s3Sections: 'optional',
+    forbidden: [],
+    invariantCount: 6,
+    invariantCounts: [6, 11, 21],
+    futureInvariantPattern: /$^/,
     fixtureSlices: ['s1'],
-    allowS2Fixtures: true
+    laterFixtureSlices: ['s2', 's3'],
+    evaluateSlices: ['s1']
   },
   s2: {
     required: [...S1_MODEL_SECTIONS, ...S2_MODEL_SECTIONS],
     s2Sections: 'required',
-    forbidden: S3_MODEL_SECTIONS,
-    invariantCounts: [11],
-    futureInvariantPattern: /INV-A3-(1[2-9]|2[01])\b/,
+    s3Sections: 'optional',
+    forbidden: [],
+    invariantCount: 11,
+    invariantCounts: [11, 21],
+    futureInvariantPattern: /$^/,
     fixtureSlices: ['s1', 's2'],
-    allowS2Fixtures: true
+    laterFixtureSlices: ['s3'],
+    evaluateSlices: ['s1', 's2']
+  },
+  s3: {
+    required: [...S1_MODEL_SECTIONS, ...S2_MODEL_SECTIONS, ...S3_MODEL_SECTIONS],
+    s2Sections: 'required',
+    s3Sections: 'required',
+    forbidden: [],
+    invariantCount: 21,
+    invariantCounts: [21],
+    futureInvariantPattern: /$^/,
+    fixtureSlices: ['s1', 's2', 's3'],
+    laterFixtureSlices: [],
+    evaluateSlices: ['s1', 's2', 's3']
   }
 };
 
@@ -167,7 +185,21 @@ const EXPECTED_INVARIANTS_S2 = [
   ['INV-A3-11', 'Provider callbacks require mTLS, vendor signature, timestamp and nonce; the same event and fingerprint is idempotent while a changed payload is a conflict.']
 ];
 
+const EXPECTED_INVARIANTS_S3 = [
+  ['INV-A3-12', 'Media credentials are short-lived, single-object or single-purpose and least-privilege; upload cannot read, list or delete, playback cannot write, and both are redacted.'],
+  ['INV-A3-13', 'COS remains private with no anonymous access; no object key, bucket, version or permanent URL appears in a public contract or log.'],
+  ['INV-A3-14', 'Audit is append-only through audit.append_fact; high-risk operations require role, state, reason and before-after in one transaction; audit reads are employee-only.'],
+  ['INV-A3-15', 'Redaction runs deterministically before emit; deny-listed fields, credential URLs and header secrets never enter logs, traces, errors, analytics, support or public contracts.'],
+  ['INV-A3-16', 'Support views show only masked, redacted, internal ID and status values and never grant recording playback or expose an original sensitive value.'],
+  ['INV-A3-17', 'KMS, Secret Manager, Redis nonce, COS, database and audit failures fail closed with no plaintext fallback, credential issuance, evidence solidification, redial or duplicate A2 business side effect.'],
+  ['INV-A3-18', 'Region, SKU, price, capacity, WORM and object-lock are never invented; every production value is a typed deferred input with an owner and destination.'],
+  ['INV-A3-19', 'Only the fixed ADMIN and OPS employee roles exist; no new employee role, service decomposition or infrastructure topology is introduced.'],
+  ['INV-A3-20', 'Every key, credential and service-call class has an audit or access owner and a testable scenario; the registry has no orphan row.'],
+  ['INV-A3-21', 'The accepted A0, A1 and A2 contracts are unchanged; the validator proves their counts, shapes and digests, and any necessary change is a blocker.']
+];
+
 const EXPECTED_INVARIANTS_CUMULATIVE = [...EXPECTED_INVARIANTS, ...EXPECTED_INVARIANTS_S2];
+const EXPECTED_INVARIANTS_ALL = [...EXPECTED_INVARIANTS_CUMULATIVE, ...EXPECTED_INVARIANTS_S3];
 
 const EXPECTED_TRUST_SURFACES = [
   { surfaceId: 'TS1', domain: 'customer', prefix: '/api/v1/customer/', operations: 18, boundaries: ['TB1', 'TB2'], authentication: 'customerSession audience onecall:customer-session:v1' },
@@ -293,6 +325,164 @@ const EXPECTED_AUDIENCE_REGISTRY = [
   { audience: 'onecall:service:media-ai:v1', ownerDomain: 'internal', credentialClasses: [], verifier: 'Tencent CAM service role', serviceIdentity: 'media-ai-worker' }
 ];
 
+const EXPECTED_MEDIA_POLICIES = [
+  {
+    policyId: 'U1',
+    mediaKind: 'UPLOAD',
+    credentialClass: 'C09 uploadCredential',
+    primaryShape: 'short-lived single-object Tencent COS presigned PUT credential',
+    issuanceGate: 'CV-4 verifies the required method, object and expiry plus supported size restrictions before issuance; otherwise fail closed and stop for architecture resolution',
+    audienceClassification: 'onecall:evidence-upload:v1 is an issuance-side policy classification, not a COS embedded audience claim',
+    scope: 'single recording object; PUT only; declared size, MIME and duration limits; valid until uploadExpiresAt',
+    presentation: 'response-only opaque 1-2048 credential; the IVR presents it directly to the private COS object over a controlled channel; it never crosses a public contract',
+    forbiddenOperations: 'READ/LIST/DELETE',
+    redaction: 'the credential is redacted in every egress and is never logged, split into object fields or reissued on replay',
+    binding: ['callId', 'recordingId', 'objectIdentityDigest', 'purpose=UPLOAD'],
+    serverObservation: 'completion observes object identity, SHA-256, size, MIME and duration on the server and binds them to the declaration',
+    completionBoundary: 'A2 recording completion validates server-observed facts and never solidifies evidence',
+    permanence: 'no permanent URL, object key, bucket or version is returned; no renewal and no re-sign',
+    cvGate: 'CV-4',
+    fallbackPolicy: 'no custom HMAC token and no signing-gateway fallback; when CV-4 cannot verify the capability, issuance fails closed and implementation stops',
+    ttlInput: 'uploadExpiresAt'
+  },
+  {
+    policyId: 'P1',
+    mediaKind: 'PLAYBACK',
+    credentialClass: 'C10 playbackCredential',
+    primaryShape: 'opaque short-lived media-gateway bearer credential',
+    issuanceGate: 'share admission verifies share, admission, revocation generation, object scope and purpose before issuance; expiry is bounded by the session and Q22',
+    audienceClassification: 'onecall:media-playback:v1 audience verified by the media-gateway',
+    scope: 'share, admission, generation, object and PLAYBACK/SEEK/RENEW only; no write, list or delete',
+    presentation: 'Authorization: Bearer <credential> to the authenticated media-gateway data plane; the bearer alone resolves the object and the client supplies no object key, bucket, version or public resource identifier',
+    forbiddenOperations: 'WRITE/LIST/DELETE',
+    redaction: 'the bearer and any credential URL are redacted in every egress',
+    binding: ['shareId', 'admissionId', 'revocationGeneration', 'objectIdentityDigest', 'purpose'],
+    serverObservation: 'media-gateway verifies signature, audience, expiry, generation and object scope before reading COS with its own CAM identity',
+    completionBoundary: 'not applicable; playback never changes evidence',
+    permanence: 'no COS URL, object key, bucket or version is exposed; issued credentials are not recalled and expire per Q22',
+    cvGate: 'none',
+    fallbackPolicy: 'no permanent URL fallback',
+    ttlInput: 'Q22'
+  }
+];
+
+const EXPECTED_COS_POLICY = {
+  bucketPrivacy: 'private bucket; anonymous read, write and list are forbidden; transport is TLS-only; public access is blocked',
+  objectClasses: ['RAW_RECORDING', 'DERIVED_PREVIEW', 'TRANSCRIPT', 'SUMMARY', 'EXPORT'],
+  objectClassRule: 'each object category has a separate prefix or class; derived objects never overwrite the raw object',
+  encryption: 'COS SSE-KMS under K10',
+  versioning: 'COS versioning enabled',
+  objectKeyRule: 'object keys are unguessable and never public; raw object keys never cross a public contract',
+  accessPaths: ['Tencent CAM service role', 'short-lived upload credential', 'short-lived playback credential through media-gateway'],
+  logging: 'log only object identity digest and hash prefix; never object key, bucket, version or URL',
+  deferred: ['region', 'storage class', 'retention', 'object lock/WORM', 'private endpoint or VPC wiring', 'HTTPS delivery path'],
+  claimsNotMade: ['WORM', 'object lock', 'region', 'SKU', 'price', 'capacity', 'private endpoint'],
+  evidenceBoundary: 'A2 completion validates server-observed facts but never solidifies evidence',
+  failClosed: 'anonymous or public access, key/bucket/version/URL exposure or unverified capability is denied and alerted'
+};
+
+const EXPECTED_AUDIT_EVENTS = [
+  ['SECURITY_KEY_ACTIVATE', 'SERVICE/SYSTEM', 'KEY', 'key version 激活', 'append_fact'],
+  ['SECURITY_KEY_ROTATE', 'SERVICE/SYSTEM', 'KEY', '新旧 version overlap', 'append_fact'],
+  ['SECURITY_KEY_RETIRE', 'SERVICE/SYSTEM', 'KEY', '旧 version retire', 'append_fact'],
+  ['SECURITY_KEY_DISABLE', 'SERVICE/SYSTEM', 'KEY', '紧急 disable', 'append_fact'],
+  ['SECURITY_KEY_RECOVER', 'SERVICE/SYSTEM', 'KEY', 're-enable/restore', 'append_fact'],
+  ['SECURITY_KEY_DESTROY', 'SYSTEM', 'KEY', 'pending/executed destroy', 'append_fact'],
+  ['SECURITY_KEY_PURPOSE_MISMATCH', 'SERVICE/SYSTEM', 'KEY', 'purpose/dataClass 不匹配', 'append_fact'],
+  ['SECURITY_KEY_ACCESS_DENIED', 'SERVICE/SYSTEM', 'KEY', '未授权 key/secret 访问', 'append_fact'],
+  ['SECURITY_AUTH_DENIED', 'SERVICE/SYSTEM', 'CREDENTIAL', '会话/凭据无效', 'append_fact'],
+  ['SECURITY_AUDIENCE_MISMATCH', 'SERVICE/SYSTEM', 'CREDENTIAL', '跨域 token/credential', 'append_fact'],
+  ['SECURITY_SERVICE_IDENTITY_DENIED', 'SERVICE/SYSTEM', 'SERVICE', 'mTLS/CAM 身份不允许', 'append_fact'],
+  ['SECURITY_SIGNATURE_INVALID', 'SERVICE/SYSTEM', 'REQUEST', 'IVR/provider 签名失败', 'append_fact'],
+  ['SECURITY_REPLAY_REJECTED', 'SERVICE/SYSTEM', 'REQUEST', 'nonce replay', 'append_fact'],
+  ['SECURITY_TIMESTAMP_REJECTED', 'SERVICE/SYSTEM', 'REQUEST', 'timestamp 超窗', 'append_fact'],
+  ['SECURITY_PROVIDER_CALLBACK_REJECTED', 'SERVICE/SYSTEM', 'PAYMENT_EVENT', 'provider 回调拒绝', 'append_fact'],
+  ['SECURITY_UPLOAD_CREDENTIAL_ISSUED', 'SERVICE', 'RECORDING', 'upload credential 签发', 'append_fact'],
+  ['SECURITY_UPLOAD_CREDENTIAL_DENIED', 'SERVICE', 'RECORDING', 'upload scope/expiry deny', 'append_fact'],
+  ['SECURITY_PLAYBACK_CREDENTIAL_ISSUED', 'SERVICE', 'SHARE_ADMISSION', 'playback credential 签发', 'append_fact'],
+  ['SECURITY_PLAYBACK_CREDENTIAL_DENIED', 'SERVICE', 'SHARE_ADMISSION', 'playback scope/expiry deny', 'append_fact'],
+  ['SECURITY_COS_POLICY_DENIED', 'SERVICE/SYSTEM', 'MEDIA_OBJECT', '私有策略/对象访问拒绝', 'append_fact'],
+  ['AUDIT_READ', 'EMPLOYEE', 'AUDIT', '审计读取 access event', 'access_event'],
+  ['AUDIT_READ_DENIED', 'SERVICE/EMPLOYEE', 'AUDIT', '审计读取拒绝', 'access_event'],
+  ['OPERATIONS_HIGH_RISK_DENIED', 'EMPLOYEE', 'OPERATIONS', '高风险 role/state/reason 拒绝', 'append_fact'],
+  ['SECURITY_SENSITIVE_READ', 'EMPLOYEE/SERVICE', 'DATA_CLASS', '员工/支持读取敏感字段', 'append_fact'],
+  ['SECURITY_REDACTION_BLOCKED', 'SERVICE/SYSTEM', 'EXPORT', '未知字段/脱敏失败被阻断', 'append_fact'],
+  ['SECURITY_REDACTION_VIOLATION', 'SERVICE/SYSTEM', 'EXPORT', '检测到明文/secret 出口', 'append_fact'],
+  ['SUBJECT_SUSPEND', 'EMPLOYEE', 'SUBJECT', 'OPS suspend', 'append_fact'],
+  ['SUBJECT_RESUME', 'EMPLOYEE', 'SUBJECT', 'OPS resume', 'append_fact'],
+  ['CATALOG_VERSION_PUBLISH', 'EMPLOYEE', 'CATALOG_VERSION', 'ADMIN publish', 'append_fact'],
+  ['CATALOG_VERSION_OFFSALE', 'EMPLOYEE', 'CATALOG_VERSION', 'ADMIN offsale', 'append_fact'],
+  ['TRIAL_POLICY_CREATE', 'EMPLOYEE', 'TRIAL_POLICY', 'ADMIN create draft', 'append_fact'],
+  ['TRIAL_POLICY_REPLACE', 'EMPLOYEE', 'TRIAL_POLICY', 'ADMIN replace draft', 'append_fact'],
+  ['TRIAL_POLICY_PUBLISH', 'EMPLOYEE', 'TRIAL_POLICY', 'ADMIN publish', 'append_fact'],
+  ['TRIAL_POLICY_DISABLE', 'EMPLOYEE', 'TRIAL_POLICY', 'ADMIN disable', 'append_fact'],
+  ['CATALOG_DRAFT_CREATE', 'EMPLOYEE', 'CATALOG_VERSION', 'ADMIN create draft', 'append_fact'],
+  ['CATALOG_DRAFT_REPLACE', 'EMPLOYEE', 'CATALOG_VERSION', 'ADMIN replace draft', 'append_fact'],
+  ['SHARE_REVOKE', 'ACCOUNT', 'SHARE_GRANT', 'customer revoke', 'append_fact'],
+  ['SHARE_CODE_ROTATE', 'ACCOUNT', 'SHARE_GRANT', 'customer code rotation', 'append_fact'],
+  ['PAYMENT_CALLBACK_ACCEPTED', 'SERVICE', 'PAYMENT_EVENT', 'accepted/duplicate provider event', 'append_fact']
+];
+
+const EXPECTED_HIGH_RISK_ACTIONS = [
+  ['suspendOperationsSubject', 'OPS', 'REQUEST reasonCode', 'ACTIVE', 'SUBJECT_SUSPEND', 'ACTIVATION_STATE_CONFLICT', 'status/revision/reason'],
+  ['resumeOperationsSubject', 'OPS', 'REQUEST reasonCode', 'SUSPENDED', 'SUBJECT_RESUME', 'ACTIVATION_STATE_CONFLICT', 'status/revision/reason'],
+  ['publishOperationsCatalogVersion', 'ADMIN', 'ACTION_DERIVED', 'DRAFT_NEVER_PUBLISHED', 'CATALOG_VERSION_PUBLISH', 'PUBLICATION_STALE_VIEW', 'status/revision/snapshot hash'],
+  ['offsaleOperationsCatalogVersion', 'ADMIN', 'ACTION_DERIVED', 'ACTIVE', 'CATALOG_VERSION_OFFSALE', 'PUBLICATION_STALE_VIEW', 'status/revision'],
+  ['createOperationsTrialPolicyDraft', 'ADMIN', 'ACTION_DERIVED', 'NATURAL_KEY_ABSENT', 'TRIAL_POLICY_CREATE', 'TRIAL_POLICY_DRAFT_CONFLICT', 'policy identity/revision'],
+  ['replaceOperationsTrialPolicyDraft', 'ADMIN', 'ACTION_DERIVED', 'DRAFT_NEVER_PUBLISHED', 'TRIAL_POLICY_REPLACE', 'TRIAL_POLICY_DRAFT_STALE_VIEW', 'revision/snapshot hash'],
+  ['publishOperationsTrialPolicy', 'ADMIN', 'ACTION_DERIVED', 'DRAFT_NEVER_PUBLISHED', 'TRIAL_POLICY_PUBLISH', 'TRIAL_POLICY_STALE_VIEW', 'enabled/publisher/revision'],
+  ['disableOperationsTrialPolicy', 'ADMIN', 'ACTION_DERIVED', 'ENABLED', 'TRIAL_POLICY_DISABLE', 'TRIAL_POLICY_STALE_VIEW', 'enabled/revision'],
+  ['createOperationsCatalogVersionDraft', 'ADMIN', 'ACTION_DERIVED', 'NATURAL_KEY_ABSENT', 'CATALOG_DRAFT_CREATE', 'CATALOG_DRAFT_CONFLICT', 'identity/revision'],
+  ['replaceOperationsCatalogVersionDraft', 'ADMIN', 'ACTION_DERIVED', 'DRAFT', 'CATALOG_DRAFT_REPLACE', 'CATALOG_DRAFT_STALE_VIEW', 'revision/snapshot hash']
+];
+
+const EXPECTED_AUDIT_COVERAGE = [
+  ['CUSTOMER_API', 'customer_iam/catalog_order/sharing/activation_consent', 'customerSession audience onecall:customer-session:v1', 'business mutations append_fact; AUDIT_READ and AUDIT_READ_DENIED are access events', 'masked value, internal ID or status only; no credential, capability token or ciphertext', 'existing 401/403/503 with no plaintext fallback'],
+  ['OPERATIONS_API', 'operations_iam/audit', 'employeeSession audience onecall:employee-session:v1 with fixed ADMIN/OPS', 'high-risk operations append_fact; audit reads use access events', 'no raw snapshot, PII, credential or object identifier', 'existing 401/403/409/500 with transaction rollback'],
+  ['IVR_API', 'ivr/evidence', 'ivrMtls plus ivrSignature plus timestamp plus nonce', 'security and media events follow the registry persistence route', 'no signature, nonce, credential, object key or plaintext party number', 'existing 401/403/503 with zero A2 business side effect'],
+  ['PUBLIC_SHARE_API', 'sharing/evidence/media-gateway', 'capability C07 or C08; C10 bearer only at media-gateway', 'credential events append_fact; denied audit reads are access events', 'no capability token, playback credential, object key or URL', 'existing 404/403/410/503 without admission recount'],
+  ['PROVIDER_CALLBACK_API', 'catalog_order', 'providerCallbackMtls plus providerCallbackSignature plus timestamp plus nonce', 'accepted event uses PAYMENT_CALLBACK_ACCEPTED; rejection uses SECURITY_PROVIDER_CALLBACK_REJECTED', 'no provider payload, signature, nonce or internal result', 'existing 401/409/503 without payment advance'],
+  ['INTERNAL_SERVICE_CALL', 'all owning domains', 'Tencent CAM service role plus audience', 'dispatch access is redacted; security failures append_fact', 'authorized fields only; no cross-module secret', 'existing 503/500 without partial write'],
+  ['KMS_OPERATION', 'Security/Infrastructure', 'Tencent CAM service role', 'SECURITY_KEY events append_fact', 'never log key_ref, plaintext, DEK or ciphertext', 'existing 503 with no plaintext fallback'],
+  ['SECRET_MANAGER_READ', 'Security/Infrastructure', 'Tencent CAM service role', 'SECURITY_KEY_ACCESS_DENIED or SECURITY_KEY_RECOVER appends a fact', 'secret value never emitted', 'existing 503 with no environment or image fallback'],
+  ['COS_OPERATION', 'evidence/media', 'Tencent CAM service role or a short-lived upload or playback credential', 'media and COS policy events append_fact; provider logs are supplementary', 'object identity digest and hash prefix only', 'existing 503 or STORAGE_UNKNOWN without fabricated media facts'],
+  ['DATABASE_ACCESS', 'each domain NOLOGIN role', 'NOLOGIN database role', 'audit.append_fact for facts; access events for reads', 'redacted snapshots only', 'transaction rollback without partial write']
+];
+
+const EXPECTED_REDACTION_POLICY = {
+  order: ['structured allow-list', 'recursive deny-list at any depth', 'credential, header and URL pattern controls', 'destination policy', 'emit'],
+  matchMode: 'case-insensitive key match at any depth',
+  denyList: ['phone', 'mobile', 'callerNumber', 'calleeNumber', 'providerSubject', 'identityNumber', 'idNumber', 'legalName', 'shareCode', 'otp', 'objectKey', 'objectVersionId', 'bucket', 'providerTransactionId', 'providerEventId', 'secret', 'token', 'password', 'hmac', 'ciphertext', 'keyRef', 'kmsKey', 'credential', 'capabilityToken', 'extractionCode', 'authorization', 'cookie', 'signature', 'nonce', 'accessNumberHmac'],
+  maskedVariantsAllowed: true,
+  tokenFormat: '[REDACTED:<CLASS>]',
+  tokenClasses: ['PHONE', 'PROVIDER_SUBJECT', 'IDENTITY_NUMBER', 'LEGAL_NAME', 'SHARE_CODE', 'OTP', 'OBJECT_KEY', 'OBJECT_VERSION', 'BUCKET', 'PROVIDER_TRANSACTION_ID', 'PROVIDER_EVENT_ID', 'SECRET', 'TOKEN', 'PASSWORD', 'HMAC', 'CIPHERTEXT', 'KEY_REF', 'KMS_KEY', 'CREDENTIAL', 'CAPABILITY_TOKEN', 'EXTRACTION_CODE', 'AUTHORIZATION', 'COOKIE', 'SIGNATURE', 'NONCE', 'ACCESS_NUMBER_HMAC', 'PAYLOAD', 'URL'],
+  determinism: 'the same input at the same destination always yields the same token; random tokens are forbidden',
+  forbiddenEgress: ['logs', 'traces', 'errors', 'analytics', 'support views', 'public contracts'],
+  forbiddenFields: ['request or response body for authentication, callback or media credential endpoints', 'Authorization, Cookie, signature and nonce headers', 'full URL or query', 'capabilityToken path segment', 'upload or playback credential', 'provider payload', 'KMS key_ref', 'ciphertext', 'OTP or share code'],
+  pathControl: '/api/v1/public/shares/{capabilityToken}/... is emitted as /api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]/...',
+  errorPolicy: 'return only a stable Problem code, a user-safe message and traceId; never provider, stack, SQL or secret',
+  supportPolicy: 'masked, redacted, internal ID, status and reason only; no playback right and no original sensitive value',
+  failurePolicy: 'run before emit; an unknown field or failed redaction blocks or drops the field, raises SECURITY_REDACTION_BLOCKED and alerts; never emit first and scrub; the response path returns 500 INTERNAL',
+  destinations: ['log', 'trace', 'error', 'analytics', 'support', 'public-contract']
+};
+
+const EXPECTED_FAIL_CLOSED_MATRIX = [
+  ['KMS_DECRYPT_UNAVAILABLE', 'KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref', ['customer', 'operations', 'ivr'], '503 SERVICE_UNAVAILABLE', 503, 'SERVICE_UNAVAILABLE', ['SERVICE_UNAVAILABLE'], ['no plaintext returned', 'no business write']],
+  ['KMS_DECRYPT_PUBLIC_SHARE', 'KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref', ['public-share'], '503 DEPENDENCY_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE', 503, 'DEPENDENCY_UNAVAILABLE', ['DEPENDENCY_UNAVAILABLE', 'SHARE_SESSION_POLICY_UNAVAILABLE'], ['no media credential issued', 'no admission recount']],
+  ['KMS_DECRYPT_PROVIDER', 'KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref', ['provider'], '503 CALLBACK_RETRY_LATER', 503, 'CALLBACK_RETRY_LATER', ['CALLBACK_RETRY_LATER'], ['no payment or entitlement advance']],
+  ['SECRET_MANAGER_SIGNING_UNAVAILABLE', 'Secret Manager or IVR signing key unavailable', ['ivr'], '503 SERVICE_UNAVAILABLE', 503, 'SERVICE_UNAVAILABLE', ['SERVICE_UNAVAILABLE'], ['no verification success', 'no A2 processing']],
+  ['REDIS_NONCE_UNAVAILABLE', 'Redis nonce store unavailable', ['ivr'], '503 SERVICE_UNAVAILABLE', 503, 'SERVICE_UNAVAILABLE', ['SERVICE_UNAVAILABLE'], ['no nonce consumption', 'no A2 processing']],
+  ['REDIS_SESSION_UNAVAILABLE', 'Redis session store unavailable', ['customer', 'employee', 'public-share'], '503 SERVICE_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE', 503, 'SERVICE_UNAVAILABLE', ['SERVICE_UNAVAILABLE', 'SHARE_SESSION_POLICY_UNAVAILABLE'], ['no authentication bypass', 'no session creation']],
+  ['COS_UPLOAD_SIGNING_UNAVAILABLE', 'COS or upload signing unavailable', ['ivr'], '503 SERVICE_UNAVAILABLE', 503, 'SERVICE_UNAVAILABLE', ['SERVICE_UNAVAILABLE'], ['no upload credential issued']],
+  ['COS_STORAGE_UNKNOWN', 'COS or storage outcome unknown', ['ivr'], '503 STORAGE_UNKNOWN', 503, 'STORAGE_UNKNOWN', ['STORAGE_UNKNOWN'], ['no media fact', 'no terminal state change']],
+  ['COS_PLAYBACK_SIGNING_UNAVAILABLE', 'COS or playback signing unavailable', ['public-share'], '503 DEPENDENCY_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE', 503, 'DEPENDENCY_UNAVAILABLE', ['DEPENDENCY_UNAVAILABLE', 'SHARE_SESSION_POLICY_UNAVAILABLE'], ['no playback credential issued']],
+  ['AUDIT_APPEND_FAILED', 'audit append failure', ['operations', 'ivr media', 'payment'], '500 INTERNAL or the existing 503 when no 4xx semantics apply', 500, 'INTERNAL', ['INTERNAL', 'SERVICE_UNAVAILABLE'], ['domain transaction rollback', 'no partial write']],
+  ['HMAC_KEY_UNAVAILABLE', 'HMAC key unavailable', ['any lookup'], 'existing 503 for the surface', 503, 'SERVICE_UNAVAILABLE', ['SERVICE_UNAVAILABLE'], ['no plaintext scan', 'no fake empty result']],
+  ['REDACTION_PIPELINE_FAILED', 'redaction pipeline failure', ['any egress'], '500 INTERNAL or a dropped log field', 500, 'INTERNAL', ['INTERNAL'], ['no raw value emitted', 'alert raised']],
+  ['MFA_OR_IDP_UNAVAILABLE', 'MFA or identity provider unavailable (Q1)', ['employee login', 'customer login'], 'existing 401 or 503 for the surface', 401, 'UNAUTHENTICATED', ['UNAUTHENTICATED', 'SERVICE_UNAVAILABLE'], ['no session creation']],
+  ['PROVIDER_PROFILE_OR_NONCE_UNAVAILABLE', 'provider profile or nonce store unavailable', ['provider'], '503 CALLBACK_RETRY_LATER', 503, 'CALLBACK_RETRY_LATER', ['CALLBACK_RETRY_LATER'], ['no payment advance']]
+];
+
 const EXPECTED_ENVELOPE = {
   version: 'v1',
   textShape: 'v1.<key_ref>.<base64url(nonce || authenticated_ciphertext_and_tag)>',
@@ -390,7 +580,19 @@ const EXPECTED_FIXTURES_S2 = [
   ['sec-s2-09-ivr-outbox-auth-blocked', true]
 ];
 
+const EXPECTED_FIXTURES_S3 = [
+  ['sec-s3-01-upload-credential-scope', false],
+  ['sec-s3-02-playback-credential-scope', true],
+  ['sec-s3-03-cos-private-policy', false],
+  ['sec-s3-04-audit-access-denied', true],
+  ['sec-s3-05-high-risk-controls', false],
+  ['sec-s3-06-redaction-deterministic', false],
+  ['sec-s3-07-credential-url-leak', true],
+  ['sec-s3-08-end-to-end-security', false]
+];
+
 const EXPECTED_FIXTURES = [...EXPECTED_FIXTURES_S1, ...EXPECTED_FIXTURES_S2];
+const EXPECTED_FIXTURES_ALL = [...EXPECTED_FIXTURES, ...EXPECTED_FIXTURES_S3];
 
 const MARKER_CONFIG = {
   key: {
@@ -416,6 +618,26 @@ const MARKER_CONFIG = {
   credential: {
     name: 'security-credential-map',
     header: ['credentialClass', 'domain', 'audience', 'storage', 'ttlInput', 'scope', 'rotationRevocation', 'redaction']
+  },
+  media: {
+    name: 'security-media-map',
+    header: ['policyId', 'mediaKind', 'credentialClass', 'primaryShape', 'issuanceGate', 'scope', 'presentation', 'forbiddenOperations', 'redaction']
+  },
+  audit: {
+    name: 'security-audit-map',
+    header: ['actionCode', 'actor', 'objectType', 'trigger', 'persistence']
+  },
+  highRisk: {
+    name: 'security-high-risk-map',
+    header: ['operationId', 'role', 'reasonSource', 'preconditionState', 'auditCode', 'conflictCode', 'beforeAfter']
+  },
+  coverage: {
+    name: 'security-coverage-map',
+    header: ['callClass', 'owner', 'authentication', 'auditAccessClass', 'redaction', 'failClosed']
+  },
+  failClosed: {
+    name: 'security-failclosed-map',
+    header: ['failureId', 'failure', 'affectedSurfaces', 'existingError', 'sideEffects']
   }
 };
 
@@ -462,7 +684,7 @@ function parseArgs(argv) {
     }
   }
   if (!STAGE_CONFIG[result.stage]) {
-    throw new Error(`stage ${result.stage} is not implemented by the S2 validator`);
+    throw new Error(`stage ${result.stage} is not implemented by the security validator`);
   }
   return result;
 }
@@ -661,6 +883,181 @@ function denied(reason, securityEvent, extra = {}) {
   };
 }
 
+const AUDIT_READ_ROLES = ['ADMIN', 'OPS'];
+const REDACTION_CONTAINER_KEYS = new Set(['context', 'request', 'headers', 'actor', 'object', 'metadata', 'fields', 'share', 'media', 'attributes', 'event']);
+const REDACTION_ALLOW = {
+  log: ['id', 'internalId', 'orderId', 'subjectId', 'status', 'reasonCode', 'traceId', 'count', 'path', 'method', 'category', 'durationMs'],
+  trace: ['id', 'internalId', 'orderId', 'subjectId', 'status', 'reasonCode', 'traceId', 'count', 'path', 'method', 'category', 'durationMs'],
+  analytics: ['id', 'internalId', 'orderId', 'subjectId', 'status', 'reasonCode', 'traceId', 'count', 'category'],
+  error: ['status', 'reasonCode', 'traceId', 'problemCode'],
+  support: ['id', 'internalId', 'orderId', 'subjectId', 'status', 'reasonCode'],
+  'public-contract': ['id', 'internalId', 'orderId', 'subjectId', 'status', 'reasonCode']
+};
+const REDACTION_CLASS_BY_KEY = {
+  phone: 'PHONE',
+  mobile: 'PHONE',
+  callernumber: 'PHONE',
+  calleenumber: 'PHONE',
+  providersubject: 'PROVIDER_SUBJECT',
+  identitynumber: 'IDENTITY_NUMBER',
+  idnumber: 'IDENTITY_NUMBER',
+  legalname: 'LEGAL_NAME',
+  sharecode: 'SHARE_CODE',
+  otp: 'OTP',
+  objectkey: 'OBJECT_KEY',
+  objectversionid: 'OBJECT_VERSION',
+  bucket: 'BUCKET',
+  providertransactionid: 'PROVIDER_TRANSACTION_ID',
+  providereventid: 'PROVIDER_EVENT_ID',
+  secret: 'SECRET',
+  token: 'TOKEN',
+  password: 'PASSWORD',
+  hmac: 'HMAC',
+  ciphertext: 'CIPHERTEXT',
+  keyref: 'KEY_REF',
+  kmskey: 'KMS_KEY',
+  credential: 'CREDENTIAL',
+  uploadcredential: 'CREDENTIAL',
+  playbackcredential: 'CREDENTIAL',
+  capabilitytoken: 'CAPABILITY_TOKEN',
+  extractioncode: 'EXTRACTION_CODE',
+  authorization: 'AUTHORIZATION',
+  cookie: 'COOKIE',
+  signature: 'SIGNATURE',
+  nonce: 'NONCE',
+  accessnumberhmac: 'ACCESS_NUMBER_HMAC',
+  payload: 'PAYLOAD'
+};
+
+// A key ending in "Masked" is only a display-safe variant when its base is an
+// explicitly recognized sensitive class that is safe to surface masked. Credential,
+// auth, secret, token, signature, nonce, object-key, bucket, ciphertext, HMAC,
+// key-ref and KMS classes are never display-safe masked variants; unknown bases
+// follow the unknown-field fail-closed path.
+const MASKED_DISPLAY_SAFE_CLASSES = new Set(['PHONE', 'IDENTITY_NUMBER', 'LEGAL_NAME']);
+
+function maskedDisplayClass(key) {
+  const name = String(key);
+  if (!/masked$/i.test(name)) {
+    return null;
+  }
+  const base = name.slice(0, -'Masked'.length).toLowerCase();
+  const className = REDACTION_CLASS_BY_KEY[base] || null;
+  return {
+    className,
+    safe: Boolean(className) && MASKED_DISPLAY_SAFE_CLASSES.has(className)
+  };
+}
+
+function redactionClassFor(key) {
+  return REDACTION_CLASS_BY_KEY[String(key).toLowerCase()] || null;
+}
+
+function redactionToken(className) {
+  return `[REDACTED:${className}]`;
+}
+
+function redactStringValue(value) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    return { token: 'URL', value: redactionToken('URL') };
+  }
+  if (/bearer\s+[A-Za-z0-9._~+/=-]+/i.test(value)) {
+    return { token: 'CREDENTIAL', value: redactionToken('CREDENTIAL') };
+  }
+  const named = value.match(/(credential|capabilityToken|extractionCode|authorization|cookie|signature|nonce|secret|token|hmac|password|accessNumberHmac)\s*=/i);
+  if (named) {
+    const className = redactionClassFor(named[1]) || 'SECRET';
+    return { token: className, value: redactionToken(className) };
+  }
+  if (/^v1\.[A-Za-z0-9._:-]+\.[A-Za-z0-9_-]+$/.test(value)) {
+    return { token: 'CREDENTIAL', value: redactionToken('CREDENTIAL') };
+  }
+  if (value.includes('/api/v1/public/shares/')) {
+    return {
+      token: 'CAPABILITY_TOKEN',
+      value: value.replace(/\/api\/v1\/public\/shares\/[^/]+/g, '/api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]')
+    };
+  }
+  return { value };
+}
+
+function redactNode(value, destination) {
+  if (Array.isArray(value)) {
+    const output = [];
+    let tokens = [];
+    for (const item of value) {
+      const result = redactNode(item, destination);
+      if (result.blocked) {
+        return result;
+      }
+      output.push(result.value);
+      tokens = tokens.concat(result.tokens || []);
+    }
+    return { value: output, tokens };
+  }
+  if (value === null || typeof value !== 'object') {
+    return { value, tokens: [] };
+  }
+  const output = {};
+  let tokens = [];
+  for (const [key, child] of Object.entries(value)) {
+    const lower = key.toLowerCase();
+    const maskedDisplay = maskedDisplayClass(key);
+    if (maskedDisplay) {
+      if (!maskedDisplay.safe || (child !== null && typeof child === 'object')) {
+        return { blocked: true, field: key };
+      }
+      if (typeof child === 'string') {
+        const result = redactStringValue(child);
+        output[key] = result.value;
+        if (result.token) {
+          tokens.push(redactionToken(result.token));
+        }
+      } else if (child === null || typeof child === 'number' || typeof child === 'boolean') {
+        output[key] = child;
+      } else {
+        return { blocked: true, field: key };
+      }
+      continue;
+    }
+    const className = redactionClassFor(key);
+    if (className) {
+      const token = redactionToken(className);
+      output[key] = token;
+      tokens.push(token);
+      continue;
+    }
+    if (REDACTION_CONTAINER_KEYS.has(lower)) {
+      if (child === null || typeof child !== 'object' || Array.isArray(child)) {
+        return { blocked: true, field: key };
+      }
+      const result = redactNode(child, destination);
+      if (result.blocked) {
+        return result;
+      }
+      output[key] = result.value;
+      tokens = tokens.concat(result.tokens || []);
+      continue;
+    }
+    const allowed = (REDACTION_ALLOW[destination] || []).includes(key);
+    if (!allowed) {
+      return { blocked: true, field: key };
+    }
+    if (typeof child === 'string') {
+      const result = redactStringValue(child);
+      output[key] = result.value;
+      if (result.token) {
+        tokens.push(redactionToken(result.token));
+      }
+    } else if (child === null || typeof child === 'number' || typeof child === 'boolean') {
+      output[key] = child;
+    } else {
+      return { blocked: true, field: key };
+    }
+  }
+  return { value: output, tokens };
+}
+
 function createMachine(model, stage = 's1') {
   const keyById = new Map(model.keyClasses.map((row) => [row.keyId, row]));
   const keyClassById = keyById;
@@ -688,7 +1085,27 @@ function createMachine(model, stage = 's1') {
     a2Reservations: 0,
     a2Settlements: 0,
     a2Redials: 0,
-    a2ReResolves: 0
+    a2ReResolves: 0,
+    upload: null,
+    uploadIssued: 0,
+    uploadDenied: 0,
+    playback: null,
+    playbackIssued: 0,
+    playbackDenied: 0,
+    cosDenied: 0,
+    auditReads: 0,
+    auditReadDenied: 0,
+    auditFactsAppended: 0,
+    auditAccessEventsEmitted: 0,
+    recursiveAppendFactCalls: 0,
+    highRiskCommitted: 0,
+    highRiskRolledBack: 0,
+    highRiskDenied: 0,
+    redactionEmits: 0,
+    redactionBlocks: 0,
+    redactionRawExposures: 0,
+    supportPlaybackAllowed: 0,
+    evidenceSolidified: 0
   };
 
   function domainForPath(requestPath) {
@@ -1581,6 +1998,646 @@ function createMachine(model, stage = 's1') {
         }
         return { ...base, status: 'OK', statusCode: 200, problemCode: null, reason: 'OUTBOX_UNCHANGED', outboxState: entry.state, securityBlocked: entry.securityBlocked };
       }
+      case 'upload-credential': {
+        const phase = step.phase;
+        const common = {
+          phase,
+          credentialClass: 'C09 uploadCredential',
+          credentialIssued: false,
+          credentialExposed: false,
+          fallbackUsed: false,
+          permanentUrlReturned: false,
+          objectKeyReturned: false,
+          bucketReturned: false,
+          versionReturned: false,
+          evidenceSolidified: false,
+          mediaFactCreated: 0,
+          rowsWritten: 0,
+          securityEvent: null,
+          sideEffects: sideEffectsZero()
+        };
+        if (phase === 'ISSUE') {
+          const declaration = step.declaration || {};
+          if (step.cv4Verified !== true) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return {
+              ...common,
+              status: 'DENIED',
+              statusCode: 503,
+              problemCode: 'SERVICE_UNAVAILABLE',
+              reason: 'CV4_UNVERIFIED',
+              cv4Verified: false,
+              securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED',
+              auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED'
+            };
+          }
+          const requiredStrings = ['callId', 'recordingId', 'objectIdentityDigest', 'mime'];
+          const declarationValid = requiredStrings.every((field) => typeof declaration[field] === 'string' && declaration[field].length > 0)
+            && declaration.purpose === 'UPLOAD'
+            && Number(declaration.maxBytes) > 0
+            && Number(declaration.sizeBytes) > 0
+            && Number(declaration.sizeBytes) <= Number(declaration.maxBytes)
+            && Number(declaration.durationSeconds) > 0
+            && Number(declaration.expiresAt) > Number(declaration.nowSeconds);
+          if (!declarationValid) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return {
+              ...common,
+              status: 'DENIED',
+              statusCode: 422,
+              problemCode: 'VALIDATION_FAILED',
+              reason: 'DECLARATION_INVALID',
+              cv4Verified: true,
+              securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED',
+              auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED'
+            };
+          }
+          state.upload = {
+            callId: declaration.callId,
+            recordingId: declaration.recordingId,
+            objectIdentityDigest: declaration.objectIdentityDigest,
+            purpose: declaration.purpose,
+            sizeBytes: Number(declaration.sizeBytes),
+            maxBytes: Number(declaration.maxBytes),
+            mime: declaration.mime,
+            durationSeconds: Number(declaration.durationSeconds),
+            declaredSha256: declaration.declaredSha256 || null,
+            expiresAt: Number(declaration.expiresAt)
+          };
+          state.uploadIssued += 1;
+          state.auditFactsAppended += 1;
+          return {
+            ...common,
+            status: 'OK',
+            statusCode: 200,
+            problemCode: null,
+            reason: 'CREDENTIAL_ISSUED',
+            cv4Verified: true,
+            credentialIssued: true,
+            credentialShape: 'COS_PRESIGNED_PUT',
+            singleObject: true,
+            method: 'PUT',
+            purpose: declaration.purpose,
+            readListDeleteAllowed: false,
+            responseOnly: true,
+            uploadExpiresAt: Number(declaration.expiresAt),
+            maxBytes: Number(declaration.maxBytes),
+            securityEvent: null,
+            auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_ISSUED'
+          };
+        }
+        if (phase === 'USE') {
+          const request = step.request || {};
+          if (!state.upload) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...common, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'NO_CREDENTIAL', securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED', auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED' };
+          }
+          const forbiddenOperation = request.method !== 'PUT'
+            || ['READ', 'LIST', 'DELETE'].includes(request.operation);
+          if (forbiddenOperation) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return {
+              ...common,
+              status: 'DENIED',
+              statusCode: 403,
+              problemCode: 'FORBIDDEN',
+              reason: 'WRITE_SCOPE_VIOLATION',
+              acceptedUpload: false,
+              acceptedOperations: ['PUT'],
+              deniedOperations: ['READ', 'LIST', 'DELETE'],
+              securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED',
+              auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED'
+            };
+          }
+          const scopeMatches = request.callId === state.upload.callId
+            && request.recordingId === state.upload.recordingId
+            && request.objectIdentityDigest === state.upload.objectIdentityDigest
+            && request.purpose === state.upload.purpose;
+          if (!scopeMatches) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...common, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'CROSS_OBJECT_OR_PURPOSE', acceptedUpload: false, securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED', auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED' };
+          }
+          if (Number(request.nowSeconds) > state.upload.expiresAt) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...common, status: 'DENIED', statusCode: 409, problemCode: 'UPLOAD_EXPIRED', reason: 'EXPIRED', acceptedUpload: false, securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED', auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED' };
+          }
+          if (Number(request.sizeBytes) > state.upload.maxBytes) {
+            state.uploadDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...common, status: 'DENIED', statusCode: 422, problemCode: 'VALIDATION_FAILED', reason: 'OVERSIZE', acceptedUpload: false, securityEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED', auditEvent: 'SECURITY_UPLOAD_CREDENTIAL_DENIED' };
+          }
+          return {
+            ...common,
+            status: 'OK',
+            statusCode: 200,
+            problemCode: null,
+            reason: 'UPLOAD_ACCEPTED',
+            acceptedUpload: true,
+            acceptedOperations: ['PUT'],
+            deniedOperations: ['READ', 'LIST', 'DELETE'],
+            singleObject: true,
+            purpose: state.upload.purpose,
+            uploadExpiresAt: state.upload.expiresAt
+          };
+        }
+        if (phase === 'COMPLETE') {
+          if (!state.upload) {
+            return { ...common, status: 'DENIED', statusCode: 503, problemCode: 'STORAGE_UNKNOWN', reason: 'NO_CREDENTIAL', serverObserved: false };
+          }
+          const observation = step.observation || {};
+          const shaOk = typeof observation.sha256 === 'string' && /^[0-9a-f]{64}$/.test(observation.sha256);
+          const hashMatches = !state.upload.declaredSha256 || observation.sha256 === state.upload.declaredSha256;
+          const bindingOk = observation.objectIdentityDigest === state.upload.objectIdentityDigest
+            && Number(observation.sizeBytes) === state.upload.sizeBytes
+            && observation.mime === state.upload.mime
+            && Number(observation.durationSeconds) === state.upload.durationSeconds
+            && observation.clientClaimTrusted !== true
+            && shaOk
+            && hashMatches;
+          if (!bindingOk) {
+            return {
+              ...common,
+              status: 'DENIED',
+              statusCode: 503,
+              problemCode: 'STORAGE_UNKNOWN',
+              reason: 'OBSERVATION_BINDING_MISMATCH',
+              serverObserved: true,
+              clientClaimTrusted: observation.clientClaimTrusted === true,
+              mediaFactCreated: 0
+            };
+          }
+          return {
+            ...common,
+            status: 'OK',
+            statusCode: 200,
+            problemCode: null,
+            reason: 'RECORDING_COMPLETED',
+            serverObserved: true,
+            clientClaimTrusted: false,
+            identityBinding: true,
+            hashBinding: true,
+            sizeBinding: true,
+            mimeBinding: true,
+            durationBinding: true,
+            mediaFactCreated: 1,
+            evidenceSolidified: false
+          };
+        }
+        return { status: 'FAILED', reason: 'UNSUPPORTED_UPLOAD_PHASE' };
+      }
+      case 'playback-credential': {
+        const phase = step.phase;
+        const common = {
+          phase,
+          credentialClass: 'C10 playbackCredential',
+          credentialIssued: false,
+          credentialExposed: false,
+          cosUrlExposed: false,
+          objectKeyExposed: false,
+          bucketExposed: false,
+          versionExposed: false,
+          admissionRecounted: false,
+          writeAllowed: false,
+          sideEffects: sideEffectsZero()
+        };
+        if (phase === 'ISSUE') {
+          const share = step.share || {};
+          let denial = null;
+          if (share.status === 'REVOKED') {
+            denial = { statusCode: 410, problemCode: 'SHARE_REVOKED', reason: 'SHARE_REVOKED' };
+          } else if (share.status === 'EXPIRED') {
+            denial = { statusCode: 410, problemCode: 'SHARE_EXPIRED', reason: 'SHARE_EXPIRED' };
+          } else if (share.status === 'LOCKED' && share.admissionAdmitted !== true) {
+            denial = { statusCode: 409, problemCode: 'SHARE_LOCKED', reason: 'SHARE_LOCKED' };
+          } else if (share.verified !== true) {
+            denial = { statusCode: 403, problemCode: 'SHARE_VERIFICATION_FAILED', reason: 'VERIFICATION_FAILED' };
+          } else if (share.admissionAdmitted !== true) {
+            denial = { statusCode: 409, problemCode: 'SHARE_ADMISSION_LIMIT_REACHED', reason: 'NO_ADMISSION' };
+          } else if (Number(share.nowSeconds) >= Number(share.sessionExpiresAt)) {
+            denial = { statusCode: 410, problemCode: 'SHARE_SESSION_EXPIRED', reason: 'SESSION_EXPIRED' };
+          } else if (!['PLAYBACK', 'SEEK', 'RENEW'].includes(share.purpose)) {
+            denial = { statusCode: 403, problemCode: 'FORBIDDEN', reason: 'PURPOSE_NOT_ALLOWED' };
+          } else if (!(Number(share.expiresAt) > Number(share.nowSeconds)) || Number(share.expiresAt) > Number(share.sessionExpiresAt)) {
+            denial = { statusCode: 410, problemCode: 'SHARE_SESSION_EXPIRED', reason: 'TICKET_EXPIRED_OR_OVERLONG' };
+          }
+          if (denial) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...common, status: 'DENIED', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', ...denial };
+          }
+          state.playback = {
+            shareId: share.shareId,
+            admissionId: share.admissionId,
+            generation: share.revocationGeneration,
+            objectIdentityDigest: share.objectIdentityDigest,
+            purpose: share.purpose,
+            expiresAt: Number(share.expiresAt),
+            sessionExpiresAt: Number(share.sessionExpiresAt)
+          };
+          state.playbackIssued += 1;
+          state.auditFactsAppended += 1;
+          return {
+            ...common,
+            status: 'OK',
+            statusCode: 200,
+            problemCode: null,
+            reason: 'CREDENTIAL_ISSUED',
+            credentialIssued: true,
+            credentialFormat: 'OPAQUE_MEDIA_GATEWAY_BEARER',
+            audience: 'onecall:media-playback:v1',
+            generation: share.revocationGeneration,
+            purpose: share.purpose,
+            expiresAt: Number(share.expiresAt),
+            access: 'PLAYBACK/SEEK/RENEW',
+            securityEvent: null,
+            auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_ISSUED'
+          };
+        }
+        if (phase === 'PRESENT') {
+          const request = step.request || {};
+          const base = {
+            ...common,
+            bearerPresented: request.headerName === 'Authorization' && request.scheme === 'Bearer' && request.credentialFromIssue === true,
+            audienceValid: request.audience === 'onecall:media-playback:v1',
+            objectScopeValid: false,
+            purposeAllowed: false,
+            generationValid: false,
+            expired: false,
+            cosReadAllowed: false
+          };
+          const clientObjectFields = Boolean(request.clientObjectKey || request.clientBucket || request.clientVersionId || request.publicResourceId);
+          if (!state.playback || !base.bearerPresented || !base.audienceValid) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 401, problemCode: 'UNAUTHENTICATED', reason: 'CREDENTIAL_INVALID', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          if (clientObjectFields) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'CLIENT_OBJECT_IDENTIFIER_REJECTED', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          if (Number(request.nowSeconds) > state.playback.expiresAt) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 410, problemCode: 'SHARE_SESSION_EXPIRED', reason: 'EXPIRED', expired: true, securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          if (request.revoked === true) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 410, problemCode: 'SHARE_REVOKED', reason: 'SHARE_REVOKED', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          if (Number(request.generation) !== Number(state.playback.generation)) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 409, problemCode: 'SHARE_GENERATION_STALE', reason: 'GENERATION_MISMATCH', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          if (request.objectIdentityDigest !== state.playback.objectIdentityDigest) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'CROSS_OBJECT', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          if (!['PLAYBACK', 'SEEK', 'RENEW'].includes(request.purpose) || request.writeAttempt === true) {
+            state.playbackDenied += 1;
+            state.auditFactsAppended += 1;
+            return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'WRITE_SCOPE_VIOLATION', securityEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED', auditEvent: 'SECURITY_PLAYBACK_CREDENTIAL_DENIED' };
+          }
+          return {
+            ...base,
+            status: 'OK',
+            statusCode: 200,
+            problemCode: null,
+            reason: 'PLAYBACK_AUTHORIZED',
+            objectScopeValid: true,
+            purposeAllowed: true,
+            generationValid: true,
+            expired: false,
+            cosReadAllowed: true,
+            noWrite: true,
+            securityEvent: null,
+            auditEvent: null
+          };
+        }
+        return { status: 'FAILED', reason: 'UNSUPPORTED_PLAYBACK_PHASE' };
+      }
+      case 'cos-access': {
+        const attempt = step.attempt;
+        const policy = model.cosPolicy || {};
+        const facts = {
+          attempt,
+          bucketPrivate: String(policy.bucketPrivacy || '').includes('private'),
+          anonymousAccessForbidden: String(policy.bucketPrivacy || '').includes('anonymous'),
+          tlsOnly: String(policy.bucketPrivacy || '').includes('TLS-only'),
+          publicAccessBlocked: String(policy.bucketPrivacy || '').includes('public access is blocked'),
+          sseKms: String(policy.encryption || '').includes('SSE-KMS'),
+          versioning: String(policy.versioning || '').includes('versioning'),
+          objectLockClaimed: false,
+          wormClaimed: false,
+          regionDeclared: false,
+          skuDeclared: false,
+          privateEndpointDeclared: false,
+          objectKeyPublic: false,
+          objectKeyExposed: false,
+          bucketExposed: false,
+          versionExposed: false,
+          cosUrlExposed: false,
+          loggingPolicy: policy.logging || null,
+          objectReadThroughCamServiceRole: false,
+          securityEvent: null,
+          sideEffects: sideEffectsZero()
+        };
+        if (attempt === 'POLICY_CHECK') {
+          return { ...facts, status: 'OK', statusCode: 200, problemCode: null, reason: 'POLICY_FROZEN' };
+        }
+        if (attempt === 'SERVER_READ') {
+          return { ...facts, status: 'OK', statusCode: 200, problemCode: null, reason: 'PRIVATE_SERVER_READ', objectReadThroughCamServiceRole: true };
+        }
+        state.cosDenied += 1;
+        state.auditFactsAppended += 1;
+        return {
+          ...facts,
+          status: 'DENIED',
+          statusCode: 403,
+          problemCode: 'FORBIDDEN',
+          reason: 'COS_PRIVATE_POLICY_DENIED',
+          securityEvent: 'SECURITY_COS_POLICY_DENIED',
+          auditEvent: 'SECURITY_COS_POLICY_DENIED'
+        };
+      }
+      case 'audit-access': {
+        const domain = step.domain;
+        const role = step.role;
+        const operation = step.operation;
+        const base = {
+          domain,
+          role,
+          operation,
+          accessEvent: 'AUDIT_READ_DENIED',
+          persistenceRoute: 'access_event',
+          auditFactsAppended: 0,
+          recursiveAppendFactCalls: 0,
+          projection: [],
+          rawValuesExposed: false,
+          rowsChanged: 0,
+          selectOnly: true,
+          updateDeleteTruncateAllowed: false,
+          auditReaderRole: 'SELECT only',
+          sideEffects: sideEffectsZero()
+        };
+        if (domain !== 'employee' || !AUDIT_READ_ROLES.includes(role)) {
+          state.auditReadDenied += 1;
+          state.auditAccessEventsEmitted += 1;
+          return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'AUDIT_READ_FORBIDDEN' };
+        }
+        if (['UPDATE', 'DELETE', 'TRUNCATE'].includes(operation)) {
+          state.auditReadDenied += 1;
+          state.auditAccessEventsEmitted += 1;
+          return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'AUDIT_MUTATION_FORBIDDEN' };
+        }
+        if (step.rawSnapshotRequested === true || step.snapshotRedactedOrEncrypted !== true) {
+          state.auditReadDenied += 1;
+          state.auditAccessEventsEmitted += 1;
+          return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'RAW_SNAPSHOT_FORBIDDEN' };
+        }
+        if (!['READ', 'LIST', 'EXPORT'].includes(operation)) {
+          return { status: 'FAILED', reason: 'UNSUPPORTED_AUDIT_OPERATION' };
+        }
+        state.auditReads += 1;
+        state.auditAccessEventsEmitted += 1;
+        return {
+          ...base,
+          status: 'OK',
+          statusCode: 200,
+          problemCode: null,
+          reason: 'AUDIT_READ_ALLOWED',
+          accessEvent: 'AUDIT_READ',
+          projection: ['status', 'revision', 'reasonCode']
+        };
+      }
+      case 'high-risk': {
+        const action = (model.highRiskActions || []).find((row) => row.operationId === step.operationId);
+        const base = {
+          operationId: step.operationId,
+          expectedRole: action?.role || null,
+          expectedReasonSource: action?.reasonSource || null,
+          mutationCommitted: false,
+          domainMutationRolledBack: false,
+          auditFactsAppended: 0,
+          sameTransaction: true,
+          partialWrite: false,
+          lastAdminPreserved: true,
+          newEmployeeRolesCreated: 0,
+          uiSecondConfirmationAsserted: false,
+          runtimeUnverifiedControls: ['UI_SECOND_CONFIRMATION'],
+          sideEffects: sideEffectsZero()
+        };
+        if (!action) {
+          return { ...base, status: 'DENIED', statusCode: 404, problemCode: 'NOT_FOUND', reason: 'UNKNOWN_OPERATION', auditEvent: null };
+        }
+        if (step.employeeRole !== action.role) {
+          state.highRiskDenied += 1;
+          state.auditFactsAppended += 1;
+          return { ...base, status: 'DENIED', statusCode: 403, problemCode: 'FORBIDDEN', reason: 'ROLE_DENIED', auditEvent: 'OPERATIONS_HIGH_RISK_DENIED', auditFactsAppended: 1 };
+        }
+        if (step.reasonSource !== action.reasonSource || (action.reasonSource === 'REQUEST reasonCode' && (typeof step.reasonCode !== 'string' || step.reasonCode.length === 0))) {
+          state.highRiskDenied += 1;
+          state.auditFactsAppended += 1;
+          return { ...base, status: 'DENIED', statusCode: action.reasonSource === 'REQUEST reasonCode' ? 422 : 403, problemCode: action.reasonSource === 'REQUEST reasonCode' ? 'VALIDATION_FAILED' : 'FORBIDDEN', reason: 'REASON_SOURCE_INVALID', auditEvent: 'OPERATIONS_HIGH_RISK_DENIED', auditFactsAppended: 1 };
+        }
+        if (step.currentState !== action.preconditionState) {
+          state.highRiskDenied += 1;
+          state.auditFactsAppended += 1;
+          return { ...base, status: 'DENIED', statusCode: 409, problemCode: action.conflictCode, reason: 'STATE_CONFLICT', auditEvent: 'OPERATIONS_HIGH_RISK_DENIED', auditFactsAppended: 1 };
+        }
+        if (Number(step.expectedRevision) !== Number(step.actualRevision)) {
+          state.highRiskDenied += 1;
+          state.auditFactsAppended += 1;
+          return { ...base, status: 'DENIED', statusCode: 409, problemCode: action.conflictCode, reason: 'REVISION_CONFLICT', auditEvent: 'OPERATIONS_HIGH_RISK_DENIED', auditFactsAppended: 1 };
+        }
+        if (step.auditAppendOk !== true) {
+          state.highRiskRolledBack += 1;
+          return { ...base, status: 'ROLLED_BACK', statusCode: 500, problemCode: 'INTERNAL', reason: 'AUDIT_APPEND_FAILED', mutationCommitted: false, domainMutationRolledBack: true, auditFactsAppended: 0, auditEvent: null };
+        }
+        state.highRiskCommitted += 1;
+        state.auditFactsAppended += 1;
+        return {
+          ...base,
+          status: 'OK',
+          statusCode: 200,
+          problemCode: null,
+          reason: 'HIGH_RISK_APPLIED',
+          mutationCommitted: true,
+          auditFactsAppended: 1,
+          auditEvent: action.auditCode,
+          beforeAfter: action.beforeAfter,
+          role: action.role,
+          reasonSource: action.reasonSource
+        };
+      }
+      case 'redact': {
+        const destination = step.destination;
+        if (!(destination in REDACTION_ALLOW)) {
+          return { status: 'FAILED', reason: 'UNSUPPORTED_DESTINATION' };
+        }
+        if (step.playbackRequested === true && ['support', 'public-contract', 'analytics'].includes(destination)) {
+          return {
+            status: 'DENIED',
+            destination,
+            statusCode: 403,
+            problemCode: 'FORBIDDEN',
+            reason: 'PLAYBACK_NOT_ALLOWED',
+            emitted: false,
+            blocked: false,
+            alert: false,
+            playbackAllowed: false,
+            playbackDenied: true,
+            redactionAppliedBeforeEmit: true,
+            rawExposed: false,
+            deterministic: true,
+            tokens: [],
+            tokenCount: 0,
+            sideEffects: sideEffectsZero()
+          };
+        }
+        const first = redactNode(step.event || {}, destination);
+        const second = redactNode(step.event || {}, destination);
+        const deterministic = deepEqual(first, second);
+        if (first.blocked) {
+          state.redactionBlocks += 1;
+          return {
+            status: 'DENIED',
+            destination,
+            statusCode: ['error', 'public-contract'].includes(destination) ? 500 : null,
+            problemCode: ['error', 'public-contract'].includes(destination) ? 'INTERNAL' : null,
+            reason: 'SECURITY_REDACTION_BLOCKED',
+            emitted: false,
+            blocked: true,
+            alert: true,
+            unknownFieldBlocked: true,
+            blockedField: first.field,
+            redactionAppliedBeforeEmit: true,
+            rawExposed: false,
+            deterministic,
+            tokens: [],
+            tokenCount: 0,
+            accessEvent: 'SECURITY_REDACTION_BLOCKED',
+            sideEffects: sideEffectsZero()
+          };
+        }
+        state.redactionEmits += 1;
+        const tokens = [...new Set(first.tokens || [])].sort();
+        return {
+          status: 'OK',
+          destination,
+          statusCode: null,
+          problemCode: null,
+          reason: 'EMITTED_REDACTED',
+          emitted: true,
+          blocked: false,
+          alert: false,
+          unknownFieldBlocked: false,
+          redactedEvent: first.value,
+          tokens,
+          tokenCount: tokens.length,
+          redactionAppliedBeforeEmit: true,
+          rawExposed: false,
+          deterministic,
+          sideEffects: sideEffectsZero()
+        };
+      }
+      case 'support-view': {
+        const requested = Array.isArray(step.requestedFields) ? step.requestedFields : [];
+        const allowed = requested.filter((field) => {
+          const maskedDisplay = maskedDisplayClass(field);
+          return (maskedDisplay && maskedDisplay.safe)
+            || ['id', 'internalId', 'status', 'reasonCode'].includes(field);
+        });
+        const denied = requested.filter((field) => !allowed.includes(field));
+        const playbackRequested = step.playbackRequested === true;
+        if (playbackRequested) {
+          return {
+            status: 'DENIED',
+            statusCode: 403,
+            problemCode: 'FORBIDDEN',
+            reason: 'PLAYBACK_NOT_ALLOWED',
+            allowedFields: allowed,
+            deniedFields: denied,
+            playbackAllowed: false,
+            playbackDenied: true,
+            rawSensitiveExposed: false,
+            credentialExposed: false,
+            objectKeyExposed: false,
+            cosUrlExposed: false,
+            supportAllowList: ['id', 'internalId', 'status', 'reasonCode', 'masked fields'],
+            sideEffects: sideEffectsZero()
+          };
+        }
+        return {
+          status: 'OK',
+          statusCode: 200,
+          problemCode: null,
+          reason: 'SUPPORT_VIEW_REDACTED',
+          allowedFields: allowed,
+          deniedFields: denied,
+          playbackAllowed: false,
+          playbackDenied: false,
+          rawSensitiveExposed: false,
+          credentialExposed: false,
+          objectKeyExposed: false,
+          cosUrlExposed: false,
+          supportAllowList: ['id', 'internalId', 'status', 'reasonCode', 'masked fields'],
+          sideEffects: sideEffectsZero()
+        };
+      }
+      case 'dependency': {
+        const row = (model.failClosedMatrix || []).find((entry) => entry.failureId === step.failureId);
+        if (!row) {
+          return { status: 'FAILED', reason: 'UNKNOWN_FAILURE_ID' };
+        }
+        if (step.fallbackRequested === true) {
+          return {
+            status: 'DENIED', failureId: row.failureId, statusCode: row.primaryStatus, problemCode: row.primaryProblem,
+            reason: 'FALLBACK_FORBIDDEN', fallbackUsed: false, plaintextReturned: false,
+            credentialIssued: false, evidenceSolidified: false, redial: false,
+            a2BusinessSideEffects: 0, domainMutationCommitted: false, fallbackRejected: true,
+            sideEffects: sideEffectsZero()
+          };
+        }
+        return {
+          status: 'DENIED',
+          failureId: row.failureId,
+          existingError: row.existingError,
+          affectedSurfaces: row.affectedSurfaces,
+          statusCode: row.primaryStatus,
+          problemCode: row.primaryProblem,
+          allowedProblems: row.allowedProblems,
+          reason: 'FAIL_CLOSED',
+          noFallback: true,
+          plaintextReturned: false,
+          credentialIssued: false,
+          evidenceSolidified: false,
+          mediaFactCreated: 0,
+          redial: false,
+          a2BusinessSideEffects: 0,
+          domainMutationCommitted: false,
+          domainMutationRolledBack: row.failureId === 'AUDIT_APPEND_FAILED',
+          auditFactAppended: false,
+          nonceConsumed: false,
+          sessionCreated: false,
+          paymentAdvanced: false,
+          entitlementAdvanced: false,
+          emitted: false,
+          rawExposed: false,
+          alert: row.failureId === 'REDACTION_PIPELINE_FAILED',
+          noDuplicateA2SideEffects: true,
+          sideEffects: sideEffectsZero()
+        };
+      }
       case 'assert': {
         const actual = machineSummary();
         const mismatches = [];
@@ -1597,38 +2654,45 @@ function createMachine(model, stage = 's1') {
   }
 
   function projectedModel() {
+    const config = STAGE_CONFIG[stage] || STAGE_CONFIG.s1;
     const projected = {};
     for (const key of S1_MODEL_SECTIONS) {
       if (key in model) {
         projected[key] = model[key];
       }
     }
-    projected.invariants = (model.invariants || []).slice(0, 6);
-    if (stage === 's2') {
+    projected.invariants = (model.invariants || []).slice(0, config.invariantCount);
+    if (stage !== 's1') {
       for (const key of S2_MODEL_SECTIONS) {
         if (key in model) {
           projected[key] = model[key];
         }
       }
-      projected.invariants = model.invariants || [];
+    }
+    if (stage === 's3') {
+      for (const key of S3_MODEL_SECTIONS) {
+        if (key in model) {
+          projected[key] = model[key];
+        }
+      }
     }
     return projected;
   }
 
   function machineSummary() {
     const projected = projectedModel();
+    const config = STAGE_CONFIG[stage] || STAGE_CONFIG.s1;
     const projectedStrings = collectStrings(projected, []);
-    const futurePattern = stage === 's2'
-      ? /INV-A3-(1[2-9]|2[01])\b/
-      : /INV-A3-(0[7-9]|1[0-9]|2[01])\b/;
-    const futureInvariant = projectedStrings.filter((text) => futurePattern.test(text)).length;
-    const futureFixtures = projectedStrings.filter((text) => /sec-s3-/.test(text)).length;
+    const futureInvariant = projectedStrings.filter((text) => config.futureInvariantPattern.test(text)).length;
+    const futureFixturePattern = stage === 's3' ? /sec-s4-/ : /sec-s3-/;
+    const futureFixtures = projectedStrings.filter((text) => futureFixturePattern.test(text)).length;
     let forbiddenSections = 0;
     walkKeys(projected, (key) => {
-      if (S3_MODEL_SECTIONS.includes(key)) {
+      if (config.forbidden.includes(key)) {
         forbiddenSections += 1;
       }
     });
+    const auditEvents = Array.isArray(projected.auditEvents) ? projected.auditEvents : [];
     return {
       keyClasses: projected.keyClasses.length,
       dataClasses: projected.dataClasses.length,
@@ -1663,7 +2727,36 @@ function createMachine(model, stage = 's1') {
       payments: state.payments,
       entitlements: state.entitlements,
       providerEvents: state.providerEvents.size,
-      nonceSeen: state.nonceSeen.size
+      nonceSeen: state.nonceSeen.size,
+      mediaPolicies: (projected.mediaPolicies || []).length,
+      cosPrivate: String(projected.cosPolicy?.bucketPrivacy || '').includes('private'),
+      auditEvents: auditEvents.length,
+      auditPersistence: auditEvents.filter((row) => row.persistence === 'append_fact' || row.persistence === 'access_event').length,
+      auditAccessEvents: auditEvents.filter((row) => row.persistence === 'access_event').length,
+      auditAppendFacts: auditEvents.filter((row) => row.persistence === 'append_fact').length,
+      highRiskActions: (projected.highRiskActions || []).length,
+      auditCoverage: (projected.auditCoverage || []).length,
+      redactionTokens: (projected.redactionPolicy?.tokenClasses || []).length,
+      uploadIssued: state.uploadIssued,
+      uploadDenied: state.uploadDenied,
+      playbackIssued: state.playbackIssued,
+      playbackDenied: state.playbackDenied,
+      cosDenied: state.cosDenied,
+      auditReads: state.auditReads,
+      auditReadDenied: state.auditReadDenied,
+      auditFactsAppended: state.auditFactsAppended,
+      auditAccessEventsEmitted: state.auditAccessEventsEmitted,
+      recursiveAppendFactCalls: state.recursiveAppendFactCalls,
+      highRiskCommitted: state.highRiskCommitted,
+      highRiskRolledBack: state.highRiskRolledBack,
+      highRiskDenied: state.highRiskDenied,
+      redactionEmits: state.redactionEmits,
+      redactionBlocks: state.redactionBlocks,
+      redactionRawExposures: state.redactionRawExposures,
+      supportPlaybackAllowed: state.supportPlaybackAllowed,
+      evidenceSolidified: state.evidenceSolidified,
+      lastAdminPreserved: true,
+      newEmployeeRolesCreated: 0
     };
   }
 
@@ -1831,11 +2924,11 @@ function validateModel(model, stage, counters, issues) {
       issues.push(`model: missing required ${stage} section ${key}`);
     }
   }
-  const allowedTopLevel = new Set([...S1_MODEL_SECTIONS, ...S2_MODEL_SECTIONS]);
+  const allowedTopLevel = new Set([...S1_MODEL_SECTIONS, ...S2_MODEL_SECTIONS, ...S3_MODEL_SECTIONS]);
   for (const key of actualKeys) {
     if (!allowedTopLevel.has(key)) {
       counters.stage_field_premature += 1;
-      issues.push(`model: premature section ${key}`);
+      issues.push(`model: unknown or premature section ${key}`);
     }
   }
   if (config.s2Sections === 'optional') {
@@ -1845,12 +2938,13 @@ function validateModel(model, stage, counters, issues) {
       issues.push('model: partially present S2 section set');
     }
   }
-  walkKeys(model, (key, trail) => {
-    if (S3_MODEL_SECTIONS.includes(key)) {
-      counters.stage_field_premature += 1;
-      issues.push(`model: premature S3 field ${trail}`);
+  if (config.s3Sections === 'optional') {
+    const presentS3 = S3_MODEL_SECTIONS.filter((key) => actualKeys.includes(key));
+    if (presentS3.length !== 0 && presentS3.length !== S3_MODEL_SECTIONS.length) {
+      counters.stage_field_missing += 1;
+      issues.push('model: partially present S3 section set');
     }
-  });
+  }
 
   checkExact('model.envelopeProfile', model.envelopeProfile, EXPECTED_ENVELOPE, counters, issues);
   checkExact('model.hmacProfile', model.hmacProfile, EXPECTED_HMAC, counters, issues);
@@ -1965,27 +3059,27 @@ function validateModel(model, stage, counters, issues) {
     issues.push(`model.invariants count is ${invariants.length}, expected ${config.invariantCounts.join(' or ')}`);
   }
   const invariantPairs = invariants.map((row) => [row.id, row.statement]);
-  let expectedInvariants = EXPECTED_INVARIANTS;
-  if (invariants.length === 11) {
-    expectedInvariants = EXPECTED_INVARIANTS_CUMULATIVE;
-  } else if (stage === 's2' || invariants.length !== 6) {
-    expectedInvariants = EXPECTED_INVARIANTS_CUMULATIVE;
-  }
-  if (!deepEqual(invariantPairs, expectedInvariants)) {
+  if (invariants.length >= config.invariantCount && invariants.length <= EXPECTED_INVARIANTS_ALL.length) {
+    const expectedInvariants = EXPECTED_INVARIANTS_ALL.slice(0, invariants.length);
+    if (!deepEqual(invariantPairs, expectedInvariants)) {
+      counters.stage_field_missing += 1;
+      issues.push(`model.invariants do not exactly match the ${stage} invariant projection`);
+    }
+  } else if (invariants.length > EXPECTED_INVARIANTS_ALL.length) {
     counters.stage_field_missing += 1;
-    issues.push(`model.invariants do not exactly match the ${stage} invariant registry`);
+    issues.push(`model.invariants has ${invariants.length} rows, exceeding the approved 21`);
   }
 
   const modelStrings = [];
   collectStrings(model, modelStrings);
   for (const text of modelStrings) {
-    if (config.futureInvariantPattern.test(text)) {
+    if (/INV-A3-(2[2-9]|[3-9][0-9])\b/.test(text)) {
       counters.stage_field_premature += 1;
-      issues.push('model contains a future invariant ID');
+      issues.push('model contains an unapproved future invariant ID');
     }
-    if (/sec-s3-/.test(text)) {
+    if (/sec-s4-/.test(text)) {
       counters.stage_field_premature += 1;
-      issues.push('model contains a future fixture ID');
+      issues.push('model contains an unapproved future fixture ID');
     }
     if (/https?:\/\//.test(text)) {
       counters.stage_field_premature += 1;
@@ -1995,6 +3089,9 @@ function validateModel(model, stage, counters, issues) {
 
   if (config.s2Sections === 'required' || S2_MODEL_SECTIONS.every((key) => actualKeys.includes(key))) {
     validateS2Model(model, counters, issues);
+  }
+  if (stage === 's3') {
+    validateS3Model(model, counters, issues);
   }
 
   return { keyClasses, dataClasses, deferred, invariants, qRows, cvRows, keyIds };
@@ -2176,6 +3273,226 @@ function validateS2Model(model, counters, issues) {
   }
 }
 
+function validateS3Model(model, counters, issues) {
+  const media = Array.isArray(model.mediaPolicies) ? model.mediaPolicies : [];
+  if (!deepEqual(media, EXPECTED_MEDIA_POLICIES)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.mediaPolicies does not exactly match the frozen U1/P1 media policies');
+  }
+  if (media.length !== 2) {
+    counters.stage_field_missing += 1;
+    issues.push(`model.mediaPolicies count is ${media.length}, expected 2`);
+  }
+  const upload = media.find((row) => row.policyId === 'U1');
+  const playback = media.find((row) => row.policyId === 'P1');
+  if (!upload || upload.mediaKind !== 'UPLOAD' || upload.credentialClass !== 'C09 uploadCredential'
+    || upload.forbiddenOperations !== 'READ/LIST/DELETE'
+    || !String(upload.fallbackPolicy || '').includes('no custom HMAC token')
+    || !/fails? closed/.test(String(upload.fallbackPolicy || ''))) {
+    counters.stage_field_missing += 1;
+    issues.push('upload media policy does not freeze the single COS presigned PUT shape and fail-closed no-fallback rule');
+  }
+  if (!playback || playback.mediaKind !== 'PLAYBACK' || playback.credentialClass !== 'C10 playbackCredential'
+    || !String(playback.presentation || '').includes('Authorization: Bearer')
+    || playback.forbiddenOperations !== 'WRITE/LIST/DELETE'
+    || !String(playback.permanence || '').includes('no COS URL')) {
+    counters.stage_field_missing += 1;
+    issues.push('playback media policy does not freeze bearer presentation and least privilege');
+  }
+
+  if (!deepEqual(model.cosPolicy, EXPECTED_COS_POLICY)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.cosPolicy does not exactly match the frozen private COS policy');
+  }
+  const cosPrivacy = String(model.cosPolicy?.bucketPrivacy || '');
+  if (!cosPrivacy.includes('private') || !cosPrivacy.includes('anonymous') || !cosPrivacy.includes('TLS-only')) {
+    counters.stage_field_missing += 1;
+    issues.push('COS policy must require a private bucket, no anonymous access and TLS-only transport');
+  }
+  if (!String(model.cosPolicy?.encryption || '').includes('SSE-KMS') || !String(model.cosPolicy?.versioning || '').includes('versioning')) {
+    counters.stage_field_missing += 1;
+    issues.push('COS policy must require SSE-KMS and versioning');
+  }
+  for (const claim of ['WORM', 'object lock', 'region', 'SKU']) {
+    if (!(model.cosPolicy?.claimsNotMade || []).includes(claim)) {
+      counters.stage_field_missing += 1;
+      issues.push(`COS policy must explicitly not claim ${claim}`);
+    }
+  }
+
+  const audit = Array.isArray(model.auditEvents) ? model.auditEvents : [];
+  const auditExpected = EXPECTED_AUDIT_EVENTS.map(([actionCode, actor, objectType, trigger, persistence]) => ({ actionCode, actor, objectType, trigger, persistence }));
+  if (!deepEqual(audit, auditExpected)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.auditEvents does not exactly match the frozen 39-row audit/access registry');
+  }
+  if (audit.length !== 39) {
+    counters.stage_field_missing += 1;
+    issues.push(`model.auditEvents count is ${audit.length}, expected 39`);
+  }
+  const actionCodes = new Set();
+  let accessEvents = 0;
+  let appendFacts = 0;
+  for (const row of audit) {
+    if (actionCodes.has(row.actionCode)) {
+      counters.stage_field_missing += 1;
+      issues.push(`duplicate audit actionCode ${row.actionCode}`);
+    }
+    actionCodes.add(row.actionCode);
+    if (row.persistence === 'access_event') {
+      accessEvents += 1;
+      if (!['AUDIT_READ', 'AUDIT_READ_DENIED'].includes(row.actionCode)) {
+        counters.stage_field_missing += 1;
+        issues.push(`audit row ${row.actionCode} must not use access_event persistence`);
+      }
+    } else if (row.persistence === 'append_fact') {
+      appendFacts += 1;
+      if (['AUDIT_READ', 'AUDIT_READ_DENIED'].includes(row.actionCode)) {
+        counters.stage_field_missing += 1;
+        issues.push(`audit row ${row.actionCode} must use access_event and must not recursively append a fact`);
+      }
+    } else {
+      counters.stage_field_missing += 1;
+      issues.push(`audit row ${row.actionCode} has an invalid persistence route`);
+    }
+    for (const field of ['actor', 'objectType', 'trigger']) {
+      if (typeof row[field] !== 'string' || row[field].trim() === '') {
+        counters.stage_field_missing += 1;
+        issues.push(`audit row ${row.actionCode} has an invalid ${field}`);
+      }
+    }
+  }
+  if (accessEvents !== 2 || appendFacts !== 37) {
+    counters.stage_field_missing += 1;
+    issues.push(`audit persistence is ${accessEvents} access_event + ${appendFacts} append_fact, expected 2 + 37`);
+  }
+  for (const code of ['AUDIT_READ', 'AUDIT_READ_DENIED']) {
+    const row = audit.find((entry) => entry.actionCode === code);
+    if (!row || row.persistence !== 'access_event') {
+      counters.stage_field_missing += 1;
+      issues.push(`${code} must be present and routed to access_event`);
+    }
+  }
+
+  const highRisk = Array.isArray(model.highRiskActions) ? model.highRiskActions : [];
+  const highRiskExpected = EXPECTED_HIGH_RISK_ACTIONS.map(([operationId, role, reasonSource, preconditionState, auditCode, conflictCode, beforeAfter]) => ({ operationId, role, reasonSource, preconditionState, auditCode, conflictCode, beforeAfter }));
+  if (!deepEqual(highRisk, highRiskExpected)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.highRiskActions does not exactly match the frozen ten high-risk operations');
+  }
+  if (highRisk.length !== 10) {
+    counters.stage_field_missing += 1;
+    issues.push(`model.highRiskActions count is ${highRisk.length}, expected 10`);
+  }
+  const operationIds = new Set();
+  for (const row of highRisk) {
+    if (operationIds.has(row.operationId)) {
+      counters.stage_field_missing += 1;
+      issues.push(`duplicate high-risk operation ${row.operationId}`);
+    }
+    operationIds.add(row.operationId);
+    if (!['ADMIN', 'OPS'].includes(row.role)) {
+      counters.stage_field_missing += 1;
+      issues.push(`high-risk operation ${row.operationId} uses an unapproved employee role ${row.role}`);
+    }
+    if (!['REQUEST reasonCode', 'ACTION_DERIVED'].includes(row.reasonSource)) {
+      counters.stage_field_missing += 1;
+      issues.push(`high-risk operation ${row.operationId} has an invalid reason source`);
+    }
+    if (!actionCodes.has(row.auditCode)) {
+      counters.stage_field_missing += 1;
+      issues.push(`high-risk operation ${row.operationId} references an unregistered audit code ${row.auditCode}`);
+    }
+  }
+
+  const coverage = Array.isArray(model.auditCoverage) ? model.auditCoverage : [];
+  const coverageExpected = EXPECTED_AUDIT_COVERAGE.map(([callClass, owner, authentication, auditAccessClass, redaction, failClosed]) => ({ callClass, owner, authentication, auditAccessClass, redaction, failClosed }));
+  if (!deepEqual(coverage, coverageExpected)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.auditCoverage does not exactly match the frozen ten call classes');
+  }
+  if (coverage.length !== 10) {
+    counters.stage_field_missing += 1;
+    issues.push(`model.auditCoverage count is ${coverage.length}, expected 10`);
+  }
+  const callClasses = new Set();
+  for (const row of coverage) {
+    if (callClasses.has(row.callClass)) {
+      counters.stage_field_missing += 1;
+      issues.push(`duplicate audit coverage class ${row.callClass}`);
+    }
+    callClasses.add(row.callClass);
+    for (const field of ['owner', 'authentication', 'auditAccessClass', 'redaction', 'failClosed']) {
+      if (typeof row[field] !== 'string' || row[field].trim() === '') {
+        counters.stage_field_missing += 1;
+        issues.push(`audit coverage ${row.callClass} has an invalid ${field}`);
+      }
+    }
+  }
+
+  if (!deepEqual(model.redactionPolicy, EXPECTED_REDACTION_POLICY)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.redactionPolicy does not exactly match the frozen deterministic redaction policy');
+  }
+  const denyList = model.redactionPolicy?.denyList || [];
+  if (denyList.length !== 30) {
+    counters.stage_field_missing += 1;
+    issues.push(`redaction denyList has ${denyList.length} keys, expected 30`);
+  }
+  const denyLower = new Set(denyList.map((key) => String(key).toLowerCase()));
+  for (const key of EXPECTED_REDACTION_POLICY.denyList) {
+    if (!denyLower.has(key.toLowerCase())) {
+      counters.stage_field_missing += 1;
+      issues.push(`redaction denyList is missing ${key}`);
+    }
+  }
+  if (!deepEqual(model.redactionPolicy?.order, EXPECTED_REDACTION_POLICY.order)) {
+    counters.stage_field_missing += 1;
+    issues.push('redaction order must run allow-list, recursive deny-list, pattern controls, destination policy, then emit');
+  }
+  if (model.redactionPolicy?.maskedVariantsAllowed !== true) {
+    counters.stage_field_missing += 1;
+    issues.push('redaction policy must allow explicit masked variants');
+  }
+  if (!String(model.redactionPolicy?.failurePolicy || '').includes('never emit first')) {
+    counters.stage_field_missing += 1;
+    issues.push('redaction failure policy must block or drop before emit, never emit first');
+  }
+
+  const failClosed = Array.isArray(model.failClosedMatrix) ? model.failClosedMatrix : [];
+  const failClosedExpected = EXPECTED_FAIL_CLOSED_MATRIX.map(([failureId, failure, affectedSurfaces, existingError, primaryStatus, primaryProblem, allowedProblems, sideEffects]) => ({ failureId, failure, affectedSurfaces, existingError, primaryStatus, primaryProblem, allowedProblems, sideEffects }));
+  if (!deepEqual(failClosed, failClosedExpected)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.failClosedMatrix does not exactly match the frozen fail-closed matrix');
+  }
+  if (failClosed.length !== 14) {
+    counters.stage_field_missing += 1;
+    issues.push(`model.failClosedMatrix count is ${failClosed.length}, expected 14`);
+  }
+  const allowedMatrixProblems = new Set(['SERVICE_UNAVAILABLE', 'DEPENDENCY_UNAVAILABLE', 'CALLBACK_RETRY_LATER', 'STORAGE_UNKNOWN', 'INTERNAL', 'UNAUTHENTICATED', 'SHARE_SESSION_POLICY_UNAVAILABLE']);
+  for (const row of failClosed) {
+    if (!allowedMatrixProblems.has(row.primaryProblem) || !(row.allowedProblems || []).every((code) => allowedMatrixProblems.has(code))) {
+      counters.stage_field_missing += 1;
+      issues.push(`fail-closed row ${row.failureId} references a non-existing Problem code`);
+    }
+    if (!(row.allowedProblems || []).includes(row.primaryProblem)) {
+      counters.stage_field_missing += 1;
+      issues.push(`fail-closed row ${row.failureId} primary problem is not in its allowed set`);
+    }
+    if (!String(row.existingError || '').includes(String(row.primaryStatus))) {
+      counters.stage_field_missing += 1;
+      issues.push(`fail-closed row ${row.failureId} existingError does not state status ${row.primaryStatus}`);
+    }
+  }
+  if (!actionCodes.has('SECURITY_UPLOAD_CREDENTIAL_ISSUED')
+    || !actionCodes.has('SECURITY_PLAYBACK_CREDENTIAL_ISSUED')
+    || !actionCodes.has('SECURITY_COS_POLICY_DENIED')
+    || !actionCodes.has('SECURITY_REDACTION_BLOCKED')) {
+    counters.stage_field_missing += 1;
+    issues.push('audit registry lacks an S3 media, COS or redaction event');
+  }
+}
+
 function validateDeferredAgainstA0(model, a0Inputs, counters, issues) {
   const deferred = Array.isArray(model.deferredInputs) ? model.deferredInputs : [];
   for (const row of deferred) {
@@ -2231,7 +3548,7 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
   } catch (error) {
     counters.failed += 1;
     issues.push(`fixtures directory is unreadable: ${error.message}`);
-    return { fixtureCount: 0, negativeCount: 0, s1Count: 0, s2Count: 0 };
+    return { fixtureCount: 0, negativeCount: 0, s1Count: 0, s2Count: 0, s3Count: 0 };
   }
   const jsonFiles = files.filter((name) => name.endsWith('.json'));
   for (const name of files.filter((entry) => !entry.endsWith('.json'))) {
@@ -2248,12 +3565,17 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
     }
   }
 
+  const config = STAGE_CONFIG[stage];
   const s1Ids = EXPECTED_FIXTURES_S1.map((entry) => entry[0]);
   const s2Ids = EXPECTED_FIXTURES_S2.map((entry) => entry[0]);
-  const expectedIds = stage === 's2' ? [...s1Ids, ...s2Ids] : s1Ids;
-  const considered = stage === 's2'
-    ? entries
-    : entries.filter((entry) => fixtureSlice(entry.fixture?.id) === 's1');
+  const s3Ids = EXPECTED_FIXTURES_S3.map((entry) => entry[0]);
+  const expectedIds = stage === 's1'
+    ? s1Ids
+    : stage === 's2'
+      ? [...s1Ids, ...s2Ids]
+      : [...s1Ids, ...s2Ids, ...s3Ids];
+  const evaluateSlices = new Set(config.evaluateSlices);
+  const considered = entries.filter((entry) => evaluateSlices.has(fixtureSlice(entry.fixture?.id)));
 
   const actualIds = considered.map((entry) => entry.fixture?.id).filter((id) => typeof id === 'string');
   for (const id of expectedIds) {
@@ -2272,25 +3594,32 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
     counters.fixture_id_extra += 1;
     issues.push('duplicate fixture ID detected');
   }
-  if (stage === 's1') {
-    for (const entry of entries) {
-      const slice = fixtureSlice(entry.fixture?.id);
-      if (slice === 's3' || slice === 'unknown') {
-        counters.fixture_id_extra += 1;
-        issues.push(`premature fixture ID outside the S1 projection: ${entry.fixture?.id || entry.fileName}`);
-        continue;
-      }
-      if (slice === 's2') {
-        const expected = EXPECTED_FIXTURES_S2.find((row) => row[0] === entry.fixture?.id);
-        if (!expected
-          || entry.fixture?.slice !== 's2'
-          || entry.fixture?.negative !== expected[1]
-          || entry.fileName !== `${entry.fixture?.id}.json`) {
-          counters.fixture_id_extra += 1;
-          issues.push(`S2 fixture ${entry.fileName} is not a valid later-stage artifact`);
-        }
-      }
+  const laterSeen = new Set();
+  for (const entry of entries) {
+    if (considered.includes(entry)) {
+      continue;
     }
+    const slice = fixtureSlice(entry.fixture?.id);
+    if (!config.laterFixtureSlices.includes(slice)) {
+      counters.fixture_id_extra += 1;
+      issues.push(`premature or unknown fixture ID outside the ${stage} projection: ${entry.fixture?.id || entry.fileName}`);
+      continue;
+    }
+    const expected = EXPECTED_FIXTURES_ALL.find((row) => row[0] === entry.fixture?.id);
+    if (!expected
+      || entry.fixture?.slice !== slice
+      || entry.fixture?.negative !== expected[1]
+      || entry.fileName !== `${entry.fixture?.id}.json`
+      || entry.fixture?.schemaVersion !== 1) {
+      counters.fixture_id_extra += 1;
+      issues.push(`${slice} fixture ${entry.fileName} is not a valid later-stage artifact`);
+      continue;
+    }
+    if (laterSeen.has(entry.fixture?.id)) {
+      counters.fixture_id_extra += 1;
+      issues.push(`duplicate later-stage fixture ID ${entry.fixture?.id}`);
+    }
+    laterSeen.add(entry.fixture?.id);
   }
 
   for (const { fileName, fixture } of considered) {
@@ -2300,7 +3629,7 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
     if (fixture.slice !== slice) fixtureIssues.push(`slice must be ${slice}`);
     if (fileName !== `${fixture.id}.json`) fixtureIssues.push(`file name ${fileName} does not match ID ${fixture.id}`);
     if (!Array.isArray(fixture.steps) || fixture.steps.length === 0) fixtureIssues.push('steps must be a non-empty array');
-    const expectedNegative = EXPECTED_FIXTURES.find((entry) => entry[0] === fixture.id)?.[1];
+    const expectedNegative = EXPECTED_FIXTURES_ALL.find((entry) => entry[0] === fixture.id)?.[1];
     if (expectedNegative !== undefined && fixture.negative !== expectedNegative) {
       fixtureIssues.push(`negative flag must be ${expectedNegative}`);
     }
@@ -2338,6 +3667,11 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
         fixtureIssues.push(`step ${step.id} has no expected result`);
       }
     }
+    walkKeys(fixture, (key) => {
+      if (/^(ui)?secondConfirmation$/i.test(key)) {
+        fixtureIssues.push('UI second confirmation is runtime-unverified and must not be a static assertion');
+      }
+    });
     const fixtureStrings = [];
     collectStrings(fixture, fixtureStrings);
     for (const text of fixtureStrings) {
@@ -2350,7 +3684,13 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
       if (slice === 's2' && /INV-A3-(1[2-9]|2[01])\b/.test(text)) {
         fixtureIssues.push('S2 fixture contains a future invariant ID');
       }
-      const forbidden = slice === 's1' ? [...S2_MODEL_SECTIONS, ...S3_MODEL_SECTIONS] : S3_MODEL_SECTIONS;
+      if (slice === 's3' && /INV-A3-(2[2-9]|[3-9][0-9])\b/.test(text)) {
+        fixtureIssues.push('S3 fixture contains an unapproved future invariant ID');
+      }
+      if (/sec-s4-/.test(text)) {
+        fixtureIssues.push('fixture contains an unapproved future fixture ID');
+      }
+      const forbidden = slice === 's1' ? [...S2_MODEL_SECTIONS, ...S3_MODEL_SECTIONS] : slice === 's2' ? S3_MODEL_SECTIONS : [];
       for (const section of forbidden) {
         if (text.includes(section)) {
           fixtureIssues.push(`fixture contains premature section token ${section}`);
@@ -2386,7 +3726,8 @@ function validateFixtures(fixturesDir, model, stage, counters, issues) {
   const negativeCount = considered.filter((entry) => entry.fixture?.negative === true).length;
   const s1Count = considered.filter((entry) => fixtureSlice(entry.fixture?.id) === 's1').length;
   const s2Count = considered.filter((entry) => fixtureSlice(entry.fixture?.id) === 's2').length;
-  return { fixtureCount: considered.length, negativeCount, s1Count, s2Count };
+  const s3Count = considered.filter((entry) => fixtureSlice(entry.fixture?.id) === 's3').length;
+  return { fixtureCount: considered.length, negativeCount, s1Count, s2Count, s3Count };
 }
 
 function main() {
@@ -2555,8 +3896,7 @@ function main() {
       rows: modelInfo.deferred.map((row) => MARKER_CONFIG.deferred.header.map((column) => String(row[column])))
     }
   ];
-  const s2MarkerRequested = args.stage === 's2'
-    || ['security-domain-map', 'security-service-map', 'security-credential-map'].some((name) => doc.includes(`<!-- ${name}:start -->`));
+  const s2MarkerRequested = args.stage === 's2' || args.stage === 's3';
   if (s2MarkerRequested) {
     const domainMarker = extractMarker(doc, MARKER_CONFIG.domain.name, counters, issues);
     const serviceMarker = extractMarker(doc, MARKER_CONFIG.service.name, counters, issues);
@@ -2593,6 +3933,51 @@ function main() {
         marker: credentialMarker,
         header: MARKER_CONFIG.credential.header,
         rows: (model.credentialClasses || []).map((row) => MARKER_CONFIG.credential.header.map((column) => String(row[column])))
+      }
+    );
+  }
+  if (args.stage === 's3') {
+    const mediaMarker = extractMarker(doc, MARKER_CONFIG.media.name, counters, issues);
+    const auditMarker = extractMarker(doc, MARKER_CONFIG.audit.name, counters, issues);
+    const highRiskMarker = extractMarker(doc, MARKER_CONFIG.highRisk.name, counters, issues);
+    const coverageMarker = extractMarker(doc, MARKER_CONFIG.coverage.name, counters, issues);
+    const failClosedMarker = extractMarker(doc, MARKER_CONFIG.failClosed.name, counters, issues);
+    markerDefinitions.push(
+      {
+        name: MARKER_CONFIG.media.name,
+        marker: mediaMarker,
+        header: MARKER_CONFIG.media.header,
+        rows: (model.mediaPolicies || []).map((row) => MARKER_CONFIG.media.header.map((column) => String(row[column])))
+      },
+      {
+        name: MARKER_CONFIG.audit.name,
+        marker: auditMarker,
+        header: MARKER_CONFIG.audit.header,
+        rows: (model.auditEvents || []).map((row) => MARKER_CONFIG.audit.header.map((column) => String(row[column])))
+      },
+      {
+        name: MARKER_CONFIG.highRisk.name,
+        marker: highRiskMarker,
+        header: MARKER_CONFIG.highRisk.header,
+        rows: (model.highRiskActions || []).map((row) => MARKER_CONFIG.highRisk.header.map((column) => String(row[column])))
+      },
+      {
+        name: MARKER_CONFIG.coverage.name,
+        marker: coverageMarker,
+        header: MARKER_CONFIG.coverage.header,
+        rows: (model.auditCoverage || []).map((row) => MARKER_CONFIG.coverage.header.map((column) => String(row[column])))
+      },
+      {
+        name: MARKER_CONFIG.failClosed.name,
+        marker: failClosedMarker,
+        header: MARKER_CONFIG.failClosed.header,
+        rows: (model.failClosedMatrix || []).map((row) => [
+          row.failureId,
+          row.failure,
+          (row.affectedSurfaces || []).join(', '),
+          row.existingError,
+          (row.sideEffects || []).join('; ')
+        ])
       }
     );
   }
@@ -2646,14 +4031,18 @@ function main() {
   for (const row of modelInfo.deferred) {
     tokens.add(row.inputId);
   }
-  const tokenInvariants = args.stage === 's2' ? modelInfo.invariants : modelInfo.invariants.slice(0, 6);
+  const tokenInvariants = args.stage === 's1'
+    ? modelInfo.invariants.slice(0, 6)
+    : args.stage === 's2'
+      ? modelInfo.invariants.slice(0, 11)
+      : modelInfo.invariants;
   for (const row of tokenInvariants) {
     tokens.add(row.id);
   }
   for (const [state] of EXPECTED_KEY_STATES) {
     tokens.add(state);
   }
-  if (args.stage === 's2') {
+  if (args.stage === 's2' || args.stage === 's3') {
     for (const row of model.trustSurfaces || []) {
       tokens.add(row.surfaceId);
       tokens.add(row.domain);
@@ -2677,6 +4066,34 @@ function main() {
       tokens.add(row.audience);
     }
   }
+  if (args.stage === 's3') {
+    for (const row of model.mediaPolicies || []) {
+      tokens.add(row.policyId);
+      tokens.add(row.credentialClass);
+    }
+    for (const row of model.auditEvents || []) {
+      tokens.add(row.actionCode);
+    }
+    for (const row of model.highRiskActions || []) {
+      tokens.add(row.operationId);
+    }
+    for (const row of model.auditCoverage || []) {
+      tokens.add(row.callClass);
+    }
+    for (const row of model.failClosedMatrix || []) {
+      tokens.add(row.failureId);
+    }
+    for (const className of model.redactionPolicy?.tokenClasses || []) {
+      tokens.add(`[REDACTED:${className}]`);
+    }
+    tokens.add(model.redactionPolicy?.tokenFormat || '[REDACTED:<CLASS>]');
+    tokens.add(model.redactionPolicy?.pathControl || '');
+    tokens.add(model.cosPolicy?.encryption || '');
+    tokens.add(model.cosPolicy?.versioning || '');
+    for (const claim of model.cosPolicy?.claimsNotMade || []) {
+      tokens.add(claim);
+    }
+  }
   for (const token of [...tokens].sort()) {
     if (!doc.includes(token)) {
       counters.token_missing += 1;
@@ -2690,20 +4107,13 @@ function main() {
     }
   }
 
-  const futureInvariantMatch = doc.match(/INV-A3-(1[2-9]|2[01])\b/);
-  if (futureInvariantMatch) {
+  if (/INV-A3-(2[2-9]|[3-9][0-9])\b/.test(doc)) {
     counters.stage_field_premature += 1;
-    issues.push('document contains a future invariant ID');
+    issues.push('document contains an unapproved future invariant ID');
   }
-  if (/sec-s3-/.test(doc)) {
+  if (/sec-s4-/.test(doc)) {
     counters.stage_field_premature += 1;
-    issues.push('document contains a future fixture ID');
-  }
-  for (const section of S3_MODEL_SECTIONS) {
-    if (doc.includes(section)) {
-      counters.stage_field_premature += 1;
-      issues.push(`document contains premature S3 section token ${section}`);
-    }
+    issues.push('document contains an unapproved future fixture ID');
   }
   if (/https?:\/\//.test(doc)) {
     counters.stage_field_premature += 1;
@@ -2718,13 +4128,31 @@ function main() {
   const deferredCount = modelInfo.deferred.length;
   const deferredQ = modelInfo.deferred.filter((row) => /^Q[0-9]+$/.test(row.inputId)).length;
   const deferredCv = modelInfo.deferred.filter((row) => /^CV-[0-9]+$/.test(row.inputId)).length;
-  const projectedInvariantCount = args.stage === 's2' ? modelInfo.invariants.length : Math.min(modelInfo.invariants.length, 6);
-  const expectedFixtureCount = args.stage === 's2' ? 15 : 6;
-  const sliceLabel = args.stage === 's2'
-    ? `${fixtureInfo.s1Count}+${fixtureInfo.s2Count}`
-    : String(fixtureInfo.s1Count);
+  const projectedInvariantCount = args.stage === 's1'
+    ? Math.min(modelInfo.invariants.length, 6)
+    : args.stage === 's2'
+      ? Math.min(modelInfo.invariants.length, 11)
+      : modelInfo.invariants.length;
+  const expectedFixtureCount = args.stage === 's1' ? 6 : args.stage === 's2' ? 15 : 23;
+  const sliceLabel = args.stage === 's1'
+    ? String(fixtureInfo.s1Count)
+    : args.stage === 's2'
+      ? `${fixtureInfo.s1Count}+${fixtureInfo.s2Count}`
+      : `${fixtureInfo.s1Count}+${fixtureInfo.s2Count}+${fixtureInfo.s3Count}`;
+  const auditEventCount = Array.isArray(model.auditEvents) ? model.auditEvents.length : 0;
+  const auditPersistenceCount = Array.isArray(model.auditEvents)
+    ? model.auditEvents.filter((row) => row.persistence === 'append_fact' || row.persistence === 'access_event').length
+    : 0;
+  const auditAccessEventCount = Array.isArray(model.auditEvents)
+    ? model.auditEvents.filter((row) => row.persistence === 'access_event').length
+    : 0;
+  const auditAppendFactCount = Array.isArray(model.auditEvents)
+    ? model.auditEvents.filter((row) => row.persistence === 'append_fact').length
+    : 0;
 
-  if (args.stage === 's2') {
+  if (args.stage === 's3') {
+    process.stdout.write(`stage=s3 trust_surfaces=${(model.trustSurfaces || []).length} auth_domains=${(model.authDomains || []).length} trust_boundaries=${(model.trustBoundaries || []).length} service_identities=${(model.serviceIdentities || []).length} credential_classes=${(model.credentialClasses || []).length} signature_profiles=${(model.signatureProfiles || []).length} media_policies=${(model.mediaPolicies || []).length} audit_events=${auditEventCount} audit_persistence=${auditPersistenceCount} audit_access_events=${auditAccessEventCount} audit_append_facts=${auditAppendFactCount} high_risk_actions=${(model.highRiskActions || []).length} audit_coverage=${(model.auditCoverage || []).length} key_classes=${keyCount} data_classes=${dataCount} deferred_inputs=${deferredCount} deferred_q=${deferredQ} deferred_cv=${deferredCv} invariants=${projectedInvariantCount} fixtures=${fixtureInfo.fixtureCount} passed=${counters.passed} failed=${counters.failed} negative=${fixtureInfo.negativeCount} slice_fixtures=${sliceLabel}\n`);
+  } else if (args.stage === 's2') {
     process.stdout.write(`stage=s2 trust_surfaces=${(model.trustSurfaces || []).length} auth_domains=${(model.authDomains || []).length} trust_boundaries=${(model.trustBoundaries || []).length} service_identities=${(model.serviceIdentities || []).length} credential_classes=${(model.credentialClasses || []).length} signature_profiles=${(model.signatureProfiles || []).length} key_classes=${keyCount} data_classes=${dataCount} deferred_inputs=${deferredCount} deferred_q=${deferredQ} deferred_cv=${deferredCv} invariants=${projectedInvariantCount} fixtures=${fixtureInfo.fixtureCount} passed=${counters.passed} failed=${counters.failed} negative=${fixtureInfo.negativeCount} slice_fixtures=${sliceLabel}\n`);
   } else {
     process.stdout.write(`stage=s1 key_classes=${keyCount} data_classes=${dataCount} deferred_inputs=${deferredCount} deferred_q=${deferredQ} deferred_cv=${deferredCv} invariants=${projectedInvariantCount} fixtures=${fixtureInfo.fixtureCount} passed=${counters.passed} failed=${counters.failed} negative=${fixtureInfo.negativeCount} slice_fixtures=${sliceLabel}\n`);
@@ -2733,19 +4161,38 @@ function main() {
   process.stdout.write(`doc_missing=${counters.doc_missing} doc_extra=${counters.doc_extra} doc_duplicate=${counters.doc_duplicate} doc_invalid=${counters.doc_invalid} token_missing=${counters.token_missing}\n`);
   process.stdout.write(`stage_field_missing=${counters.stage_field_missing} stage_field_premature=${counters.stage_field_premature} fixture_id_missing=${counters.fixture_id_missing} fixture_id_extra=${counters.fixture_id_extra}\n`);
 
-  const stageCountsOk = args.stage === 's2'
+  const stageCountsOk = args.stage === 's3'
     ? (model.trustSurfaces || []).length === 5
       && (model.authDomains || []).length === 5
       && (model.trustBoundaries || []).length === 7
       && (model.serviceIdentities || []).length === 6
       && (model.credentialClasses || []).length === 10
       && (model.signatureProfiles || []).length === 2
-      && projectedInvariantCount === 11
+      && (model.mediaPolicies || []).length === 2
+      && auditEventCount === 39
+      && auditPersistenceCount === 39
+      && auditAccessEventCount === 2
+      && auditAppendFactCount === 37
+      && (model.highRiskActions || []).length === 10
+      && (model.auditCoverage || []).length === 10
+      && projectedInvariantCount === 21
       && fixtureInfo.s1Count === 6
       && fixtureInfo.s2Count === 9
-      && fixtureInfo.negativeCount === 7
-    : fixtureInfo.s1Count === 6
-      && fixtureInfo.negativeCount === 2;
+      && fixtureInfo.s3Count === 8
+      && fixtureInfo.negativeCount === 10
+    : args.stage === 's2'
+      ? (model.trustSurfaces || []).length === 5
+        && (model.authDomains || []).length === 5
+        && (model.trustBoundaries || []).length === 7
+        && (model.serviceIdentities || []).length === 6
+        && (model.credentialClasses || []).length === 10
+        && (model.signatureProfiles || []).length === 2
+        && projectedInvariantCount === 11
+        && fixtureInfo.s1Count === 6
+        && fixtureInfo.s2Count === 9
+        && fixtureInfo.negativeCount === 7
+      : fixtureInfo.s1Count === 6
+        && fixtureInfo.negativeCount === 2;
   const failed = counters.passed !== fixtureInfo.fixtureCount
     || fixtureInfo.fixtureCount !== expectedFixtureCount
     || !stageCountsOk
@@ -2775,4 +4222,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   main();
 }
 
-export { EXPECTED_FIXTURES, EXPECTED_KEY_ROWS, EXPECTED_DATA_ROWS, validateFixtures };
+export {
+  EXPECTED_FIXTURES,
+  EXPECTED_FIXTURES_ALL,
+  EXPECTED_KEY_ROWS,
+  EXPECTED_DATA_ROWS,
+  EXPECTED_AUDIT_EVENTS,
+  EXPECTED_HIGH_RISK_ACTIONS,
+  EXPECTED_AUDIT_COVERAGE,
+  EXPECTED_FAIL_CLOSED_MATRIX,
+  EXPECTED_MEDIA_POLICIES,
+  validateFixtures
+};

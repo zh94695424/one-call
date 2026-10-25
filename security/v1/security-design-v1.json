@@ -1390,6 +1390,667 @@
       "destination": "Q13 observability"
     }
   ],
+  "mediaPolicies": [
+    {
+      "policyId": "U1",
+      "mediaKind": "UPLOAD",
+      "credentialClass": "C09 uploadCredential",
+      "primaryShape": "short-lived single-object Tencent COS presigned PUT credential",
+      "issuanceGate": "CV-4 verifies the required method, object and expiry plus supported size restrictions before issuance; otherwise fail closed and stop for architecture resolution",
+      "audienceClassification": "onecall:evidence-upload:v1 is an issuance-side policy classification, not a COS embedded audience claim",
+      "scope": "single recording object; PUT only; declared size, MIME and duration limits; valid until uploadExpiresAt",
+      "presentation": "response-only opaque 1-2048 credential; the IVR presents it directly to the private COS object over a controlled channel; it never crosses a public contract",
+      "forbiddenOperations": "READ/LIST/DELETE",
+      "redaction": "the credential is redacted in every egress and is never logged, split into object fields or reissued on replay",
+      "binding": ["callId", "recordingId", "objectIdentityDigest", "purpose=UPLOAD"],
+      "serverObservation": "completion observes object identity, SHA-256, size, MIME and duration on the server and binds them to the declaration",
+      "completionBoundary": "A2 recording completion validates server-observed facts and never solidifies evidence",
+      "permanence": "no permanent URL, object key, bucket or version is returned; no renewal and no re-sign",
+      "cvGate": "CV-4",
+      "fallbackPolicy": "no custom HMAC token and no signing-gateway fallback; when CV-4 cannot verify the capability, issuance fails closed and implementation stops",
+      "ttlInput": "uploadExpiresAt"
+    },
+    {
+      "policyId": "P1",
+      "mediaKind": "PLAYBACK",
+      "credentialClass": "C10 playbackCredential",
+      "primaryShape": "opaque short-lived media-gateway bearer credential",
+      "issuanceGate": "share admission verifies share, admission, revocation generation, object scope and purpose before issuance; expiry is bounded by the session and Q22",
+      "audienceClassification": "onecall:media-playback:v1 audience verified by the media-gateway",
+      "scope": "share, admission, generation, object and PLAYBACK/SEEK/RENEW only; no write, list or delete",
+      "presentation": "Authorization: Bearer <credential> to the authenticated media-gateway data plane; the bearer alone resolves the object and the client supplies no object key, bucket, version or public resource identifier",
+      "forbiddenOperations": "WRITE/LIST/DELETE",
+      "redaction": "the bearer and any credential URL are redacted in every egress",
+      "binding": ["shareId", "admissionId", "revocationGeneration", "objectIdentityDigest", "purpose"],
+      "serverObservation": "media-gateway verifies signature, audience, expiry, generation and object scope before reading COS with its own CAM identity",
+      "completionBoundary": "not applicable; playback never changes evidence",
+      "permanence": "no COS URL, object key, bucket or version is exposed; issued credentials are not recalled and expire per Q22",
+      "cvGate": "none",
+      "fallbackPolicy": "no permanent URL fallback",
+      "ttlInput": "Q22"
+    }
+  ],
+  "cosPolicy": {
+    "bucketPrivacy": "private bucket; anonymous read, write and list are forbidden; transport is TLS-only; public access is blocked",
+    "objectClasses": ["RAW_RECORDING", "DERIVED_PREVIEW", "TRANSCRIPT", "SUMMARY", "EXPORT"],
+    "objectClassRule": "each object category has a separate prefix or class; derived objects never overwrite the raw object",
+    "encryption": "COS SSE-KMS under K10",
+    "versioning": "COS versioning enabled",
+    "objectKeyRule": "object keys are unguessable and never public; raw object keys never cross a public contract",
+    "accessPaths": ["Tencent CAM service role", "short-lived upload credential", "short-lived playback credential through media-gateway"],
+    "logging": "log only object identity digest and hash prefix; never object key, bucket, version or URL",
+    "deferred": ["region", "storage class", "retention", "object lock/WORM", "private endpoint or VPC wiring", "HTTPS delivery path"],
+    "claimsNotMade": ["WORM", "object lock", "region", "SKU", "price", "capacity", "private endpoint"],
+    "evidenceBoundary": "A2 completion validates server-observed facts but never solidifies evidence",
+    "failClosed": "anonymous or public access, key/bucket/version/URL exposure or unverified capability is denied and alerted"
+  },
+  "auditEvents": [
+    {
+      "actionCode": "SECURITY_KEY_ACTIVATE",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "key version 激活",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_ROTATE",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "新旧 version overlap",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_RETIRE",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "旧 version retire",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_DISABLE",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "紧急 disable",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_RECOVER",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "re-enable/restore",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_DESTROY",
+      "actor": "SYSTEM",
+      "objectType": "KEY",
+      "trigger": "pending/executed destroy",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_PURPOSE_MISMATCH",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "purpose/dataClass 不匹配",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_KEY_ACCESS_DENIED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "KEY",
+      "trigger": "未授权 key/secret 访问",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_AUTH_DENIED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "CREDENTIAL",
+      "trigger": "会话/凭据无效",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_AUDIENCE_MISMATCH",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "CREDENTIAL",
+      "trigger": "跨域 token/credential",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_SERVICE_IDENTITY_DENIED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "SERVICE",
+      "trigger": "mTLS/CAM 身份不允许",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_SIGNATURE_INVALID",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "REQUEST",
+      "trigger": "IVR/provider 签名失败",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_REPLAY_REJECTED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "REQUEST",
+      "trigger": "nonce replay",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_TIMESTAMP_REJECTED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "REQUEST",
+      "trigger": "timestamp 超窗",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_PROVIDER_CALLBACK_REJECTED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "PAYMENT_EVENT",
+      "trigger": "provider 回调拒绝",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_UPLOAD_CREDENTIAL_ISSUED",
+      "actor": "SERVICE",
+      "objectType": "RECORDING",
+      "trigger": "upload credential 签发",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_UPLOAD_CREDENTIAL_DENIED",
+      "actor": "SERVICE",
+      "objectType": "RECORDING",
+      "trigger": "upload scope/expiry deny",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_PLAYBACK_CREDENTIAL_ISSUED",
+      "actor": "SERVICE",
+      "objectType": "SHARE_ADMISSION",
+      "trigger": "playback credential 签发",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_PLAYBACK_CREDENTIAL_DENIED",
+      "actor": "SERVICE",
+      "objectType": "SHARE_ADMISSION",
+      "trigger": "playback scope/expiry deny",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_COS_POLICY_DENIED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "MEDIA_OBJECT",
+      "trigger": "私有策略/对象访问拒绝",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "AUDIT_READ",
+      "actor": "EMPLOYEE",
+      "objectType": "AUDIT",
+      "trigger": "审计读取 access event",
+      "persistence": "access_event"
+    },
+    {
+      "actionCode": "AUDIT_READ_DENIED",
+      "actor": "SERVICE/EMPLOYEE",
+      "objectType": "AUDIT",
+      "trigger": "审计读取拒绝",
+      "persistence": "access_event"
+    },
+    {
+      "actionCode": "OPERATIONS_HIGH_RISK_DENIED",
+      "actor": "EMPLOYEE",
+      "objectType": "OPERATIONS",
+      "trigger": "高风险 role/state/reason 拒绝",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_SENSITIVE_READ",
+      "actor": "EMPLOYEE/SERVICE",
+      "objectType": "DATA_CLASS",
+      "trigger": "员工/支持读取敏感字段",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_REDACTION_BLOCKED",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "EXPORT",
+      "trigger": "未知字段/脱敏失败被阻断",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SECURITY_REDACTION_VIOLATION",
+      "actor": "SERVICE/SYSTEM",
+      "objectType": "EXPORT",
+      "trigger": "检测到明文/secret 出口",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SUBJECT_SUSPEND",
+      "actor": "EMPLOYEE",
+      "objectType": "SUBJECT",
+      "trigger": "OPS suspend",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SUBJECT_RESUME",
+      "actor": "EMPLOYEE",
+      "objectType": "SUBJECT",
+      "trigger": "OPS resume",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "CATALOG_VERSION_PUBLISH",
+      "actor": "EMPLOYEE",
+      "objectType": "CATALOG_VERSION",
+      "trigger": "ADMIN publish",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "CATALOG_VERSION_OFFSALE",
+      "actor": "EMPLOYEE",
+      "objectType": "CATALOG_VERSION",
+      "trigger": "ADMIN offsale",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "TRIAL_POLICY_CREATE",
+      "actor": "EMPLOYEE",
+      "objectType": "TRIAL_POLICY",
+      "trigger": "ADMIN create draft",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "TRIAL_POLICY_REPLACE",
+      "actor": "EMPLOYEE",
+      "objectType": "TRIAL_POLICY",
+      "trigger": "ADMIN replace draft",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "TRIAL_POLICY_PUBLISH",
+      "actor": "EMPLOYEE",
+      "objectType": "TRIAL_POLICY",
+      "trigger": "ADMIN publish",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "TRIAL_POLICY_DISABLE",
+      "actor": "EMPLOYEE",
+      "objectType": "TRIAL_POLICY",
+      "trigger": "ADMIN disable",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "CATALOG_DRAFT_CREATE",
+      "actor": "EMPLOYEE",
+      "objectType": "CATALOG_VERSION",
+      "trigger": "ADMIN create draft",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "CATALOG_DRAFT_REPLACE",
+      "actor": "EMPLOYEE",
+      "objectType": "CATALOG_VERSION",
+      "trigger": "ADMIN replace draft",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SHARE_REVOKE",
+      "actor": "ACCOUNT",
+      "objectType": "SHARE_GRANT",
+      "trigger": "customer revoke",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "SHARE_CODE_ROTATE",
+      "actor": "ACCOUNT",
+      "objectType": "SHARE_GRANT",
+      "trigger": "customer code rotation",
+      "persistence": "append_fact"
+    },
+    {
+      "actionCode": "PAYMENT_CALLBACK_ACCEPTED",
+      "actor": "SERVICE",
+      "objectType": "PAYMENT_EVENT",
+      "trigger": "accepted/duplicate provider event",
+      "persistence": "append_fact"
+    }
+  ],
+  "highRiskActions": [
+    {
+      "operationId": "suspendOperationsSubject",
+      "role": "OPS",
+      "reasonSource": "REQUEST reasonCode",
+      "preconditionState": "ACTIVE",
+      "auditCode": "SUBJECT_SUSPEND",
+      "conflictCode": "ACTIVATION_STATE_CONFLICT",
+      "beforeAfter": "status/revision/reason"
+    },
+    {
+      "operationId": "resumeOperationsSubject",
+      "role": "OPS",
+      "reasonSource": "REQUEST reasonCode",
+      "preconditionState": "SUSPENDED",
+      "auditCode": "SUBJECT_RESUME",
+      "conflictCode": "ACTIVATION_STATE_CONFLICT",
+      "beforeAfter": "status/revision/reason"
+    },
+    {
+      "operationId": "publishOperationsCatalogVersion",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "DRAFT_NEVER_PUBLISHED",
+      "auditCode": "CATALOG_VERSION_PUBLISH",
+      "conflictCode": "PUBLICATION_STALE_VIEW",
+      "beforeAfter": "status/revision/snapshot hash"
+    },
+    {
+      "operationId": "offsaleOperationsCatalogVersion",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "ACTIVE",
+      "auditCode": "CATALOG_VERSION_OFFSALE",
+      "conflictCode": "PUBLICATION_STALE_VIEW",
+      "beforeAfter": "status/revision"
+    },
+    {
+      "operationId": "createOperationsTrialPolicyDraft",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "NATURAL_KEY_ABSENT",
+      "auditCode": "TRIAL_POLICY_CREATE",
+      "conflictCode": "TRIAL_POLICY_DRAFT_CONFLICT",
+      "beforeAfter": "policy identity/revision"
+    },
+    {
+      "operationId": "replaceOperationsTrialPolicyDraft",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "DRAFT_NEVER_PUBLISHED",
+      "auditCode": "TRIAL_POLICY_REPLACE",
+      "conflictCode": "TRIAL_POLICY_DRAFT_STALE_VIEW",
+      "beforeAfter": "revision/snapshot hash"
+    },
+    {
+      "operationId": "publishOperationsTrialPolicy",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "DRAFT_NEVER_PUBLISHED",
+      "auditCode": "TRIAL_POLICY_PUBLISH",
+      "conflictCode": "TRIAL_POLICY_STALE_VIEW",
+      "beforeAfter": "enabled/publisher/revision"
+    },
+    {
+      "operationId": "disableOperationsTrialPolicy",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "ENABLED",
+      "auditCode": "TRIAL_POLICY_DISABLE",
+      "conflictCode": "TRIAL_POLICY_STALE_VIEW",
+      "beforeAfter": "enabled/revision"
+    },
+    {
+      "operationId": "createOperationsCatalogVersionDraft",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "NATURAL_KEY_ABSENT",
+      "auditCode": "CATALOG_DRAFT_CREATE",
+      "conflictCode": "CATALOG_DRAFT_CONFLICT",
+      "beforeAfter": "identity/revision"
+    },
+    {
+      "operationId": "replaceOperationsCatalogVersionDraft",
+      "role": "ADMIN",
+      "reasonSource": "ACTION_DERIVED",
+      "preconditionState": "DRAFT",
+      "auditCode": "CATALOG_DRAFT_REPLACE",
+      "conflictCode": "CATALOG_DRAFT_STALE_VIEW",
+      "beforeAfter": "revision/snapshot hash"
+    }
+  ],
+  "auditCoverage": [
+    {
+      "callClass": "CUSTOMER_API",
+      "owner": "customer_iam/catalog_order/sharing/activation_consent",
+      "authentication": "customerSession audience onecall:customer-session:v1",
+      "auditAccessClass": "business mutations append_fact; AUDIT_READ and AUDIT_READ_DENIED are access events",
+      "redaction": "masked value, internal ID or status only; no credential, capability token or ciphertext",
+      "failClosed": "existing 401/403/503 with no plaintext fallback"
+    },
+    {
+      "callClass": "OPERATIONS_API",
+      "owner": "operations_iam/audit",
+      "authentication": "employeeSession audience onecall:employee-session:v1 with fixed ADMIN/OPS",
+      "auditAccessClass": "high-risk operations append_fact; audit reads use access events",
+      "redaction": "no raw snapshot, PII, credential or object identifier",
+      "failClosed": "existing 401/403/409/500 with transaction rollback"
+    },
+    {
+      "callClass": "IVR_API",
+      "owner": "ivr/evidence",
+      "authentication": "ivrMtls plus ivrSignature plus timestamp plus nonce",
+      "auditAccessClass": "security and media events follow the registry persistence route",
+      "redaction": "no signature, nonce, credential, object key or plaintext party number",
+      "failClosed": "existing 401/403/503 with zero A2 business side effect"
+    },
+    {
+      "callClass": "PUBLIC_SHARE_API",
+      "owner": "sharing/evidence/media-gateway",
+      "authentication": "capability C07 or C08; C10 bearer only at media-gateway",
+      "auditAccessClass": "credential events append_fact; denied audit reads are access events",
+      "redaction": "no capability token, playback credential, object key or URL",
+      "failClosed": "existing 404/403/410/503 without admission recount"
+    },
+    {
+      "callClass": "PROVIDER_CALLBACK_API",
+      "owner": "catalog_order",
+      "authentication": "providerCallbackMtls plus providerCallbackSignature plus timestamp plus nonce",
+      "auditAccessClass": "accepted event uses PAYMENT_CALLBACK_ACCEPTED; rejection uses SECURITY_PROVIDER_CALLBACK_REJECTED",
+      "redaction": "no provider payload, signature, nonce or internal result",
+      "failClosed": "existing 401/409/503 without payment advance"
+    },
+    {
+      "callClass": "INTERNAL_SERVICE_CALL",
+      "owner": "all owning domains",
+      "authentication": "Tencent CAM service role plus audience",
+      "auditAccessClass": "dispatch access is redacted; security failures append_fact",
+      "redaction": "authorized fields only; no cross-module secret",
+      "failClosed": "existing 503/500 without partial write"
+    },
+    {
+      "callClass": "KMS_OPERATION",
+      "owner": "Security/Infrastructure",
+      "authentication": "Tencent CAM service role",
+      "auditAccessClass": "SECURITY_KEY events append_fact",
+      "redaction": "never log key_ref, plaintext, DEK or ciphertext",
+      "failClosed": "existing 503 with no plaintext fallback"
+    },
+    {
+      "callClass": "SECRET_MANAGER_READ",
+      "owner": "Security/Infrastructure",
+      "authentication": "Tencent CAM service role",
+      "auditAccessClass": "SECURITY_KEY_ACCESS_DENIED or SECURITY_KEY_RECOVER appends a fact",
+      "redaction": "secret value never emitted",
+      "failClosed": "existing 503 with no environment or image fallback"
+    },
+    {
+      "callClass": "COS_OPERATION",
+      "owner": "evidence/media",
+      "authentication": "Tencent CAM service role or a short-lived upload or playback credential",
+      "auditAccessClass": "media and COS policy events append_fact; provider logs are supplementary",
+      "redaction": "object identity digest and hash prefix only",
+      "failClosed": "existing 503 or STORAGE_UNKNOWN without fabricated media facts"
+    },
+    {
+      "callClass": "DATABASE_ACCESS",
+      "owner": "each domain NOLOGIN role",
+      "authentication": "NOLOGIN database role",
+      "auditAccessClass": "audit.append_fact for facts; access events for reads",
+      "redaction": "redacted snapshots only",
+      "failClosed": "transaction rollback without partial write"
+    }
+  ],
+  "redactionPolicy": {
+    "order": ["structured allow-list", "recursive deny-list at any depth", "credential, header and URL pattern controls", "destination policy", "emit"],
+    "matchMode": "case-insensitive key match at any depth",
+    "denyList": ["phone", "mobile", "callerNumber", "calleeNumber", "providerSubject", "identityNumber", "idNumber", "legalName", "shareCode", "otp", "objectKey", "objectVersionId", "bucket", "providerTransactionId", "providerEventId", "secret", "token", "password", "hmac", "ciphertext", "keyRef", "kmsKey", "credential", "capabilityToken", "extractionCode", "authorization", "cookie", "signature", "nonce", "accessNumberHmac"],
+    "maskedVariantsAllowed": true,
+    "tokenFormat": "[REDACTED:<CLASS>]",
+    "tokenClasses": ["PHONE", "PROVIDER_SUBJECT", "IDENTITY_NUMBER", "LEGAL_NAME", "SHARE_CODE", "OTP", "OBJECT_KEY", "OBJECT_VERSION", "BUCKET", "PROVIDER_TRANSACTION_ID", "PROVIDER_EVENT_ID", "SECRET", "TOKEN", "PASSWORD", "HMAC", "CIPHERTEXT", "KEY_REF", "KMS_KEY", "CREDENTIAL", "CAPABILITY_TOKEN", "EXTRACTION_CODE", "AUTHORIZATION", "COOKIE", "SIGNATURE", "NONCE", "ACCESS_NUMBER_HMAC", "PAYLOAD", "URL"],
+    "determinism": "the same input at the same destination always yields the same token; random tokens are forbidden",
+    "forbiddenEgress": ["logs", "traces", "errors", "analytics", "support views", "public contracts"],
+    "forbiddenFields": ["request or response body for authentication, callback or media credential endpoints", "Authorization, Cookie, signature and nonce headers", "full URL or query", "capabilityToken path segment", "upload or playback credential", "provider payload", "KMS key_ref", "ciphertext", "OTP or share code"],
+    "pathControl": "/api/v1/public/shares/{capabilityToken}/... is emitted as /api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]/...",
+    "errorPolicy": "return only a stable Problem code, a user-safe message and traceId; never provider, stack, SQL or secret",
+    "supportPolicy": "masked, redacted, internal ID, status and reason only; no playback right and no original sensitive value",
+    "failurePolicy": "run before emit; an unknown field or failed redaction blocks or drops the field, raises SECURITY_REDACTION_BLOCKED and alerts; never emit first and scrub; the response path returns 500 INTERNAL",
+    "destinations": ["log", "trace", "error", "analytics", "support", "public-contract"]
+  },
+  "failClosedMatrix": [
+    {
+      "failureId": "KMS_DECRYPT_UNAVAILABLE",
+      "failure": "KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref",
+      "affectedSurfaces": ["customer", "operations", "ivr"],
+      "existingError": "503 SERVICE_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "SERVICE_UNAVAILABLE",
+      "allowedProblems": ["SERVICE_UNAVAILABLE"],
+      "sideEffects": ["no plaintext returned", "no business write"]
+    },
+    {
+      "failureId": "KMS_DECRYPT_PUBLIC_SHARE",
+      "failure": "KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref",
+      "affectedSurfaces": ["public-share"],
+      "existingError": "503 DEPENDENCY_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "DEPENDENCY_UNAVAILABLE",
+      "allowedProblems": ["DEPENDENCY_UNAVAILABLE", "SHARE_SESSION_POLICY_UNAVAILABLE"],
+      "sideEffects": ["no media credential issued", "no admission recount"]
+    },
+    {
+      "failureId": "KMS_DECRYPT_PROVIDER",
+      "failure": "KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref",
+      "affectedSurfaces": ["provider"],
+      "existingError": "503 CALLBACK_RETRY_LATER",
+      "primaryStatus": 503,
+      "primaryProblem": "CALLBACK_RETRY_LATER",
+      "allowedProblems": ["CALLBACK_RETRY_LATER"],
+      "sideEffects": ["no payment or entitlement advance"]
+    },
+    {
+      "failureId": "SECRET_MANAGER_SIGNING_UNAVAILABLE",
+      "failure": "Secret Manager or IVR signing key unavailable",
+      "affectedSurfaces": ["ivr"],
+      "existingError": "503 SERVICE_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "SERVICE_UNAVAILABLE",
+      "allowedProblems": ["SERVICE_UNAVAILABLE"],
+      "sideEffects": ["no verification success", "no A2 processing"]
+    },
+    {
+      "failureId": "REDIS_NONCE_UNAVAILABLE",
+      "failure": "Redis nonce store unavailable",
+      "affectedSurfaces": ["ivr"],
+      "existingError": "503 SERVICE_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "SERVICE_UNAVAILABLE",
+      "allowedProblems": ["SERVICE_UNAVAILABLE"],
+      "sideEffects": ["no nonce consumption", "no A2 processing"]
+    },
+    {
+      "failureId": "REDIS_SESSION_UNAVAILABLE",
+      "failure": "Redis session store unavailable",
+      "affectedSurfaces": ["customer", "employee", "public-share"],
+      "existingError": "503 SERVICE_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "SERVICE_UNAVAILABLE",
+      "allowedProblems": ["SERVICE_UNAVAILABLE", "SHARE_SESSION_POLICY_UNAVAILABLE"],
+      "sideEffects": ["no authentication bypass", "no session creation"]
+    },
+    {
+      "failureId": "COS_UPLOAD_SIGNING_UNAVAILABLE",
+      "failure": "COS or upload signing unavailable",
+      "affectedSurfaces": ["ivr"],
+      "existingError": "503 SERVICE_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "SERVICE_UNAVAILABLE",
+      "allowedProblems": ["SERVICE_UNAVAILABLE"],
+      "sideEffects": ["no upload credential issued"]
+    },
+    {
+      "failureId": "COS_STORAGE_UNKNOWN",
+      "failure": "COS or storage outcome unknown",
+      "affectedSurfaces": ["ivr"],
+      "existingError": "503 STORAGE_UNKNOWN",
+      "primaryStatus": 503,
+      "primaryProblem": "STORAGE_UNKNOWN",
+      "allowedProblems": ["STORAGE_UNKNOWN"],
+      "sideEffects": ["no media fact", "no terminal state change"]
+    },
+    {
+      "failureId": "COS_PLAYBACK_SIGNING_UNAVAILABLE",
+      "failure": "COS or playback signing unavailable",
+      "affectedSurfaces": ["public-share"],
+      "existingError": "503 DEPENDENCY_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE",
+      "primaryStatus": 503,
+      "primaryProblem": "DEPENDENCY_UNAVAILABLE",
+      "allowedProblems": ["DEPENDENCY_UNAVAILABLE", "SHARE_SESSION_POLICY_UNAVAILABLE"],
+      "sideEffects": ["no playback credential issued"]
+    },
+    {
+      "failureId": "AUDIT_APPEND_FAILED",
+      "failure": "audit append failure",
+      "affectedSurfaces": ["operations", "ivr media", "payment"],
+      "existingError": "500 INTERNAL or the existing 503 when no 4xx semantics apply",
+      "primaryStatus": 500,
+      "primaryProblem": "INTERNAL",
+      "allowedProblems": ["INTERNAL", "SERVICE_UNAVAILABLE"],
+      "sideEffects": ["domain transaction rollback", "no partial write"]
+    },
+    {
+      "failureId": "HMAC_KEY_UNAVAILABLE",
+      "failure": "HMAC key unavailable",
+      "affectedSurfaces": ["any lookup"],
+      "existingError": "existing 503 for the surface",
+      "primaryStatus": 503,
+      "primaryProblem": "SERVICE_UNAVAILABLE",
+      "allowedProblems": ["SERVICE_UNAVAILABLE"],
+      "sideEffects": ["no plaintext scan", "no fake empty result"]
+    },
+    {
+      "failureId": "REDACTION_PIPELINE_FAILED",
+      "failure": "redaction pipeline failure",
+      "affectedSurfaces": ["any egress"],
+      "existingError": "500 INTERNAL or a dropped log field",
+      "primaryStatus": 500,
+      "primaryProblem": "INTERNAL",
+      "allowedProblems": ["INTERNAL"],
+      "sideEffects": ["no raw value emitted", "alert raised"]
+    },
+    {
+      "failureId": "MFA_OR_IDP_UNAVAILABLE",
+      "failure": "MFA or identity provider unavailable (Q1)",
+      "affectedSurfaces": ["employee login", "customer login"],
+      "existingError": "existing 401 or 503 for the surface",
+      "primaryStatus": 401,
+      "primaryProblem": "UNAUTHENTICATED",
+      "allowedProblems": ["UNAUTHENTICATED", "SERVICE_UNAVAILABLE"],
+      "sideEffects": ["no session creation"]
+    },
+    {
+      "failureId": "PROVIDER_PROFILE_OR_NONCE_UNAVAILABLE",
+      "failure": "provider profile or nonce store unavailable",
+      "affectedSurfaces": ["provider"],
+      "existingError": "503 CALLBACK_RETRY_LATER",
+      "primaryStatus": 503,
+      "primaryProblem": "CALLBACK_RETRY_LATER",
+      "allowedProblems": ["CALLBACK_RETRY_LATER"],
+      "sideEffects": ["no payment advance"]
+    }
+  ],
   "invariants": [
     {
       "id": "INV-A3-01",
@@ -1434,6 +2095,46 @@
     {
       "id": "INV-A3-11",
       "statement": "Provider callbacks require mTLS, vendor signature, timestamp and nonce; the same event and fingerprint is idempotent while a changed payload is a conflict."
+    },
+    {
+      "id": "INV-A3-12",
+      "statement": "Media credentials are short-lived, single-object or single-purpose and least-privilege; upload cannot read, list or delete, playback cannot write, and both are redacted."
+    },
+    {
+      "id": "INV-A3-13",
+      "statement": "COS remains private with no anonymous access; no object key, bucket, version or permanent URL appears in a public contract or log."
+    },
+    {
+      "id": "INV-A3-14",
+      "statement": "Audit is append-only through audit.append_fact; high-risk operations require role, state, reason and before-after in one transaction; audit reads are employee-only."
+    },
+    {
+      "id": "INV-A3-15",
+      "statement": "Redaction runs deterministically before emit; deny-listed fields, credential URLs and header secrets never enter logs, traces, errors, analytics, support or public contracts."
+    },
+    {
+      "id": "INV-A3-16",
+      "statement": "Support views show only masked, redacted, internal ID and status values and never grant recording playback or expose an original sensitive value."
+    },
+    {
+      "id": "INV-A3-17",
+      "statement": "KMS, Secret Manager, Redis nonce, COS, database and audit failures fail closed with no plaintext fallback, credential issuance, evidence solidification, redial or duplicate A2 business side effect."
+    },
+    {
+      "id": "INV-A3-18",
+      "statement": "Region, SKU, price, capacity, WORM and object-lock are never invented; every production value is a typed deferred input with an owner and destination."
+    },
+    {
+      "id": "INV-A3-19",
+      "statement": "Only the fixed ADMIN and OPS employee roles exist; no new employee role, service decomposition or infrastructure topology is introduced."
+    },
+    {
+      "id": "INV-A3-20",
+      "statement": "Every key, credential and service-call class has an audit or access owner and a testable scenario; the registry has no orphan row."
+    },
+    {
+      "id": "INV-A3-21",
+      "statement": "The accepted A0, A1 and A2 contracts are unchanged; the validator proves their counts, shapes and digests, and any necessary change is a blocker."
     }
   ]
 }

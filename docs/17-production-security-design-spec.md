@@ -1,22 +1,22 @@
-# 生产安全设计规范（S1+S2：敏感数据保护、认证域与服务身份）
+# 生产安全设计规范（S1+S2+S3：敏感数据、认证域、媒体、审计与脱敏）
 
 > Work unit：`A3-production-security-design-spec`
 >
-> Slice：S1 — 敏感数据保护、密钥层级、轮换/恢复与历史 replay 兼容；S2 — 认证域、服务身份、凭据、签名与 replay 拒绝
+> Slice：S1 — 敏感数据保护、密钥层级、轮换/恢复与历史 replay 兼容；S2 — 认证域、服务身份、凭据、签名与 replay 拒绝；S3 — 媒体凭证、COS 私有策略、审计访问、高风险控制与确定性脱敏
 >
-> Task label：`a3-security-s2-impl-ds-20261025-01`
+> Task label：`a3-security-s3-impl-ds-20261026-01`
 >
-> Base：accepted S1 checkpoint `88079d208e90ebc176ab54a25734c38bbf7732aa`
+> Base：accepted S2 checkpoint `b20be2edfa576e4e27bdf94e067335df25e9cf88`
 >
 > Machine model：`security/v1/security-design-v1.json`
 >
 > Validator：`security/validate.mjs`（零第三方依赖，Node 22）
 >
-> Status：S2 author-complete；S3 媒体凭证/COS/审计/脱敏未实现，也未在本文件中提前冻结。
+> Status：S3 author-complete（累计 S1+S2+S3）；等待独立 code review，不是 accepted checkpoint。
 
 ## 1. 状态、来源关系与静态限制
 
-本文件是 A3 安全语义的人类 canonical 规范；`security/v1/security-design-v1.json` 是同一语义的机器投影，二者由 `security/validate.mjs` 做双向一致性校验。S1 冻结数据与密钥真相：哪些数据由哪个 purpose/key 保护、如何 envelope/HMAC、如何轮换/恢复、如何保持历史解密/查找与 A2 replay 兼容。S2 在不改变 S1 语义的前提下冻结五个信任面/认证域、七个 trust boundary、六个内部服务身份、十个凭据类、两个签名 profile、audience/nonce 策略，以及 IVR/provider 的 mTLS + 签名 + timestamp + nonce/replay 确定性验证和失败零副作用语义。
+本文件是 A3 安全语义的人类 canonical 规范；`security/v1/security-design-v1.json` 是同一语义的机器投影，二者由 `security/validate.mjs` 做双向一致性校验。S1 冻结数据与密钥真相：哪些数据由哪个 purpose/key 保护、如何 envelope/HMAC、如何轮换/恢复、如何保持历史解密/查找与 A2 replay 兼容。S2 在不改变 S1 语义的前提下冻结五个信任面/认证域、七个 trust boundary、六个内部服务身份、十个凭据类、两个签名 profile、audience/nonce 策略，以及 IVR/provider 的 mTLS + 签名 + timestamp + nonce/replay 确定性验证和失败零副作用语义。S3 在不改变 S1/S2 的前提下冻结媒体 upload/playback 凭证、COS 私有对象策略、39 个审计/访问事件及其 persistence route、10 个高风险操作、10 个调用类覆盖、确定性脱敏与 fail-closed 矩阵，并累计 21 个 invariant。
 
 本文件与模型是静态设计产物，**不声称**任何运行时或云能力已经执行、验证或可用。没有真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR 线路、日志平台、analytics 或支付供应商调用发生。fixtures 只验证模型级确定性行为，不是生产验收矩阵、渗透测试或容量结论。
 
@@ -51,7 +51,18 @@ S2 追加冻结（不改变 S1 语义）：
 - 累计 invariant 恰好 11 个（新增 `INV-A3-07` 至 `INV-A3-11`）；
 - 恰好 9 个 S2 fixture，累计 15 个（6+9），其中 7 个显式负例。
 
-S3 不在本文件中提前冻结：媒体凭证、COS 私有策略、audit access、高风险控制和确定性脱敏的模型 section、fixture ID 或 invariant 文本都不得出现；validator 必须拒绝任何未来 stage 的 invariant、fixture 或 section 文本。
+S3 追加冻结（不改变 S1/S2 语义）：
+
+- 恰好 2 个媒体策略：U1 short-lived single-object Tencent COS presigned PUT（CV-4 门禁，不可验证则 fail closed 且停止，不 fallback）与 P1 opaque media-gateway bearer（`Authorization: Bearer`，无 COS key/bucket/version/permanent URL）；
+- COS 私有策略：私有 bucket、禁匿名、TLS-only、SSE-KMS、versioning、不改写原始对象、不声称 WORM/object-lock/region/SKU/private endpoint；
+- 恰好 39 个审计/访问事件，每行带 `persistence`，精确为 2 个 `access_event`（`AUDIT_READ`/`AUDIT_READ_DENIED`，不递归调用 `audit.append_fact`）与 37 个 `append_fact`；
+- 恰好 10 个高风险员工 mutation，固定 ADMIN/OPS、role/state/reason/audit 同事务、audit 失败回滚；UI 二次确认标记 runtime-unverified，不作为 validator-assertable 成功项；
+- 恰好 10 个调用类覆盖行；
+- emit 前确定性脱敏：结构化 allow-list → 任意深度递归 deny-list → credential/header/URL pattern → destination policy；失败 block/drop 并告警，绝不先 emit 后清洗；support view 无 playback；
+- fail-closed 矩阵与 `INV-A3-12` 至 `INV-A3-21`（累计 21）；
+- 恰好 8 个 S3 fixture，累计 23（`6+9+8`），其中累计 10 个显式负例。
+
+`--stage s1` 和 `--stage s2` 在同一累计文件上只验证各自 projection 的 registry、marker 与 fixture，忽略后续 slice；`--stage s3` 要求全部 S3 section/marker/invariant/fixture 存在且精确，任何缺失、额外、畸形、未知或篡改内容都失败。
 
 ## 3. 上游权威与禁改边界
 
@@ -377,7 +388,7 @@ A2 §6.6 outbox 分类未命名 `UNAUTHENTICATED`/`FORBIDDEN`（401/403）。S2 
 - 只有在收到显式 credential/key/certificate 或 service-authorization recovery signal 后才允许重试；重试使用同一 domain identity（`callId`/`eventId`/`recordingId`/`decisionId`）与 immutable payload，并生成新的 timestamp/nonce。
 - 数值 retry/backoff/alert 值仍为 Q8/Q13/Q25 deferred。本策略不新增 A2 state/event/digest 或 server classification；`PENDING` 是 A2 既有四态之一。
 
-## 15. Invariants（累计 11）
+## 15. Invariants（累计 21）
 
 | ID | Statement |
 | --- | --- |
@@ -387,18 +398,207 @@ A2 §6.6 outbox 分类未命名 `UNAUTHENTICATED`/`FORBIDDEN`（401/403）。S2 
 | INV-A3-04 | HMAC is lowercase 64-hex under an independent key; it is used only for equality, uniqueness and indexed lookup and is never returned, logged or public. |
 | INV-A3-05 | Every key and credential has an owner, custody, state, rotation and recovery path; secret material never enters a database, code, image or log. |
 | INV-A3-06 | Rotation never rewrites append-only or frozen rows; historical keys are retained until retention; A2 replay returns the same payload/decision without re-selection or a second reservation. |
-
 | INV-A3-07 | The five authentication domains never share a token, credential, audience or verifier; a request that crosses domains is rejected. |
 | INV-A3-08 | The six service identities use least privilege, independent CAM roles and rotation; no frontend holds a service secret and no policy grants a wildcard action or resource. |
 | INV-A3-09 | Every IVR request must pass mTLS, signature, timestamp and nonce verification; the verification order and canonical string are fixed. |
 | INV-A3-10 | Replay rejection occurs before any domain side effect; transport nonce and timestamp are refreshed on every retry while A2 eventId and payload stay unchanged. |
 | INV-A3-11 | Provider callbacks require mTLS, vendor signature, timestamp and nonce; the same event and fingerprint is idempotent while a changed payload is a conflict. |
+| INV-A3-12 | Media credentials are short-lived, single-object or single-purpose and least-privilege; upload cannot read, list or delete, playback cannot write, and both are redacted. |
+| INV-A3-13 | COS remains private with no anonymous access; no object key, bucket, version or permanent URL appears in a public contract or log. |
+| INV-A3-14 | Audit is append-only through audit.append_fact; high-risk operations require role, state, reason and before-after in one transaction; audit reads are employee-only. |
+| INV-A3-15 | Redaction runs deterministically before emit; deny-listed fields, credential URLs and header secrets never enter logs, traces, errors, analytics, support or public contracts. |
+| INV-A3-16 | Support views show only masked, redacted, internal ID and status values and never grant recording playback or expose an original sensitive value. |
+| INV-A3-17 | KMS, Secret Manager, Redis nonce, COS, database and audit failures fail closed with no plaintext fallback, credential issuance, evidence solidification, redial or duplicate A2 business side effect. |
+| INV-A3-18 | Region, SKU, price, capacity, WORM and object-lock are never invented; every production value is a typed deferred input with an owner and destination. |
+| INV-A3-19 | Only the fixed ADMIN and OPS employee roles exist; no new employee role, service decomposition or infrastructure topology is introduced. |
+| INV-A3-20 | Every key, credential and service-call class has an audit or access owner and a testable scenario; the registry has no orphan row. |
+| INV-A3-21 | The accepted A0, A1 and A2 contracts are unchanged; the validator proves their counts, shapes and digests, and any necessary change is a blocker. |
 
-S2 累计 invariant 恰好 11 个，不包含任何未来 stage 的 invariant 文本、ID 或断言。S3 的行为、fixture 与 invariant 文本必须在 S3 Gate 中单独冻结。
+S3 累计 invariant 恰好 21 个（S1 冻结 6，S2 累计 11，S3 累计 21）。任何未批准的更高 invariant ID、section 或 fixture ID 都被 validator 拒绝。
 
-## 16. 确定性验证、fixtures 与诚实限制
+## 16. 媒体凭证与 COS 私有策略（S3）
 
-验证命令（在 repo root，S2 使用与 S1 相同参数并切换 `--stage`）：
+媒体 authority 只有两个策略。U1 upload 的唯一 primary shape 是 short-lived single-object Tencent COS presigned PUT，仅在 CV-4 验证 required method/object/expiry/size 后签发；能力不可验证时 fail closed 并停止，不 fallback 到 custom HMAC token 或 signing gateway。P1 playback 是 opaque media-gateway bearer，客户端以 `Authorization: Bearer <credential>` 调用已鉴权的 media-gateway data plane；bearer 单独解析 share/admission/generation/object/purpose，客户端不提供 COS key/bucket/version 或任何 public A1 resource identifier。两者都不返回永久 URL，且在任何 egress 中被 redacted。
+
+<!-- security-media-map:start -->
+| policyId | mediaKind | credentialClass | primaryShape | issuanceGate | scope | presentation | forbiddenOperations | redaction |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| U1 | UPLOAD | C09 uploadCredential | short-lived single-object Tencent COS presigned PUT credential | CV-4 verifies the required method, object and expiry plus supported size restrictions before issuance; otherwise fail closed and stop for architecture resolution | single recording object; PUT only; declared size, MIME and duration limits; valid until uploadExpiresAt | response-only opaque 1-2048 credential; the IVR presents it directly to the private COS object over a controlled channel; it never crosses a public contract | READ/LIST/DELETE | the credential is redacted in every egress and is never logged, split into object fields or reissued on replay |
+| P1 | PLAYBACK | C10 playbackCredential | opaque short-lived media-gateway bearer credential | share admission verifies share, admission, revocation generation, object scope and purpose before issuance; expiry is bounded by the session and Q22 | share, admission, generation, object and PLAYBACK/SEEK/RENEW only; no write, list or delete | Authorization: Bearer <credential> to the authenticated media-gateway data plane; the bearer alone resolves the object and the client supplies no object key, bucket, version or public resource identifier | WRITE/LIST/DELETE | the bearer and any credential URL are redacted in every egress |
+<!-- security-media-map:end -->
+
+Upload 的签发侧应用校验 `callId`/`recordingId`/`purpose` 并推导 hidden target object；`onecall:evidence-upload:v1` 只是签发侧 policy/audience 分类，不是 COS 内嵌 audience claim。完成后服务端重算 object identity、SHA-256、size、MIME 与 duration 并与 declaration 绑定；A2 complete 不固化 evidence。Playback 的 issued credential 不被远程召回，只受 Q22 撤销传播窗口与 expiry 约束；`SHARE_LOCKED` 只阻止新准入，不阻止已准入 P3 授权。精确 gateway origin/path、CDN/LB、range/streaming 与 delivery topology 仍是 `R-A3-MEDIA-GATEWAY-TRANSPORT` 的部署输入。
+
+**COS 私有策略**
+
+- Bucket 固定私有；禁止匿名 read/write/list；TLS-only；block public access。
+- 对象按 RAW_RECORDING、DERIVED_PREVIEW、TRANSCRIPT、SUMMARY、EXPORT 分类；每类独立 prefix/class；派生对象不覆盖原始录音。
+- 加密固定为 `COS SSE-KMS under K10`；版本控制固定为 `COS versioning enabled`；对象 key 不可猜测且永不 public。
+- 访问只经 Tencent CAM service role、short-lived upload credential 或经 media-gateway 的 short-lived playback credential；日志只记录 object identity digest 与 hash prefix，不记录 key/bucket/version/URL。
+- `region`、storage class、retention、`object lock/WORM`、private endpoint/VPC 与 HTTPS delivery path 全部 Q11/CV-4 typed deferred。本文件**不声称** `WORM`、`object lock`、`region`、`SKU`、`price`、`capacity` 或 `private endpoint` 已验证或可用。
+
+## 17. 审计访问、高风险操作与调用类覆盖（S3）
+
+审计真源是 PostgreSQL `audit.audit_fact`；日志平台副本不是审计真源。只通过 `audit.append_fact` 写入；`audit_reader_role` 只有 SELECT，无 UPDATE/DELETE/TRUNCATE。审计读取只限 `employee` domain 的固定 ADMIN/OPS，成功读取写 `AUDIT_READ` access event，拒绝写 `AUDIT_READ_DENIED` access event；两者都**不得**递归调用 `audit.append_fact`。其余 37 行使用 `append_fact`。projection 只含 status/revision/reasonCode，不返回 raw snapshot。
+
+<!-- security-audit-map:start -->
+| actionCode | actor | objectType | trigger | persistence |
+| --- | --- | --- | --- | --- |
+| SECURITY_KEY_ACTIVATE | SERVICE/SYSTEM | KEY | key version 激活 | append_fact |
+| SECURITY_KEY_ROTATE | SERVICE/SYSTEM | KEY | 新旧 version overlap | append_fact |
+| SECURITY_KEY_RETIRE | SERVICE/SYSTEM | KEY | 旧 version retire | append_fact |
+| SECURITY_KEY_DISABLE | SERVICE/SYSTEM | KEY | 紧急 disable | append_fact |
+| SECURITY_KEY_RECOVER | SERVICE/SYSTEM | KEY | re-enable/restore | append_fact |
+| SECURITY_KEY_DESTROY | SYSTEM | KEY | pending/executed destroy | append_fact |
+| SECURITY_KEY_PURPOSE_MISMATCH | SERVICE/SYSTEM | KEY | purpose/dataClass 不匹配 | append_fact |
+| SECURITY_KEY_ACCESS_DENIED | SERVICE/SYSTEM | KEY | 未授权 key/secret 访问 | append_fact |
+| SECURITY_AUTH_DENIED | SERVICE/SYSTEM | CREDENTIAL | 会话/凭据无效 | append_fact |
+| SECURITY_AUDIENCE_MISMATCH | SERVICE/SYSTEM | CREDENTIAL | 跨域 token/credential | append_fact |
+| SECURITY_SERVICE_IDENTITY_DENIED | SERVICE/SYSTEM | SERVICE | mTLS/CAM 身份不允许 | append_fact |
+| SECURITY_SIGNATURE_INVALID | SERVICE/SYSTEM | REQUEST | IVR/provider 签名失败 | append_fact |
+| SECURITY_REPLAY_REJECTED | SERVICE/SYSTEM | REQUEST | nonce replay | append_fact |
+| SECURITY_TIMESTAMP_REJECTED | SERVICE/SYSTEM | REQUEST | timestamp 超窗 | append_fact |
+| SECURITY_PROVIDER_CALLBACK_REJECTED | SERVICE/SYSTEM | PAYMENT_EVENT | provider 回调拒绝 | append_fact |
+| SECURITY_UPLOAD_CREDENTIAL_ISSUED | SERVICE | RECORDING | upload credential 签发 | append_fact |
+| SECURITY_UPLOAD_CREDENTIAL_DENIED | SERVICE | RECORDING | upload scope/expiry deny | append_fact |
+| SECURITY_PLAYBACK_CREDENTIAL_ISSUED | SERVICE | SHARE_ADMISSION | playback credential 签发 | append_fact |
+| SECURITY_PLAYBACK_CREDENTIAL_DENIED | SERVICE | SHARE_ADMISSION | playback scope/expiry deny | append_fact |
+| SECURITY_COS_POLICY_DENIED | SERVICE/SYSTEM | MEDIA_OBJECT | 私有策略/对象访问拒绝 | append_fact |
+| AUDIT_READ | EMPLOYEE | AUDIT | 审计读取 access event | access_event |
+| AUDIT_READ_DENIED | SERVICE/EMPLOYEE | AUDIT | 审计读取拒绝 | access_event |
+| OPERATIONS_HIGH_RISK_DENIED | EMPLOYEE | OPERATIONS | 高风险 role/state/reason 拒绝 | append_fact |
+| SECURITY_SENSITIVE_READ | EMPLOYEE/SERVICE | DATA_CLASS | 员工/支持读取敏感字段 | append_fact |
+| SECURITY_REDACTION_BLOCKED | SERVICE/SYSTEM | EXPORT | 未知字段/脱敏失败被阻断 | append_fact |
+| SECURITY_REDACTION_VIOLATION | SERVICE/SYSTEM | EXPORT | 检测到明文/secret 出口 | append_fact |
+| SUBJECT_SUSPEND | EMPLOYEE | SUBJECT | OPS suspend | append_fact |
+| SUBJECT_RESUME | EMPLOYEE | SUBJECT | OPS resume | append_fact |
+| CATALOG_VERSION_PUBLISH | EMPLOYEE | CATALOG_VERSION | ADMIN publish | append_fact |
+| CATALOG_VERSION_OFFSALE | EMPLOYEE | CATALOG_VERSION | ADMIN offsale | append_fact |
+| TRIAL_POLICY_CREATE | EMPLOYEE | TRIAL_POLICY | ADMIN create draft | append_fact |
+| TRIAL_POLICY_REPLACE | EMPLOYEE | TRIAL_POLICY | ADMIN replace draft | append_fact |
+| TRIAL_POLICY_PUBLISH | EMPLOYEE | TRIAL_POLICY | ADMIN publish | append_fact |
+| TRIAL_POLICY_DISABLE | EMPLOYEE | TRIAL_POLICY | ADMIN disable | append_fact |
+| CATALOG_DRAFT_CREATE | EMPLOYEE | CATALOG_VERSION | ADMIN create draft | append_fact |
+| CATALOG_DRAFT_REPLACE | EMPLOYEE | CATALOG_VERSION | ADMIN replace draft | append_fact |
+| SHARE_REVOKE | ACCOUNT | SHARE_GRANT | customer revoke | append_fact |
+| SHARE_CODE_ROTATE | ACCOUNT | SHARE_GRANT | customer code rotation | append_fact |
+| PAYMENT_CALLBACK_ACCEPTED | SERVICE | PAYMENT_EVENT | accepted/duplicate provider event | append_fact |
+<!-- security-audit-map:end -->
+
+高风险员工 mutation 固定 10 个，只允许 ADMIN/OPS。合法请求必须校验 employee session、role、当前 status/revision、expected revision 与 reason source，并在同一事务写 domain mutation 与 `audit.append_fact`；audit 失败整体回滚。`ACTION_DERIVED` 仅是 A1 请求 schema 所需的 A0 `reason_code` 技术投影，不是员工手工输入的动机；语义缺口仍由 `R-A3-A1-EMPLOYEE-REASON-PROJECTION` 承接。运营 UI 二次确认是架构要求的运行时控制，但 S3 不做 UI/prototype 工作；静态模型、validator 与 fixtures **不**声称其已实现，标记 runtime-unverified，不作为 validator-assertable success criterion。
+
+<!-- security-high-risk-map:start -->
+| operationId | role | reasonSource | preconditionState | auditCode | conflictCode | beforeAfter |
+| --- | --- | --- | --- | --- | --- | --- |
+| suspendOperationsSubject | OPS | REQUEST reasonCode | ACTIVE | SUBJECT_SUSPEND | ACTIVATION_STATE_CONFLICT | status/revision/reason |
+| resumeOperationsSubject | OPS | REQUEST reasonCode | SUSPENDED | SUBJECT_RESUME | ACTIVATION_STATE_CONFLICT | status/revision/reason |
+| publishOperationsCatalogVersion | ADMIN | ACTION_DERIVED | DRAFT_NEVER_PUBLISHED | CATALOG_VERSION_PUBLISH | PUBLICATION_STALE_VIEW | status/revision/snapshot hash |
+| offsaleOperationsCatalogVersion | ADMIN | ACTION_DERIVED | ACTIVE | CATALOG_VERSION_OFFSALE | PUBLICATION_STALE_VIEW | status/revision |
+| createOperationsTrialPolicyDraft | ADMIN | ACTION_DERIVED | NATURAL_KEY_ABSENT | TRIAL_POLICY_CREATE | TRIAL_POLICY_DRAFT_CONFLICT | policy identity/revision |
+| replaceOperationsTrialPolicyDraft | ADMIN | ACTION_DERIVED | DRAFT_NEVER_PUBLISHED | TRIAL_POLICY_REPLACE | TRIAL_POLICY_DRAFT_STALE_VIEW | revision/snapshot hash |
+| publishOperationsTrialPolicy | ADMIN | ACTION_DERIVED | DRAFT_NEVER_PUBLISHED | TRIAL_POLICY_PUBLISH | TRIAL_POLICY_STALE_VIEW | enabled/publisher/revision |
+| disableOperationsTrialPolicy | ADMIN | ACTION_DERIVED | ENABLED | TRIAL_POLICY_DISABLE | TRIAL_POLICY_STALE_VIEW | enabled/revision |
+| createOperationsCatalogVersionDraft | ADMIN | ACTION_DERIVED | NATURAL_KEY_ABSENT | CATALOG_DRAFT_CREATE | CATALOG_DRAFT_CONFLICT | identity/revision |
+| replaceOperationsCatalogVersionDraft | ADMIN | ACTION_DERIVED | DRAFT | CATALOG_DRAFT_REPLACE | CATALOG_DRAFT_STALE_VIEW | revision/snapshot hash |
+<!-- security-high-risk-map:end -->
+
+敏感非员工操作保持 ACCOUNT/SERVICE actor，不新增 role：`revokeCustomerShare` → `SHARE_REVOKE`；`rotateCustomerShareCode` → `SHARE_CODE_ROTATE`（generation +1，响应不返回 capability token）；`receivePaymentProviderCallback` → `PAYMENT_CALLBACK_ACCEPTED`，拒绝走 `SECURITY_PROVIDER_CALLBACK_REJECTED`，同 event/同 payload 幂等。
+
+<!-- security-coverage-map:start -->
+| callClass | owner | authentication | auditAccessClass | redaction | failClosed |
+| --- | --- | --- | --- | --- | --- |
+| CUSTOMER_API | customer_iam/catalog_order/sharing/activation_consent | customerSession audience onecall:customer-session:v1 | business mutations append_fact; AUDIT_READ and AUDIT_READ_DENIED are access events | masked value, internal ID or status only; no credential, capability token or ciphertext | existing 401/403/503 with no plaintext fallback |
+| OPERATIONS_API | operations_iam/audit | employeeSession audience onecall:employee-session:v1 with fixed ADMIN/OPS | high-risk operations append_fact; audit reads use access events | no raw snapshot, PII, credential or object identifier | existing 401/403/409/500 with transaction rollback |
+| IVR_API | ivr/evidence | ivrMtls plus ivrSignature plus timestamp plus nonce | security and media events follow the registry persistence route | no signature, nonce, credential, object key or plaintext party number | existing 401/403/503 with zero A2 business side effect |
+| PUBLIC_SHARE_API | sharing/evidence/media-gateway | capability C07 or C08; C10 bearer only at media-gateway | credential events append_fact; denied audit reads are access events | no capability token, playback credential, object key or URL | existing 404/403/410/503 without admission recount |
+| PROVIDER_CALLBACK_API | catalog_order | providerCallbackMtls plus providerCallbackSignature plus timestamp plus nonce | accepted event uses PAYMENT_CALLBACK_ACCEPTED; rejection uses SECURITY_PROVIDER_CALLBACK_REJECTED | no provider payload, signature, nonce or internal result | existing 401/409/503 without payment advance |
+| INTERNAL_SERVICE_CALL | all owning domains | Tencent CAM service role plus audience | dispatch access is redacted; security failures append_fact | authorized fields only; no cross-module secret | existing 503/500 without partial write |
+| KMS_OPERATION | Security/Infrastructure | Tencent CAM service role | SECURITY_KEY events append_fact | never log key_ref, plaintext, DEK or ciphertext | existing 503 with no plaintext fallback |
+| SECRET_MANAGER_READ | Security/Infrastructure | Tencent CAM service role | SECURITY_KEY_ACCESS_DENIED or SECURITY_KEY_RECOVER appends a fact | secret value never emitted | existing 503 with no environment or image fallback |
+| COS_OPERATION | evidence/media | Tencent CAM service role or a short-lived upload or playback credential | media and COS policy events append_fact; provider logs are supplementary | object identity digest and hash prefix only | existing 503 or STORAGE_UNKNOWN without fabricated media facts |
+| DATABASE_ACCESS | each domain NOLOGIN role | NOLOGIN database role | audit.append_fact for facts; access events for reads | redacted snapshots only | transaction rollback without partial write |
+<!-- security-coverage-map:end -->
+
+## 18. 确定性脱敏与 fail-closed 矩阵（S3）
+
+统一 redaction pipeline 必须在任何 emit 前执行：结构化 allow-list → 任意深度递归 deny-list → credential/header/URL pattern controls → destination policy → emit。deny-list 大小写不敏感、任意深度，固定包含 A0 §10.7 全部键 `phone,mobile,callerNumber,calleeNumber,providerSubject,identityNumber,idNumber,legalName,shareCode,otp,objectKey,objectVersionId,bucket,providerTransactionId,providerEventId,secret,token,password,hmac,ciphertext,keyRef,kmsKey`，并追加 `credential,capabilityToken,extractionCode,authorization,cookie,signature,nonce,accessNumberHmac`。masked 变体（如 `calleeNumberMasked`）允许，但不得把 encrypted envelope 当普通日志字段。固定 token 形如 `[REDACTED:<CLASS>]`；同一输入在相同出口必须产生相同 token，禁止随机值。
+
+| class token | 覆盖字段 |
+| --- | --- |
+| [REDACTED:PHONE] | phone / mobile / callerNumber / calleeNumber |
+| [REDACTED:PROVIDER_SUBJECT] | providerSubject |
+| [REDACTED:IDENTITY_NUMBER] | identityNumber / idNumber |
+| [REDACTED:LEGAL_NAME] | legalName |
+| [REDACTED:SHARE_CODE] | shareCode |
+| [REDACTED:OTP] | otp |
+| [REDACTED:OBJECT_KEY] | objectKey |
+| [REDACTED:OBJECT_VERSION] | objectVersionId |
+| [REDACTED:BUCKET] | bucket |
+| [REDACTED:PROVIDER_TRANSACTION_ID] | providerTransactionId |
+| [REDACTED:PROVIDER_EVENT_ID] | providerEventId |
+| [REDACTED:SECRET] | secret |
+| [REDACTED:TOKEN] | token |
+| [REDACTED:PASSWORD] | password |
+| [REDACTED:HMAC] | hmac |
+| [REDACTED:CIPHERTEXT] | ciphertext |
+| [REDACTED:KEY_REF] | keyRef |
+| [REDACTED:KMS_KEY] | kmsKey |
+| [REDACTED:CREDENTIAL] | credential / uploadCredential / playbackCredential |
+| [REDACTED:CAPABILITY_TOKEN] | capabilityToken |
+| [REDACTED:EXTRACTION_CODE] | extractionCode |
+| [REDACTED:AUTHORIZATION] | authorization |
+| [REDACTED:COOKIE] | cookie |
+| [REDACTED:SIGNATURE] | signature |
+| [REDACTED:NONCE] | nonce |
+| [REDACTED:ACCESS_NUMBER_HMAC] | accessNumberHmac |
+| [REDACTED:PAYLOAD] | provider payload |
+| [REDACTED:URL] | any absolute URL pattern |
+
+路径脱敏固定为：`/api/v1/public/shares/{capabilityToken}/... is emitted as /api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]/...`。Error 只返回 stable Problem code、用户可理解信息与 `traceId`，不返回 provider/stack/SQL/secret。Support view 只允许 masked/redacted/internal ID/status/reason，不授予 playback，不展示 object key/URL/credential/HMAC/ciphertext。出口失败关闭：未知字段或 redaction 失败 → block/drop + `SECURITY_REDACTION_BLOCKED` + alert；对外路径返回 `500 INTERNAL`；**不得**先 emit 后清洗。
+
+**Fail-closed 矩阵**
+
+| 故障 | 受影响面 | 既有错误（不新增 code） | 副作用 |
+| --- | --- | --- | --- |
+| KMS/DEK decrypt 不可用、key disabled/destroyed、unknown key_ref | customer/operations/ivr | 503 SERVICE_UNAVAILABLE | 不返回 plaintext；无业务写入 |
+| 同上 | public-share | 503 DEPENDENCY_UNAVAILABLE 或 503 SHARE_SESSION_POLICY_UNAVAILABLE | 不签发媒体凭证；不重计准入 |
+| 同上 | provider | 503 CALLBACK_RETRY_LATER | 不推进支付/权益 |
+| Secret Manager/IVR signing key 不可用 | ivr | 503 SERVICE_UNAVAILABLE | 不验签成功、不进入 A2 |
+| Redis/nonce store 不可用 | ivr | 503 SERVICE_UNAVAILABLE | 不消费 nonce、不进入 A2 |
+| Redis/session store 不可用 | customer/employee/public-share | 503 SERVICE_UNAVAILABLE 或 503 SHARE_SESSION_POLICY_UNAVAILABLE | 不绕过认证；不创建会话 |
+| COS/upload signing 不可用 | ivr declare | 503 SERVICE_UNAVAILABLE | 不签发 upload credential |
+| COS/storage unknown | ivr complete | 503 STORAGE_UNKNOWN | 不产生 media fact、不终态变更 |
+| COS/playback signing 不可用 | public-share P3 | 503 DEPENDENCY_UNAVAILABLE 或 503 SHARE_SESSION_POLICY_UNAVAILABLE | 不签发 playback credential |
+| audit append 失败 | operations/ivr media/payment | 500 INTERNAL（或该面既有 503） | 领域事务回滚；无半写 |
+| HMAC key 不可用 | 任意 lookup | 该面既有 503 | 不做明文扫描、不返回假空 |
+| redaction pipeline 失败 | 任意出口 | 500 INTERNAL / 丢弃日志字段 | 不 emit 原文；告警 |
+| MFA/IdP 不可用（Q1） | employee/customer 登录 | 该面既有 401/503 | 不建 session |
+| provider profile/nonce 不可用 | provider | 503 CALLBACK_RETRY_LATER | 不推进支付 |
+
+<!-- security-failclosed-map:start -->
+| failureId | failure | affectedSurfaces | existingError | sideEffects |
+| --- | --- | --- | --- | --- |
+| KMS_DECRYPT_UNAVAILABLE | KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref | customer, operations, ivr | 503 SERVICE_UNAVAILABLE | no plaintext returned; no business write |
+| KMS_DECRYPT_PUBLIC_SHARE | KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref | public-share | 503 DEPENDENCY_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE | no media credential issued; no admission recount |
+| KMS_DECRYPT_PROVIDER | KMS or DEK decrypt unavailable, key disabled or destroyed, or unknown key_ref | provider | 503 CALLBACK_RETRY_LATER | no payment or entitlement advance |
+| SECRET_MANAGER_SIGNING_UNAVAILABLE | Secret Manager or IVR signing key unavailable | ivr | 503 SERVICE_UNAVAILABLE | no verification success; no A2 processing |
+| REDIS_NONCE_UNAVAILABLE | Redis nonce store unavailable | ivr | 503 SERVICE_UNAVAILABLE | no nonce consumption; no A2 processing |
+| REDIS_SESSION_UNAVAILABLE | Redis session store unavailable | customer, employee, public-share | 503 SERVICE_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE | no authentication bypass; no session creation |
+| COS_UPLOAD_SIGNING_UNAVAILABLE | COS or upload signing unavailable | ivr | 503 SERVICE_UNAVAILABLE | no upload credential issued |
+| COS_STORAGE_UNKNOWN | COS or storage outcome unknown | ivr | 503 STORAGE_UNKNOWN | no media fact; no terminal state change |
+| COS_PLAYBACK_SIGNING_UNAVAILABLE | COS or playback signing unavailable | public-share | 503 DEPENDENCY_UNAVAILABLE or 503 SHARE_SESSION_POLICY_UNAVAILABLE | no playback credential issued |
+| AUDIT_APPEND_FAILED | audit append failure | operations, ivr media, payment | 500 INTERNAL or the existing 503 when no 4xx semantics apply | domain transaction rollback; no partial write |
+| HMAC_KEY_UNAVAILABLE | HMAC key unavailable | any lookup | existing 503 for the surface | no plaintext scan; no fake empty result |
+| REDACTION_PIPELINE_FAILED | redaction pipeline failure | any egress | 500 INTERNAL or a dropped log field | no raw value emitted; alert raised |
+| MFA_OR_IDP_UNAVAILABLE | MFA or identity provider unavailable (Q1) | employee login, customer login | existing 401 or 503 for the surface | no session creation |
+| PROVIDER_PROFILE_OR_NONCE_UNAVAILABLE | provider profile or nonce store unavailable | provider | 503 CALLBACK_RETRY_LATER | no payment advance |
+<!-- security-failclosed-map:end -->
+
+任何认证/签名/nonce/COS/audit/redaction 失败都发生在领域副作用之前或使领域事务回滚：无 plaintext fallback、无凭证签发、无 evidence 固化、无 redial、无第二 reservation/settlement/event/media object。所有错误引用 A1 既有 Problem code 或 `500 INTERNAL`，不新增 code。
+
+## 19. 确定性验证、fixtures 与诚实限制
+
+验证命令（在 repo root，S1/S2/S3 使用相同参数并切换 `--stage`）：
 
 ```bash
 cd api/openapi && npm ci && npm run check:s3
@@ -425,12 +625,20 @@ node security/validate.mjs --stage s2 \
   --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
   --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
   --a2-fixtures protocol/ivr/v1/fixtures
+node security/validate.mjs --stage s3 \
+  --model security/v1/security-design-v1.json \
+  --fixtures security/v1/fixtures \
+  --spec docs/17-production-security-design-spec.md \
+  --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+  --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
+  --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
+  --a2-fixtures protocol/ivr/v1/fixtures
 ```
 
-S1 stage 必须继续在累计文件上通过并只评估 6 个 S1 fixture；S2 stage 评估累计 15 个 fixture（`6+9`），其中 7 个显式负例。S2 期望计数固定为：
+`--stage s1` 只评估 6 个 S1 fixture，`--stage s2` 评估累计 15 个（`6+9`，7 个负例），二者忽略后续 slice 的 section/marker/fixture。`--stage s3` 评估累计 23 个（`6+9+8`，10 个负例）并要求全部 S3 section/marker/invariant/fixture 精确存在。S3 期望计数固定为：
 
 ```text
-trust_surfaces=5 auth_domains=5 trust_boundaries=7 service_identities=6 credential_classes=10 signature_profiles=2 invariants=11 fixtures=15 passed=15 failed=0 negative=7 slice_fixtures=6+9
+stage=s3 trust_surfaces=5 auth_domains=5 trust_boundaries=7 service_identities=6 credential_classes=10 signature_profiles=2 media_policies=2 audit_events=39 audit_persistence=39 audit_access_events=2 audit_append_facts=37 high_risk_actions=10 audit_coverage=10 key_classes=20 data_classes=28 deferred_inputs=23 deferred_q=18 deferred_cv=5 invariants=21 fixtures=23 passed=23 failed=0 negative=10 slice_fixtures=6+9+8
 ```
 
 S1 fixtures（6，恰 2 个显式负例）：
@@ -458,13 +666,26 @@ S2 fixtures（9，恰 5 个显式负例）：
 | `sec-s2-08-failclosed-dependency-preserves-a2` | SM/Redis 不可用；恢复后同 identity 重试 | 503；无 A2 写入；outbox 不改 eventId；A2 digest/状态不变 |
 | `sec-s2-09-ivr-outbox-auth-blocked` | 负例：IVR outbox 分别观测 401 与 403；hot retry/identity/payload/redial/re-resolve/reservation/settlement 均被拒绝；显式 recovery 后重试 | 同一 entry 保持 `PENDING`/security-blocked；alert/audit 不含 credential；recovery 使用同一 domain identity + immutable payload + 新 timestamp/nonce；零 A2 业务副作用；`invariants=11` 且无未来文本 |
 
-fixtures 使用 `TEST_ONLY_*` 合成标签与固定 nonce；密钥字节由 label 的 SHA-256 确定性派生。fixture 中的 window/TTL 输入只是确定性 evaluator 输入，不是生产 Q25 值。它们不包含真实 secret、URL、credential、phone、identity 或 cloud identifier。
+S3 fixtures（8，恰 3 个显式负例）：
 
-validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算 fixture 行为；不读取 `expected` 来决定结果，也不存在脱离解析输入的成功打印。缺少/多余/重复/非法 row、跨域 token、通配权限、前端 secret、畸形/缺失 header、时间戳格式/窗口、unknown/disabled key、坏签名、nonce replay/Redis 不可用、provider duplicate-vs-conflict 顺序、IVR outbox 违规重试/身份变更、提前 stage 内容、fixture ID/slice 不匹配与上游 drift 都会失败。
+| Fixture | 场景 | 关键断言 |
+| --- | --- | --- |
+| `sec-s3-01-upload-credential-scope` | CV-4 未验证 fail closed；签发/使用/完成 upload credential | 唯一 COS presigned PUT；单对象/单 purpose；跨对象/purpose/过期/超 size/read/list/delete deny；无永久 URL；complete 重校验 server-observed identity/hash/size/MIME/duration；无 fallback |
+| `sec-s3-02-playback-credential-scope` | 负例：bearer presentation；跨对象/purpose/generation/过期/撤销/写/客户端 object 字段 | bearer 被验证且 credential redacted；无 COS URL/key/bucket/version；无写；无准入重计 |
+| `sec-s3-03-cos-private-policy` | 匿名读/写/list、public URL、key/bucket/version 泄漏、WORM 声称 | 全部 deny；SSE-KMS/versioning/私有/TLS-only 固定；WORM/object-lock/region/SKU 不声称 |
+| `sec-s3-04-audit-access-denied` | 负例：customer/ivr/public/provider 读 audit；employee 读；UPDATE/DELETE/TRUNCATE | 非 employee 拒绝；employee 只 redacted projection；access_event route；无递归 append_fact；39 行 persistence 精确 2+37 |
+| `sec-s3-05-high-risk-controls` | 10 个员工 mutation 的 role/state/reason/audit | 合法通过；坏 role/state/reason 拒绝；audit 失败回滚；last-admin 不变；UI 二次确认不作断言 |
+| `sec-s3-06-redaction-deterministic` | 递归 deny-list、masked、credential/header/path pattern、未知字段 | 固定 `[REDACTED:*]`；masked 允许；未知字段 block；确定性；无原文 |
+| `sec-s3-07-credential-url-leak` | 负例：capabilityToken path、upload/playback credential、signature/nonce、Authorization/Cookie | 所有出口无 secret；public 只 masked/ID；analytics/support 无 playback |
+| `sec-s3-08-end-to-end-security` | IVR media + share playback + audit + provider callback | 全链路身份/凭证/审计/脱敏/fail-closed；complete 不固化 evidence；累计计数正确 |
+
+fixtures 使用 `TEST_ONLY_*` 合成标签与固定 nonce；密钥字节由 label 的 SHA-256 确定性派生。fixture 中的 window/TTL 输入只是确定性 evaluator 输入，不是生产 Q25 值。它们不包含真实 secret、URL、credential、phone、identity 或 cloud identifier。S3 fixture 不得把 UI 二次确认作为静态断言。
+
+validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算 fixture 行为；不读取 `expected` 来决定结果，也不存在脱离解析输入的成功打印。缺少/多余/重复/非法 row、跨域 token、通配权限、前端 secret、畸形/缺失 header、时间戳格式/窗口、unknown/disabled key、坏签名、nonce replay/Redis 不可用、provider duplicate-vs-conflict 顺序、IVR outbox 违规重试/身份变更、upload/playback scope 越界、CV-4 未验证 fallback、COS public URL、audit 越权/改写、`AUDIT_READ`/`AUDIT_READ_DENIED` 误走 `append_fact`、high-risk 缺 role/state/reason、redaction 泄漏、未知字段未阻断、stage 内容提前/缺失、fixture ID/slice 不匹配与上游 drift 都会失败。
 
 诚实限制：没有运行真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR 线路、日志平台、analytics 或供应商；不能证明真实 mTLS 证书、真实 Redis `SET NX`、生产 nonce 的 CSPRNG、真实 envelope 解密、真实云 rotation/recovery、数据库 append-only trigger、审计事务回滚或媒体对象行为。fixtures 是安全模型级断言，不是生产验收或渗透测试。
 
-## 17. 残余风险与完成声明
+## 20. 残余风险与完成声明
 
 | ID | 内容 | Owner / Destination |
 | --- | --- | --- |
@@ -480,10 +701,16 @@ validator 独立解析模型、文档 marker、A0/A1/A2 与 fixtures，并计算
 | `R-A3-PROVIDER-VERIFY` | vendor signature 算法/canonicalization/payload/window 未冻结（Q6/Q15） | Payments/Backend；payment adapter |
 | `R-A3-SESSION-LIFECYCLE` | 真实 session/OTP/WeChat 登录、员工 MFA 与 TTL 未验证（Q1/Q19） | Identity/Backend；authentication design |
 | `R-A3-NONCE-STORE` | 真实 Redis `SET NX` 原子性、TTL 与故障切换未验证（Q25） | Security/Backend；production readiness |
+| `R-A3-A1-EMPLOYEE-REASON-PROJECTION` | `ACTION_DERIVED` 只是 A0 `reason_code` 技术投影，不是员工动机；语义 operation-reason 缺口与 UI 二次确认 runtime 控制未在静态层证明 | Product/Operations + API governance；未来 A1/UI refinement |
+| `R-A3-A1-UPLOAD-CREDENTIAL-SHAPE` | upload 唯一 primary shape 为 CV-4 门禁的 COS presigned PUT；能力不可验证时 fail closed 并停止，不 fallback | Security/Backend/Evidence；API/evidence review |
+| `R-A3-MEDIA-GATEWAY-TRANSPORT` | C10 bearer presentation 已冻结；gateway origin/path、CDN/LB、range/streaming 与 delivery topology 未定，且不新增 A1 operation | Infrastructure/Security；media gateway deployment / storage capacity |
+| `R-A3-REDACTION-RUNTIME` | 不能证明 edge/gateway/analytics/log collector 的真实脱敏配置；A3 只冻结 contract/fixtures | Platform/Security/Observability；logging review |
+| `R-A3-AUDIT-VOLUME` | audit/access event volume、retention 与 DLQ 未定（Q13） | Operations/Backend；runbook/observability |
+| `R-A3-SUPPORT-VIEW` | A1 无 operations playback；未来 break-glass 不在 A3 | Product/Security/Operations；future work unit |
 
-S2 完成信号：5 trust surfaces/auth domains、7 trust boundaries、6 service identities、10 credential classes、2 signature profiles、11 cumulative invariants、15 fixtures（6+9，7 negatives）与 validator 均已落盘；S1 的 20 keys/28 data/23 deferred/6 fixtures 保持不变；A0/A1/A2 计数与 digest 由 validator 断言不变；没有新增表、列、状态、endpoint、header、Problem code、role 或生产数值。
+S3 完成信号：2 media policies、私有 COS policy、39 audit/access events（2 `access_event` + 37 `append_fact`）、10 high-risk actions、10 call classes、确定性 redaction policy、14-row fail-closed matrix、21 cumulative invariants、23 fixtures（`6+9+8`，10 negatives）与 validator 均已落盘；S1/S2 的 registry/fixture/invariant 保持不变；A0/A1/A2 计数与 digest 由 validator 断言不变；没有新增表、列、状态、endpoint、header、Problem code、role 或生产数值。
 
-本文件与模型不声称任何运行时或云实现。S2 author completion 后停止；不进入 S3，不 stage、commit、push、创建/修改 PR 或 merge。
+本文件与模型不声称任何运行时或云实现，也不声称真实 KMS、Secret Manager、CAM、COS、Redis、PostgreSQL、IVR、gateway、日志平台、analytics 或支付供应商行为已被证明。S3 author completion 后停止；不进入 code review、checkpoint 或后续 Gate，不 stage、commit、push、创建/修改 PR 或 merge。
 
 ### Completion report template
 
