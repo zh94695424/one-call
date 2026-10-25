@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-07-signing-key-rotation",
+  "slice": "s2",
+  "negative": false,
+  "description": "IVR and provider signing keys keep the previous version VERIFY_ONLY for overlap verification and reject it after retirement, without any A2 business side effect.",
+  "materials": [
+    { "keyId": "K17", "keyRef": "TEST_ONLY_K17_V1", "keyLabel": "TEST_ONLY_K17_SIGNING_V1", "state": "ACTIVE" },
+    { "keyId": "K18", "keyRef": "TEST_ONLY_K18_V1", "keyLabel": "TEST_ONLY_K18_VERIFY_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "ivr-v1-accepted",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "body": "TEST_ONLY_IVR_ROTATION_BODY",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000000",
+      "receivedAt": 1700000000,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0701",
+      "nonceStore": "AVAILABLE",
+      "expected": { "status": "OK", "statusCode": 200, "signatureVerified": true, "keyState": "ACTIVE", "a2Processed": false }
+    },
+    {
+      "id": "rotate-ivr-key",
+      "action": "rotate",
+      "keyId": "K17",
+      "fromKeyRef": "TEST_ONLY_K17_V1",
+      "toKeyRef": "TEST_ONLY_K17_V2",
+      "newKeyLabel": "TEST_ONLY_K17_SIGNING_V2",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "fromState": "VERIFY_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE", "retentionApproved": true }
+    },
+    {
+      "id": "ivr-old-key-verify-only",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "body": "TEST_ONLY_IVR_ROTATION_BODY",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000100",
+      "receivedAt": 1700000100,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0702",
+      "nonceStore": "AVAILABLE",
+      "expected": { "status": "OK", "statusCode": 200, "signatureVerified": true, "keyState": "VERIFY_ONLY" }
+    },
+    {
+      "id": "ivr-new-key-accepted",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "body": "TEST_ONLY_IVR_ROTATION_BODY",
+      "keyRef": "TEST_ONLY_K17_V2",
+      "timestamp": "1700000200",
+      "receivedAt": 1700000200,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0703",
+      "nonceStore": "AVAILABLE",
+      "expected": { "status": "OK", "statusCode": 200, "signatureVerified": true, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "retire-ivr-old-key",
+      "action": "retire",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "keyState": "DISABLED", "auditEvent": "SECURITY_KEY_RETIRE" }
+    },
+    {
+      "id": "ivr-retired-key-rejected",
+      "action": "ivr-request",
+      "mtls": { "present": true, "serviceIdentity": "ivr-gateway", "certificateState": "ACTIVE" },
+      "method": "POST",
+      "path": "/api/v1/ivr/inbound/resolve",
+      "body": "TEST_ONLY_IVR_ROTATION_BODY",
+      "keyRef": "TEST_ONLY_K17_V1",
+      "timestamp": "1700000300",
+      "receivedAt": 1700000300,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_NONCE_0704",
+      "nonceStore": "AVAILABLE",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "SIGNATURE_KEY_DISABLED", "keyState": "DISABLED" }
+    },
+    {
+      "id": "provider-v1-accepted",
+      "action": "provider-callback",
+      "mtls": { "present": true, "serviceIdentity": "provider", "certificateState": "ACTIVE" },
+      "keyRef": "TEST_ONLY_K18_V1",
+      "profileAvailable": true,
+      "signatureMode": "valid",
+      "timestamp": "1700000000",
+      "receivedAt": 1700000000,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_PROVIDER_NONCE_0701",
+      "nonceStore": "AVAILABLE",
+      "eventId": "TEST_ONLY_PROVIDER_EVENT_ROTATION",
+      "payloadFingerprint": "TEST_ONLY_PROVIDER_PAYLOAD_ROTATION",
+      "expected": { "status": "OK", "statusCode": 200, "reason": "ACCEPTED", "payments": 1, "entitlements": 1 }
+    },
+    {
+      "id": "rotate-provider-key",
+      "action": "rotate",
+      "keyId": "K18",
+      "fromKeyRef": "TEST_ONLY_K18_V1",
+      "toKeyRef": "TEST_ONLY_K18_V2",
+      "newKeyLabel": "TEST_ONLY_K18_VERIFY_V2",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "fromState": "VERIFY_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE" }
+    },
+    {
+      "id": "provider-old-key-duplicate",
+      "action": "provider-callback",
+      "mtls": { "present": true, "serviceIdentity": "provider", "certificateState": "ACTIVE" },
+      "keyRef": "TEST_ONLY_K18_V1",
+      "profileAvailable": true,
+      "signatureMode": "valid",
+      "timestamp": "1700000100",
+      "receivedAt": 1700000100,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_PROVIDER_NONCE_0702",
+      "nonceStore": "AVAILABLE",
+      "eventId": "TEST_ONLY_PROVIDER_EVENT_ROTATION",
+      "payloadFingerprint": "TEST_ONLY_PROVIDER_PAYLOAD_ROTATION",
+      "expected": { "status": "OK", "statusCode": 200, "reason": "EXACT_DUPLICATE", "duplicate": true, "payments": 1, "entitlements": 1 }
+    },
+    {
+      "id": "retire-provider-old-key",
+      "action": "retire",
+      "keyRef": "TEST_ONLY_K18_V1",
+      "retentionApproved": true,
+      "expected": { "status": "OK", "keyState": "DISABLED" }
+    },
+    {
+      "id": "provider-retired-key-rejected",
+      "action": "provider-callback",
+      "mtls": { "present": true, "serviceIdentity": "provider", "certificateState": "ACTIVE" },
+      "keyRef": "TEST_ONLY_K18_V1",
+      "profileAvailable": true,
+      "signatureMode": "valid",
+      "timestamp": "1700000200",
+      "receivedAt": 1700000200,
+      "windowSeconds": 300,
+      "nonce": "TEST_ONLY_PROVIDER_NONCE_0703",
+      "nonceStore": "AVAILABLE",
+      "eventId": "TEST_ONLY_PROVIDER_EVENT_ROTATION",
+      "payloadFingerprint": "TEST_ONLY_PROVIDER_PAYLOAD_ROTATION",
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "CALLBACK_SIGNATURE_INVALID", "reason": "SIGNATURE_KEY_DISABLED", "payments": 1 }
+    },
+    {
+      "id": "assert-rotation-no-a2-effects",
+      "action": "assert",
+      "checks": {
+        "invariants": 11,
+        "futureFixtureIds": 0,
+        "a2Events": 0,
+        "payments": 1,
+        "entitlements": 1,
+        "providerEvents": 1
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

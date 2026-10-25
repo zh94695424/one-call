@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s1-02-hmac-index-equality",
+  "slice": "s1",
+  "negative": false,
+  "description": "Independent HMAC lookup: same value under the same purpose yields the same 64-hex value, a different purpose uses a different key and value, and lookups are equality-only with no plaintext scan.",
+  "materials": [
+    { "keyId": "K12", "keyRef": "TEST_ONLY_K12_V1", "keyLabel": "TEST_ONLY_K12_HMAC_V1", "state": "ACTIVE" },
+    { "keyId": "K13", "keyRef": "TEST_ONLY_K13_V1", "keyLabel": "TEST_ONLY_K13_HMAC_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "lookup-phone",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_SHARED_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "lookup-phone-repeat",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_SHARED_VALUE_0001",
+      "equalsStep": "lookup-phone",
+      "expected": { "status": "OK", "matched": true, "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "lookup-id-different-purpose",
+      "action": "lookup",
+      "keyId": "K12",
+      "keyRef": "TEST_ONLY_K12_V1",
+      "purpose": "ID_NUMBER_LOOKUP",
+      "dataClass": "D02",
+      "plaintext": "TEST_ONLY_SHARED_VALUE_0001",
+      "differsFromStep": "lookup-phone",
+      "expected": { "status": "OK", "differs": true, "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "lookup-equality-hit",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_SHARED_VALUE_0001",
+      "storedHmacStep": "lookup-phone",
+      "expected": { "status": "OK", "matched": true, "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "lookup-equality-miss",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_SHARED_VALUE_0002",
+      "storedHmacStep": "lookup-phone",
+      "expected": { "status": "OK", "matched": false, "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    }
+  ]
+}

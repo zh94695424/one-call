@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s3-03-cos-private-policy",
+  "slice": "s3",
+  "negative": false,
+  "description": "COS is private, TLS-only and SSE-KMS with versioning; anonymous access, public URL, object identifier exposure and WORM claims are denied, and no unsupported cloud capability is asserted.",
+  "materials": [],
+  "steps": [
+    {
+      "id": "anonymous-read-denied",
+      "action": "cos-access",
+      "attempt": "ANONYMOUS_READ",
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 403,
+        "problemCode": "FORBIDDEN",
+        "reason": "COS_PRIVATE_POLICY_DENIED",
+        "bucketPrivate": true,
+        "anonymousAccessForbidden": true,
+        "tlsOnly": true,
+        "publicAccessBlocked": true,
+        "sseKms": true,
+        "versioning": true,
+        "objectReadThroughCamServiceRole": false,
+        "securityEvent": "SECURITY_COS_POLICY_DENIED",
+        "auditEvent": "SECURITY_COS_POLICY_DENIED",
+        "objectKeyExposed": false,
+        "bucketExposed": false,
+        "versionExposed": false,
+        "cosUrlExposed": false
+      }
+    },
+    {
+      "id": "anonymous-write-denied",
+      "action": "cos-access",
+      "attempt": "ANONYMOUS_WRITE",
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "COS_PRIVATE_POLICY_DENIED", "securityEvent": "SECURITY_COS_POLICY_DENIED" }
+    },
+    {
+      "id": "anonymous-list-denied",
+      "action": "cos-access",
+      "attempt": "ANONYMOUS_LIST",
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "COS_PRIVATE_POLICY_DENIED", "securityEvent": "SECURITY_COS_POLICY_DENIED" }
+    },
+    {
+      "id": "public-url-denied",
+      "action": "cos-access",
+      "attempt": "PUBLIC_URL",
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "COS_PRIVATE_POLICY_DENIED", "cosUrlExposed": false, "securityEvent": "SECURITY_COS_POLICY_DENIED" }
+    },
+    {
+      "id": "expose-object-key-denied",
+      "action": "cos-access",
+      "attempt": "EXPOSE_KEY",
+      "expected": { "status": "DENIED", "statusCode": 403, "reason": "COS_PRIVATE_POLICY_DENIED", "objectKeyExposed": false, "securityEvent": "SECURITY_COS_POLICY_DENIED" }
+    },
+    {
+      "id": "claim-worm-denied",
+      "action": "cos-access",
+      "attempt": "CLAIM_WORM",
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 403,
+        "reason": "COS_PRIVATE_POLICY_DENIED",
+        "objectLockClaimed": false,
+        "wormClaimed": false,
+        "regionDeclared": false,
+        "skuDeclared": false,
+        "privateEndpointDeclared": false,
+        "securityEvent": "SECURITY_COS_POLICY_DENIED"
+      }
+    },
+    {
+      "id": "private-server-read-allowed",
+      "action": "cos-access",
+      "attempt": "SERVER_READ",
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "problemCode": null,
+        "reason": "PRIVATE_SERVER_READ",
+        "objectReadThroughCamServiceRole": true,
+        "objectKeyExposed": false,
+        "bucketExposed": false,
+        "versionExposed": false,
+        "cosUrlExposed": false
+      }
+    },
+    {
+      "id": "policy-check-frozen",
+      "action": "cos-access",
+      "attempt": "POLICY_CHECK",
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "problemCode": null,
+        "reason": "POLICY_FROZEN",
+        "bucketPrivate": true,
+        "anonymousAccessForbidden": true,
+        "tlsOnly": true,
+        "publicAccessBlocked": true,
+        "sseKms": true,
+        "versioning": true,
+        "objectLockClaimed": false,
+        "wormClaimed": false,
+        "regionDeclared": false,
+        "skuDeclared": false,
+        "privateEndpointDeclared": false,
+        "loggingPolicy": "log only object identity digest and hash prefix; never object key, bucket, version or URL"
+      }
+    },
+    {
+      "id": "assert-cos-policy",
+      "action": "assert",
+      "checks": {
+        "cosPrivate": true,
+        "mediaPolicies": 2,
+        "auditEvents": 39,
+        "highRiskActions": 10,
+        "auditCoverage": 10,
+        "invariants": 21,
+        "cosDenied": 6
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

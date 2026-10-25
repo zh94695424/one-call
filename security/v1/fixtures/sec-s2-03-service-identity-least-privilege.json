@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-03-service-identity-least-privilege",
+  "slice": "s2",
+  "negative": false,
+  "description": "The six internal service identities perform only their frozen allowed calls; wildcard actions, frontend service secrets and audit reads are denied.",
+  "materials": [],
+  "steps": [
+    {
+      "id": "core-api-db",
+      "action": "service-call",
+      "serviceIdentity": "core-api",
+      "call": "DB",
+      "expected": { "status": "OK", "statusCode": 200, "problemCode": null, "reason": "CALL_ALLOWED", "callAllowed": true, "wildcardAllowed": false, "frontendSecretGranted": false }
+    },
+    {
+      "id": "async-worker-mq",
+      "action": "service-call",
+      "serviceIdentity": "async-worker",
+      "call": "MQ consumer",
+      "expected": { "status": "OK", "statusCode": 200, "callAllowed": true }
+    },
+    {
+      "id": "scheduler-lease",
+      "action": "service-call",
+      "serviceIdentity": "scheduler",
+      "call": "expiry scan",
+      "expected": { "status": "OK", "statusCode": 200, "callAllowed": true }
+    },
+    {
+      "id": "media-ai-cos-read",
+      "action": "service-call",
+      "serviceIdentity": "media-ai-worker",
+      "call": "COS read",
+      "expected": { "status": "OK", "statusCode": 200, "callAllowed": true }
+    },
+    {
+      "id": "ivr-gateway-ivr-api",
+      "action": "service-call",
+      "serviceIdentity": "ivr-gateway",
+      "call": "A1 IVR API",
+      "expected": { "status": "OK", "statusCode": 200, "callAllowed": true }
+    },
+    {
+      "id": "media-gateway-playback-validation",
+      "action": "service-call",
+      "serviceIdentity": "media-gateway",
+      "call": "C10 validation",
+      "expected": { "status": "OK", "statusCode": 200, "callAllowed": true }
+    },
+    {
+      "id": "scheduler-cos-write-denied",
+      "action": "service-call",
+      "serviceIdentity": "scheduler",
+      "call": "COS write",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "CALL_NOT_ALLOWED", "callAllowed": false, "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 } }
+    },
+    {
+      "id": "media-ai-db-denied",
+      "action": "service-call",
+      "serviceIdentity": "media-ai-worker",
+      "call": "DB",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "CALL_NOT_ALLOWED", "callAllowed": false }
+    },
+    {
+      "id": "ivr-gateway-db-denied",
+      "action": "service-call",
+      "serviceIdentity": "ivr-gateway",
+      "call": "DB",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "CALL_NOT_ALLOWED", "callAllowed": false }
+    },
+    {
+      "id": "core-api-audit-read-denied",
+      "action": "service-call",
+      "serviceIdentity": "core-api",
+      "call": "AUDIT_READ",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "AUDIT_READ_FORBIDDEN", "callAllowed": false, "auditReadDenied": true }
+    },
+    {
+      "id": "async-worker-audit-read-denied",
+      "action": "service-call",
+      "serviceIdentity": "async-worker",
+      "call": "AUDIT_READ",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "AUDIT_READ_FORBIDDEN", "callAllowed": false, "auditReadDenied": true }
+    },
+    {
+      "id": "frontend-service-secret-denied",
+      "action": "service-call",
+      "serviceIdentity": "customer-web",
+      "frontend": true,
+      "holdsSecret": true,
+      "call": "DB",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "FRONTEND_SERVICE_SECRET_FORBIDDEN", "callAllowed": false, "frontendSecretGranted": false, "frontendSecretRejected": true }
+    },
+    {
+      "id": "wildcard-denied",
+      "action": "service-call",
+      "serviceIdentity": "core-api",
+      "call": "*",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "WILDCARD_FORBIDDEN", "callAllowed": false, "wildcardAllowed": false }
+    },
+    {
+      "id": "assert-service-registry",
+      "action": "assert",
+      "checks": {
+        "trustSurfaces": 5,
+        "authDomains": 5,
+        "trustBoundaries": 7,
+        "serviceIdentities": 6,
+        "credentialClasses": 10,
+        "signatureProfiles": 2,
+        "invariants": 11,
+        "futureFixtureIds": 0,
+        "a2Events": 0
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

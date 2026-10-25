@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s1-06-append-only-rotation-safety",
+  "slice": "s1",
+  "negative": false,
+  "description": "Frozen/append-only rows reject rewrite, rotation is allowed but retirement is gated on unresolved retention, old versions remain decrypt-only or lookup-only, and the S1 stage boundary contains 20 keys, 28 data classes, 23 deferred inputs and exactly six invariants.",
+  "materials": [
+    { "keyId": "K02", "keyRef": "TEST_ONLY_K02_V1", "keyLabel": "TEST_ONLY_K02_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K13", "keyRef": "TEST_ONLY_K13_V1", "keyLabel": "TEST_ONLY_K13_HMAC_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "persist-decision-rewrite",
+      "action": "persist",
+      "dataClass": "D08",
+      "appendOnly": true,
+      "attempt": "rewrite",
+      "expected": { "status": "DENIED", "reason": "APPEND_ONLY_VIOLATION", "rowsWritten": 0, "a0Mutations": 0, "dataClass": "D08", "appendOnly": true }
+    },
+    {
+      "id": "persist-call-event-rewrite",
+      "action": "persist",
+      "dataClass": "D10",
+      "appendOnly": true,
+      "attempt": "rewrite",
+      "expected": { "status": "DENIED", "reason": "APPEND_ONLY_VIOLATION", "rowsWritten": 0, "a0Mutations": 0, "dataClass": "D10", "appendOnly": true }
+    },
+    {
+      "id": "persist-audit-rewrite",
+      "action": "persist",
+      "dataClass": "D27",
+      "appendOnly": true,
+      "attempt": "rewrite",
+      "expected": { "status": "DENIED", "reason": "APPEND_ONLY_VIOLATION", "rowsWritten": 0, "a0Mutations": 0, "dataClass": "D27", "appendOnly": true }
+    },
+    {
+      "id": "rotate-dek-retire-retention-unresolved",
+      "action": "rotate",
+      "keyId": "K02",
+      "fromKeyRef": "TEST_ONLY_K02_V1",
+      "toKeyRef": "TEST_ONLY_K02_V2",
+      "newKeyLabel": "TEST_ONLY_K02_DEK_V2",
+      "retireRequested": true,
+      "retentionApproved": false,
+      "expected": { "status": "DENIED", "reason": "RETENTION_UNRESOLVED", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0, "fromState": "ACTIVE", "toState": "ACTIVE" }
+    },
+    {
+      "id": "rotate-dek",
+      "action": "rotate",
+      "keyId": "K02",
+      "fromKeyRef": "TEST_ONLY_K02_V1",
+      "toKeyRef": "TEST_ONLY_K02_V2",
+      "newKeyLabel": "TEST_ONLY_K02_DEK_V2",
+      "retireRequested": false,
+      "retentionApproved": false,
+      "expected": { "status": "OK", "fromState": "DECRYPT_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE", "retentionApproved": false }
+    },
+    {
+      "id": "rotate-hmac",
+      "action": "rotate",
+      "keyId": "K13",
+      "fromKeyRef": "TEST_ONLY_K13_V1",
+      "toKeyRef": "TEST_ONLY_K13_V2",
+      "newKeyLabel": "TEST_ONLY_K13_HMAC_V2",
+      "retireRequested": false,
+      "retentionApproved": false,
+      "expected": { "status": "OK", "fromState": "LOOKUP_ONLY", "toState": "ACTIVE", "auditEvent": "SECURITY_KEY_ROTATE", "retentionApproved": false }
+    },
+    {
+      "id": "retire-retention-unresolved",
+      "action": "retire",
+      "keyRef": "TEST_ONLY_K02_V2",
+      "retentionApproved": false,
+      "expected": { "status": "DENIED", "reason": "RETENTION_UNRESOLVED", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "assert-s1-boundary",
+      "action": "assert",
+      "checks": {
+        "keyClasses": 20,
+        "dataClasses": 28,
+        "deferredInputs": 23,
+        "deferredQ": 18,
+        "deferredCv": 5,
+        "invariants": 6,
+        "futureFixtureIds": 0
+      },
+      "expected": {
+        "status": "OK",
+        "keyClasses": 20,
+        "dataClasses": 28,
+        "deferredInputs": 23,
+        "deferredQ": 18,
+        "deferredCv": 5,
+        "invariants": 6,
+        "futureFixtureIds": 0,
+        "mismatches": []
+      }
+    }
+  ]
+}

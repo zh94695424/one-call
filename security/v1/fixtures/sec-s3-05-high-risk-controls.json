@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s3-05-high-risk-controls",
+  "slice": "s3",
+  "negative": false,
+  "description": "Ten high-risk employee mutations enforce fixed ADMIN/OPS, state and reason source, write the domain mutation and audit fact in one transaction, and roll the domain mutation back when audit append fails; UI second confirmation stays runtime-unverified.",
+  "materials": [],
+  "steps": [
+    {
+      "id": "suspend-applied",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "OPS",
+      "currentState": "ACTIVE",
+      "expectedRevision": 3,
+      "actualRevision": 3,
+      "reasonSource": "REQUEST reasonCode",
+      "reasonCode": "TEST_ONLY_REASON_SUSPEND",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "problemCode": null,
+        "reason": "HIGH_RISK_APPLIED",
+        "expectedRole": "OPS",
+        "expectedReasonSource": "REQUEST reasonCode",
+        "mutationCommitted": true,
+        "domainMutationRolledBack": false,
+        "auditFactsAppended": 1,
+        "auditEvent": "SUBJECT_SUSPEND",
+        "beforeAfter": "status/revision/reason",
+        "role": "OPS",
+        "reasonSource": "REQUEST reasonCode",
+        "sameTransaction": true,
+        "partialWrite": false,
+        "uiSecondConfirmationAsserted": false,
+        "runtimeUnverifiedControls": ["UI_SECOND_CONFIRMATION"],
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "suspend-wrong-role-denied",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "ADMIN",
+      "currentState": "ACTIVE",
+      "expectedRevision": 3,
+      "actualRevision": 3,
+      "reasonSource": "REQUEST reasonCode",
+      "reasonCode": "TEST_ONLY_REASON_SUSPEND",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 403,
+        "problemCode": "FORBIDDEN",
+        "reason": "ROLE_DENIED",
+        "mutationCommitted": false,
+        "auditFactsAppended": 1,
+        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED"
+      }
+    },
+    {
+      "id": "suspend-wrong-state-denied",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "OPS",
+      "currentState": "SUSPENDED",
+      "expectedRevision": 3,
+      "actualRevision": 3,
+      "reasonSource": "REQUEST reasonCode",
+      "reasonCode": "TEST_ONLY_REASON_SUSPEND",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 409,
+        "problemCode": "ACTIVATION_STATE_CONFLICT",
+        "reason": "STATE_CONFLICT",
+        "mutationCommitted": false,
+        "auditFactsAppended": 1,
+        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED"
+      }
+    },
+    {
+      "id": "suspend-wrong-reason-source-denied",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "OPS",
+      "currentState": "ACTIVE",
+      "expectedRevision": 3,
+      "actualRevision": 3,
+      "reasonSource": "ACTION_DERIVED",
+      "reasonCode": "TEST_ONLY_REASON_SUSPEND",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 422,
+        "problemCode": "VALIDATION_FAILED",
+        "reason": "REASON_SOURCE_INVALID",
+        "mutationCommitted": false,
+        "auditFactsAppended": 1,
+        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED"
+      }
+    },
+    {
+      "id": "suspend-missing-reason-denied",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "OPS",
+      "currentState": "ACTIVE",
+      "expectedRevision": 3,
+      "actualRevision": 3,
+      "reasonSource": "REQUEST reasonCode",
+      "reasonCode": "",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 422,
+        "problemCode": "VALIDATION_FAILED",
+        "reason": "REASON_SOURCE_INVALID",
+        "mutationCommitted": false,
+        "auditFactsAppended": 1,
+        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED"
+      }
+    },
+    {
+      "id": "suspend-stale-revision-denied",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "OPS",
+      "currentState": "ACTIVE",
+      "expectedRevision": 3,
+      "actualRevision": 4,
+      "reasonSource": "REQUEST reasonCode",
+      "reasonCode": "TEST_ONLY_REASON_SUSPEND",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 409,
+        "problemCode": "ACTIVATION_STATE_CONFLICT",
+        "reason": "REVISION_CONFLICT",
+        "mutationCommitted": false,
+        "auditFactsAppended": 1,
+        "auditEvent": "OPERATIONS_HIGH_RISK_DENIED"
+      }
+    },
+    {
+      "id": "publish-catalog-applied",
+      "action": "high-risk",
+      "operationId": "publishOperationsCatalogVersion",
+      "employeeRole": "ADMIN",
+      "currentState": "DRAFT_NEVER_PUBLISHED",
+      "expectedRevision": 7,
+      "actualRevision": 7,
+      "reasonSource": "ACTION_DERIVED",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "reason": "HIGH_RISK_APPLIED",
+        "mutationCommitted": true,
+        "auditFactsAppended": 1,
+        "auditEvent": "CATALOG_VERSION_PUBLISH",
+        "beforeAfter": "status/revision/snapshot hash",
+        "sameTransaction": true,
+        "partialWrite": false
+      }
+    },
+    {
+      "id": "disable-trial-policy-applied",
+      "action": "high-risk",
+      "operationId": "disableOperationsTrialPolicy",
+      "employeeRole": "ADMIN",
+      "currentState": "ENABLED",
+      "expectedRevision": 5,
+      "actualRevision": 5,
+      "reasonSource": "ACTION_DERIVED",
+      "auditAppendOk": true,
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "reason": "HIGH_RISK_APPLIED",
+        "mutationCommitted": true,
+        "auditFactsAppended": 1,
+        "auditEvent": "TRIAL_POLICY_DISABLE",
+        "beforeAfter": "enabled/revision"
+      }
+    },
+    {
+      "id": "audit-failure-rolls-back",
+      "action": "high-risk",
+      "operationId": "suspendOperationsSubject",
+      "employeeRole": "OPS",
+      "currentState": "ACTIVE",
+      "expectedRevision": 3,
+      "actualRevision": 3,
+      "reasonSource": "REQUEST reasonCode",
+      "reasonCode": "TEST_ONLY_REASON_SUSPEND",
+      "auditAppendOk": false,
+      "expected": {
+        "status": "ROLLED_BACK",
+        "statusCode": 500,
+        "problemCode": "INTERNAL",
+        "reason": "AUDIT_APPEND_FAILED",
+        "mutationCommitted": false,
+        "domainMutationRolledBack": true,
+        "auditFactsAppended": 0,
+        "auditEvent": null,
+        "sameTransaction": true,
+        "partialWrite": false
+      }
+    },
+    {
+      "id": "assert-high-risk",
+      "action": "assert",
+      "checks": {
+        "highRiskActions": 10,
+        "auditCoverage": 10,
+        "auditEvents": 39,
+        "auditPersistence": 39,
+        "invariants": 21,
+        "highRiskCommitted": 3,
+        "highRiskRolledBack": 1,
+        "highRiskDenied": 5,
+        "auditFactsAppended": 8
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

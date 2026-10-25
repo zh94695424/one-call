@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s1-01-envelope-purpose-roundtrip",
+  "slice": "s1",
+  "negative": false,
+  "description": "AES-256-GCM envelope roundtrip and independent HMAC for every S1 AEAD data class named by the accepted plan; fixed TEST_ONLY nonces are evaluator inputs only.",
+  "materials": [
+    { "keyId": "K02", "keyRef": "TEST_ONLY_K02_V1", "keyLabel": "TEST_ONLY_K02_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K03", "keyRef": "TEST_ONLY_K03_V1", "keyLabel": "TEST_ONLY_K03_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K05", "keyRef": "TEST_ONLY_K05_V1", "keyLabel": "TEST_ONLY_K05_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K06", "keyRef": "TEST_ONLY_K06_V1", "keyLabel": "TEST_ONLY_K06_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K07", "keyRef": "TEST_ONLY_K07_V1", "keyLabel": "TEST_ONLY_K07_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K08", "keyRef": "TEST_ONLY_K08_V1", "keyLabel": "TEST_ONLY_K08_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K11", "keyRef": "TEST_ONLY_K11_V1", "keyLabel": "TEST_ONLY_K11_HMAC_V1", "state": "ACTIVE" },
+    { "keyId": "K12", "keyRef": "TEST_ONLY_K12_V1", "keyLabel": "TEST_ONLY_K12_HMAC_V1", "state": "ACTIVE" },
+    { "keyId": "K13", "keyRef": "TEST_ONLY_K13_V1", "keyLabel": "TEST_ONLY_K13_HMAC_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "encrypt-d01",
+      "action": "encrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "plaintext": "TEST_ONLY_PROVIDER_SUBJECT_VALUE_0001",
+      "nonceHex": "000102030405060708090a0b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PROVIDER_SUBJECT:D01", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d01",
+      "action": "decrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "envelopeFromStep": "encrypt-d01",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-d01",
+      "action": "lookup",
+      "keyId": "K11",
+      "keyRef": "TEST_ONLY_K11_V1",
+      "purpose": "PROVIDER_SUBJECT_LOOKUP",
+      "dataClass": "D01",
+      "plaintext": "TEST_ONLY_PROVIDER_SUBJECT_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "encrypt-d02",
+      "action": "encrypt",
+      "keyId": "K03",
+      "keyRef": "TEST_ONLY_K03_V1",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D02",
+      "plaintext": "TEST_ONLY_IDENTITY_PROFILE_VALUE_0001",
+      "nonceHex": "101112131415161718191a1b",
+      "expected": { "status": "OK", "aad": "onecall:v1:IDENTITY_PROFILE:D02", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d02",
+      "action": "decrypt",
+      "keyId": "K03",
+      "keyRef": "TEST_ONLY_K03_V1",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D02",
+      "envelopeFromStep": "encrypt-d02",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-d02",
+      "action": "lookup",
+      "keyId": "K12",
+      "keyRef": "TEST_ONLY_K12_V1",
+      "purpose": "ID_NUMBER_LOOKUP",
+      "dataClass": "D02",
+      "plaintext": "TEST_ONLY_IDENTITY_PROFILE_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "encrypt-d04",
+      "action": "encrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_VALUE_0001",
+      "nonceHex": "202122232425262728292a2b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PHONE_NUMBER:D04", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d04",
+      "action": "decrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D04",
+      "envelopeFromStep": "encrypt-d04",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-d04",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D04",
+      "plaintext": "TEST_ONLY_PHONE_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "encrypt-d06",
+      "action": "encrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D06",
+      "plaintext": "TEST_ONLY_TASK_CALLEE_VALUE_0001",
+      "nonceHex": "303132333435363738393a3b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PHONE_NUMBER:D06", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d06",
+      "action": "decrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D06",
+      "envelopeFromStep": "encrypt-d06",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-d06",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D06",
+      "plaintext": "TEST_ONLY_TASK_CALLEE_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "encrypt-d07",
+      "action": "encrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D07",
+      "plaintext": "TEST_ONLY_INBOUND_CALLER_VALUE_0001",
+      "nonceHex": "404142434445464748494a4b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PHONE_NUMBER:D07", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d07",
+      "action": "decrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D07",
+      "envelopeFromStep": "encrypt-d07",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-d07",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D07",
+      "plaintext": "TEST_ONLY_INBOUND_CALLER_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "encrypt-d08",
+      "action": "encrypt",
+      "keyId": "K06",
+      "keyRef": "TEST_ONLY_K06_V1",
+      "purpose": "IVR_DECISION",
+      "dataClass": "D08",
+      "plaintext": "TEST_ONLY_IVR_DECISION_VALUE_0001",
+      "nonceHex": "505152535455565758595a5b",
+      "expected": { "status": "OK", "aad": "onecall:v1:IVR_DECISION:D08", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d08",
+      "action": "decrypt",
+      "keyId": "K06",
+      "keyRef": "TEST_ONLY_K06_V1",
+      "purpose": "IVR_DECISION",
+      "dataClass": "D08",
+      "envelopeFromStep": "encrypt-d08",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "encrypt-d09",
+      "action": "encrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D09",
+      "plaintext": "TEST_ONLY_CALL_PARTY_VALUE_0001",
+      "nonceHex": "606162636465666768696a6b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PHONE_NUMBER:D09", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d09",
+      "action": "decrypt",
+      "keyId": "K05",
+      "keyRef": "TEST_ONLY_K05_V1",
+      "purpose": "PHONE_NUMBER",
+      "dataClass": "D09",
+      "envelopeFromStep": "encrypt-d09",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-d09",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "PHONE_NUMBER_LOOKUP",
+      "dataClass": "D09",
+      "plaintext": "TEST_ONLY_CALL_PARTY_VALUE_0001",
+      "expected": { "status": "OK", "hmacPattern": true, "hmacLength": 64, "scanMode": "INDEXED_EQUALITY", "plaintextScanned": false, "keyState": "ACTIVE" }
+    },
+    {
+      "id": "encrypt-d10",
+      "action": "encrypt",
+      "keyId": "K07",
+      "keyRef": "TEST_ONLY_K07_V1",
+      "purpose": "CALL_EVENT",
+      "dataClass": "D10",
+      "plaintext": "TEST_ONLY_CALL_EVENT_VALUE_0001",
+      "nonceHex": "707172737475767778797a7b",
+      "expected": { "status": "OK", "aad": "onecall:v1:CALL_EVENT:D10", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d10",
+      "action": "decrypt",
+      "keyId": "K07",
+      "keyRef": "TEST_ONLY_K07_V1",
+      "purpose": "CALL_EVENT",
+      "dataClass": "D10",
+      "envelopeFromStep": "encrypt-d10",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "encrypt-d11",
+      "action": "encrypt",
+      "keyId": "K08",
+      "keyRef": "TEST_ONLY_K08_V1",
+      "purpose": "PROVIDER_PAYLOAD",
+      "dataClass": "D11",
+      "plaintext": "TEST_ONLY_PROVIDER_PAYLOAD_VALUE_0001",
+      "nonceHex": "808182838485868788898a8b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PROVIDER_PAYLOAD:D11", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d11",
+      "action": "decrypt",
+      "keyId": "K08",
+      "keyRef": "TEST_ONLY_K08_V1",
+      "purpose": "PROVIDER_PAYLOAD",
+      "dataClass": "D11",
+      "envelopeFromStep": "encrypt-d11",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    }
+  ]
+}

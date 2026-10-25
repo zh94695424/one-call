@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s3-06-redaction-deterministic",
+  "slice": "s3",
+  "negative": false,
+  "description": "Redaction applies an allow-list, a recursive deny-list at any depth, credential/header/path pattern controls and destination policy before emit; tokens are deterministic, only recognized display-safe masked variants survive, masked keys cannot bypass pattern controls, unknown fields block, and support cannot request playback.",
+  "materials": [],
+  "steps": [
+    {
+      "id": "log-recursive-nested",
+      "action": "redact",
+      "destination": "log",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0001",
+        "status": "ACTIVE",
+        "context": {
+          "phone": "TEST_ONLY_PHONE_0001",
+          "calleeNumberMasked": "138****0000",
+          "providerSubject": "TEST_ONLY_PROVIDER_SUBJECT",
+          "request": {
+            "nonce": "TEST_ONLY_NONCE_0001",
+            "method": "POST"
+          }
+        },
+        "path": "/api/v1/public/shares/TEST_ONLY_CAPABILITY_0001/view"
+      },
+      "expected": {
+        "status": "OK",
+        "destination": "log",
+        "statusCode": null,
+        "problemCode": null,
+        "reason": "EMITTED_REDACTED",
+        "emitted": true,
+        "blocked": false,
+        "alert": false,
+        "redactedEvent": {
+          "id": "TEST_ONLY_EVENT_0001",
+          "status": "ACTIVE",
+          "context": {
+            "phone": "[REDACTED:PHONE]",
+            "calleeNumberMasked": "138****0000",
+            "providerSubject": "[REDACTED:PROVIDER_SUBJECT]",
+            "request": {
+              "nonce": "[REDACTED:NONCE]",
+              "method": "POST"
+            }
+          },
+          "path": "/api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]/view"
+        },
+        "tokens": ["[REDACTED:CAPABILITY_TOKEN]", "[REDACTED:NONCE]", "[REDACTED:PHONE]", "[REDACTED:PROVIDER_SUBJECT]"],
+        "tokenCount": 4,
+        "deterministic": true,
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "log-credential-and-headers",
+      "action": "redact",
+      "destination": "log",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0002",
+        "status": "OK",
+        "context": {
+          "headers": {
+            "authorization": "Bearer TEST_ONLY_BEARER",
+            "cookie": "TEST_ONLY_COOKIE",
+            "signature": "TEST_ONLY_SIGNATURE"
+          },
+          "credential": "TEST_ONLY_CREDENTIAL_VALUE"
+        }
+      },
+      "expected": {
+        "status": "OK",
+        "destination": "log",
+        "reason": "EMITTED_REDACTED",
+        "emitted": true,
+        "redactedEvent": {
+          "id": "TEST_ONLY_EVENT_0002",
+          "status": "OK",
+          "context": {
+            "headers": {
+              "authorization": "[REDACTED:AUTHORIZATION]",
+              "cookie": "[REDACTED:COOKIE]",
+              "signature": "[REDACTED:SIGNATURE]"
+            },
+            "credential": "[REDACTED:CREDENTIAL]"
+          }
+        },
+        "tokens": ["[REDACTED:AUTHORIZATION]", "[REDACTED:COOKIE]", "[REDACTED:CREDENTIAL]", "[REDACTED:SIGNATURE]"],
+        "tokenCount": 4,
+        "deterministic": true,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "support-masked-allowed",
+      "action": "redact",
+      "destination": "support",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0003",
+        "status": "ACTIVE",
+        "reasonCode": "TEST_ONLY_REASON",
+        "calleeNumberMasked": "138****0000",
+        "providerSubject": "TEST_ONLY_PROVIDER_SUBJECT",
+        "objectKey": "TEST_ONLY_OBJECT_KEY"
+      },
+      "expected": {
+        "status": "OK",
+        "destination": "support",
+        "reason": "EMITTED_REDACTED",
+        "emitted": true,
+        "redactedEvent": {
+          "id": "TEST_ONLY_EVENT_0003",
+          "status": "ACTIVE",
+          "reasonCode": "TEST_ONLY_REASON",
+          "calleeNumberMasked": "138****0000",
+          "providerSubject": "[REDACTED:PROVIDER_SUBJECT]",
+          "objectKey": "[REDACTED:OBJECT_KEY]"
+        },
+        "tokens": ["[REDACTED:OBJECT_KEY]", "[REDACTED:PROVIDER_SUBJECT]"],
+        "tokenCount": 2,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "support-unknown-field-blocked",
+      "action": "redact",
+      "destination": "support",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0004",
+        "status": "ACTIVE",
+        "unsupportedField": "TEST_ONLY_UNKNOWN_VALUE"
+      },
+      "expected": {
+        "status": "DENIED",
+        "destination": "support",
+        "statusCode": null,
+        "problemCode": null,
+        "reason": "SECURITY_REDACTION_BLOCKED",
+        "emitted": false,
+        "blocked": true,
+        "alert": true,
+        "unknownFieldBlocked": true,
+        "blockedField": "unsupportedField",
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false,
+        "deterministic": true,
+        "tokens": [],
+        "tokenCount": 0,
+        "accessEvent": "SECURITY_REDACTION_BLOCKED"
+      }
+    },
+    {
+      "id": "error-unknown-field-blocked",
+      "action": "redact",
+      "destination": "error",
+      "event": {
+        "status": "ERROR",
+        "reasonCode": "TEST_ONLY_REASON",
+        "traceId": "TEST_ONLY_TRACE",
+        "providerMessage": "TEST_ONLY_PROVIDER_DETAIL"
+      },
+      "expected": {
+        "status": "DENIED",
+        "destination": "error",
+        "statusCode": 500,
+        "problemCode": "INTERNAL",
+        "reason": "SECURITY_REDACTION_BLOCKED",
+        "emitted": false,
+        "blocked": true,
+        "alert": true,
+        "unknownFieldBlocked": true,
+        "blockedField": "providerMessage",
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "public-contract-masked-only",
+      "action": "redact",
+      "destination": "public-contract",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0006",
+        "status": "ACTIVE",
+        "calleeNumberMasked": "138****0000"
+      },
+      "expected": {
+        "status": "OK",
+        "destination": "public-contract",
+        "reason": "EMITTED_REDACTED",
+        "emitted": true,
+        "redactedEvent": {
+          "id": "TEST_ONLY_EVENT_0006",
+          "status": "ACTIVE",
+          "calleeNumberMasked": "138****0000"
+        },
+        "tokens": [],
+        "tokenCount": 0,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "support-playback-request-denied",
+      "action": "redact",
+      "destination": "support",
+      "playbackRequested": true,
+      "event": {
+        "id": "TEST_ONLY_EVENT_0007",
+        "status": "ACTIVE"
+      },
+      "expected": {
+        "status": "DENIED",
+        "destination": "support",
+        "statusCode": 403,
+        "problemCode": "FORBIDDEN",
+        "reason": "PLAYBACK_NOT_ALLOWED",
+        "emitted": false,
+        "blocked": false,
+        "alert": false,
+        "playbackAllowed": false,
+        "playbackDenied": true,
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false,
+        "tokens": [],
+        "tokenCount": 0
+      }
+    },
+    {
+      "id": "log-deterministic-repeat",
+      "action": "redact",
+      "destination": "log",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0001",
+        "status": "ACTIVE",
+        "context": {
+          "phone": "TEST_ONLY_PHONE_0001",
+          "calleeNumberMasked": "138****0000",
+          "providerSubject": "TEST_ONLY_PROVIDER_SUBJECT",
+          "request": {
+            "nonce": "TEST_ONLY_NONCE_0001",
+            "method": "POST"
+          }
+        },
+        "path": "/api/v1/public/shares/TEST_ONLY_CAPABILITY_0001/view"
+      },
+      "expected": {
+        "status": "OK",
+        "destination": "log",
+        "reason": "EMITTED_REDACTED",
+        "emitted": true,
+        "redactedEvent": {
+          "id": "TEST_ONLY_EVENT_0001",
+          "status": "ACTIVE",
+          "context": {
+            "phone": "[REDACTED:PHONE]",
+            "calleeNumberMasked": "138****0000",
+            "providerSubject": "[REDACTED:PROVIDER_SUBJECT]",
+            "request": {
+              "nonce": "[REDACTED:NONCE]",
+              "method": "POST"
+            }
+          },
+          "path": "/api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]/view"
+        },
+        "tokens": ["[REDACTED:CAPABILITY_TOKEN]", "[REDACTED:NONCE]", "[REDACTED:PHONE]", "[REDACTED:PROVIDER_SUBJECT]"],
+        "tokenCount": 4,
+        "deterministic": true,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "log-safe-masked-credential-tokenized",
+      "action": "redact",
+      "destination": "log",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0008",
+        "status": "OK",
+        "context": {
+          "calleeNumberMasked": "Bearer TEST_ONLY_BEARER_MASK_0008",
+          "phoneMasked": "redirect=/api/v1/public/shares/TEST_ONLY_CAPABILITY_0008/view",
+          "mobileMasked": "v1.K09.TEST_ONLY_ENVELOPE_0008",
+          "identityNumberMasked": "credential=TEST_ONLY_NAMED_CREDENTIAL_0008"
+        }
+      },
+      "expected": {
+        "status": "OK",
+        "destination": "log",
+        "statusCode": null,
+        "problemCode": null,
+        "reason": "EMITTED_REDACTED",
+        "emitted": true,
+        "blocked": false,
+        "alert": false,
+        "redactedEvent": {
+          "id": "TEST_ONLY_EVENT_0008",
+          "status": "OK",
+          "context": {
+            "calleeNumberMasked": "[REDACTED:CREDENTIAL]",
+            "phoneMasked": "redirect=/api/v1/public/shares/[REDACTED:CAPABILITY_TOKEN]/view",
+            "mobileMasked": "[REDACTED:CREDENTIAL]",
+            "identityNumberMasked": "[REDACTED:CREDENTIAL]"
+          }
+        },
+        "tokens": ["[REDACTED:CAPABILITY_TOKEN]", "[REDACTED:CREDENTIAL]"],
+        "tokenCount": 2,
+        "deterministic": true,
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false
+      }
+    },
+    {
+      "id": "log-credential-masked-key-blocked",
+      "action": "redact",
+      "destination": "log",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0009",
+        "status": "OK",
+        "context": {
+          "capabilityTokenMasked": "Bearer TEST_ONLY_BEARER_0009"
+        }
+      },
+      "expected": {
+        "status": "DENIED",
+        "destination": "log",
+        "statusCode": null,
+        "problemCode": null,
+        "reason": "SECURITY_REDACTION_BLOCKED",
+        "emitted": false,
+        "blocked": true,
+        "alert": true,
+        "unknownFieldBlocked": true,
+        "blockedField": "capabilityTokenMasked",
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false,
+        "deterministic": true,
+        "tokens": [],
+        "tokenCount": 0,
+        "accessEvent": "SECURITY_REDACTION_BLOCKED"
+      }
+    },
+    {
+      "id": "log-unknown-masked-key-blocked",
+      "action": "redact",
+      "destination": "log",
+      "event": {
+        "id": "TEST_ONLY_EVENT_0010",
+        "status": "OK",
+        "randomMasked": "TEST_ONLY_ARBITRARY_MASK_VALUE"
+      },
+      "expected": {
+        "status": "DENIED",
+        "destination": "log",
+        "statusCode": null,
+        "problemCode": null,
+        "reason": "SECURITY_REDACTION_BLOCKED",
+        "emitted": false,
+        "blocked": true,
+        "alert": true,
+        "unknownFieldBlocked": true,
+        "blockedField": "randomMasked",
+        "redactionAppliedBeforeEmit": true,
+        "rawExposed": false,
+        "deterministic": true,
+        "tokens": [],
+        "tokenCount": 0,
+        "accessEvent": "SECURITY_REDACTION_BLOCKED"
+      }
+    },
+    {
+      "id": "assert-redaction",
+      "action": "assert",
+      "checks": {
+        "redactionTokens": 28,
+        "redactionEmits": 6,
+        "redactionBlocks": 4,
+        "invariants": 21,
+        "auditEvents": 39
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

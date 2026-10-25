@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s1-05-key-unavailable-failclosed",
+  "slice": "s1",
+  "negative": true,
+  "description": "Unknown, disabled, destroyed and dependency-unavailable key states fail closed with the existing 503 and no plaintext fallback; an authorized recovery restores a disabled key, while a destroyed key is unrecoverable.",
+  "materials": [
+    { "keyId": "K02", "keyRef": "TEST_ONLY_K02_V1", "keyLabel": "TEST_ONLY_K02_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K03", "keyRef": "TEST_ONLY_K03_V1", "keyLabel": "TEST_ONLY_K03_DEK_V1", "state": "DISABLED" },
+    { "keyId": "K04", "keyRef": "TEST_ONLY_K04_V1", "keyLabel": "TEST_ONLY_K04_DEK_V1", "state": "DESTROYED" }
+  ],
+  "steps": [
+    {
+      "id": "encrypt-d01",
+      "action": "encrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "plaintext": "TEST_ONLY_PROVIDER_SUBJECT_VALUE_0001",
+      "nonceHex": "000102030405060708090a0b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PROVIDER_SUBJECT:D01", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-unknown-key",
+      "action": "decrypt",
+      "keyId": "K02",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "envelope": "v1.TEST_ONLY_UNKNOWN_V1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": { "status": "DENIED", "reason": "KEY_UNKNOWN", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "auditEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "decrypt-disabled-key",
+      "action": "decrypt",
+      "keyId": "K03",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D02",
+      "envelope": "v1.TEST_ONLY_K03_V1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": { "status": "DENIED", "reason": "KEY_STATE_DENIED", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "auditEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "decrypt-destroyed-key",
+      "action": "decrypt",
+      "keyId": "K04",
+      "purpose": "VERIFICATION_REF",
+      "dataClass": "D05",
+      "envelope": "v1.TEST_ONLY_K04_V1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expected": { "status": "DENIED", "reason": "KEY_STATE_DENIED", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "auditEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "decrypt-dependency-unavailable",
+      "action": "decrypt",
+      "keyId": "K02",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "envelopeFromStep": "encrypt-d01",
+      "dependencyAvailable": false,
+      "expected": { "status": "DENIED", "reason": "DEPENDENCY_UNAVAILABLE", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "auditEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "recover-disabled-key",
+      "action": "recover",
+      "keyId": "K03",
+      "keyRef": "TEST_ONLY_K03_V1",
+      "expected": { "status": "OK", "previousState": "DISABLED", "keyState": "ACTIVE", "auditEvent": "SECURITY_KEY_RECOVER" }
+    },
+    {
+      "id": "encrypt-d02-after-recover",
+      "action": "encrypt",
+      "keyId": "K03",
+      "keyRef": "TEST_ONLY_K03_V1",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D02",
+      "plaintext": "TEST_ONLY_IDENTITY_PROFILE_RECOVERED_0001",
+      "nonceHex": "202122232425262728292a2b",
+      "expected": { "status": "OK", "aad": "onecall:v1:IDENTITY_PROFILE:D02", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-d02-after-recover",
+      "action": "decrypt",
+      "keyId": "K03",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D02",
+      "envelopeFromStep": "encrypt-d02-after-recover",
+      "expected": { "status": "OK", "roundtripMatches": true, "plaintextExposed": false, "keyState": "ACTIVE", "rowsWritten": 0 }
+    },
+    {
+      "id": "recover-destroyed-key",
+      "action": "recover",
+      "keyId": "K04",
+      "keyRef": "TEST_ONLY_K04_V1",
+      "expected": { "status": "DENIED", "reason": "UNRECOVERABLE", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_ACCESS_DENIED", "auditEvent": "SECURITY_KEY_ACCESS_DENIED", "plaintextExposed": false, "rowsWritten": 0, "keyState": "DESTROYED" }
+    }
+  ]
+}

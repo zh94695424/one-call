@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s2-09-ivr-outbox-auth-blocked",
+  "slice": "s2",
+  "negative": true,
+  "description": "An IVR-local outbox keeps the same PENDING entry security-blocked after 401 and 403, rejects hot retry, identity or payload mutation, redial, re-resolve, reservation and settlement, emits only redacted alerts, and retries only after an explicit recovery signal with the same non-empty domain identity and fresh, well-formed transport values that have not been reused.",
+  "materials": [],
+  "steps": [
+    {
+      "id": "observe-401",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_401", "eventId": "TEST_ONLY_OUTBOX_EVENT_401" },
+      "observedStatus": 401,
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0901",
+      "transportTimestamp": "1700000000",
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 401,
+        "problemCode": "UNAUTHENTICATED",
+        "reason": "OBSERVED_UNAUTHENTICATED",
+        "outboxState": "PENDING",
+        "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+        "sameEventId": true,
+        "samePayload": true,
+        "securityBlocked": true,
+        "retried": false,
+        "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED",
+        "alertRedacted": true,
+        "credentialExposed": false,
+        "signatureLogged": false,
+        "nonceLogged": false,
+        "sideEffects": { "sessions": 0, "calls": 0, "decisions": 0, "tasks": 0, "reservations": 0, "settlements": 0, "events": 0, "redials": 0, "reResolves": 0 }
+      }
+    },
+    {
+      "id": "hot-retry-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "hotRetryRequested": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "HOT_RETRY_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "identity-mutation-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "mutateEventId": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "payload-mutation-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "mutatePayload": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "PAYLOAD_MUTATION_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "redial-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "redial": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "REDIAL_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "re-resolve-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "reResolve": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "RERESOLVE_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "reservation-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "reservation": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "RESERVATION_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "settlement-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "settlement": true,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "SETTLEMENT_FORBIDDEN", "outboxState": "PENDING" }
+    },
+    {
+      "id": "observe-403",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "observedStatus": 403,
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0902",
+      "transportTimestamp": "1700000100",
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 403,
+        "problemCode": "FORBIDDEN",
+        "reason": "OBSERVED_FORBIDDEN",
+        "outboxState": "PENDING",
+        "securityBlocked": true,
+        "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED",
+        "alertRedacted": true,
+        "credentialExposed": false,
+        "signatureLogged": false,
+        "nonceLogged": false
+      }
+    },
+    {
+      "id": "recovery-retry",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_401",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_401",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_401", "eventId": "TEST_ONLY_OUTBOX_EVENT_401" },
+      "recoverySignal": "CREDENTIAL_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0903",
+      "transportTimestamp": "1700000200",
+      "expected": {
+        "status": "OK",
+        "statusCode": 200,
+        "problemCode": null,
+        "reason": "RETRY_AFTER_RECOVERY",
+        "outboxState": "PENDING",
+        "sameEventId": true,
+        "samePayload": true,
+        "securityBlocked": false,
+        "retryAllowed": true,
+        "retried": true,
+        "freshTransport": true,
+        "alertSignal": null
+      }
+    },
+    {
+      "id": "stale-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0902",
+      "transportTimestamp": "1700000100",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true }
+    },
+    {
+      "id": "omitted-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
+    },
+    {
+      "id": "null-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": null,
+      "transportTimestamp": null,
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
+    },
+    {
+      "id": "empty-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "",
+      "transportTimestamp": "",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
+    },
+    {
+      "id": "malformed-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST ONLY OUTBOX NONCE",
+      "transportTimestamp": "17000001O0",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
+    },
+    {
+      "id": "partially-reused-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0904",
+      "transportTimestamp": "1700000100",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
+    },
+    {
+      "id": "omitted-recovery-identity-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0905",
+      "transportTimestamp": "1700000300",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true }
+    },
+    {
+      "id": "empty-recovery-identity-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0906",
+      "transportTimestamp": "1700000400",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true }
+    },
+    {
+      "id": "mismatched-recovery-identity-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_OTHER", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0907",
+      "transportTimestamp": "1700000500",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "IDENTITY_MUTATION_FORBIDDEN", "outboxState": "PENDING", "securityBlocked": true }
+    },
+    {
+      "id": "recovery-403-accepted",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "KEY_ROTATED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0908",
+      "transportTimestamp": "1700000600",
+      "expected": { "status": "OK", "statusCode": 200, "problemCode": null, "reason": "RETRY_AFTER_RECOVERY", "outboxState": "PENDING", "securityBlocked": false, "retryAllowed": true, "retried": true, "freshTransport": true }
+    },
+    {
+      "id": "reblock-403",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "observedStatus": 401,
+      "expected": { "status": "DENIED", "statusCode": 401, "problemCode": "UNAUTHENTICATED", "reason": "OBSERVED_UNAUTHENTICATED", "outboxState": "PENDING", "securityBlocked": true, "alertSignal": "IVR_OUTBOX_SECURITY_BLOCKED" }
+    },
+    {
+      "id": "reused-accepted-transport-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_403",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_403",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_403", "eventId": "TEST_ONLY_OUTBOX_EVENT_403" },
+      "recoverySignal": "SERVICE_AUTHORIZATION_RESTORED",
+      "transportNonce": "TEST_ONLY_OUTBOX_NONCE_0908",
+      "transportTimestamp": "1700000600",
+      "expected": { "status": "DENIED", "statusCode": 403, "problemCode": "FORBIDDEN", "reason": "STALE_TRANSPORT", "outboxState": "PENDING", "securityBlocked": true, "retried": false }
+    },
+    {
+      "id": "initial-observation-transport-omitted-denied",
+      "action": "ivr-outbox",
+      "eventId": "TEST_ONLY_OUTBOX_EVENT_ORPHAN",
+      "payloadFingerprint": "TEST_ONLY_OUTBOX_PAYLOAD_ORPHAN",
+      "domainIdentity": { "callId": "TEST_ONLY_CALL_ORPHAN", "eventId": "TEST_ONLY_OUTBOX_EVENT_ORPHAN" },
+      "observedStatus": 401,
+      "expected": {
+        "status": "DENIED",
+        "statusCode": 403,
+        "problemCode": "FORBIDDEN",
+        "reason": "STALE_TRANSPORT",
+        "outboxState": "PENDING",
+        "securityBlocked": false
+      }
+    },
+    {
+      "id": "assert-outbox-policy",
+      "action": "assert",
+      "checks": {
+        "invariants": 11,
+        "futureFixtureIds": 0,
+        "outboxEntries": 2,
+        "securityBlockedEntries": 1,
+        "a2Events": 0,
+        "payments": 0,
+        "entitlements": 0
+      },
+      "expected": { "status": "OK", "mismatches": [] }
+    }
+  ]
+}

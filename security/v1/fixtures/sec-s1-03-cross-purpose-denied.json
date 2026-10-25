@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "sec-s1-03-cross-purpose-denied",
+  "slice": "s1",
+  "negative": true,
+  "description": "Cross-purpose misuse is denied with zero plaintext exposure and zero writes: D01 ciphertext with a D02 key, a wrong AAD, a wrong purpose and a cross-purpose HMAC are all rejected.",
+  "materials": [
+    { "keyId": "K02", "keyRef": "TEST_ONLY_K02_V1", "keyLabel": "TEST_ONLY_K02_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K03", "keyRef": "TEST_ONLY_K03_V1", "keyLabel": "TEST_ONLY_K03_DEK_V1", "state": "ACTIVE" },
+    { "keyId": "K13", "keyRef": "TEST_ONLY_K13_V1", "keyLabel": "TEST_ONLY_K13_HMAC_V1", "state": "ACTIVE" }
+  ],
+  "steps": [
+    {
+      "id": "encrypt-d01",
+      "action": "encrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "plaintext": "TEST_ONLY_PROVIDER_SUBJECT_VALUE_0001",
+      "nonceHex": "000102030405060708090a0b",
+      "expected": { "status": "OK", "aad": "onecall:v1:PROVIDER_SUBJECT:D01", "envelopeVersion": "v1", "nonceBytes": 12, "tagBytes": 16, "envelopePattern": true, "plaintextAbsentFromEnvelope": true, "keyState": "ACTIVE", "rowsWritten": 1 }
+    },
+    {
+      "id": "decrypt-with-other-data-key",
+      "action": "decrypt",
+      "keyId": "K03",
+      "keyRef": "TEST_ONLY_K03_V1",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D02",
+      "envelopeFromStep": "encrypt-d01",
+      "expected": { "status": "DENIED", "reason": "KEY_MISMATCH", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_PURPOSE_MISMATCH", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "decrypt-with-wrong-aad",
+      "action": "decrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "PROVIDER_SUBJECT",
+      "dataClass": "D01",
+      "envelopeFromStep": "encrypt-d01",
+      "aad": "onecall:v1:IDENTITY_PROFILE:D01",
+      "expected": { "status": "DENIED", "reason": "AAD_MISMATCH", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_PURPOSE_MISMATCH", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "decrypt-with-wrong-purpose",
+      "action": "decrypt",
+      "keyId": "K02",
+      "keyRef": "TEST_ONLY_K02_V1",
+      "purpose": "IDENTITY_PROFILE",
+      "dataClass": "D01",
+      "envelopeFromStep": "encrypt-d01",
+      "expected": { "status": "DENIED", "reason": "PURPOSE_MISMATCH", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_PURPOSE_MISMATCH", "plaintextExposed": false, "rowsWritten": 0 }
+    },
+    {
+      "id": "lookup-with-other-purpose-key",
+      "action": "lookup",
+      "keyId": "K13",
+      "keyRef": "TEST_ONLY_K13_V1",
+      "purpose": "ID_NUMBER_LOOKUP",
+      "dataClass": "D02",
+      "plaintext": "TEST_ONLY_CROSS_PURPOSE_VALUE_0001",
+      "expected": { "status": "DENIED", "reason": "PURPOSE_MISMATCH", "problemCode": "SERVICE_UNAVAILABLE", "securityEvent": "SECURITY_KEY_PURPOSE_MISMATCH", "plaintextExposed": false, "rowsWritten": 0 }
+    }
+  ]
+}
