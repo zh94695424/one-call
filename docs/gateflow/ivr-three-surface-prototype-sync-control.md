@@ -7,7 +7,7 @@
 - Status: active.
 - Base: `origin/main` at `754b7dfc53c277e79c5d63e24d578a93fa557cda`.
 - Branch: `codex/ivr-prototype-sync` in an isolated managed worktree.
-- Current gate / next entry point: `PR review`; Draft PR #3 is open against `main`.
+- Current gate / next entry point: `accepted PR review commit`; PR #3 review passed with no material findings.
 - Dispatch protocol: `sub-agents`; DeepSeek authors implementation, fresh MiMo 2.6 Flash reviews.
 
 ## Binding goal confirmation
@@ -51,6 +51,7 @@
 | ready-to-open-draft-PR | passed | fetched `origin/main` remains `754b7df`; merge-base is `754b7df`; GitHub auth valid; no existing PR for `codex/ivr-prototype-sync`; full branch diff check will be clean after this bookkeeping correction | push |
 | push | passed | pushed `codex/ivr-prototype-sync` to `origin` and set upstream | create draft PR |
 | create draft PR | passed | PR #3, `https://github.com/zh94695424/one-call/pull/3`; title `Sync IVR call-task flow across prototypes`; base `main`; head `codex/ivr-prototype-sync`; Draft/Open; no CI checks reported at creation | PR review |
+| PR review | passed | `docs/reviews/pr-3-review-20261025-043930.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-prreview-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no material findings; PR checks none reported | accepted PR review commit |
 
 ## Residual risks
 
@@ -87,6 +88,14 @@
 - State: Open Draft; base `main`; head `codex/ivr-prototype-sync`.
 - Body records prototype scope, task/no-task behavior, 47/47 tests, three surface runners, cross-channel/build/diff checks and residual production owners.
 - Checks at creation: none reported by GitHub.
+
+## PR review adjudication
+
+- Artifact: `docs/reviews/pr-3-review-20261025-043930.md`.
+- Verdict accepted: `pass`; no material correctness, stability, ownership/isolation, state-machine, semantic-ownership, generated-source, frontend truthfulness, responsive/QA, documentation-contract or PR-readiness finding remains.
+- AR-01 and AR-02 were independently rechecked as closed. Earlier CF findings remain closed by the prior accepted review chain.
+- Live GitHub checks remain empty/none reported; reviewer-side `gh` was permission-blocked, while controller-side PR metadata and authentication were already verified before creation. This is recorded as a CI visibility gap, not a code defect.
+- Gate decision: create the accepted PR review commit, push it, then enter `draft-PR-pass` and final closeout.
 
 ## Plan return notes
 
