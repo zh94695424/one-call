@@ -54,7 +54,7 @@
 | PR review | passed | `docs/reviews/pr-3-review-20261025-043930.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-prreview-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no material findings; PR checks none reported | accepted PR review commit |
 | accepted PR review commit | passed | `7eee10d`, `gateflow: accept IVR prototype PR review`; PR review artifact and control adjudication committed | push |
 | push | passed | `7eee10d` pushed to `origin/codex/ivr-prototype-sync`; PR #3 head updated; working tree clean | draft-PR-pass |
-| draft-PR-pass | passed | PR #3 remains Open Draft against `main`, head `7eee10d`; PR review pass accepted; no CI checks reported; no unresolved accepted findings | final closeout |
+| draft-PR-pass | passed | PR #3 remains Open Draft against `main`; its head tracks the subsequently pushed final-closeout commits; PR review pass accepted; no CI checks reported; no unresolved accepted findings | final closeout |
 
 ## Residual risks
 
@@ -105,7 +105,7 @@
 - What changed: three prototype surfaces now share the call-task/IVR decision fixture; task creation freezes 30 seconds; valid IVR calls atomically claim the owned task and auto-dial its frozen callee without confirmation; no-task calls retain DTMF input; recording/upload/evidence and failure states are visible; operations diagnostics are read-only; generated copies remain hash-consistent.
 - Aggregate findings AR-01 and AR-02 were fixed by DeepSeek, validated by the controller, and independently re-reviewed by MiMo Flash. PR review also passed with no material findings.
 - Verification: six syntax checks, shared tests 47/47, Mini/Web/Operations full runners, cross-channel runner, builder `--check`, original-resolution Mini screenshot inspection and full branch `git diff --check` passed. The worktree is clean after the final pushed control commit.
-- PR: `https://github.com/zh94695424/one-call/pull/3`, Open Draft, base `main`, head `codex/ivr-prototype-sync` at `7eee10d92d9764abc49cc129edca82e1cbeb8e85`; no GitHub checks are configured/reported.
+- PR: `https://github.com/zh94695424/one-call/pull/3`, Open Draft, base `main`, head `codex/ivr-prototype-sync` at the final pushed closeout commit; no GitHub checks are configured/reported.
 - Scope and exclusions: this remains a prototype alignment slice. Production database atomicity/concurrency, IVR/SIP/media integration, recording object storage, cloud deployment, payment and final legal consent copy are not implemented here.
 - Residual risk reconciliation:
   - Backend/IVR integration work unit: production concurrency, persistence, real IVR/telephony, upload and cloud behavior; prototype evidence does not prove these.
