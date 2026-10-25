@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "id": "s3-06-recording-identity-conflict",
+  "slice": "s3",
+  "description": "A changed declaration for the same recording identity is 409 RECORDING_IDENTITY_CONFLICT; after the first observation is accepted, an identical observation replay still returns UPLOADED after uploadExpiresAt, a re-declare and a changed observation both fail closed without mutation, and a pre-terminal completion presenting different server-observed object facts quarantines once without overwriting the first media object.",
+  "steps": [
+    {
+      "id": "resolve",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s3-06",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000306",
+        "subjectId": "20000000-0000-5000-8000-000000000306",
+        "nodeId": "node-s3-06",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "11111111-1111-5111-8111-111111111306",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "entitlement": {
+          "availableRecordingSeconds": 0
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "callId": "call-s3-06",
+          "action": "GUIDE_PURCHASE"
+        },
+        "persisted": {
+          "call": {
+            "exists": true
+          }
+        },
+        "counts": {
+          "callsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "declare",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "mimeType": "audio/wav",
+        "sizeBytes": 6000,
+        "durationSeconds": 60,
+        "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "server": {
+        "now": "2026-10-25T10:00:00Z",
+        "uploadExpiresAt": "2026-10-25T10:10:00Z"
+      },
+      "expected": {
+        "status": 201,
+        "response": {
+          "recordingId": "rec-s3-06",
+          "status": "DECLARED"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "DECLARED",
+              "revision": 1
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "changed-declaration",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "mimeType": "audio/wav",
+        "sizeBytes": 6000,
+        "durationSeconds": 61,
+        "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "server": {
+        "now": "2026-10-25T10:01:00Z",
+        "uploadExpiresAt": "2026-10-25T10:20:00Z"
+      },
+      "expected": {
+        "status": 409,
+        "code": "RECORDING_IDENTITY_CONFLICT",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "DECLARED",
+              "revision": 1,
+              "declared": {
+                "durationSeconds": 60,
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+              },
+              "uploadExpiresAt": "2026-10-25T10:10:00Z",
+              "mediaObject": null
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingDeclarations": 1,
+          "recordingDeclarationReplays": 0,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 0,
+          "recordingOutboxRetried": 1
+        }
+      }
+    },
+    {
+      "id": "upload-observed",
+      "action": "local",
+      "operation": "recording.observeUpload",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-06-1",
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "sizeBytes": 6000,
+          "mimeType": "audio/wav",
+          "durationSeconds": 60
+        },
+        "now": "2026-10-25T10:02:00Z"
+      },
+      "expected": {
+        "status": 200,
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "UPLOADED",
+              "revision": 2,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-06-1",
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+              }
+            }
+          ]
+        },
+        "counts": {
+          "mediaObjectsCreated": 1
+        }
+      }
+    },
+    {
+      "id": "upload-observation-replay-after-expiry",
+      "action": "local",
+      "operation": "recording.observeUpload",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-06-1",
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "sizeBytes": 6000,
+          "mimeType": "audio/wav",
+          "durationSeconds": 60
+        },
+        "now": "2026-10-25T10:11:00Z"
+      },
+      "expected": {
+        "status": 200,
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "UPLOADED",
+              "revision": 2,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-06-1",
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                "sizeBytes": 6000,
+                "mimeType": "audio/wav",
+                "durationSeconds": 60
+              },
+              "validated": null
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "uploadObservations": 1,
+          "uploadObservationReplays": 1,
+          "mediaObjectsCreated": 1,
+          "recordingQuarantines": 0,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 0,
+          "recordingOutboxRetried": 1
+        }
+      }
+    },
+    {
+      "id": "re-declare-after-upload",
+      "action": "request",
+      "operation": "declareIvrRecording",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "mimeType": "audio/wav",
+        "sizeBytes": 6000,
+        "durationSeconds": 60,
+        "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "server": {
+        "now": "2026-10-25T10:11:30Z",
+        "uploadExpiresAt": "2026-10-25T10:30:00Z"
+      },
+      "expected": {
+        "status": 409,
+        "code": "RECORDING_IDENTITY_CONFLICT",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "UPLOADED",
+              "revision": 2,
+              "declared": {
+                "durationSeconds": 60,
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+              },
+              "uploadExpiresAt": "2026-10-25T10:10:00Z",
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-06-1"
+              },
+              "validated": null
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "recordingsCreated": 1,
+          "recordingDeclarations": 1,
+          "recordingDeclarationReplays": 0,
+          "mediaObjectsCreated": 1,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 0,
+          "recordingOutboxRetried": 2
+        }
+      }
+    },
+    {
+      "id": "upload-observation-changed-after-expiry",
+      "action": "local",
+      "operation": "recording.observeUpload",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-06-2",
+          "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+          "sizeBytes": 7000,
+          "mimeType": "audio/wav",
+          "durationSeconds": 61
+        },
+        "now": "2026-10-25T10:12:00Z"
+      },
+      "expected": {
+        "status": 409,
+        "code": "RECORDING_IDENTITY_CONFLICT",
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "UPLOADED",
+              "revision": 2,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-06-1",
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                "sizeBytes": 6000,
+                "mimeType": "audio/wav",
+                "durationSeconds": 60
+              },
+              "validated": null
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "uploadObservations": 1,
+          "uploadObservationReplays": 1,
+          "mediaObjectsCreated": 1,
+          "recordingQuarantines": 0,
+          "recordingOutboxEntries": 1,
+          "recordingOutboxAcked": 1,
+          "recordingOutboxPermanent": 0,
+          "recordingOutboxRetried": 2
+        }
+      }
+    },
+    {
+      "id": "complete-different-observation",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "clientReference": "ref-s3-06"
+      },
+      "server": {
+        "now": "2026-10-25T10:13:00Z",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-06-2",
+          "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+          "sizeBytes": 7000,
+          "mimeType": "audio/wav",
+          "durationSeconds": 61
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "recordingId": "rec-s3-06",
+          "status": "QUARANTINED",
+          "reasonCode": "RECORDING_IDENTITY_CONFLICT",
+          "completedAt": "2026-10-25T10:13:00Z"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "QUARANTINED",
+              "revision": 3,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-06-1",
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                "sizeBytes": 6000,
+                "durationSeconds": 60
+              },
+              "validated": null,
+              "terminalFacts": {
+                "objectIdentityDigest": "object-digest-s3-06-2",
+                "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+                "sizeBytes": 7000,
+                "durationSeconds": 61
+              },
+              "evidenceCreated": false,
+              "evidenceSolidified": false
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "completion",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            },
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            }
+          ],
+          "recordingConflictOutbox": []
+        },
+        "counts": {
+          "mediaObjectsCreated": 1,
+          "recordingValidations": 0,
+          "recordingQuarantines": 1,
+          "recordingConflictFacts": 0,
+          "recordingOutboxEntries": 2,
+          "recordingOutboxAcked": 2,
+          "recordingOutboxPermanent": 0,
+          "recordingOutboxRetried": 2
+        }
+      }
+    },
+    {
+      "id": "complete-different-observation-replay",
+      "action": "request",
+      "operation": "completeIvrRecording",
+      "body": {
+        "callId": "call-s3-06",
+        "recordingId": "rec-s3-06",
+        "clientReference": "ref-s3-06"
+      },
+      "server": {
+        "now": "2026-10-25T10:14:00Z",
+        "observed": {
+          "objectIdentityDigest": "object-digest-s3-06-2",
+          "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+          "sizeBytes": 7000,
+          "mimeType": "audio/wav",
+          "durationSeconds": 61
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "recordingId": "rec-s3-06",
+          "status": "QUARANTINED",
+          "reasonCode": "RECORDING_IDENTITY_CONFLICT"
+        },
+        "persisted": {
+          "recordings": [
+            {
+              "recordingId": "rec-s3-06",
+              "status": "QUARANTINED",
+              "revision": 3,
+              "mediaObject": {
+                "objectIdentityDigest": "object-digest-s3-06-1"
+              },
+              "validated": null
+            }
+          ],
+          "recordingOutbox": [
+            {
+              "kind": "completion",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            },
+            {
+              "kind": "declaration",
+              "recordingId": "rec-s3-06",
+              "status": "ACKED"
+            }
+          ],
+          "recordingConflictOutbox": []
+        },
+        "counts": {
+          "mediaObjectsCreated": 1,
+          "recordingQuarantines": 1,
+          "recordingCompletionReplays": 1,
+          "recordingConflictFacts": 0,
+          "recordingOutboxEntries": 2,
+          "recordingOutboxAcked": 2,
+          "recordingOutboxPermanent": 0,
+          "recordingOutboxRetried": 3
+        }
+      }
+    }
+  ]
+}

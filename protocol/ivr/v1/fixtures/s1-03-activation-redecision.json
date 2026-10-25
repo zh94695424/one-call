@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "id": "s1-03-activation-redecision",
+  "slice": "s1",
+  "description": "An unregistered caller receives GUIDE_ACTIVATION, confirms with key 1, receives exactly one trial and a new frozen task decision while the original resolve decision and identity remain unchanged.",
+  "steps": [
+    {
+      "id": "resolve-guide",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s1-03",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0",
+        "promptVersion": "prompt-activation-v1"
+      },
+      "server": {
+        "callerState": "UNREGISTERED",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000003",
+        "subjectId": "20000000-0000-5000-8000-000000000003",
+        "nodeId": "node-s1-03",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "66666666-6666-5666-8666-666666666666",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "task": {
+          "taskId": "TASK-S1-03",
+          "businessType": "EVIDENCE_CALL",
+          "calleeMasked": "139****9000",
+          "calleeNumber": "13900139000",
+          "expired": false
+        },
+        "entitlement": {
+          "availableRecordingSeconds": 0,
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:20Z"
+        },
+        "activation": {
+          "state": "UNREGISTERED",
+          "consentRequired": false,
+          "trialEligible": true,
+          "resultState": "ACTIVE"
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "decisionId": "66666666-6666-5666-8666-666666666666",
+          "callId": "call-s1-03",
+          "purpose": "INBOUND_RESOLVE",
+          "action": "GUIDE_ACTIVATION",
+          "callerState": "UNREGISTERED",
+          "taskMatch": "NONE",
+          "reasonCode": "ACTIVATION_REQUIRED",
+          "availableRecordingSeconds": 0,
+          "balanceAsOf": "2026-10-25T10:00:00Z",
+          "task": null,
+          "reservationId": null,
+          "authorizedRecordingSeconds": null,
+          "authorizationExpiresAt": null,
+          "decisionAt": "2026-10-25T10:00:00Z"
+        },
+        "persisted": {
+          "call": {
+            "exists": true,
+            "status": "ACTIVE",
+            "protocolVersion": "1.0",
+            "sessionStatus": "RECEIVED",
+            "task": null,
+            "reservation": null,
+            "decisions": [
+              {
+                "purpose": "INBOUND_RESOLVE",
+                "action": "GUIDE_ACTIVATION",
+                "reasonCode": "ACTIVATION_REQUIRED"
+              }
+            ],
+            "trialGrants": 0,
+            "activationConfirmations": 0,
+            "behavior": {
+              "taskAutoDialFrozenCallee": false,
+              "calleeConfirmationRequired": false,
+              "directDtmfRequired": false,
+              "purchaseGuidanceOnly": false,
+              "activationKeyOneRequired": true
+            }
+          }
+        },
+        "counts": {
+          "callsCreated": 1,
+          "sessionsCreated": 1,
+          "tasksClaimed": 0,
+          "reservationsCreated": 0,
+          "decisionsFrozen": 1,
+          "trialsGranted": 0,
+          "activationConfirmations": 0,
+          "directConfirmations": 0,
+          "loginAccountsCreated": 0,
+          "realNameProfilesCreated": 0,
+          "purchaseOrdersCreated": 0,
+          "operatorIntegrations": 0
+        }
+      }
+    },
+    {
+      "id": "confirm-key-one",
+      "action": "request",
+      "operation": "confirmIvrActivation",
+      "body": {
+        "eventId": "evt-s1-03-confirm",
+        "policyCode": "IVR-ACTIVATION",
+        "policyVersion": "1",
+        "promptVersion": "prompt-activation-v1",
+        "contentSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "decision": "ACCEPT"
+      },
+      "server": {
+        "callId": "call-s1-03",
+        "callerState": "UNREGISTERED",
+        "confirmedSubjectId": "20000000-0000-5000-8000-000000000003",
+        "decisionId": "77777777-7777-5777-8777-777777777777",
+        "decisionAt": "2026-10-25T10:00:20Z",
+        "balanceAsOf": "2026-10-25T10:00:20Z",
+        "task": {
+          "taskId": "TASK-S1-03",
+          "businessType": "EVIDENCE_CALL",
+          "calleeMasked": "139****9000",
+          "calleeNumber": "13900139000",
+          "expired": false
+        },
+        "reservationId": "88888888-8888-5888-8888-888888888888",
+        "entitlement": {
+          "availableRecordingSeconds": 300,
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:20Z"
+        },
+        "activation": {
+          "state": "UNREGISTERED",
+          "consentRequired": false,
+          "trialEligible": true,
+          "resultState": "ACTIVE"
+        }
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "decisionId": "77777777-7777-5777-8777-777777777777",
+          "callId": "call-s1-03",
+          "purpose": "ACTIVATION_NEXT_ACTION",
+          "action": "DIAL_TASK_CALLEE",
+          "callerState": "ACTIVE",
+          "taskMatch": "CLAIMED",
+          "reasonCode": "TASK_CLAIMED",
+          "availableRecordingSeconds": 300,
+          "balanceAsOf": "2026-10-25T10:00:20Z",
+          "task": {
+            "taskId": "TASK-S1-03",
+            "businessType": "EVIDENCE_CALL",
+            "calleeMasked": "139****9000",
+            "calleeNumber": "13900139000"
+          },
+          "reservationId": "88888888-8888-5888-8888-888888888888",
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:20Z",
+          "decisionAt": "2026-10-25T10:00:20Z"
+        },
+        "persisted": {
+          "call": {
+            "exists": true,
+            "status": "ACTIVE",
+            "protocolVersion": "1.0",
+            "sessionStatus": "CONFIRMED",
+            "task": {
+              "taskId": "TASK-S1-03",
+              "status": "CLAIMED"
+            },
+            "reservation": {
+              "reservationId": "88888888-8888-5888-8888-888888888888",
+              "status": "HELD"
+            },
+            "decisions": [
+              {
+                "purpose": "INBOUND_RESOLVE",
+                "action": "GUIDE_ACTIVATION",
+                "reasonCode": "ACTIVATION_REQUIRED"
+              },
+              {
+                "purpose": "ACTIVATION_NEXT_ACTION",
+                "action": "DIAL_TASK_CALLEE",
+                "reasonCode": "TASK_CLAIMED"
+              }
+            ],
+            "trialGrants": 1,
+            "activationConfirmations": 1,
+            "behavior": {
+              "taskAutoDialFrozenCallee": true,
+              "calleeConfirmationRequired": false,
+              "directDtmfRequired": false,
+              "purchaseGuidanceOnly": false,
+              "activationKeyOneRequired": false
+            }
+          }
+        },
+        "counts": {
+          "callsCreated": 1,
+          "sessionsCreated": 1,
+          "tasksClaimed": 1,
+          "reservationsCreated": 1,
+          "decisionsFrozen": 2,
+          "trialsGranted": 1,
+          "activationConfirmations": 1,
+          "directConfirmations": 0,
+          "loginAccountsCreated": 0,
+          "realNameProfilesCreated": 0,
+          "purchaseOrdersCreated": 0,
+          "operatorIntegrations": 0
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,2078 @@
+{
+  "modelVersion": 1,
+  "protocolVersion": "1.0",
+  "supportedVersions": [
+    "1.0"
+  ],
+  "messages": [
+    {
+      "messageId": "resolve.request",
+      "slice": "S1",
+      "operationId": "resolveIvrInbound",
+      "methodPath": "POST /api/v1/ivr/inbound/resolve",
+      "requestSchema": "IvrInboundResolveRequest",
+      "responseSchema": "IvrDecision",
+      "identity": "callId"
+    },
+    {
+      "messageId": "resolve.decision",
+      "slice": "S1",
+      "operationId": "resolveIvrInbound",
+      "methodPath": "POST /api/v1/ivr/inbound/resolve",
+      "requestSchema": "-",
+      "responseSchema": "IvrDecision",
+      "identity": "decisionId"
+    },
+    {
+      "messageId": "activation-confirm.request",
+      "slice": "S1",
+      "operationId": "confirmIvrActivation",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/activation-confirmations",
+      "requestSchema": "IvrActivationConfirmRequest",
+      "responseSchema": "IvrDecision",
+      "identity": "eventId + callId"
+    },
+    {
+      "messageId": "activation-confirm.decision",
+      "slice": "S1",
+      "operationId": "confirmIvrActivation",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/activation-confirmations",
+      "requestSchema": "-",
+      "responseSchema": "IvrDecision",
+      "identity": "decisionId"
+    },
+    {
+      "messageId": "direct-authorization.request",
+      "slice": "S1",
+      "operationId": "authorizeIvrDirectOutbound",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/outbound-authorizations",
+      "requestSchema": "IvrDirectAuthorizationRequest",
+      "responseSchema": "IvrDecision",
+      "identity": "eventId + callId"
+    },
+    {
+      "messageId": "direct-authorization.decision",
+      "slice": "S1",
+      "operationId": "authorizeIvrDirectOutbound",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/outbound-authorizations",
+      "requestSchema": "-",
+      "responseSchema": "IvrDecision",
+      "identity": "decisionId"
+    },
+    {
+      "messageId": "call-event.request",
+      "slice": "S2",
+      "operationId": "ingestIvrCallEvent",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/events",
+      "requestSchema": "IvrCallEventRequest",
+      "responseSchema": "CallEventReceipt",
+      "identity": "eventId"
+    },
+    {
+      "messageId": "call-event.receipt",
+      "slice": "S2",
+      "operationId": "ingestIvrCallEvent",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/events",
+      "requestSchema": "-",
+      "responseSchema": "CallEventReceipt",
+      "identity": "eventId"
+    },
+    {
+      "messageId": "recording-declare.request",
+      "slice": "S3",
+      "operationId": "declareIvrRecording",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/recordings",
+      "requestSchema": "RecordingDeclarationRequest",
+      "responseSchema": "RecordingDeclaration",
+      "identity": "recordingId"
+    },
+    {
+      "messageId": "recording-declare.result",
+      "slice": "S3",
+      "operationId": "declareIvrRecording",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/recordings",
+      "requestSchema": "-",
+      "responseSchema": "RecordingDeclaration",
+      "identity": "recordingId"
+    },
+    {
+      "messageId": "recording-complete.request",
+      "slice": "S3",
+      "operationId": "completeIvrRecording",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete",
+      "requestSchema": "RecordingCompletionRequest",
+      "responseSchema": "RecordingCompletion",
+      "identity": "recordingId"
+    },
+    {
+      "messageId": "recording-complete.result",
+      "slice": "S3",
+      "operationId": "completeIvrRecording",
+      "methodPath": "POST /api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete",
+      "requestSchema": "-",
+      "responseSchema": "RecordingCompletion",
+      "identity": "recordingId"
+    }
+  ],
+  "eventTypes": [
+    {
+      "eventType": "CALLER_LEG_ANSWERED",
+      "envelopeLegId": "REQUIRED",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "CALLEE_LEG_RINGING",
+      "envelopeLegId": "REQUIRED",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "CALLEE_LEG_ANSWERED",
+      "envelopeLegId": "REQUIRED",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "BRIDGE_STARTED",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "calleeLegId",
+        "callerLegId"
+      ],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "RECORDING_STARTED",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "RECORDING_ENDED",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "CALL_TERMINATED",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "authoritativeRecordingSeconds",
+        "bridgedAt?",
+        "calleeLegAnsweredAt?",
+        "calleeLegId?",
+        "calleeLegOutcome?",
+        "calleeLegStartedAt?",
+        "callerLegAnsweredAt?",
+        "callerLegId",
+        "callerLegOutcome",
+        "endReason",
+        "recordingEndedAt?",
+        "recordingStartedAt?"
+      ],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "CALL_TERMINATION_UNKNOWN",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "reasonCode"
+      ],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "CALL_TERMINAL_RECONCILED",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "authoritativeRecordingSeconds",
+        "bridgedAt?",
+        "calleeLegAnsweredAt?",
+        "calleeLegId?",
+        "calleeLegOutcome?",
+        "calleeLegStartedAt?",
+        "callerLegAnsweredAt?",
+        "callerLegId",
+        "callerLegOutcome",
+        "endReason",
+        "recordingEndedAt?",
+        "recordingStartedAt?",
+        "resolvesUnknownEventId"
+      ],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "OUTBOUND_NOT_STARTED",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "reasonCode",
+        "reservationId?"
+      ],
+      "normalProcessingOutcome": "APPLIED"
+    },
+    {
+      "eventType": "CALL_HEARTBEAT",
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [],
+      "normalProcessingOutcome": "IGNORED"
+    }
+  ],
+  "identities": [
+    {
+      "identity": "callId",
+      "owner": "IVR gateway",
+      "uniqueness": "globally unique across nodes; 1-128; immutable; one callId per inbound call",
+      "precondition": "created on first inbound; every later message requires the existing call",
+      "replayConflict": "same callId and fingerprint replays; changed caller/access/node is a stable conflict",
+      "a0a1Mapping": "ivr.inbound_session.call_id; ivr.call_record.call_id; resolve path"
+    },
+    {
+      "identity": "sessionId",
+      "owner": "backend",
+      "uniqueness": "UUID; one per callId; immutable",
+      "precondition": "created or reused by resolve",
+      "replayConflict": "derived from callId; no client input",
+      "a0a1Mapping": "ivr.inbound_session.id"
+    },
+    {
+      "identity": "decisionId",
+      "owner": "backend",
+      "uniqueness": "UUID; one per (callId,purpose); frozen",
+      "precondition": "first decision for the purpose committed",
+      "replayConflict": "same fingerprint replays; changed fingerprint is 409 SESSION_IDENTITY_MISMATCH",
+      "a0a1Mapping": "ivr.ivr_decision.id; uq_ivr_decision_call_purpose"
+    },
+    {
+      "identity": "decision fingerprint",
+      "owner": "backend",
+      "uniqueness": "one canonical SHA-256 per decision purpose; immutable",
+      "precondition": "computed at decision time",
+      "replayConflict": "same fingerprint replays; changed fingerprint is 409 SESSION_IDENTITY_MISMATCH",
+      "a0a1Mapping": "ivr.ivr_decision.request_fingerprint; A0 §10.17"
+    },
+    {
+      "identity": "taskId",
+      "owner": "backend",
+      "uniqueness": "text 1-64; globally unique; immutable after claim",
+      "precondition": "PENDING task claimed for a task-backed decision",
+      "replayConflict": "same task replays; a different task never replaces a claimed task",
+      "a0a1Mapping": "ivr.outbound_call_task.task_id; ivr.call_record.task_id"
+    },
+    {
+      "identity": "reservationId",
+      "owner": "backend",
+      "uniqueness": "UUID; one per call; terminal once",
+      "precondition": "committed with the task claim or direct authorization",
+      "replayConflict": "replay never renews and never creates a second reservation",
+      "a0a1Mapping": "entitlement_metering.usage_reservation.id; uq_usage_reservation_call"
+    },
+    {
+      "identity": "action / executable intent",
+      "owner": "backend",
+      "uniqueness": "one per decision; frozen",
+      "precondition": "selected only by the backend action selector",
+      "replayConflict": "replay returns the same action; the IVR never reselects",
+      "a0a1Mapping": "ivr.ivr_decision.action; ck_ivr_decision_action"
+    },
+    {
+      "identity": "eventId",
+      "owner": "IVR",
+      "uniqueness": "1-128; globally unique in IVR_EVENT; immutable",
+      "precondition": "parent call exists",
+      "replayConflict": "same eventId and fingerprint returns the first receipt; changed content is EVENT_ID_CONFLICT",
+      "a0a1Mapping": "ivr.call_event.event_id; uq_call_event_domain_id"
+    },
+    {
+      "identity": "sequenceNo",
+      "owner": "IVR",
+      "uniqueness": "positive integer; unique per call when present",
+      "precondition": "event creation",
+      "replayConflict": "a different event reusing it is a sequence conflict",
+      "a0a1Mapping": "ivr.call_event.sequence_no"
+    },
+    {
+      "identity": "legId",
+      "owner": "IVR",
+      "uniqueness": "1-64; unique per call; immutable",
+      "precondition": "leg event or terminal fact",
+      "replayConflict": "same leg facts are idempotent; conflicting facts are quarantined",
+      "a0a1Mapping": "ivr.call_leg.leg_id"
+    },
+    {
+      "identity": "B-leg operation",
+      "owner": "IVR local",
+      "uniqueness": "key callId; one per call; durable local operation",
+      "precondition": "committed authorization decision and before any line request",
+      "replayConflict": "restore only; never create a second B-leg operation",
+      "a0a1Mapping": "A0 has no table; Q28 local operation"
+    },
+    {
+      "identity": "recordingId",
+      "owner": "IVR",
+      "uniqueness": "1-128; globally unique; immutable",
+      "precondition": "call known and upload not expired",
+      "replayConflict": "same declaration or observed facts replay; changed identity is RECORDING_IDENTITY_CONFLICT",
+      "a0a1Mapping": "evidence.recording.recording_id"
+    },
+    {
+      "identity": "upload credential",
+      "owner": "backend",
+      "uniqueness": "short-lived; single object; not an identity; not return-once",
+      "precondition": "declaration succeeded",
+      "replayConflict": "may be reissued or replayed but never changes recording or object identity",
+      "a0a1Mapping": "A0 upload session; no column"
+    },
+    {
+      "identity": "upload expiry",
+      "owner": "backend",
+      "uniqueness": "equals recording.upload_expires_at; not renewed",
+      "precondition": "declaration created",
+      "replayConflict": "replay does not extend it; expiry is UPLOAD_EXPIRED",
+      "a0a1Mapping": "evidence.recording.upload_expires_at"
+    },
+    {
+      "identity": "terminal fact",
+      "owner": "IVR to backend",
+      "uniqueness": "first accepted terminal per call; eventId identity",
+      "precondition": "call exists and its state permits the fact",
+      "replayConflict": "duplicate returns the first outcome; a conflicting terminal is quarantined",
+      "a0a1Mapping": "ivr.call_record.ended_at; ivr.call_record.end_reason; ivr.call_record.authoritative_seconds; ivr.call_event.event_id"
+    },
+    {
+      "identity": "heartbeat",
+      "owner": "IVR",
+      "uniqueness": "eventId; repeatable; no business state change",
+      "precondition": "call known",
+      "replayConflict": "same eventId replays; never releases, authorizes or redials",
+      "a0a1Mapping": "ivr.call_event.processing_status"
+    },
+    {
+      "identity": "bridge fact",
+      "owner": "IVR",
+      "uniqueness": "callId plus legIds; no independent backend identity",
+      "precondition": "both legs answered or terminal reconciliation",
+      "replayConflict": "consistent facts are idempotent; regressing facts are quarantined",
+      "a0a1Mapping": "ivr.call_record.bridged_at"
+    },
+    {
+      "identity": "recording start/end",
+      "owner": "IVR",
+      "uniqueness": "callId plus eventId",
+      "precondition": "bridge occurred",
+      "replayConflict": "consistent facts are idempotent; contradictory facts are quarantined",
+      "a0a1Mapping": "ivr.call_record.recording_started_at; ivr.call_record.recording_ended_at"
+    },
+    {
+      "identity": "media object",
+      "owner": "backend",
+      "uniqueness": "internal UUID/version/hash; immutable",
+      "precondition": "upload observation",
+      "replayConflict": "same object/version/hash is reused; a different identity conflicts",
+      "a0a1Mapping": "evidence.media_object.id"
+    },
+    {
+      "identity": "evidence record",
+      "owner": "backend",
+      "uniqueness": "internal UUID; downstream owner",
+      "precondition": "recording VALIDATED and evidence owner flow",
+      "replayConflict": "A2 defines no evidence wire replay",
+      "a0a1Mapping": "evidence.evidence_record.id"
+    },
+    {
+      "identity": "settlement fact",
+      "owner": "backend",
+      "uniqueness": "unique reservation/type and source event",
+      "precondition": "accepted terminal fact",
+      "replayConflict": "duplicates return the first fact; conflicts are quarantined",
+      "a0a1Mapping": "entitlement_metering.usage_fact.id; uq_usage_fact_reservation_type"
+    },
+    {
+      "identity": "IVR event outbox",
+      "owner": "IVR local",
+      "uniqueness": "(callId,eventId); immutable payload",
+      "precondition": "event generated",
+      "replayConflict": "retransmit the same identity; never mint a replacement identity",
+      "a0a1Mapping": "Q28 local durable store"
+    }
+  ],
+  "actionSelection": {
+    "selector": "select_call_action",
+    "contract": "One IvrDecision shape for all three purposes; the IVR executes only the returned action.",
+    "purposeOrder": [
+      "INBOUND_RESOLVE",
+      "ACTIVATION_NEXT_ACTION",
+      "DIRECT_AUTHORIZATION"
+    ],
+    "rules": [
+      {
+        "result": "DIAL_TASK_CALLEE",
+        "requires": [
+          "taskMatch is CLAIMED",
+          "taskId, businessType and masked callee are present",
+          "reservationId, authorizedRecordingSeconds and authorizationExpiresAt are present",
+          "the full callee exists only in the encrypted internal task payload"
+        ],
+        "ivrBehavior": [
+          "persist one callId B-leg operation before any line request",
+          "dial the frozen task callee",
+          "bridge and record after the callee answers",
+          "do not require callee confirmation"
+        ],
+        "forbidden": [
+          "calling direct authorization",
+          "selecting another callee",
+          "recomputing the task"
+        ]
+      },
+      {
+        "result": "ENTER_CALLEE",
+        "requires": [
+          "no task is claimed",
+          "taskMatch is NONE",
+          "no reservation exists"
+        ],
+        "ivrBehavior": [
+          "collect the direct callee through DTMF",
+          "confirm the entered callee",
+          "call direct authorization"
+        ],
+        "forbidden": [
+          "claiming a task",
+          "treating the DTMF callee as a task callee"
+        ]
+      },
+      {
+        "result": "GUIDE_ACTIVATION",
+        "requires": [
+          "no reservation exists",
+          "reasonCode is ACTIVATION_REQUIRED or CONSENT_REQUIRED"
+        ],
+        "ivrBehavior": [
+          "play the versioned activation and consent notice",
+          "after explicit key 1 call activation confirmation at most once",
+          "execute the returned next action"
+        ],
+        "forbidden": [
+          "activating before key 1",
+          "repeating confirmation to obtain a second trial",
+          "rewriting the resolve decision"
+        ]
+      },
+      {
+        "result": "GUIDE_PURCHASE",
+        "requires": [
+          "no reservation exists",
+          "reasonCode is NO_AVAILABLE_ENTITLEMENT"
+        ],
+        "ivrBehavior": [
+          "play purchase guidance for the Mini Program or Web and then end"
+        ],
+        "forbidden": [
+          "creating an order",
+          "taking payment",
+          "placing an outbound call"
+        ]
+      },
+      {
+        "result": "REJECT",
+        "requires": [
+          "no reservation exists",
+          "a matching rejection reasonCode is present"
+        ],
+        "ivrBehavior": [
+          "play the failure notice and end"
+        ],
+        "forbidden": [
+          "outbound dialing",
+          "claiming a task",
+          "retrying routing"
+        ]
+      },
+      {
+        "result": "REJECT_SUSPENDED",
+        "requires": [
+          "no reservation exists",
+          "reasonCode is ACTIVATION_SUSPENDED"
+        ],
+        "ivrBehavior": [
+          "play the suspension notice and offline service entry, then end"
+        ],
+        "forbidden": [
+          "restoring activation through IVR"
+        ]
+      },
+      {
+        "result": "REJECT_CALL_IN_PROGRESS",
+        "requires": [
+          "no reservation exists",
+          "reasonCode is CALL_IN_PROGRESS"
+        ],
+        "ivrBehavior": [
+          "play a retry-later notice and end"
+        ],
+        "forbidden": [
+          "concurrent outbound dialing"
+        ]
+      }
+    ],
+    "directSuccess": {
+      "purpose": "DIRECT_AUTHORIZATION",
+      "action": null,
+      "reasonCode": "DIRECT_AUTHORIZED",
+      "requires": [
+        "taskMatch is NONE",
+        "task fields are null",
+        "a reservation is committed and HELD",
+        "the confirmed callee exists only in the encrypted authorization payload"
+      ],
+      "ivrBehavior": [
+        "persist one callId B-leg operation before any line request",
+        "dial the confirmed direct callee"
+      ],
+      "forbidden": [
+        "using task fields",
+        "authorizing direct outbound a second time",
+        "recollecting the callee"
+      ]
+    },
+    "sharedInvariants": [
+      "one decision has exactly one executable intent",
+      "direct success is a purpose-specific execution rule, not an eighth action",
+      "availableRecordingSeconds is a routing snapshot only",
+      "authorizedRecordingSeconds is the only spend ceiling",
+      "authorizationExpiresAt is the last instant to start a B-leg and is never renewed by replay",
+      "the task path never asks the caller to confirm the callee",
+      "the direct path never falls back to a task",
+      "one call supports at most one successful confirm and one successful direct authorization"
+    ]
+  },
+  "decisionFields": {
+    "required": [
+      "decisionId",
+      "callId",
+      "purpose",
+      "action",
+      "callerState",
+      "taskMatch",
+      "reasonCode",
+      "availableRecordingSeconds",
+      "balanceAsOf",
+      "reservationId",
+      "authorizedRecordingSeconds",
+      "authorizationExpiresAt",
+      "decisionAt"
+    ],
+    "fields": [
+      "decisionId",
+      "callId",
+      "purpose",
+      "action",
+      "callerState",
+      "taskMatch",
+      "reasonCode",
+      "availableRecordingSeconds",
+      "balanceAsOf",
+      "task.taskId",
+      "task.businessType",
+      "task.calleeMasked",
+      "task.calleeNumber",
+      "authorization.calleeNumber",
+      "reservationId",
+      "authorizedRecordingSeconds",
+      "authorizationExpiresAt",
+      "decisionAt"
+    ],
+    "enums": {
+      "callerState": [
+        "UNREGISTERED",
+        "INACTIVE",
+        "ACTIVE",
+        "SUSPENDED"
+      ],
+      "taskMatch": [
+        "CLAIMED",
+        "NONE",
+        "EXPIRED",
+        "REJECTED",
+        "CONFLICT"
+      ]
+    }
+  },
+  "actions": [
+    "GUIDE_ACTIVATION",
+    "DIAL_TASK_CALLEE",
+    "ENTER_CALLEE",
+    "GUIDE_PURCHASE",
+    "REJECT",
+    "REJECT_SUSPENDED",
+    "REJECT_CALL_IN_PROGRESS"
+  ],
+  "purposes": [
+    "INBOUND_RESOLVE",
+    "ACTIVATION_NEXT_ACTION",
+    "DIRECT_AUTHORIZATION"
+  ],
+  "decisionReasons": [
+    "ACTIVATION_REQUIRED",
+    "CONSENT_REQUIRED",
+    "CALLER_UNTRUSTED",
+    "SESSION_IDENTITY_MISMATCH",
+    "CALL_IN_PROGRESS",
+    "CONFIRMATION_NOT_ALLOWED",
+    "ACTIVATION_SUSPENDED",
+    "CALLER_BINDING_REVOKED",
+    "WORKSPACE_ACCESS_REVOKED",
+    "TASK_ACCESS_REVOKED",
+    "ORGANIZATION_INACTIVE",
+    "ACCOUNT_DISABLED",
+    "CALL_STATE_UNRESOLVED",
+    "TASK_CONFLICT",
+    "TASK_CLAIMED",
+    "NO_AVAILABLE_ENTITLEMENT",
+    "NO_VALID_TASK",
+    "TASK_EXPIRED",
+    "TASK_UNAVAILABLE",
+    "DIRECT_AUTHORIZED",
+    "DATA_INTEGRITY"
+  ],
+  "errors": {
+    "problemCodes": {
+      "VALIDATION_FAILED": 422,
+      "IVR_ARGUMENT_INVALID": 400,
+      "SESSION_IDENTITY_MISMATCH": 409,
+      "EVENT_ID_CONFLICT": 409,
+      "CALL_UNKNOWN": 404,
+      "RECORDING_IDENTITY_CONFLICT": 409,
+      "UPLOAD_OBSERVATION_REQUIRED": 409,
+      "UPLOAD_EXPIRED": 409,
+      "STORAGE_UNKNOWN": 503,
+      "RATE_LIMITED": 429,
+      "SERVICE_UNAVAILABLE": 503,
+      "INTERNAL": 500
+    },
+    "operations": {
+      "resolveIvrInbound": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "VALIDATION_FAILED",
+        "IVR_ARGUMENT_INVALID",
+        "SESSION_IDENTITY_MISMATCH",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "confirmIvrActivation": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "VALIDATION_FAILED",
+        "IVR_ARGUMENT_INVALID",
+        "SESSION_IDENTITY_MISMATCH",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "authorizeIvrDirectOutbound": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "VALIDATION_FAILED",
+        "IVR_ARGUMENT_INVALID",
+        "SESSION_IDENTITY_MISMATCH",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "ingestIvrCallEvent": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "VALIDATION_FAILED",
+        "IVR_ARGUMENT_INVALID",
+        "CALL_UNKNOWN",
+        "EVENT_ID_CONFLICT",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "declareIvrRecording": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "VALIDATION_FAILED",
+        "IVR_ARGUMENT_INVALID",
+        "CALL_UNKNOWN",
+        "RECORDING_IDENTITY_CONFLICT",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "completeIvrRecording": [
+        "UNAUTHENTICATED",
+        "FORBIDDEN",
+        "VALIDATION_FAILED",
+        "IVR_ARGUMENT_INVALID",
+        "CALL_UNKNOWN",
+        "UPLOAD_OBSERVATION_REQUIRED",
+        "RECORDING_IDENTITY_CONFLICT",
+        "UPLOAD_EXPIRED",
+        "STORAGE_UNKNOWN",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ]
+    },
+    "conditions": [
+      {
+        "condition": "A1 closed schema type or length failure",
+        "operations": "all",
+        "http": 422,
+        "code": "VALIDATION_FAILED",
+        "retryable": false,
+        "sideEffect": "none"
+      },
+      {
+        "condition": "version malformed or unsupported, unknown eventType, or A2 payload or leg rule violation",
+        "operations": "all",
+        "http": 400,
+        "code": "IVR_ARGUMENT_INVALID",
+        "retryable": false,
+        "sideEffect": "no session, call or event write"
+      },
+      {
+        "condition": "decision, session, access-number or fingerprint conflict",
+        "operations": "resolveIvrInbound,confirmIvrActivation,authorizeIvrDirectOutbound",
+        "http": 409,
+        "code": "SESSION_IDENTITY_MISMATCH",
+        "retryable": false,
+        "sideEffect": "none"
+      },
+      {
+        "condition": "confirm or direct request for an unknown call",
+        "operations": "confirmIvrActivation,authorizeIvrDirectOutbound",
+        "http": 409,
+        "code": "SESSION_IDENTITY_MISMATCH",
+        "retryable": false,
+        "sideEffect": "none; A1 declares no CALL_UNKNOWN for these operations"
+      },
+      {
+        "condition": "event identity or semantic conflict",
+        "operations": "ingestIvrCallEvent",
+        "http": 409,
+        "code": "EVENT_ID_CONFLICT",
+        "retryable": false,
+        "sideEffect": "first outcome unchanged"
+      },
+      {
+        "condition": "missing parent call for an event, declaration or completion",
+        "operations": "ingestIvrCallEvent,declareIvrRecording,completeIvrRecording",
+        "http": 404,
+        "code": "CALL_UNKNOWN",
+        "retryable": false,
+        "sideEffect": "no placeholder"
+      },
+      {
+        "condition": "recording identity or declaration conflict",
+        "operations": "declareIvrRecording,completeIvrRecording",
+        "http": 409,
+        "code": "RECORDING_IDENTITY_CONFLICT",
+        "retryable": false,
+        "sideEffect": "no overwrite"
+      },
+      {
+        "condition": "completion before server upload observation",
+        "operations": "completeIvrRecording",
+        "http": 409,
+        "code": "UPLOAD_OBSERVATION_REQUIRED",
+        "retryable": true,
+        "sideEffect": "none; retry with the same recordingId"
+      },
+      {
+        "condition": "upload expiry reached",
+        "operations": "completeIvrRecording",
+        "http": 409,
+        "code": "UPLOAD_EXPIRED",
+        "retryable": false,
+        "sideEffect": "recording quarantine; no media fact"
+      },
+      {
+        "condition": "storage or media outcome unknown",
+        "operations": "completeIvrRecording",
+        "http": 503,
+        "code": "STORAGE_UNKNOWN",
+        "retryable": true,
+        "sideEffect": "no media fact; retry with the same recordingId"
+      },
+      {
+        "condition": "rate limit, dependency or internal failure",
+        "operations": "all",
+        "http": "429|503|500",
+        "code": "RATE_LIMITED|SERVICE_UNAVAILABLE|INTERNAL",
+        "retryable": "conditional",
+        "sideEffect": "none or rollback"
+      },
+      {
+        "condition": "normal business refusal",
+        "operations": "resolveIvrInbound,confirmIvrActivation,authorizeIvrDirectOutbound",
+        "http": 200,
+        "code": "IvrDecision",
+        "retryable": false,
+        "sideEffect": "exactly the frozen decision"
+      },
+      {
+        "condition": "event fact contradiction, ordering or unknown leg",
+        "operations": "ingestIvrCallEvent",
+        "http": 200,
+        "code": "CallEventReceipt QUARANTINED",
+        "retryable": false,
+        "sideEffect": "the fact is not applied"
+      }
+    ]
+  },
+  "preconditions": {
+    "protocolVersion": {
+      "literal": "1.0",
+      "grammar": "^[0-9]+\\.[0-9]+$",
+      "lengthMin": 1,
+      "lengthMax": 32,
+      "transport": "resolve request body only",
+      "freezeAt": "resolve success",
+      "unknownVersion": "400 IVR_ARGUMENT_INVALID before any session, call, task or reservation write",
+      "minorCompatibility": "new optional fields or event types only; a new session is required; no mid-call upgrade",
+      "majorCompatibility": "new session required; in-flight v1 continues under v1 or fails closed with 503 SERVICE_UNAVAILABLE",
+      "downgrade": false
+    },
+    "decisionPaths": [
+      {
+        "id": "task-claim",
+        "action": "DIAL_TASK_CALLEE",
+        "requires": [
+          "task status is PENDING",
+          "expires_at is greater than database time at the conditional claim",
+          "current caller, subject, binding, workspace and access checks pass",
+          "conditional update changes the task from PENDING to CLAIMED",
+          "one reservation HELD and one frozen decision commit in the same transaction"
+        ],
+        "forbidden": [
+          "claiming without a reservation",
+          "claiming on the direct path",
+          "switching to another task"
+        ]
+      },
+      {
+        "id": "session-confirm",
+        "action": "GUIDE_ACTIVATION",
+        "requires": [
+          "prior INBOUND_RESOLVE decision is GUIDE_ACTIVATION",
+          "session status is RECEIVED",
+          "explicit key 1 confirmation",
+          "current policy, prompt and consent content",
+          "confirmed subject matches the captured subject",
+          "at most one first trial per subject",
+          "no login account or real-name record creation"
+        ],
+        "forbidden": [
+          "confirming without key 1",
+          "granting a second trial",
+          "rewriting the resolve decision"
+        ]
+      },
+      {
+        "id": "decision-freeze",
+        "requires": [
+          "one decision per (callId,purpose)",
+          "a canonical purpose fingerprint",
+          "first frozen decision returned on replay",
+          "changed fingerprint returns 409 SESSION_IDENTITY_MISMATCH"
+        ],
+        "forbidden": [
+          "overwriting a frozen decision",
+          "recomputing state on replay",
+          "creating a second decision for the same purpose"
+        ]
+      },
+      {
+        "id": "reservation-held",
+        "requires": [
+          "one reservation per call",
+          "status HELD at creation",
+          "authorizedRecordingSeconds copied from committed authorized_units",
+          "authorizationExpiresAt copied and never renewed"
+        ],
+        "forbidden": [
+          "creating a second reservation",
+          "extending authorization on replay",
+          "treating availableRecordingSeconds as spend authorization"
+        ]
+      },
+      {
+        "id": "direct-authorization",
+        "action": null,
+        "requires": [
+          "prior ENTER_CALLEE decision on the same call",
+          "taskMatch NONE",
+          "task fields null",
+          "one reservation HELD",
+          "server-normalized DTMF callee",
+          "success shape is action null with reasonCode DIRECT_AUTHORIZED"
+        ],
+        "forbidden": [
+          "claiming a task",
+          "using task fields",
+          "authorizing a second direct outbound",
+          "recollecting the callee"
+        ]
+      }
+    ],
+    "stateTransitions": [
+      {
+        "aggregate": "outbound_call_task",
+        "from": "PENDING",
+        "to": "CLAIMED",
+        "trigger": "task-backed decision",
+        "guard": "atomic claim with reservation and frozen decision"
+      },
+      {
+        "aggregate": "inbound_session",
+        "from": "RECEIVED",
+        "to": "CONFIRMED",
+        "trigger": "successful key 1 activation confirmation",
+        "guard": "prior GUIDE_ACTIVATION resolve; current consent and prompt"
+      },
+      {
+        "aggregate": "usage_reservation",
+        "from": null,
+        "to": "HELD",
+        "trigger": "task-backed or direct authorization success",
+        "guard": "one reservation per call"
+      },
+      {
+        "aggregate": "ivr_decision",
+        "from": null,
+        "to": "frozen",
+        "trigger": "resolve, activation confirmation or direct authorization",
+        "guard": "unique (callId,purpose) and canonical fingerprint"
+      }
+    ],
+    "eventDomains": {
+      "usageFactSource": "IVR_EVENT",
+      "decisionSources": {
+        "INBOUND_RESOLVE": null,
+        "ACTIVATION_NEXT_ACTION": "IVR_CONFIRM",
+        "DIRECT_AUTHORIZATION": "IVR_DIRECT_AUTH"
+      }
+    },
+    "a0Registries": {
+      "ck_outbound_task_status": [
+        "PENDING",
+        "CLAIMED",
+        "REPLACED",
+        "CANCELLED",
+        "EXPIRED",
+        "REJECTED",
+        "COMPLETED",
+        "FAILED"
+      ],
+      "ck_inbound_session_status": [
+        "RECEIVED",
+        "CONFIRMED",
+        "ABANDONED",
+        "REJECTED"
+      ],
+      "ck_call_record_status": [
+        "ACTIVE",
+        "ENDED",
+        "FAILED",
+        "UNKNOWN",
+        "REJECTED"
+      ],
+      "ck_call_leg_state": [
+        "RINGING",
+        "ANSWERED",
+        "ENDED",
+        "FAILED"
+      ],
+      "ck_call_event_processing_status": [
+        "RECEIVED",
+        "APPLIED",
+        "IGNORED",
+        "QUARANTINED"
+      ],
+      "ck_ivr_decision_action": [
+        "GUIDE_ACTIVATION",
+        "DIAL_TASK_CALLEE",
+        "ENTER_CALLEE",
+        "GUIDE_PURCHASE",
+        "REJECT",
+        "REJECT_SUSPENDED",
+        "REJECT_CALL_IN_PROGRESS"
+      ],
+      "ck_ivr_decision_purpose": [
+        "INBOUND_RESOLVE",
+        "ACTIVATION_NEXT_ACTION",
+        "DIRECT_AUTHORIZATION"
+      ],
+      "ck_ivr_decision_reason": [
+        "ACTIVATION_REQUIRED",
+        "CONSENT_REQUIRED",
+        "CALLER_UNTRUSTED",
+        "SESSION_IDENTITY_MISMATCH",
+        "CALL_IN_PROGRESS",
+        "CONFIRMATION_NOT_ALLOWED",
+        "ACTIVATION_SUSPENDED",
+        "CALLER_BINDING_REVOKED",
+        "WORKSPACE_ACCESS_REVOKED",
+        "TASK_ACCESS_REVOKED",
+        "ORGANIZATION_INACTIVE",
+        "ACCOUNT_DISABLED",
+        "CALL_STATE_UNRESOLVED",
+        "TASK_CONFLICT",
+        "TASK_CLAIMED",
+        "NO_AVAILABLE_ENTITLEMENT",
+        "NO_VALID_TASK",
+        "TASK_EXPIRED",
+        "TASK_UNAVAILABLE",
+        "DIRECT_AUTHORIZED",
+        "DATA_INTEGRITY"
+      ],
+      "ck_usage_reservation_status": [
+        "HELD",
+        "RECONCILING",
+        "SETTLED",
+        "RELEASED"
+      ],
+      "ck_recording_status": [
+        "DECLARED",
+        "UPLOADED",
+        "VALIDATED",
+        "QUARANTINED"
+      ],
+      "ck_evidence_status": [
+        "PENDING",
+        "SOLIDIFIED",
+        "QUARANTINED",
+        "FAILED"
+      ],
+      "ck_usage_fact_type": [
+        "RECORDING_SECONDS"
+      ],
+      "ck_usage_fact_event_domain": [
+        "IVR_EVENT"
+      ],
+      "ck_idempotency_scope": [
+        "IVR_CONFIRM",
+        "PURCHASE"
+      ]
+    },
+    "columnRefs": [
+      {
+        "table": "platform.idempotency_record",
+        "columns": [
+          "id",
+          "scope",
+          "idempotency_key",
+          "request_fingerprint"
+        ]
+      },
+      {
+        "table": "platform.outbox_event",
+        "columns": [
+          "id",
+          "event_domain",
+          "dedupe_key"
+        ]
+      },
+      {
+        "table": "ivr.outbound_call_task",
+        "columns": [
+          "id",
+          "task_id",
+          "caller_binding_id",
+          "subject_id",
+          "status",
+          "expires_at",
+          "claimed_call_id",
+          "claimed_at"
+        ]
+      },
+      {
+        "table": "ivr.inbound_session",
+        "columns": [
+          "id",
+          "call_id",
+          "subject_id",
+          "protocol_version",
+          "prompt_version",
+          "status",
+          "confirmed_subject_id",
+          "confirmed_at"
+        ]
+      },
+      {
+        "table": "ivr.call_record",
+        "columns": [
+          "id",
+          "call_id",
+          "session_id",
+          "task_id",
+          "status",
+          "protocol_version",
+          "started_at",
+          "bridged_at",
+          "recording_started_at",
+          "recording_ended_at",
+          "ended_at",
+          "authoritative_seconds",
+          "end_reason"
+        ]
+      },
+      {
+        "table": "ivr.call_leg",
+        "columns": [
+          "id",
+          "call_id",
+          "leg_id",
+          "state"
+        ]
+      },
+      {
+        "table": "ivr.call_event",
+        "columns": [
+          "id",
+          "call_id",
+          "event_id",
+          "sequence_no",
+          "event_type",
+          "processing_status"
+        ]
+      },
+      {
+        "table": "ivr.ivr_decision",
+        "columns": [
+          "id",
+          "session_id",
+          "call_id",
+          "purpose",
+          "source_event_domain",
+          "source_event_id",
+          "request_fingerprint",
+          "action",
+          "reason_code",
+          "response_snapshot",
+          "response_payload_ciphertext",
+          "response_sha256",
+          "reservation_id",
+          "decided_at"
+        ]
+      },
+      {
+        "table": "entitlement_metering.trial_grant",
+        "columns": [
+          "id",
+          "subject_id",
+          "campaign_key",
+          "granted_at"
+        ]
+      },
+      {
+        "table": "entitlement_metering.usage_reservation",
+        "columns": [
+          "id",
+          "call_id",
+          "authorized_units",
+          "status",
+          "authorization_expires_at"
+        ]
+      },
+      {
+        "table": "entitlement_metering.usage_fact",
+        "columns": [
+          "id",
+          "reservation_id",
+          "usage_type",
+          "source_event_domain"
+        ]
+      },
+      {
+        "table": "activation_consent.service_activation",
+        "columns": [
+          "id",
+          "subject_id",
+          "status"
+        ]
+      },
+      {
+        "table": "evidence.media_object",
+        "columns": [
+          "id"
+        ]
+      },
+      {
+        "table": "evidence.recording",
+        "columns": [
+          "id",
+          "call_id",
+          "recording_id",
+          "upload_expires_at"
+        ]
+      },
+      {
+        "table": "evidence.evidence_record",
+        "columns": [
+          "id"
+        ]
+      }
+    ]
+  },
+  "invariants": [
+    {
+      "id": "INV-A2-01",
+      "text": "One callId maps to one inbound session/call; a second callId is never minted for the same inbound call."
+    },
+    {
+      "id": "INV-A2-02",
+      "text": "One decision has exactly one executable intent; the IVR never recomputes routing or selects another callee."
+    },
+    {
+      "id": "INV-A2-03",
+      "text": "One call has at most one B-leg operation and one actual line request; unknown outcomes or restarts never cause a second dial."
+    },
+    {
+      "id": "INV-A2-04",
+      "text": "One call has at most one reservation, one terminal settlement or release, and one usage fact."
+    },
+    {
+      "id": "INV-A2-05",
+      "text": "The first accepted terminal fact is absorbed; terminal facts never regress; UNKNOWN converges only through reconciliation."
+    },
+    {
+      "id": "INV-A2-06",
+      "text": "The (callId,purpose) decision is immutable; activation confirmation never rewrites the resolve decision."
+    },
+    {
+      "id": "INV-A2-07",
+      "text": "The single-caller single-nonterminal-task rule and reciprocal task/call links remain A0 invariants."
+    },
+    {
+      "id": "INV-A2-08",
+      "text": "Event identity is immutable; the same identity and fingerprint returns the first outcome, while changed content conflicts or quarantines."
+    },
+    {
+      "id": "INV-A2-09",
+      "text": "Recording identity is immutable; declared facts never overwrite server-observed facts; completion never solidifies evidence."
+    },
+    {
+      "id": "INV-A2-10",
+      "text": "The task path never asks for callee confirmation; the direct path never claims a task; there is no latest-callee fallback."
+    },
+    {
+      "id": "INV-A2-11",
+      "text": "Heartbeat never changes business state, never releases a reservation, never authorizes a call and never triggers redial."
+    },
+    {
+      "id": "INV-A2-12",
+      "text": "No protocol output, log, audit or outbox exposes a plaintext callee or an object key, URL or credential."
+    },
+    {
+      "id": "INV-A2-13",
+      "text": "The protocol version is frozen at resolve; an unsupported version fails before side effects; a call never upgrades mid-call."
+    },
+    {
+      "id": "INV-A2-14",
+      "text": "Every unknown outcome fails closed without redial, double reservation, double settlement or contradictory facts."
+    },
+    {
+      "id": "INV-A2-15",
+      "text": "Declaration and completion retries reuse recordingId and never create a second recording or media object."
+    }
+  ],
+  "eventRegistry": {
+    "frozenAt": "s2",
+    "sha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9"
+  },
+  "eventEnvelope": {
+    "fields": [
+      "eventId",
+      "eventType",
+      "legId?",
+      "sequenceNo?",
+      "occurredAt",
+      "payload"
+    ],
+    "required": [
+      "eventId",
+      "eventType",
+      "occurredAt",
+      "payload"
+    ],
+    "legIdRule": "required when envelopeLegId is REQUIRED; absent when envelopeLegId is ABSENT",
+    "legTypeDerivation": "callerLeg* maps to CALLER/INBOUND; calleeLeg* maps to CALLEE/OUTBOUND; leg_type and direction are never submitted",
+    "occurredAtSemantics": "UTC date-time IVR fact time; never used for task TTL or authorization judgement",
+    "payloadRule": "closed per eventType; unknown, missing required or extra payload fields fail with 400 IVR_ARGUMENT_INVALID",
+    "payloads": {
+      "CALLER_LEG_ANSWERED": {
+        "required": [],
+        "optional": []
+      },
+      "CALLEE_LEG_RINGING": {
+        "required": [],
+        "optional": []
+      },
+      "CALLEE_LEG_ANSWERED": {
+        "required": [],
+        "optional": []
+      },
+      "BRIDGE_STARTED": {
+        "required": [
+          "callerLegId",
+          "calleeLegId"
+        ],
+        "optional": []
+      },
+      "RECORDING_STARTED": {
+        "required": [],
+        "optional": []
+      },
+      "RECORDING_ENDED": {
+        "required": [],
+        "optional": []
+      },
+      "CALL_TERMINATED": {
+        "required": [
+          "callerLegId",
+          "callerLegOutcome",
+          "endReason",
+          "authoritativeRecordingSeconds"
+        ],
+        "optional": [
+          "callerLegAnsweredAt",
+          "calleeLegId",
+          "calleeLegStartedAt",
+          "calleeLegAnsweredAt",
+          "calleeLegOutcome",
+          "bridgedAt",
+          "recordingStartedAt",
+          "recordingEndedAt"
+        ]
+      },
+      "CALL_TERMINATION_UNKNOWN": {
+        "required": [
+          "reasonCode"
+        ],
+        "optional": []
+      },
+      "CALL_TERMINAL_RECONCILED": {
+        "required": [
+          "callerLegId",
+          "callerLegOutcome",
+          "endReason",
+          "authoritativeRecordingSeconds",
+          "resolvesUnknownEventId"
+        ],
+        "optional": [
+          "callerLegAnsweredAt",
+          "calleeLegId",
+          "calleeLegStartedAt",
+          "calleeLegAnsweredAt",
+          "calleeLegOutcome",
+          "bridgedAt",
+          "recordingStartedAt",
+          "recordingEndedAt"
+        ]
+      },
+      "OUTBOUND_NOT_STARTED": {
+        "required": [
+          "reasonCode"
+        ],
+        "optional": [
+          "reservationId"
+        ]
+      },
+      "CALL_HEARTBEAT": {
+        "required": [],
+        "optional": []
+      }
+    },
+    "payloadRules": {
+      "CALL_TERMINATION_UNKNOWN.reasonCode": "LINE_OUTCOME_UNKNOWN",
+      "OUTBOUND_NOT_STARTED.reasonCode": "AUTHORIZATION_EXPIRED",
+      "legOutcomes": [
+        "ENDED",
+        "FAILED"
+      ],
+      "timeOrder": "callerLegAnsweredAt <= bridgedAt <= recordingStartedAt <= recordingEndedAt <= occurredAt; calleeLegStartedAt <= calleeLegAnsweredAt <= occurredAt",
+      "missingLegTimes": "when a leg row is absent the terminal payload must carry that leg's start or answer time",
+      "secondsWithoutRecordingStart": "authoritativeRecordingSeconds must be 0 when recordingStartedAt is absent"
+    }
+  },
+  "endReasons": [
+    "CALLER_HANGUP_AFTER_BRIDGE",
+    "CALLEE_HANGUP_AFTER_BRIDGE",
+    "RECORDING_LIMIT_REACHED",
+    "CALLER_HANGUP_BEFORE_BRIDGE",
+    "CALLEE_BUSY",
+    "CALLEE_NO_ANSWER",
+    "CALLEE_REJECTED",
+    "B_LEG_FAILED",
+    "BRIDGE_FAILED"
+  ],
+  "quarantineReasons": [
+    "LEG_UNKNOWN",
+    "SEQUENCE_CONFLICT",
+    "CONTRADICTORY_FACT",
+    "CALL_TERMINAL",
+    "ALREADY_TERMINAL",
+    "AUTHORIZATION_NOT_EXPIRED",
+    "OUTBOUND_ALREADY_STARTED",
+    "USE_RECONCILIATION_EVENT",
+    "NOT_UNKNOWN",
+    "HEARTBEAT_IGNORED"
+  ],
+  "stateMachines": {
+    "outbound_call_task": {
+      "states": [
+        "PENDING",
+        "CLAIMED",
+        "REPLACED",
+        "CANCELLED",
+        "EXPIRED",
+        "REJECTED",
+        "COMPLETED",
+        "FAILED"
+      ],
+      "transitions": [
+        {
+          "from": "PENDING",
+          "to": "CLAIMED",
+          "trigger": "task-backed decision",
+          "guard": "atomic claim with reservation and frozen decision"
+        },
+        {
+          "from": "CLAIMED",
+          "to": "COMPLETED",
+          "trigger": "accepted ENDED-class terminal or reconciliation",
+          "guard": "first terminal; same-transaction settlement"
+        },
+        {
+          "from": "CLAIMED",
+          "to": "FAILED",
+          "trigger": "accepted FAILED-class terminal or OUTBOUND_NOT_STARTED",
+          "guard": "first terminal; never reopened"
+        }
+      ]
+    },
+    "inbound_session": {
+      "states": [
+        "RECEIVED",
+        "CONFIRMED",
+        "ABANDONED",
+        "REJECTED"
+      ],
+      "transitions": [
+        {
+          "from": "RECEIVED",
+          "to": "CONFIRMED",
+          "trigger": "successful key 1 activation confirmation",
+          "guard": "prior GUIDE_ACTIVATION resolve; current consent and prompt"
+        },
+        {
+          "from": "RECEIVED",
+          "to": "REJECTED",
+          "trigger": "suspended or competing rejection",
+          "guard": "never-confirmed session"
+        },
+        {
+          "from": null,
+          "to": "ABANDONED",
+          "trigger": "owner-internal only",
+          "guard": "no v1 wire trigger"
+        }
+      ]
+    },
+    "call_record": {
+      "states": [
+        "ACTIVE",
+        "ENDED",
+        "FAILED",
+        "UNKNOWN",
+        "REJECTED"
+      ],
+      "transitions": [
+        {
+          "from": null,
+          "to": "ACTIVE",
+          "trigger": "non-terminal resolve action or direct authorization",
+          "guard": "callId root"
+        },
+        {
+          "from": null,
+          "to": "REJECTED",
+          "trigger": "competing call or invalid session",
+          "guard": "end_reason CALL_IN_PROGRESS"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "ENDED",
+          "trigger": "CALL_TERMINATED ENDED-class or accepted reconciliation",
+          "guard": "first terminal; ended_at and authoritative seconds set"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "FAILED",
+          "trigger": "CALL_TERMINATED FAILED-class or OUTBOUND_NOT_STARTED",
+          "guard": "first terminal; 0 or actual seconds"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "UNKNOWN",
+          "trigger": "CALL_TERMINATION_UNKNOWN",
+          "guard": "ended_at and authoritative seconds stay NULL; occupied"
+        },
+        {
+          "from": "UNKNOWN",
+          "to": "ENDED",
+          "trigger": "CALL_TERMINAL_RECONCILED",
+          "guard": "references the accepted unknown event; authoritative reconciliation"
+        },
+        {
+          "from": "UNKNOWN",
+          "to": "FAILED",
+          "trigger": "CALL_TERMINAL_RECONCILED",
+          "guard": "references the accepted unknown event; authoritative reconciliation"
+        }
+      ]
+    },
+    "call_leg": {
+      "states": [
+        "RINGING",
+        "ANSWERED",
+        "ENDED",
+        "FAILED"
+      ],
+      "transitions": [
+        {
+          "from": null,
+          "to": "RINGING",
+          "trigger": "CALLEE_LEG_RINGING",
+          "guard": "one caller leg and at most one callee leg"
+        },
+        {
+          "from": null,
+          "to": "ANSWERED",
+          "trigger": "CALLER_LEG_ANSWERED or a complete terminal fact",
+          "guard": "forward-only times"
+        },
+        {
+          "from": "RINGING",
+          "to": "ANSWERED",
+          "trigger": "CALLEE_LEG_ANSWERED",
+          "guard": "non-decreasing time"
+        },
+        {
+          "from": "ANSWERED",
+          "to": "ENDED",
+          "trigger": "accepted terminal",
+          "guard": "leg outcome and endReason agree"
+        },
+        {
+          "from": "ANSWERED",
+          "to": "FAILED",
+          "trigger": "accepted terminal",
+          "guard": "leg outcome and endReason agree"
+        }
+      ]
+    },
+    "ivr_decision": {
+      "states": [
+        "frozen"
+      ],
+      "transitions": [
+        {
+          "from": null,
+          "to": "frozen",
+          "trigger": "resolve, activation confirmation or direct authorization",
+          "guard": "unique (callId,purpose) and canonical fingerprint"
+        }
+      ]
+    },
+    "usage_reservation": {
+      "states": [
+        "HELD",
+        "RECONCILING",
+        "SETTLED",
+        "RELEASED"
+      ],
+      "transitions": [
+        {
+          "from": "HELD",
+          "to": "SETTLED",
+          "trigger": "accepted terminal with 1..authorized seconds",
+          "guard": "one usage fact; release the remainder"
+        },
+        {
+          "from": "HELD",
+          "to": "RELEASED",
+          "trigger": "accepted zero-second terminal or OUTBOUND_NOT_STARTED",
+          "guard": "no usage fact"
+        },
+        {
+          "from": "HELD",
+          "to": "RECONCILING",
+          "trigger": "authoritative seconds exceed authorized seconds",
+          "guard": "no settlement, no release, no tolerance"
+        },
+        {
+          "from": "RECONCILING",
+          "to": "SETTLED",
+          "trigger": "authoritative reconciliation",
+          "guard": "no tolerance"
+        },
+        {
+          "from": "RECONCILING",
+          "to": "RELEASED",
+          "trigger": "authoritative reconciliation",
+          "guard": "no tolerance"
+        }
+      ]
+    },
+    "terminalMapping": {
+      "CALLER_HANGUP_AFTER_BRIDGE": {
+        "callStatus": "ENDED",
+        "taskStatus": "COMPLETED"
+      },
+      "CALLEE_HANGUP_AFTER_BRIDGE": {
+        "callStatus": "ENDED",
+        "taskStatus": "COMPLETED"
+      },
+      "RECORDING_LIMIT_REACHED": {
+        "callStatus": "ENDED",
+        "taskStatus": "COMPLETED"
+      },
+      "CALLER_HANGUP_BEFORE_BRIDGE": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "CALLEE_BUSY": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "CALLEE_NO_ANSWER": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "CALLEE_REJECTED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "B_LEG_FAILED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "BRIDGE_FAILED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "LINE_OUTCOME_UNKNOWN": {
+        "callStatus": "UNKNOWN",
+        "taskStatus": null
+      },
+      "AUTHORIZATION_EXPIRED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      }
+    }
+  },
+  "blegOperation": {
+    "key": "callId",
+    "fields": [
+      "decisionId",
+      "reservationId",
+      "authorizationExpiresAt",
+      "frozenCalleeDigest",
+      "lineAttemptCount",
+      "phase",
+      "dispatchMarker",
+      "terminalEventId"
+    ],
+    "lineAttemptCountValues": [
+      0,
+      1
+    ],
+    "phases": [
+      "ABSENT",
+      "PREPARED",
+      "DISPATCHING",
+      "DIALING",
+      "RINGING",
+      "ANSWERED",
+      "BRIDGED",
+      "RECORDING",
+      "DISPATCH_UNKNOWN",
+      "NOT_DISPATCHED",
+      "AUTHORIZATION_EXPIRED",
+      "FAILED",
+      "ENDED"
+    ],
+    "transitions": [
+      {
+        "from": "ABSENT",
+        "to": "PREPARED",
+        "guard": "frozen DIAL_TASK_CALLEE or direct-success decision with reservation"
+      },
+      {
+        "from": "PREPARED",
+        "to": "DISPATCHING",
+        "guard": "persisted marker; now before authorizationExpiresAt; lineAttemptCount 0"
+      },
+      {
+        "from": "DISPATCHING",
+        "to": "DIALING",
+        "guard": "line accepted; lineAttemptCount becomes 1 once"
+      },
+      {
+        "from": "DISPATCHING",
+        "to": "DISPATCH_UNKNOWN",
+        "guard": "line outcome unknown; lineAttemptCount becomes 1 once"
+      },
+      {
+        "from": "DISPATCHING",
+        "to": "FAILED",
+        "guard": "definitive line failure; lineAttemptCount becomes 1 once"
+      },
+      {
+        "from": "DIALING",
+        "to": "RINGING",
+        "guard": "provider ringing fact"
+      },
+      {
+        "from": "DIALING",
+        "to": "ANSWERED",
+        "guard": "callee answered fact"
+      },
+      {
+        "from": "DIALING",
+        "to": "FAILED",
+        "guard": "definitive failure before answer"
+      },
+      {
+        "from": "RINGING",
+        "to": "ANSWERED",
+        "guard": "callee answered fact"
+      },
+      {
+        "from": "RINGING",
+        "to": "FAILED",
+        "guard": "no answer, busy or rejected"
+      },
+      {
+        "from": "ANSWERED",
+        "to": "BRIDGED",
+        "guard": "bridge fact"
+      },
+      {
+        "from": "ANSWERED",
+        "to": "FAILED",
+        "guard": "definitive failure before bridge"
+      },
+      {
+        "from": "BRIDGED",
+        "to": "RECORDING",
+        "guard": "recording started fact"
+      },
+      {
+        "from": "BRIDGED",
+        "to": "ENDED",
+        "guard": "terminal fact"
+      },
+      {
+        "from": "RECORDING",
+        "to": "ENDED",
+        "guard": "terminal fact"
+      },
+      {
+        "from": "RECORDING",
+        "to": "FAILED",
+        "guard": "terminal fact"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "DIALING",
+        "guard": "authoritative line or CDR shows the attempt; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "ANSWERED",
+        "guard": "authoritative line or CDR shows an answer; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "ENDED",
+        "guard": "authoritative line or CDR shows completion; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "FAILED",
+        "guard": "authoritative line or CDR shows failure; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "NOT_DISPATCHED",
+        "guard": "authoritative proof of no attempt; lineAttemptCount returns to 0"
+      },
+      {
+        "from": "NOT_DISPATCHED",
+        "to": "PREPARED",
+        "guard": "authorization not expired; the first dispatch is allowed"
+      },
+      {
+        "from": "NOT_DISPATCHED",
+        "to": "AUTHORIZATION_EXPIRED",
+        "guard": "deadline reached with no attempt"
+      },
+      {
+        "from": "AUTHORIZATION_EXPIRED",
+        "to": "ENDED",
+        "guard": "OUTBOUND_NOT_STARTED outbox report only"
+      },
+      {
+        "from": "FAILED",
+        "to": "FAILED",
+        "guard": "terminal; never redial"
+      },
+      {
+        "from": "ENDED",
+        "to": "ENDED",
+        "guard": "terminal; never redial"
+      }
+    ],
+    "recoveryRules": [
+      "restart reads the local operation and outbox by callId; it never mints a new callId or re-resolves for a new authorization",
+      "PREPARED may dispatch once if the deadline has not passed",
+      "DISPATCHING or DISPATCH_UNKNOWN consults authoritative line or CDR evidence and never redials",
+      "a proven NO_ATTEMPT returns NOT_DISPATCHED; if the deadline has not passed the first dispatch is allowed",
+      "a deadline reached without proof of non-dispatch stays unknown and is reconciled; it is never reported as OUTBOUND_NOT_STARTED",
+      "a B-leg started before the deadline continues under the frozen seconds",
+      "one call has exactly one B-leg"
+    ]
+  },
+  "eventOutbox": {
+    "states": [
+      "PENDING",
+      "SENT",
+      "ACKED",
+      "PERMANENT_FAILURE"
+    ],
+    "identity": "(callId,eventId); immutable payload",
+    "retransmission": "resend the identical eventId and payload; never mint a replacement identity",
+    "callEvent": {
+      "ackStatuses": [
+        "APPLIED",
+        "IGNORED",
+        "QUARANTINED"
+      ],
+      "permanentCodes": [
+        "EVENT_ID_CONFLICT",
+        "SESSION_IDENTITY_MISMATCH",
+        "CALL_UNKNOWN",
+        "IVR_ARGUMENT_INVALID",
+        "VALIDATION_FAILED"
+      ],
+      "retryableCodes": [
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "retryableTransport": true
+    },
+    "recordingClassification": "deferred to S3"
+  },
+  "recordingLifecycle": {
+    "states": [
+      "DECLARED",
+      "UPLOADED",
+      "VALIDATED",
+      "QUARANTINED"
+    ],
+    "transitions": [
+      {
+        "from": null,
+        "to": "DECLARED",
+        "trigger": "first declaration for a known parent call",
+        "guard": "unique recordingId; declaration facts only"
+      },
+      {
+        "from": "DECLARED",
+        "to": "UPLOADED",
+        "trigger": "server-local upload observation",
+        "guard": "one immutable media object; replay requires identical observation identity and facts"
+      },
+      {
+        "from": "UPLOADED",
+        "to": "VALIDATED",
+        "trigger": "completion with matching server-observed facts",
+        "guard": "observed hash, size, MIME and duration match the declaration; server facts win"
+      },
+      {
+        "from": "UPLOADED",
+        "to": "QUARANTINED",
+        "trigger": "completion with different or mismatched server-observed facts",
+        "guard": "quarantine once; first media facts are preserved"
+      },
+      {
+        "from": "DECLARED",
+        "to": "QUARANTINED",
+        "trigger": "completion or upload observation at or after uploadExpiresAt",
+        "guard": "no successful media or evidence fact"
+      }
+    ],
+    "declaration": {
+      "requestFields": [
+        "recordingId",
+        "mimeType",
+        "sizeBytes",
+        "durationSeconds",
+        "sha256"
+      ],
+      "responseFields": [
+        "recordingId",
+        "status",
+        "uploadExpiresAt",
+        "upload.credential",
+        "upload.expiresAt",
+        "declaredAt"
+      ],
+      "status": "DECLARED",
+      "replay": "same recordingId with identical declaration facts while DECLARED returns the first 201 snapshot with no second recording, credential or expiry renewal",
+      "conflict": "changed declaration facts or any re-declare after UPLOADED, VALIDATED or QUARANTINED returns 409 RECORDING_IDENTITY_CONFLICT",
+      "clientReference": "not accepted by declaration and never part of declaration identity"
+    },
+    "uploadObservation": {
+      "owner": "IVR-local/server-observed; not a public IVR endpoint",
+      "fields": [
+        "objectIdentityDigest",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "durationSeconds"
+      ],
+      "replay": "same observation identity and facts returns the first UPLOADED result without a second media object, including replays at or after uploadExpiresAt",
+      "conflict": "changed observation identity or facts fails closed with RECORDING_IDENTITY_CONFLICT and mutates nothing, including after uploadExpiresAt",
+      "expiry": "a first observation while DECLARED at or after uploadExpiresAt is refused and quarantines once with UPLOAD_EXPIRED; an already UPLOADED row resolves immutable replay or conflict first",
+      "redaction": "raw object key, bucket, object version and credential material never leave the observation boundary"
+    },
+    "completion": {
+      "requestFields": [
+        "clientReference"
+      ],
+      "serverObservedFields": [
+        "objectIdentityDigest",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "durationSeconds"
+      ],
+      "clientStorageFactsForbidden": [
+        "bucket",
+        "objectKey",
+        "objectVersionId",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "durationSeconds"
+      ],
+      "order": [
+        "known call and recording",
+        "terminal replay or conflict",
+        "upload expiry for a still-DECLARED recording",
+        "upload observation",
+        "storage unknown",
+        "validation"
+      ],
+      "expired": "409 UPLOAD_EXPIRED; only a still-DECLARED recording is QUARANTINED; an already UPLOADED recording is not expired by completion time; no successful media fact for the DECLARED row",
+      "observationRequired": "a DECLARED recording returns 409 UPLOAD_OBSERVATION_REQUIRED with no mutation; the same identity retry may converge after observation",
+      "storageUnknown": "503 STORAGE_UNKNOWN with no media fact, terminal mutation or revision change; the same identity retry may converge",
+      "validated": "200 VALIDATED with server-recomputed duration and hash only",
+      "quarantined": "200 QUARANTINED for a pre-terminal differing or mismatched observation without overwriting the first media facts",
+      "replay": "same recordingId and identical server-observed facts returns the first VALIDATED or QUARANTINED result without a second recording or media object",
+      "conflict": "different server-observed facts after VALIDATED or QUARANTINED returns 409 RECORDING_IDENTITY_CONFLICT with unchanged status, revision and facts"
+    },
+    "conflictOutbox": {
+      "eventDomain": "EVIDENCE",
+      "aggregateType": "RECORDING",
+      "eventType": "RECORDING_CONFLICT",
+      "dedupeKey": "recording-conflict:<conflictDigest>",
+      "count": "exactly one deduplicated redacted fact per identical conflict payload",
+      "payloadFields": [
+        "recordingId",
+        "originalStatus",
+        "conflictDigest",
+        "presentedSha256",
+        "presentedSizeBytes",
+        "presentedMime",
+        "presentedDuration",
+        "reasonCode"
+      ],
+      "redaction": "object version and key material is hashed and never stored or logged"
+    },
+    "outbox": {
+      "identity": "(callId,recordingId); immutable payload; retries never mint a new identity",
+      "terminalAbsorption": "ACKED and PERMANENT_FAILURE are absorbing for one (callId,recordingId) entry; later responses, response loss or post-terminal conflicts never change a terminal entry or increment another terminal counter",
+      "declaration": {
+        "ackedHttp": [
+          201
+        ],
+        "permanentCodes": [
+          "RECORDING_IDENTITY_CONFLICT",
+          "IVR_ARGUMENT_INVALID",
+          "VALIDATION_FAILED",
+          "CALL_UNKNOWN"
+        ],
+        "retryableCodes": [
+          "RATE_LIMITED",
+          "SERVICE_UNAVAILABLE",
+          "INTERNAL"
+        ]
+      },
+      "completion": {
+        "ackedHttp": [
+          200
+        ],
+        "permanentCodes": [
+          "UPLOAD_EXPIRED",
+          "RECORDING_IDENTITY_CONFLICT",
+          "IVR_ARGUMENT_INVALID",
+          "VALIDATION_FAILED",
+          "CALL_UNKNOWN"
+        ],
+        "retryableCodes": [
+          "UPLOAD_OBSERVATION_REQUIRED",
+          "STORAGE_UNKNOWN",
+          "RATE_LIMITED",
+          "SERVICE_UNAVAILABLE",
+          "INTERNAL"
+        ]
+      }
+    },
+    "evidenceBoundary": "recording completion never creates or solidifies evidence; evidence creation identity and policy remain with the evidence owner"
+  },
+  "mediaEvidenceBoundary": {
+    "owner": "evidence",
+    "prerequisite": "recording.status is VALIDATED",
+    "handoffFields": [
+      "callId",
+      "recordingId",
+      "recordingStatus",
+      "validatedDurationSeconds",
+      "validatedSha256",
+      "mediaObjectDigest"
+    ],
+    "completionCreatesEvidence": false,
+    "completionSolidifiesEvidence": false,
+    "downstreamOwnerFlow": "evidence owner creates the evidence record, creation event and original artifact from its own validated source facts",
+    "wire": "no IVR evidence endpoint; the A2 boundary is typed and handoff-ready only",
+    "redaction": "no object key, bucket, version, permanent URL, credential, media bytes or raw party identifier crosses the boundary",
+    "evidenceStatusValues": [
+      "PENDING",
+      "SOLIDIFIED",
+      "QUARANTINED",
+      "FAILED"
+    ],
+    "residual": "R-A2-EVIDENCE-HANDOFF"
+  }
+}
