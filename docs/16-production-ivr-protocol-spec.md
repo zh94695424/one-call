@@ -2,7 +2,7 @@
 
 > Work unit: `A2-production-ivr-protocol-spec`
 >
-> Slice: S1 only (`authorization truth`)
+> Slice: S1 (`authorization truth`) and S2 (`execution truth`)
 >
 > Protocol version: `1.0`
 >
@@ -10,18 +10,17 @@
 >
 > Deterministic validator: `protocol/ivr/validate.mjs`
 >
-> Authority: A1 remains authoritative for paths, operations, envelopes, request/response schemas and Problem codes. A0 remains authoritative for tables, columns, states, named CHECKs, identities, transactions and idempotency. This document is authoritative for the S1 protocol semantics described below and does not restate A1 or A0 wire/schema definitions.
+> Authority: A1 remains authoritative for paths, operations, envelopes, request/response schemas and Problem codes. A0 remains authoritative for tables, columns, states, named CHECKs, identities, transactions and idempotency. This document is authoritative for the S1 authorization semantics and the S2 execution semantics described below and does not restate A1 or A0 wire/schema definitions.
 
-## Status and S1 boundary
+## Status and S2 boundary
 
-S1 freezes authorization truth: the unified `IvrDecision` action-selection contract, the 12-message identity registry, the 22-row identity matrix, protocol version compatibility, decision replay/conflict, A1 error mapping and the S1-approved state transitions. It is a static specification plus a deterministic fixture evaluator. It is not a runtime backend, database, line, media engine, cloud or evidence implementation.
+S1 freezes authorization truth: the unified `IvrDecision` action-selection contract, the 12-message identity registry, the 22-row identity matrix, protocol version compatibility, decision replay/conflict, A1 error mapping and the S1-approved state transitions.
 
-The following areas are deliberately absent from S1 and are not authorized by this slice:
+S2 freezes execution truth on top of S1 without changing A0, A1, the user-facing routing rules or any S1 action/replay/version rule. It promotes the S1 identity-only event block into the full four-column frozen event map, and adds the event envelope, 11 closed payloads, nine `endReason` values, ten quarantine/ignore reasons, the backend execution state machines, the IVR-local B-leg exactly-once operation, the IVR event outbox, heartbeat behavior, terminal/UNKNOWN/reconciliation convergence and reservation settlement/release/reconciling rules. The self-built IVR remains the owner of telephony and media facts; the backend remains the owner of task, entitlement and business state.
 
-- S2 event envelope, event payload field sets, event processing state, terminal/end reason registries, UNKNOWN reconciliation, B-leg local phase machine, event outbox, settlement execution and task terminal behavior.
-- S3 recording upload lifecycle, media object lifecycle, evidence creation or solidification and post-terminal media conflict behavior.
+S3 remains absent and is not authorized by this document: recording declaration, upload observation, completion, media object lifecycle, evidence creation or solidification and post-terminal media conflict behavior are S3 scope. S2 only carries recording start/end communication facts inside the existing event surface.
 
-The S1 event block registers event identities only. Payload, envelope, state and terminal semantics are deferred to S2. Any statement that a deferred area is already frozen is a protocol error.
+The event block below is full-frozen at S2. The S1 `DEFERRED_S2` sentinel form is replaced in place; both forms must never coexist. Any statement that a deferred S2 area is still deferred is a protocol error.
 
 The user-visible rules preserved by this slice are:
 
@@ -33,7 +32,7 @@ The user-visible rules preserved by this slice are:
 
 ## 1. Protocol version and compatibility
 
-| Item | S1 contract |
+| Item | S1/S2 contract |
 | --- | --- |
 | Literal | `1.0` |
 | Grammar | `^[0-9]+\.[0-9]+$`, length 1-32 (the A1 field bounds) |
@@ -78,7 +77,7 @@ The purpose chains are:
 
 ## 3. S1 preconditions and state transitions
 
-Only the following transitions are frozen by S1. Call, leg, terminal, reconciliation, reservation terminal and recording/media transitions remain S2 or S3 scope. The S1 precondition IDs are `task-claim`, `session-confirm`, `decision-freeze`, `reservation-held` and `direct-authorization`.
+Only the following transitions are frozen by S1. S2 adds the call, leg, terminal, reconciliation and reservation terminal machines in §6.9; recording media lifecycle remains S3. The S1 precondition IDs are `task-claim`, `session-confirm`, `decision-freeze`, `reservation-held` and `direct-authorization`.
 
 | Aggregate | S1 transition | Trigger | Guard |
 | --- | --- | --- | --- |
@@ -115,7 +114,7 @@ Full decision fields (A0 §10.14 projection):
 - `authorization.calleeNumber` and `task.calleeNumber` are internal encrypted payload values only. They never appear in a redacted snapshot, log, audit, outbox or customer response.
 - A0 §10.14 presents `task.taskId` as `uuid`, while A0 §4.23 defines `task_id` as `text` 1-64 and A1 defines a string 1-64. S1 follows the normative schema/A1 and records residual `R-A2-A0-TASKID-TYPE`; no A0 edit is made.
 
-## 4. Replay, conflict and S1 error mapping
+## 4. Replay, conflict and error mapping
 
 | Scenario | Identity | S1 rule |
 | --- | --- | --- |
@@ -127,7 +126,7 @@ Full decision fields (A0 §10.14 projection):
 | Lost response | Original identity | Retry the same identity and payload. Do not mint a new call or decision identity. |
 | Unsupported version | Resolve body | `400 IVR_ARGUMENT_INVALID` before any side effect. |
 
-S1 does not define event replay, heartbeat replay, terminal absorption, B-leg recovery, settlement or media replay. Those remain S2/S3.
+S1 does not define event replay, heartbeat replay, terminal absorption, B-leg recovery or settlement; S2 owns those in §6. Recording media replay remains S3.
 
 The exact A1 error mapping is:
 
@@ -190,29 +189,187 @@ The 12 messages are projections of the six accepted A1 IVR operations. `slice` r
 | recording-complete.result | S3 | completeIvrRecording | POST /api/v1/ivr/calls/{callId}/recordings/{recordingId}/complete | - | RecordingCompletion | recordingId |
 <!-- protocol-message-map:end -->
 
-## 6. Event identity registry (identity only at S1)
+## 6. S2 event registry, envelope and payloads
 
-The S1 event block is identity-only. The 11 event names below are frozen wire identities for S2 and S3 work. S1 does not define an event envelope, a payload field set, a processing state, a terminal/end reason, quarantine semantics, reconciliation or an outbox. The S1 validator must reject any event row that adds a payload, envelope, state or terminal column.
+S2 replaces the S1 identity-only event block in place with the following full-frozen four-column map. The model `eventTypes` array, this table and the payload registry in §6.2 are one projection. Row order is fixed. `envelopeLegId` is `REQUIRED` or `ABSENT`. `payloadFields` is the closed payload key set in dictionary order; a `?` suffix marks an optional or conditional field; `{}` is the empty payload. `normalProcessingOutcome` is the normal accepted outcome; quarantine and ignore reasons are decided by the fact rules in §6.3 and never change this column.
 
-Event identities only; payload/state/terminal semantics deferred to S2. `DEFERRED_S2` is a sentinel and does not mean that payload or state behavior is implemented by this slice.
+The event registry digest is `eventRegistry: frozenAt=s2 sha256=c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9`, computed over the 11 `eventTypes` entries in fixed order as canonical JSON (UTF-8, sorted object keys, no insignificant whitespace). S3 may read the registry but must not change it; a changed digest is drift.
 
 <!-- protocol-event-map:start -->
-| eventType | payloadState |
-| --- | --- |
-| CALLER_LEG_ANSWERED | DEFERRED_S2 |
-| CALLEE_LEG_RINGING | DEFERRED_S2 |
-| CALLEE_LEG_ANSWERED | DEFERRED_S2 |
-| BRIDGE_STARTED | DEFERRED_S2 |
-| RECORDING_STARTED | DEFERRED_S2 |
-| RECORDING_ENDED | DEFERRED_S2 |
-| CALL_TERMINATED | DEFERRED_S2 |
-| CALL_TERMINATION_UNKNOWN | DEFERRED_S2 |
-| CALL_TERMINAL_RECONCILED | DEFERRED_S2 |
-| OUTBOUND_NOT_STARTED | DEFERRED_S2 |
-| CALL_HEARTBEAT | DEFERRED_S2 |
+| eventType | envelopeLegId | payloadFields | normalProcessingOutcome |
+| --- | --- | --- | --- |
+| CALLER_LEG_ANSWERED | REQUIRED | {} | APPLIED |
+| CALLEE_LEG_RINGING | REQUIRED | {} | APPLIED |
+| CALLEE_LEG_ANSWERED | REQUIRED | {} | APPLIED |
+| BRIDGE_STARTED | ABSENT | calleeLegId,callerLegId | APPLIED |
+| RECORDING_STARTED | ABSENT | {} | APPLIED |
+| RECORDING_ENDED | ABSENT | {} | APPLIED |
+| CALL_TERMINATED | ABSENT | authoritativeRecordingSeconds,bridgedAt?,calleeLegAnsweredAt?,calleeLegId?,calleeLegOutcome?,calleeLegStartedAt?,callerLegAnsweredAt?,callerLegId,callerLegOutcome,endReason,recordingEndedAt?,recordingStartedAt? | APPLIED |
+| CALL_TERMINATION_UNKNOWN | ABSENT | reasonCode | APPLIED |
+| CALL_TERMINAL_RECONCILED | ABSENT | authoritativeRecordingSeconds,bridgedAt?,calleeLegAnsweredAt?,calleeLegId?,calleeLegOutcome?,calleeLegStartedAt?,callerLegAnsweredAt?,callerLegId,callerLegOutcome,endReason,recordingEndedAt?,recordingStartedAt?,resolvesUnknownEventId | APPLIED |
+| OUTBOUND_NOT_STARTED | ABSENT | reasonCode,reservationId? | APPLIED |
+| CALL_HEARTBEAT | ABSENT | {} | IGNORED |
 <!-- protocol-event-map:end -->
 
-The event names are `CALLER_LEG_ANSWERED`, `CALLEE_LEG_RINGING`, `CALLEE_LEG_ANSWERED`, `BRIDGE_STARTED`, `RECORDING_STARTED`, `RECORDING_ENDED`, `CALL_TERMINATED`, `CALL_TERMINATION_UNKNOWN`, `CALL_TERMINAL_RECONCILED`, `OUTBOUND_NOT_STARTED` and `CALL_HEARTBEAT`.
+The S2 form is full-frozen, not a deferred identity list. Payload, envelope, processing-state and terminal semantics are implemented by S2; the S1 `DEFERRED_S2` sentinel is removed. The event names are exactly `CALLER_LEG_ANSWERED`, `CALLEE_LEG_RINGING`, `CALLEE_LEG_ANSWERED`, `BRIDGE_STARTED`, `RECORDING_STARTED`, `RECORDING_ENDED`, `CALL_TERMINATED`, `CALL_TERMINATION_UNKNOWN`, `CALL_TERMINAL_RECONCILED`, `OUTBOUND_NOT_STARTED` and `CALL_HEARTBEAT`.
+
+### 6.1 Event envelope
+
+| Envelope field | Contract |
+| --- | --- |
+| `eventId` | Required. 1-128. Globally unique in the `IVR_EVENT` domain and immutable. |
+| `eventType` | Required. Exactly one of the 11 frozen types above. |
+| `legId` | Required when `envelopeLegId=REQUIRED`; forbidden when `envelopeLegId=ABSENT`. 1-64, unique per call and immutable. |
+| `sequenceNo` | Optional positive integer. The server never requires arrival order; it is used for conflict detection and observation. |
+| `occurredAt` | Required UTC `date-time` IVR fact time. It is never used for task TTL or authorization judgement. |
+| `payload` | Required closed object defined in §6.2. Unknown, missing required or extra fields fail with `400 IVR_ARGUMENT_INVALID` and write no event. |
+
+`leg_type` and `direction` are never submitted on the wire. They are derived: `callerLeg*` maps to `CALLER`/`INBOUND`; `calleeLeg*` maps to `CALLEE`/`OUTBOUND`. The `IvrEventPayload` schema remains opaque in A1; A2 owns this closed payload vocabulary.
+
+### 6.2 Closed payload definitions
+
+| eventType | Required payload fields | Optional payload fields | Backend effect |
+| --- | --- | --- | --- |
+| `CALLER_LEG_ANSWERED` | none | none | Create or advance the caller leg to `ANSWERED`; `started_at`/`answered_at` = `occurredAt` |
+| `CALLEE_LEG_RINGING` | none | none | Create the callee leg as `RINGING`; `started_at` = `occurredAt` |
+| `CALLEE_LEG_ANSWERED` | none | none | Advance the callee leg to `ANSWERED`; `answered_at` = `occurredAt` |
+| `BRIDGE_STARTED` | `callerLegId`, `calleeLegId` | none | Both legs must exist and be `ANSWERED`; `call_record.bridged_at` = `occurredAt` |
+| `RECORDING_STARTED` | none | none | Require `bridged_at` and `occurredAt >= bridged_at`; set `recording_started_at` |
+| `RECORDING_ENDED` | none | none | Require `recording_started_at` and `occurredAt >= recording_started_at`; set `recording_ended_at` |
+| `CALL_TERMINATED` | `callerLegId`, `callerLegOutcome`, `endReason`, `authoritativeRecordingSeconds` | `callerLegAnsweredAt`, `calleeLegId`, `calleeLegStartedAt`, `calleeLegAnsweredAt`, `calleeLegOutcome`, `bridgedAt`, `recordingStartedAt`, `recordingEndedAt` | Authoritative terminal: call `ENDED`/`FAILED`, leg ends, bridge/recording times, authoritative seconds, task terminal and settlement handoff |
+| `CALL_TERMINATION_UNKNOWN` | `reasonCode` | none | `ACTIVE` to `UNKNOWN`; `end_reason=LINE_OUTCOME_UNKNOWN`; `ended_at` and authoritative seconds stay `NULL`; no release and no redial |
+| `CALL_TERMINAL_RECONCILED` | `callerLegId`, `callerLegOutcome`, `endReason`, `authoritativeRecordingSeconds`, `resolvesUnknownEventId` | The same optional terminal times and callee fields as `CALL_TERMINATED` | Only `UNKNOWN` to `ENDED`/`FAILED`; must reference an accepted `CALL_TERMINATION_UNKNOWN` on the same call; performs terminal settlement |
+| `OUTBOUND_NOT_STARTED` | `reasonCode` | `reservationId` | Authoritative proof that no line request ever started after the deadline; call/task `FAILED` with 0 seconds and reservation `RELEASED` |
+| `CALL_HEARTBEAT` | none | none | No business state change; processing `IGNORED` with reason `HEARTBEAT_IGNORED` |
+
+Payload rules:
+
+- `CALL_TERMINATION_UNKNOWN.reasonCode` is exactly `LINE_OUTCOME_UNKNOWN`. `OUTBOUND_NOT_STARTED.reasonCode` is exactly `AUTHORIZATION_EXPIRED`.
+- Terminal `callerLegOutcome` and `calleeLegOutcome` are exactly `ENDED` or `FAILED` and must agree with `endReason`.
+- Terminal times are non-decreasing: `callerLegAnsweredAt <= bridgedAt <= recordingStartedAt <= recordingEndedAt <= occurredAt`, and `calleeLegStartedAt <= calleeLegAnsweredAt <= occurredAt`.
+- When a leg row does not already exist, the terminal payload must carry that leg's start or answer time; otherwise the event is `QUARANTINED`/`CONTRADICTORY_FACT`.
+- `authoritativeRecordingSeconds` is a non-negative integer and must be 0 when `recordingStartedAt` is absent. A value above the authorized seconds does not reject the event, but settlement enters `RECONCILING` and no usage fact or evidence is produced.
+- `occurredAt` is the call `ended_at`. The authoritative seconds and task terminal state derive only from accepted terminal communication facts.
+
+### 6.3 Event identity, ordering, terminal absorption and quarantine
+
+- An `eventId` is globally unique in `IVR_EVENT`. The same `eventId` on another call is an identity conflict.
+- Same `eventId` and same fingerprint (type, call, leg, sequence, occurred time and payload) returns the first receipt and changes no state. Same `eventId` with a changed fingerprint, type or sequence is `409 EVENT_ID_CONFLICT` and never overwrites the first outcome.
+- `sequenceNo` is optional and arrival order is not required. A different `eventId` reusing the same `(callId, sequenceNo)` produces a new `QUARANTINED`/`SEQUENCE_CONFLICT` event; the sequence index stays `NULL` and the original sequence remains in the redacted source.
+- An unknown parent call is `404 CALL_UNKNOWN` with no placeholder. An unknown event type, payload field or envelope-leg violation is `400 IVR_ARGUMENT_INVALID` with no event write.
+- After a call is terminal, only `CALL_HEARTBEAT` is accepted (`IGNORED`). Any other event whose facts are fully consistent is `IGNORED`/`ALREADY_TERMINAL`; an event that would add or change a fact is `QUARANTINED`/`CALL_TERMINAL`.
+- `CALL_TERMINATED` on an `UNKNOWN` call is `QUARANTINED`/`USE_RECONCILIATION_EVENT`. Only `CALL_TERMINAL_RECONCILED` converges `UNKNOWN`.
+- Missing or foreign `resolvesUnknownEventId` is `400 IVR_ARGUMENT_INVALID` with no event write. `CALL_TERMINAL_RECONCILED` on a non-`UNKNOWN` call is `QUARANTINED`/`NOT_UNKNOWN`.
+- `OUTBOUND_NOT_STARTED` before the deadline is `QUARANTINED`/`AUTHORIZATION_NOT_EXPIRED`; after any outbound fact it is `QUARANTINED`/`OUTBOUND_ALREADY_STARTED`; with no reservation it is `400 IVR_ARGUMENT_INVALID`.
+- Event processing status uses only A0 `RECEIVED/APPLIED/IGNORED/QUARANTINED`; the first terminal is absorbed.
+- Quarantine and ignore reasons are written to `call_event.reason_code` and are not Problem codes. The exact 10-value registry is `LEG_UNKNOWN`, `SEQUENCE_CONFLICT`, `CONTRADICTORY_FACT`, `CALL_TERMINAL`, `ALREADY_TERMINAL`, `AUTHORIZATION_NOT_EXPIRED`, `OUTBOUND_ALREADY_STARTED`, `USE_RECONCILIATION_EVENT`, `NOT_UNKNOWN` and `HEARTBEAT_IGNORED`.
+
+### 6.4 Heartbeat and liveness
+
+A heartbeat is a `CALL_HEARTBEAT` event, never a lease, a reservation proof or a terminal proof. A known call returns `200 CallEventReceipt{processingStatus:"IGNORED", reasonCode:"HEARTBEAT_IGNORED"}`. An unknown call returns `404 CALL_UNKNOWN`. A repeated `eventId` returns the first receipt. A heartbeat never changes call, task, reservation, recording or evidence state, never releases a reservation, never authorizes a call and never triggers redial. Missing heartbeats may only prompt an operations reconciliation; interval, timeout and alert thresholds remain Q8 deferred. The heartbeat row is a durable `call_event`; its retention and volume remain Q13/Q8 residual.
+
+### 6.5 IVR-local B-leg operation and exactly-once recovery
+
+Before any line request, the IVR persists one local authoritative `BlegOperation` keyed by `callId`. It is not an A0 table and does not require a media-engine rewrite; it fixes logical state and recovery decisions only.
+
+| Field | Rule |
+| --- | --- |
+| `decisionId` | The frozen decision that authorized the call |
+| `reservationId` | The reservation created by that decision; non-null for task and direct paths |
+| `authorizationExpiresAt` | Copied from the decision; never renewed |
+| `frozenCalleeDigest` | Local digest of the frozen callee; plaintext callee is never stored or logged |
+| `lineAttemptCount` | 0 or 1; changes from 0 to 1 only on the actual line request and is never 2 |
+| `phase` | One of the local phases below |
+| `dispatchMarker` | The persisted unique marker written before entering `DISPATCHING` |
+| `terminalEventId` | The local authoritative terminal event identity when one exists |
+
+Local phases are `ABSENT`, `PREPARED`, `DISPATCHING`, `DIALING`, `RINGING`, `ANSWERED`, `BRIDGED`, `RECORDING`, `DISPATCH_UNKNOWN`, `NOT_DISPATCHED`, `AUTHORIZATION_EXPIRED`, `FAILED` and `ENDED`. The allowed transitions are:
+
+| From | Allowed next phases | Guard |
+| --- | --- | --- |
+| `ABSENT` | `PREPARED` | Decision is `DIAL_TASK_CALLEE` or direct success |
+| `PREPARED` | `DISPATCHING` | Marker persisted; `now < authorizationExpiresAt`; `lineAttemptCount = 0` |
+| `DISPATCHING` | `DIALING` / `DISPATCH_UNKNOWN` / `FAILED` | The single line request; marker already committed |
+| `DIALING` | `RINGING` / `ANSWERED` / `FAILED` / `ENDED` | Line accepted |
+| `RINGING` | `ANSWERED` / `FAILED` / `ENDED` | — |
+| `ANSWERED` | `BRIDGED` / `FAILED` / `ENDED` | — |
+| `BRIDGED` | `RECORDING` / `FAILED` / `ENDED` | — |
+| `RECORDING` | `ENDED` / `FAILED` | Accepted terminal |
+| `DISPATCH_UNKNOWN` | `DIALING` / `ANSWERED` / `ENDED` / `FAILED` / `NOT_DISPATCHED` | Authoritative line/CDR record only; never a direct redial |
+| `NOT_DISPATCHED` | `PREPARED` / `AUTHORIZATION_EXPIRED` | Authoritative proof of no attempt; `lineAttemptCount` stays 0 |
+| `AUTHORIZATION_EXPIRED` | outbox report only | Deadline reached and non-dispatch proven |
+| `FAILED` / `ENDED` | none | Terminal; never redial |
+
+Recovery decisions:
+
+1. After restart the IVR reads the local operation and event outbox by `callId`. It never mints a new `callId` and never re-resolves to obtain a new authorization.
+2. `PREPARED` may dispatch once if the deadline has not passed; if it has passed, report `OUTBOUND_NOT_STARTED`.
+3. `DISPATCHING` or `DISPATCH_UNKNOWN` consults authoritative local line/CDR evidence. `ATTEMPTED`, `IN_PROGRESS`, `ANSWERED` or `COMPLETED` restores the facts with `lineAttemptCount=1` and never redials. Authoritative `NO_ATTEMPT` before the deadline returns `NOT_DISPATCHED` and then `PREPARED`, allowing the first actual dispatch. Unprovable outcomes stay unknown and occupied until reconciliation.
+4. A deadline reached without proof of non-dispatch is never reported as `OUTBOUND_NOT_STARTED`; it stays unknown/occupied for reconciliation.
+5. A lost decision response when the local operation never reached `PREPARED` is resolved by retrying the same `callId`. If the original resolve committed, the retry returns the frozen decision; if it never commits, a later `OUTBOUND_NOT_STARTED` returns `404 CALL_UNKNOWN`, creates no placeholder, releases nothing and produces no usage, and the local outbox records `PERMANENT_FAILURE`.
+6. A B-leg that started before the deadline continues under its frozen seconds; the deadline is not an interrupt or redial permission.
+7. v1 has exactly one B-leg per call. Retrying a callee requires a new call and reservation and is a product change outside A2.
+
+Evaluator-only counter semantics: `lineAttempts` and the per-operation `lineAttemptCount` are the facts for actual provider-line dial attempts. `lineAttemptCount` stays 0 or 1 per call. The deterministic fixture evaluator's `redialAttempts` counter does not count dials; it counts rejected redial-shaped local operations, namely a second B-leg prepare, a second or invalid dispatch or line outcome, and an illegal reconciliation.
+
+### 6.6 IVR event outbox
+
+| State | Rule |
+| --- | --- |
+| `PENDING` | The event/declaration/completion intent is persisted before send |
+| `SENT` | Sent but no terminal receipt is known |
+| `ACKED` | A 2xx terminal receipt (`APPLIED`, `IGNORED` or `QUARANTINED`) was observed |
+| `PERMANENT_FAILURE` | Identity, argument or terminal conflict; alert, never rewrite into a new identity |
+
+Retransmission uses the identical `eventId` and payload. A call-event 2xx (including `QUARANTINED`) is terminal for the outbox. `EVENT_ID_CONFLICT`, `SESSION_IDENTITY_MISMATCH`, `CALL_UNKNOWN`, `IVR_ARGUMENT_INVALID` and `VALIDATION_FAILED` are permanent. `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `INTERNAL`, 5xx and network failures are retryable. No retransmission changes identity or redials. Recording declaration and completion outbox classification belongs to S3 and is not implemented here.
+
+### 6.7 Terminal, UNKNOWN and reconciliation
+
+- The only authoritative terminal classes are `CALL_TERMINATED`, `CALL_TERMINAL_RECONCILED` and `OUTBOUND_NOT_STARTED`.
+- An unprovable line outcome reports only `CALL_TERMINATION_UNKNOWN`: call `UNKNOWN`, no `ended_at`, no authoritative seconds, task remains `CLAIMED`, reservation remains `HELD` and enters `RECONCILING` after the authorization expiry; it is never released and never redialed.
+- `UNKNOWN` converges only through `CALL_TERMINAL_RECONCILED` referencing the accepted unknown event, or backend operations reconciliation. Convergence completes terminal settlement or release and the task terminal in the same transaction.
+- Late or contradictory terminal facts are `QUARANTINED`; they never reopen a task, double-charge or create evidence.
+- A 30-second TTL, a local lease or a missing heartbeat never makes a `CLAIMED` task or an `UNKNOWN` call claimable again.
+- Task terminal state is separate from recording validation and evidence solidification.
+
+### 6.8 End reasons, task terminal and settlement mapping
+
+The nine `endReason` values are `CALLER_HANGUP_AFTER_BRIDGE`, `CALLEE_HANGUP_AFTER_BRIDGE`, `RECORDING_LIMIT_REACHED`, `CALLER_HANGUP_BEFORE_BRIDGE`, `CALLEE_BUSY`, `CALLEE_NO_ANSWER`, `CALLEE_REJECTED`, `B_LEG_FAILED` and `BRIDGE_FAILED`.
+
+| endReason | call_record | task (task-backed) |
+| --- | --- | --- |
+| `CALLER_HANGUP_AFTER_BRIDGE` | `ENDED` | `COMPLETED` |
+| `CALLEE_HANGUP_AFTER_BRIDGE` | `ENDED` | `COMPLETED` |
+| `RECORDING_LIMIT_REACHED` | `ENDED` | `COMPLETED` |
+| `CALLER_HANGUP_BEFORE_BRIDGE` | `FAILED` | `FAILED` |
+| `CALLEE_BUSY` | `FAILED` | `FAILED` |
+| `CALLEE_NO_ANSWER` | `FAILED` | `FAILED` |
+| `CALLEE_REJECTED` | `FAILED` | `FAILED` |
+| `B_LEG_FAILED` | `FAILED` | `FAILED` |
+| `BRIDGE_FAILED` | `FAILED` | `FAILED` |
+
+- `OUTBOUND_NOT_STARTED`: call `FAILED`, `end_reason=AUTHORIZATION_EXPIRED`, authoritative seconds 0, task `FAILED`, reservation `RELEASED` and no usage fact. This mapping assumes the original resolve committed and the backend already has the call and reservation.
+- When the original resolve never committed, no call or reservation exists. A later `OUTBOUND_NOT_STARTED` is an unknown parent call: `404 CALL_UNKNOWN`, no placeholder, no release and no usage; the IVR outbox records `PERMANENT_FAILURE`.
+- `CALL_TERMINATION_UNKNOWN`: call `UNKNOWN`, `end_reason=LINE_OUTCOME_UNKNOWN`, task unchanged and reservation not released.
+- Authoritative seconds are independent of task terminal state. A non-zero recording still settles under A0 T-S2-05 even when the call/task failed; 0 seconds is a known-zero release.
+- Seconds in `1..authorized_units` settle, release the remainder and produce exactly one `usage_fact`. Zero seconds produce `RELEASED` with no usage fact. Seconds above the authorization do not settle or release, produce no usage fact, keep the reservation in `RECONCILING` and set `last_error_code=DURATION_EXCEEDS_AUTHORIZED`; there is no tolerance.
+- Task `COMPLETED`/`FAILED` is triggered only by an accepted terminal or reconciliation, never by heartbeat, declaration, completion or evidence state.
+- Leg mapping: `CALLER_HANGUP_BEFORE_BRIDGE` ends the caller leg and fails the callee leg if present; busy/no-answer/rejected/B-leg failure fails the callee leg and ends the caller leg; post-bridge normal or limit cases end both legs; `BRIDGE_FAILED` ends both legs; a missing callee leg stays null. Leg `end_reason` uses the same `endReason` value.
+
+### 6.9 Execution state machines
+
+The model `stateMachines` freezes the S2 backend transitions for `outbound_call_task`, `inbound_session`, `call_record`, `call_leg`, `ivr_decision` and `usage_reservation`, plus the `terminalMapping` above. They never conflict with the S1 preconditions and add no new state or named CHECK.
+
+| Aggregate | Terminal-relevant transitions |
+| --- | --- |
+| `outbound_call_task` | `PENDING→CLAIMED`; `CLAIMED→COMPLETED/FAILED`; never reopened |
+| `inbound_session` | `RECEIVED→CONFIRMED/REJECTED`; `ABANDONED` has no v1 wire trigger |
+| `call_record` | new→`ACTIVE`/`REJECTED`; `ACTIVE→ENDED/FAILED/UNKNOWN`; `UNKNOWN→ENDED/FAILED` only by reconciliation |
+| `call_leg` | create `RINGING`/`ANSWERED`; `RINGING→ANSWERED`; `ANSWERED→ENDED/FAILED` |
+| `ivr_decision` | frozen once per `(callId,purpose)` |
+| `usage_reservation` | `HELD→SETTLED/RELEASED/RECONCILING`; `RECONCILING→SETTLED/RELEASED`; at most one terminal |
+
+The model `blegOperation` and `eventOutbox` freeze the local phase machine, recovery rules and outbox states described in §6.5 and §6.6. These are IVR-local; they do not create A0 tables or columns.
 
 ## 7. Identity, ownership, precondition and replay matrix
 
@@ -294,45 +451,72 @@ S1 registers the 15 cross-cutting invariant IDs. S2 and S3 may add prose and exe
 | INV-A2-14 | Every unknown outcome fails closed without redial, double reservation, double settlement or contradictory facts. |
 | INV-A2-15 | Declaration and completion retries reuse recordingId and never create a second recording or media object. |
 
-## 9. Deterministic S1 validation and fixtures
+S2 execution meaning for the same 15 IDs (no ID is added or renamed):
 
-`protocol/ivr/validate.mjs --stage s1` performs four independent checks:
+| ID | S2 execution meaning |
+| --- | --- |
+| INV-A2-01 | Resolve creates at most one call/session per inbound call; retries and restart reuse the `callId`. |
+| INV-A2-02 | The IVR executes the frozen action and one B-leg; event facts never cause local rerouting or another callee. |
+| INV-A2-03 | The local operation is keyed by `callId`; `lineAttemptCount` moves only 0 to 1 and unknown/restart recovery never redials. |
+| INV-A2-04 | One reservation is terminal once: one settlement or release and at most one usage fact per call. |
+| INV-A2-05 | The first accepted terminal is absorbed; `UNKNOWN` is occupied and converges only through `CALL_TERMINAL_RECONCILED`. |
+| INV-A2-06 | Terminal events never rewrite the decision; the S1 purposes remain frozen. |
+| INV-A2-07 | Task `CLAIMED→COMPLETED/FAILED` uses the same conditional update and preserves A0 reciprocal links. |
+| INV-A2-08 | Event replay uses the same `eventId` fingerprint; changed semantics is `EVENT_ID_CONFLICT` or quarantine. |
+| INV-A2-09 | S2 only records recording start/end facts; declaration, upload, completion and evidence remain S3. |
+| INV-A2-10 | Task terminals follow the frozen task path; direct terminals never claim a task; no latest-callee fallback. |
+| INV-A2-11 | `CALL_HEARTBEAT` is always `IGNORED` and never releases, authorizes or redials. |
+| INV-A2-12 | The B-leg stores only a callee digest; terminal facts, logs and outbox expose no plaintext callee. |
+| INV-A2-13 | The version frozen at S1 resolve governs the event/terminal interpretation. |
+| INV-A2-14 | `UNKNOWN` occupies the call and reservation; no redial, second reservation or settlement occurs. |
+| INV-A2-15 | S2 carries no declaration or completion execution; the invariant remains the S3 boundary. |
 
-1. The machine model uses only the S1 top-level sections; missing current-stage sections and premature S2/S3 sections fail.
-2. The document marker blocks (`protocol-message-map`, `protocol-event-map`, `protocol-identity-map`) match the model row-for-row and column-for-column. Event rows at S1 are exactly `eventType` and `payloadState=DEFERRED_S2`.
-3. The A1 bundle still has 49 operations, six IVR operations and the exact operation, schema and Problem sets. `IvrEventPayload` remains opaque.
-4. A0 still has 44 catalog tables, the exact named CHECK registries and every referenced column. The 22 identity rows and six fixtures are exact.
+## 9. Deterministic S2 validation and fixtures
 
-The validator evaluates fixtures with a deterministic in-memory `ProtocolMachine`. The machine computes action selection, fingerprint replay, conflict detection, task claim, reservation creation and trial counting. It does not read the fixture's expected outcome to decide a result. The machine has no database, network, clock, random source or telephony dependency. Fixture times and identities are fixed inputs.
+`protocol/ivr/validate.mjs --stage s2` performs five independent checks:
 
-The S1 fixtures are:
+1. The machine model uses the exact S2 top-level sections; a missing S2 section or a premature S1/S3 form fails. `payloadState` is forbidden anywhere.
+2. The document marker blocks match the model row-for-row and column-for-column. The event block is exactly `eventType,envelopeLegId,payloadFields,normalProcessingOutcome` with 11 rows; `{}` in the document normalizes to the model's empty payload array.
+3. The S2 registries are exact: `eventEnvelope` (six envelope fields, 11 closed payloads and payload rules), nine `endReasons`, ten `quarantineReasons`, six backend state machines plus `terminalMapping`, the B-leg fields/phases/transitions/recovery rules and the four outbox states with their call-event classification.
+4. `eventRegistry` has exactly `frozenAt=s2` and the canonical SHA-256 of the 11 `eventTypes` entries. A digest change fails. The A1 bundle still has 49 operations, six IVR operations and the exact schema/Problem sets; `IvrEventPayload` remains opaque.
+5. A0 still has 44 catalog tables, the exact named CHECK registries and every referenced column. The cumulative fixture set is exactly 17 IDs (six S1 plus 11 S2).
+
+The validator evaluates fixtures with a deterministic in-memory `ProtocolMachine`. For S2 it computes action selection, event identity/replay/conflict, leg/bridge/recording facts, terminal absorption, UNKNOWN occupancy, reconciliation, reservation settlement/release/reconciling, task terminal state, the IVR-local B-leg phase machine and the event outbox. It never reads a fixture's `expected` block to decide a result. The machine has no database, network, clock, random source, SIP/CDR, provider or telephony dependency. Fixture times, identities and line outcomes are fixed inputs. The machine is a fixture evaluator, not a backend, IVR runtime or production acceptance matrix.
+
+The S2 fixtures (cumulative 17) are:
 
 | Fixture | Scenario | Assertions |
 | --- | --- | --- |
-| `s1-01-task-path-normal` | Resolve to `DIAL_TASK_CALLEE` | 200; task `CLAIMED`; reservation `HELD`; frozen decision; task auto-dial flag; no callee confirmation |
-| `s1-02-direct-path-normal` | `ENTER_CALLEE` then direct success | `action=null`; reservation present; no task and no task fields; direct DTMF confirmation counted exactly once |
-| `s1-03-activation-redecision` | `GUIDE_ACTIVATION`, key `1`, then `DIAL_TASK_CALLEE` | Session `CONFIRMED`; one trial; resolve decision unchanged; next decision shares the action shape; no login or real-name creation |
-| `s1-04-decision-exact-replay` | Resolve, confirm and direct retries with the same fingerprints | First frozen responses; no second claim, reservation or trial; replay ignores new IDs supplied by the caller |
-| `s1-05-decision-semantic-conflict` | Changed caller, access, prompt and direct callee | 409 `SESSION_IDENTITY_MISMATCH`; persisted facts and counts unchanged; no second reservation or trial |
-| `s1-06-version-unsupported` | `protocolVersion=2.0` and malformed version | 400 `IVR_ARGUMENT_INVALID`; no call or session; all fact counts zero |
+| `s2-01-task-terminal-completed` | Task resolve, one B-leg, bridge/recording, `CALL_TERMINATED` | call `ENDED`; task `COMPLETED`; reservation `SETTLED`; one usage fact with the authoritative seconds; `lineAttemptCount=1` |
+| `s2-02-event-duplicate-replay` | Duplicate terminal and heartbeat with the same `eventId` | first receipt; no second settlement or usage fact; outbox remains `ACKED` |
+| `s2-03-event-out-of-order` | Complete terminal first, then consistent late leg facts with a sequence gap | facts applied once; legs/bridge/recording converge; late consistent events `IGNORED`; settlement once |
+| `s2-04-terminal-unknown-reconciliation` | `CALL_TERMINATION_UNKNOWN`, redial attempt, then `CALL_TERMINAL_RECONCILED` | UNKNOWN occupies call/reservation; no release/usage; redial blocked; reconciliation converges `ENDED`/`FAILED` and settles once |
+| `s2-05-response-loss-retry` | Committed resolve and terminal with lost responses, retried with identical identity | frozen resolve replay; first terminal receipt; no second B-leg/reservation/settlement; outbox `SENT→ACKED` |
+| `s2-06-ivr-restart-bleg-recovery` | Restart at `PREPARED` and `DISPATCH_UNKNOWN` | `PREPARED` dispatches once; `DISPATCH_UNKNOWN` reconciles to `DIALING` without redial; `lineAttemptCount<=1` per call |
+| `s2-07-authorization-expiry-not-started` | Before-deadline report, then deadline plus proof of no attempt | first report `QUARANTINED`/`AUTHORIZATION_NOT_EXPIRED`; `OUTBOUND_NOT_STARTED` yields `FAILED`, 0 seconds, task `FAILED`, `RELEASED`, no usage |
+| `s2-08-redial-second-bleg-rejected` (negative) | Second B-leg, second dispatch/line outcome and duplicate direct authorization | local 409 for the second B-leg and dispatch; `409 SESSION_IDENTITY_MISMATCH` for changed direct semantics; one reservation and `lineAttemptCount<=1` |
+| `s2-09-heartbeat-and-terminal` | Heartbeat before and after a terminal | both `IGNORED`/`HEARTBEAT_IGNORED`; no release or settlement from heartbeat; the terminal is still absorbed once |
+| `s2-10-terminal-contradiction-quarantine` (negative) | Second terminal with different seconds; `CALL_TERMINATED` after `UNKNOWN` | `QUARANTINED`/`CONTRADICTORY_FACT` and `QUARANTINED`/`USE_RECONCILIATION_EVENT`; no reopen, second settlement or release |
+| `s2-11-resolve-never-committed-not-started` (negative) | Resolve never commits; local B-leg/line attempt absent; later `OUTBOUND_NOT_STARTED` | `404 CALL_UNKNOWN`; no call/task/reservation placeholder; no release or usage; outbox `PERMANENT_FAILURE` |
 
-Expected successful stage-s1 output:
+Expected successful stage-s2 output:
 
 ```text
-stage=s1 messages=12 event_types=11 event_map_form=identity-only identities=22 fixtures=6 passed=6 failed=0 negative=0 slice_fixtures=6
+stage=s2 messages=12 event_types=11 event_map_form=full-frozen identities=22 fixtures=17 passed=17 failed=0 negative=3 slice_fixtures=6+11
 a1_operations=49 ivr_operations=6 a1_drift=0
 a0_tables=44 a0_status_drift=0 a0_registry_drift=0 a0_column_drift=0
 doc_missing=0 doc_extra=0 doc_duplicate=0 doc_invalid=0 token_missing=0
 stage_field_missing=0 stage_field_premature=0 fixture_id_missing=0 fixture_id_extra=0
 invariants=15
-PASS protocol-validation (s1)
+event_registry_frozen=s2 event_registry_sha256=c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9
+PASS protocol-validation (s2)
 ```
+
+Running the stage-s1 validator against an S2 tree must fail: the S1 projection requires exactly `eventType,payloadState` with `DEFERRED_S2` and forbids the S2 sections and nested event columns. A stage-s1 pass on an S2 model would be a false claim.
 
 A0 registry names checked directly against `docs/14`:
 
 `ck_outbound_task_status`, `ck_inbound_session_status`, `ck_call_record_status`, `ck_call_leg_state`, `ck_call_event_processing_status`, `ck_ivr_decision_action`, `ck_ivr_decision_purpose`, `ck_ivr_decision_reason`, `ck_usage_reservation_status`, `ck_recording_status`, `ck_evidence_status`, `ck_usage_fact_type`, `ck_usage_fact_event_domain`, `ck_idempotency_scope`.
-
-The S2/S3 registries are not authored in S1. The validator recognizes the stage names but the current model and document are stage-s1 projections; `--stage s2` or `--stage s3` must fail until those slices replace the S1 event projection and add the frozen registries.
 
 ## 10. Deferred inputs and residual risks
 
@@ -345,7 +529,7 @@ Deferred without invention:
 - Q25: authorization-window and clock-skew values. S1 uses the committed absolute `authorizationExpiresAt`.
 - Q27: organization-member task creation/claim role matrix.
 - Q13: event/heartbeat/outbox retention.
-- Q15/Q26/Q28: event wire values, snapshot/wire mapping and B-leg local recovery. S1 freezes only the authorization-side action contract, identities, version and replay; the B-leg phase/outbox shape is S2.
+- Q15/Q26/Q28: event wire values, snapshot/wire mapping and B-leg local recovery. S2 closes the 11 event wire types/payloads, event ordering/quarantine, heartbeat, terminal/UNKNOWN/reconciliation, the B-leg local phase machine keyed by `callId` and the IVR event outbox. Recording media wire remains S3.
 
 Classified residuals:
 
@@ -365,15 +549,15 @@ Classified residuals:
 | `R-A2-PROMPT-DTMF` | Prompt copy and DTMF pacing are not frozen | Product/legal, Q10 |
 | `R-A2-SIGNATURE` | Signature string, nonce and time window are not frozen | Security/backend, Q7/Q15/Q25 |
 
-S1 is a static contract. It does not prove PostgreSQL concurrency, actual task claim or reservation behavior, SIP/line/CDR behavior, B-leg dispatch, bridge or recording, COS upload observation, evidence solidification, security signing or production capacity.
+S1 and S2 are static contracts. They do not prove PostgreSQL concurrency, actual task claim or reservation behavior, SIP/line/CDR behavior, B-leg dispatch, bridge or recording, COS upload observation, evidence solidification, security signing or production capacity. The fixture evaluator is not a production acceptance matrix.
 
 ## 11. Documentation and decision record
 
 - Canonical human specification: this document.
 - Canonical machine model: `protocol/ivr/v1/ivr-protocol-v1.json`.
-- Deterministic fixtures: `protocol/ivr/v1/fixtures/s1-01-*.json` through `s1-06-*.json`.
+- Deterministic fixtures: `protocol/ivr/v1/fixtures/s1-01-*.json` through `s1-06-*.json` plus `s2-01-*.json` through `s2-11-*.json` (17 cumulative).
 - Validator: `protocol/ivr/validate.mjs`, zero third-party dependencies, Node 22.
-- S2 will promote the event block from the `DEFERRED_S2` identity form to the full frozen form and will own event payload, execution, recovery and terminal semantics.
-- S3 will own recording/media/evidence semantics and must not change the S2 event registry.
-- No README, second protocol document, JSON Schema copy, package file or A0/A1 modification is part of S1.
-- No operator/PBX integration, real credential, provider value, timeout, retry backoff, tolerance or cloud resource is introduced.
+- S2 promoted the event block from the `DEFERRED_S2` identity form to the full four-column frozen form and owns event payload, execution, recovery, heartbeat, terminal/reconciliation and settlement semantics. The frozen digest is `c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9`.
+- S3 will own recording/media/evidence semantics and must not change the S2 event registry or its digest.
+- No README, second protocol document, JSON Schema copy, package file or A0/A1 modification is part of S1 or S2.
+- No operator/PBX integration, real credential, provider value, timeout, heartbeat interval, retry backoff, tolerance or cloud resource is introduced.

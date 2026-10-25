@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 1,
+  "id": "s2-10-terminal-contradiction-quarantine",
+  "slice": "s2",
+  "description": "A second terminal with different authoritative seconds is quarantined, a reused event identity with changed payload conflicts, and CALL_TERMINATED cannot converge an UNKNOWN call; no fact is double-applied.",
+  "steps": [
+    {
+      "id": "resolve-a",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s2-10a",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "accessNumberHmac": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "callerBindingId": "10000000-0000-5000-8000-000000000111",
+        "subjectId": "20000000-0000-5000-8000-000000000111",
+        "nodeId": "node-s2-10a",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "11111111-1111-5111-8111-111111111111",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "task": {
+          "taskId": "TASK-S2-10A",
+          "businessType": "EVIDENCE_CALL",
+          "calleeMasked": "139****9011",
+          "calleeNumber": "13900139011",
+          "expired": false
+        },
+        "entitlement": {
+          "availableRecordingSeconds": 300,
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:00Z"
+        },
+        "reservationId": "33333333-3333-5333-8333-333333333311"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "action": "DIAL_TASK_CALLEE",
+          "reasonCode": "TASK_CLAIMED"
+        },
+        "persisted": {
+          "call": {
+            "status": "ACTIVE",
+            "task": {
+              "status": "CLAIMED"
+            }
+          }
+        },
+        "counts": {
+          "callsCreated": 1,
+          "tasksClaimed": 1,
+          "reservationsCreated": 1,
+          "decisionsFrozen": 1
+        }
+      }
+    },
+    {
+      "id": "first-terminal",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-10a-terminal-1",
+        "eventType": "CALL_TERMINATED",
+        "occurredAt": "2026-10-25T10:01:00Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegAnsweredAt": "2026-10-25T10:00:00Z",
+          "callerLegOutcome": "ENDED",
+          "endReason": "CALLEE_NO_ANSWER",
+          "authoritativeRecordingSeconds": 0
+        }
+      },
+      "server": {
+        "callId": "call-s2-10a"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "processingStatus": "APPLIED"
+        },
+        "persisted": {
+          "call": {
+            "status": "FAILED",
+            "task": {
+              "status": "FAILED"
+            },
+            "reservation": {
+              "status": "RELEASED"
+            },
+            "authoritativeSeconds": 0,
+            "terminalEventId": "evt-s2-10a-terminal-1"
+          }
+        },
+        "counts": {
+          "terminalFactsAccepted": 1,
+          "settlements": 0,
+          "releases": 1,
+          "usageFacts": 0
+        }
+      }
+    },
+    {
+      "id": "second-terminal-quarantined",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-10a-terminal-2",
+        "eventType": "CALL_TERMINATED",
+        "occurredAt": "2026-10-25T10:02:00Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegAnsweredAt": "2026-10-25T10:00:00Z",
+          "callerLegOutcome": "ENDED",
+          "endReason": "CALLEE_NO_ANSWER",
+          "authoritativeRecordingSeconds": 30
+        }
+      },
+      "server": {
+        "callId": "call-s2-10a"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "processingStatus": "QUARANTINED",
+          "reasonCode": "CONTRADICTORY_FACT"
+        },
+        "persisted": {
+          "call": {
+            "status": "FAILED",
+            "reservation": {
+              "status": "RELEASED"
+            },
+            "authoritativeSeconds": 0,
+            "terminalEventId": "evt-s2-10a-terminal-1"
+          }
+        },
+        "counts": {
+          "terminalFactsAccepted": 1,
+          "settlements": 0,
+          "releases": 1,
+          "usageFacts": 0,
+          "eventsQuarantined": 1
+        }
+      }
+    },
+    {
+      "id": "changed-event-conflict",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-10a-terminal-2",
+        "eventType": "CALL_TERMINATED",
+        "occurredAt": "2026-10-25T10:02:00Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegAnsweredAt": "2026-10-25T10:00:00Z",
+          "callerLegOutcome": "ENDED",
+          "endReason": "CALLEE_NO_ANSWER",
+          "authoritativeRecordingSeconds": 60
+        }
+      },
+      "server": {
+        "callId": "call-s2-10a"
+      },
+      "expected": {
+        "status": 409,
+        "code": "EVENT_ID_CONFLICT",
+        "persisted": {
+          "call": {
+            "status": "FAILED",
+            "reservation": {
+              "status": "RELEASED"
+            },
+            "authoritativeSeconds": 0,
+            "terminalEventId": "evt-s2-10a-terminal-1"
+          },
+          "outbox": [
+            {
+              "eventId": "evt-s2-10a-terminal-1",
+              "eventType": "CALL_TERMINATED",
+              "status": "ACKED"
+            },
+            {
+              "eventId": "evt-s2-10a-terminal-2",
+              "eventType": "CALL_TERMINATED",
+              "status": "PERMANENT_FAILURE"
+            }
+          ]
+        },
+        "counts": {
+          "eventsConflicted": 1,
+          "eventsQuarantined": 1,
+          "terminalFactsAccepted": 1,
+          "releases": 1,
+          "usageFacts": 0,
+          "outboxPermanent": 1
+        }
+      }
+    },
+    {
+      "id": "resolve-b",
+      "action": "request",
+      "operation": "resolveIvrInbound",
+      "body": {
+        "callId": "call-s2-10b",
+        "purpose": "INBOUND_RESOLVE",
+        "protocolVersion": "1.0"
+      },
+      "server": {
+        "callerState": "ACTIVE",
+        "callerTrusted": true,
+        "callerNumberHmac": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "accessNumberHmac": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "callerBindingId": "10000000-0000-5000-8000-000000000112",
+        "subjectId": "20000000-0000-5000-8000-000000000112",
+        "nodeId": "node-s2-10b",
+        "entryMode": "INITIAL_RESOLVE",
+        "activeCall": false,
+        "decisionId": "11111111-1111-5111-8111-111111111112",
+        "decisionAt": "2026-10-25T10:00:00Z",
+        "balanceAsOf": "2026-10-25T10:00:00Z",
+        "task": {
+          "taskId": "TASK-S2-10B",
+          "businessType": "EVIDENCE_CALL",
+          "calleeMasked": "139****9012",
+          "calleeNumber": "13900139012",
+          "expired": false
+        },
+        "entitlement": {
+          "availableRecordingSeconds": 300,
+          "authorizedRecordingSeconds": 300,
+          "authorizationExpiresAt": "2026-10-25T10:05:00Z"
+        },
+        "reservationId": "33333333-3333-5333-8333-333333333312"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "callId": "call-s2-10b",
+          "action": "DIAL_TASK_CALLEE",
+          "reasonCode": "TASK_CLAIMED"
+        },
+        "persisted": {
+          "call": {
+            "status": "ACTIVE",
+            "task": {
+              "status": "CLAIMED"
+            },
+            "reservation": {
+              "status": "HELD"
+            }
+          }
+        },
+        "counts": {
+          "callsCreated": 2,
+          "tasksClaimed": 2,
+          "reservationsCreated": 2,
+          "decisionsFrozen": 2
+        }
+      }
+    },
+    {
+      "id": "unknown-b",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-10b-unknown",
+        "eventType": "CALL_TERMINATION_UNKNOWN",
+        "occurredAt": "2026-10-25T10:01:00Z",
+        "payload": {
+          "reasonCode": "LINE_OUTCOME_UNKNOWN"
+        }
+      },
+      "server": {
+        "callId": "call-s2-10b"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "processingStatus": "APPLIED"
+        },
+        "persisted": {
+          "call": {
+            "status": "UNKNOWN",
+            "task": {
+              "status": "CLAIMED"
+            },
+            "reservation": {
+              "status": "HELD"
+            },
+            "endedAt": null,
+            "authoritativeSeconds": null,
+            "unknownEventId": "evt-s2-10b-unknown"
+          }
+        },
+        "counts": {
+          "unknownFacts": 1,
+          "terminalFactsAccepted": 1,
+          "settlements": 0,
+          "releases": 1,
+          "usageFacts": 0
+        }
+      }
+    },
+    {
+      "id": "terminal-after-unknown-quarantined",
+      "action": "request",
+      "operation": "ingestIvrCallEvent",
+      "body": {
+        "eventId": "evt-s2-10b-terminal",
+        "eventType": "CALL_TERMINATED",
+        "occurredAt": "2026-10-25T10:02:00Z",
+        "payload": {
+          "callerLegId": "leg-a",
+          "callerLegAnsweredAt": "2026-10-25T10:00:00Z",
+          "callerLegOutcome": "ENDED",
+          "endReason": "CALLEE_NO_ANSWER",
+          "authoritativeRecordingSeconds": 0
+        }
+      },
+      "server": {
+        "callId": "call-s2-10b"
+      },
+      "expected": {
+        "status": 200,
+        "response": {
+          "processingStatus": "QUARANTINED",
+          "reasonCode": "USE_RECONCILIATION_EVENT"
+        },
+        "persisted": {
+          "call": {
+            "status": "UNKNOWN",
+            "task": {
+              "status": "CLAIMED"
+            },
+            "reservation": {
+              "status": "HELD"
+            },
+            "endedAt": null,
+            "authoritativeSeconds": null,
+            "terminalEventId": null
+          },
+          "outbox": [
+            {
+              "eventId": "evt-s2-10b-terminal",
+              "eventType": "CALL_TERMINATED",
+              "status": "ACKED"
+            },
+            {
+              "eventId": "evt-s2-10b-unknown",
+              "eventType": "CALL_TERMINATION_UNKNOWN",
+              "status": "ACKED"
+            }
+          ]
+        },
+        "counts": {
+          "eventsQuarantined": 2,
+          "eventsConflicted": 1,
+          "terminalFactsAccepted": 1,
+          "unknownFacts": 1,
+          "releases": 1,
+          "usageFacts": 0
+        }
+      }
+    }
+  ]
+}

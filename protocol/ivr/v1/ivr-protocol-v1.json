@@ -117,47 +117,104 @@
   "eventTypes": [
     {
       "eventType": "CALLER_LEG_ANSWERED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "REQUIRED",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "CALLEE_LEG_RINGING",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "REQUIRED",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "CALLEE_LEG_ANSWERED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "REQUIRED",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "BRIDGE_STARTED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "calleeLegId",
+        "callerLegId"
+      ],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "RECORDING_STARTED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "RECORDING_ENDED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "CALL_TERMINATED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "authoritativeRecordingSeconds",
+        "bridgedAt?",
+        "calleeLegAnsweredAt?",
+        "calleeLegId?",
+        "calleeLegOutcome?",
+        "calleeLegStartedAt?",
+        "callerLegAnsweredAt?",
+        "callerLegId",
+        "callerLegOutcome",
+        "endReason",
+        "recordingEndedAt?",
+        "recordingStartedAt?"
+      ],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "CALL_TERMINATION_UNKNOWN",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "reasonCode"
+      ],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "CALL_TERMINAL_RECONCILED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "authoritativeRecordingSeconds",
+        "bridgedAt?",
+        "calleeLegAnsweredAt?",
+        "calleeLegId?",
+        "calleeLegOutcome?",
+        "calleeLegStartedAt?",
+        "callerLegAnsweredAt?",
+        "callerLegId",
+        "callerLegOutcome",
+        "endReason",
+        "recordingEndedAt?",
+        "recordingStartedAt?",
+        "resolvesUnknownEventId"
+      ],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "OUTBOUND_NOT_STARTED",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [
+        "reasonCode",
+        "reservationId?"
+      ],
+      "normalProcessingOutcome": "APPLIED"
     },
     {
       "eventType": "CALL_HEARTBEAT",
-      "payloadState": "DEFERRED_S2"
+      "envelopeLegId": "ABSENT",
+      "payloadFields": [],
+      "normalProcessingOutcome": "IGNORED"
     }
   ],
   "identities": [
@@ -1224,5 +1281,605 @@
       "id": "INV-A2-15",
       "text": "Declaration and completion retries reuse recordingId and never create a second recording or media object."
     }
-  ]
+  ],
+  "eventRegistry": {
+    "frozenAt": "s2",
+    "sha256": "c6b769d4953db7b38d5bf1b5d396845b51a651ad38e53157f20dec978249f4e9"
+  },
+  "eventEnvelope": {
+    "fields": [
+      "eventId",
+      "eventType",
+      "legId?",
+      "sequenceNo?",
+      "occurredAt",
+      "payload"
+    ],
+    "required": [
+      "eventId",
+      "eventType",
+      "occurredAt",
+      "payload"
+    ],
+    "legIdRule": "required when envelopeLegId is REQUIRED; absent when envelopeLegId is ABSENT",
+    "legTypeDerivation": "callerLeg* maps to CALLER/INBOUND; calleeLeg* maps to CALLEE/OUTBOUND; leg_type and direction are never submitted",
+    "occurredAtSemantics": "UTC date-time IVR fact time; never used for task TTL or authorization judgement",
+    "payloadRule": "closed per eventType; unknown, missing required or extra payload fields fail with 400 IVR_ARGUMENT_INVALID",
+    "payloads": {
+      "CALLER_LEG_ANSWERED": {
+        "required": [],
+        "optional": []
+      },
+      "CALLEE_LEG_RINGING": {
+        "required": [],
+        "optional": []
+      },
+      "CALLEE_LEG_ANSWERED": {
+        "required": [],
+        "optional": []
+      },
+      "BRIDGE_STARTED": {
+        "required": [
+          "callerLegId",
+          "calleeLegId"
+        ],
+        "optional": []
+      },
+      "RECORDING_STARTED": {
+        "required": [],
+        "optional": []
+      },
+      "RECORDING_ENDED": {
+        "required": [],
+        "optional": []
+      },
+      "CALL_TERMINATED": {
+        "required": [
+          "callerLegId",
+          "callerLegOutcome",
+          "endReason",
+          "authoritativeRecordingSeconds"
+        ],
+        "optional": [
+          "callerLegAnsweredAt",
+          "calleeLegId",
+          "calleeLegStartedAt",
+          "calleeLegAnsweredAt",
+          "calleeLegOutcome",
+          "bridgedAt",
+          "recordingStartedAt",
+          "recordingEndedAt"
+        ]
+      },
+      "CALL_TERMINATION_UNKNOWN": {
+        "required": [
+          "reasonCode"
+        ],
+        "optional": []
+      },
+      "CALL_TERMINAL_RECONCILED": {
+        "required": [
+          "callerLegId",
+          "callerLegOutcome",
+          "endReason",
+          "authoritativeRecordingSeconds",
+          "resolvesUnknownEventId"
+        ],
+        "optional": [
+          "callerLegAnsweredAt",
+          "calleeLegId",
+          "calleeLegStartedAt",
+          "calleeLegAnsweredAt",
+          "calleeLegOutcome",
+          "bridgedAt",
+          "recordingStartedAt",
+          "recordingEndedAt"
+        ]
+      },
+      "OUTBOUND_NOT_STARTED": {
+        "required": [
+          "reasonCode"
+        ],
+        "optional": [
+          "reservationId"
+        ]
+      },
+      "CALL_HEARTBEAT": {
+        "required": [],
+        "optional": []
+      }
+    },
+    "payloadRules": {
+      "CALL_TERMINATION_UNKNOWN.reasonCode": "LINE_OUTCOME_UNKNOWN",
+      "OUTBOUND_NOT_STARTED.reasonCode": "AUTHORIZATION_EXPIRED",
+      "legOutcomes": [
+        "ENDED",
+        "FAILED"
+      ],
+      "timeOrder": "callerLegAnsweredAt <= bridgedAt <= recordingStartedAt <= recordingEndedAt <= occurredAt; calleeLegStartedAt <= calleeLegAnsweredAt <= occurredAt",
+      "missingLegTimes": "when a leg row is absent the terminal payload must carry that leg's start or answer time",
+      "secondsWithoutRecordingStart": "authoritativeRecordingSeconds must be 0 when recordingStartedAt is absent"
+    }
+  },
+  "endReasons": [
+    "CALLER_HANGUP_AFTER_BRIDGE",
+    "CALLEE_HANGUP_AFTER_BRIDGE",
+    "RECORDING_LIMIT_REACHED",
+    "CALLER_HANGUP_BEFORE_BRIDGE",
+    "CALLEE_BUSY",
+    "CALLEE_NO_ANSWER",
+    "CALLEE_REJECTED",
+    "B_LEG_FAILED",
+    "BRIDGE_FAILED"
+  ],
+  "quarantineReasons": [
+    "LEG_UNKNOWN",
+    "SEQUENCE_CONFLICT",
+    "CONTRADICTORY_FACT",
+    "CALL_TERMINAL",
+    "ALREADY_TERMINAL",
+    "AUTHORIZATION_NOT_EXPIRED",
+    "OUTBOUND_ALREADY_STARTED",
+    "USE_RECONCILIATION_EVENT",
+    "NOT_UNKNOWN",
+    "HEARTBEAT_IGNORED"
+  ],
+  "stateMachines": {
+    "outbound_call_task": {
+      "states": [
+        "PENDING",
+        "CLAIMED",
+        "REPLACED",
+        "CANCELLED",
+        "EXPIRED",
+        "REJECTED",
+        "COMPLETED",
+        "FAILED"
+      ],
+      "transitions": [
+        {
+          "from": "PENDING",
+          "to": "CLAIMED",
+          "trigger": "task-backed decision",
+          "guard": "atomic claim with reservation and frozen decision"
+        },
+        {
+          "from": "CLAIMED",
+          "to": "COMPLETED",
+          "trigger": "accepted ENDED-class terminal or reconciliation",
+          "guard": "first terminal; same-transaction settlement"
+        },
+        {
+          "from": "CLAIMED",
+          "to": "FAILED",
+          "trigger": "accepted FAILED-class terminal or OUTBOUND_NOT_STARTED",
+          "guard": "first terminal; never reopened"
+        }
+      ]
+    },
+    "inbound_session": {
+      "states": [
+        "RECEIVED",
+        "CONFIRMED",
+        "ABANDONED",
+        "REJECTED"
+      ],
+      "transitions": [
+        {
+          "from": "RECEIVED",
+          "to": "CONFIRMED",
+          "trigger": "successful key 1 activation confirmation",
+          "guard": "prior GUIDE_ACTIVATION resolve; current consent and prompt"
+        },
+        {
+          "from": "RECEIVED",
+          "to": "REJECTED",
+          "trigger": "suspended or competing rejection",
+          "guard": "never-confirmed session"
+        },
+        {
+          "from": null,
+          "to": "ABANDONED",
+          "trigger": "owner-internal only",
+          "guard": "no v1 wire trigger"
+        }
+      ]
+    },
+    "call_record": {
+      "states": [
+        "ACTIVE",
+        "ENDED",
+        "FAILED",
+        "UNKNOWN",
+        "REJECTED"
+      ],
+      "transitions": [
+        {
+          "from": null,
+          "to": "ACTIVE",
+          "trigger": "non-terminal resolve action or direct authorization",
+          "guard": "callId root"
+        },
+        {
+          "from": null,
+          "to": "REJECTED",
+          "trigger": "competing call or invalid session",
+          "guard": "end_reason CALL_IN_PROGRESS"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "ENDED",
+          "trigger": "CALL_TERMINATED ENDED-class or accepted reconciliation",
+          "guard": "first terminal; ended_at and authoritative seconds set"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "FAILED",
+          "trigger": "CALL_TERMINATED FAILED-class or OUTBOUND_NOT_STARTED",
+          "guard": "first terminal; 0 or actual seconds"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "UNKNOWN",
+          "trigger": "CALL_TERMINATION_UNKNOWN",
+          "guard": "ended_at and authoritative seconds stay NULL; occupied"
+        },
+        {
+          "from": "UNKNOWN",
+          "to": "ENDED",
+          "trigger": "CALL_TERMINAL_RECONCILED",
+          "guard": "references the accepted unknown event; authoritative reconciliation"
+        },
+        {
+          "from": "UNKNOWN",
+          "to": "FAILED",
+          "trigger": "CALL_TERMINAL_RECONCILED",
+          "guard": "references the accepted unknown event; authoritative reconciliation"
+        }
+      ]
+    },
+    "call_leg": {
+      "states": [
+        "RINGING",
+        "ANSWERED",
+        "ENDED",
+        "FAILED"
+      ],
+      "transitions": [
+        {
+          "from": null,
+          "to": "RINGING",
+          "trigger": "CALLEE_LEG_RINGING",
+          "guard": "one caller leg and at most one callee leg"
+        },
+        {
+          "from": null,
+          "to": "ANSWERED",
+          "trigger": "CALLER_LEG_ANSWERED or a complete terminal fact",
+          "guard": "forward-only times"
+        },
+        {
+          "from": "RINGING",
+          "to": "ANSWERED",
+          "trigger": "CALLEE_LEG_ANSWERED",
+          "guard": "non-decreasing time"
+        },
+        {
+          "from": "ANSWERED",
+          "to": "ENDED",
+          "trigger": "accepted terminal",
+          "guard": "leg outcome and endReason agree"
+        },
+        {
+          "from": "ANSWERED",
+          "to": "FAILED",
+          "trigger": "accepted terminal",
+          "guard": "leg outcome and endReason agree"
+        }
+      ]
+    },
+    "ivr_decision": {
+      "states": [
+        "frozen"
+      ],
+      "transitions": [
+        {
+          "from": null,
+          "to": "frozen",
+          "trigger": "resolve, activation confirmation or direct authorization",
+          "guard": "unique (callId,purpose) and canonical fingerprint"
+        }
+      ]
+    },
+    "usage_reservation": {
+      "states": [
+        "HELD",
+        "RECONCILING",
+        "SETTLED",
+        "RELEASED"
+      ],
+      "transitions": [
+        {
+          "from": "HELD",
+          "to": "SETTLED",
+          "trigger": "accepted terminal with 1..authorized seconds",
+          "guard": "one usage fact; release the remainder"
+        },
+        {
+          "from": "HELD",
+          "to": "RELEASED",
+          "trigger": "accepted zero-second terminal or OUTBOUND_NOT_STARTED",
+          "guard": "no usage fact"
+        },
+        {
+          "from": "HELD",
+          "to": "RECONCILING",
+          "trigger": "authoritative seconds exceed authorized seconds",
+          "guard": "no settlement, no release, no tolerance"
+        },
+        {
+          "from": "RECONCILING",
+          "to": "SETTLED",
+          "trigger": "authoritative reconciliation",
+          "guard": "no tolerance"
+        },
+        {
+          "from": "RECONCILING",
+          "to": "RELEASED",
+          "trigger": "authoritative reconciliation",
+          "guard": "no tolerance"
+        }
+      ]
+    },
+    "terminalMapping": {
+      "CALLER_HANGUP_AFTER_BRIDGE": {
+        "callStatus": "ENDED",
+        "taskStatus": "COMPLETED"
+      },
+      "CALLEE_HANGUP_AFTER_BRIDGE": {
+        "callStatus": "ENDED",
+        "taskStatus": "COMPLETED"
+      },
+      "RECORDING_LIMIT_REACHED": {
+        "callStatus": "ENDED",
+        "taskStatus": "COMPLETED"
+      },
+      "CALLER_HANGUP_BEFORE_BRIDGE": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "CALLEE_BUSY": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "CALLEE_NO_ANSWER": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "CALLEE_REJECTED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "B_LEG_FAILED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "BRIDGE_FAILED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      },
+      "LINE_OUTCOME_UNKNOWN": {
+        "callStatus": "UNKNOWN",
+        "taskStatus": null
+      },
+      "AUTHORIZATION_EXPIRED": {
+        "callStatus": "FAILED",
+        "taskStatus": "FAILED"
+      }
+    }
+  },
+  "blegOperation": {
+    "key": "callId",
+    "fields": [
+      "decisionId",
+      "reservationId",
+      "authorizationExpiresAt",
+      "frozenCalleeDigest",
+      "lineAttemptCount",
+      "phase",
+      "dispatchMarker",
+      "terminalEventId"
+    ],
+    "lineAttemptCountValues": [
+      0,
+      1
+    ],
+    "phases": [
+      "ABSENT",
+      "PREPARED",
+      "DISPATCHING",
+      "DIALING",
+      "RINGING",
+      "ANSWERED",
+      "BRIDGED",
+      "RECORDING",
+      "DISPATCH_UNKNOWN",
+      "NOT_DISPATCHED",
+      "AUTHORIZATION_EXPIRED",
+      "FAILED",
+      "ENDED"
+    ],
+    "transitions": [
+      {
+        "from": "ABSENT",
+        "to": "PREPARED",
+        "guard": "frozen DIAL_TASK_CALLEE or direct-success decision with reservation"
+      },
+      {
+        "from": "PREPARED",
+        "to": "DISPATCHING",
+        "guard": "persisted marker; now before authorizationExpiresAt; lineAttemptCount 0"
+      },
+      {
+        "from": "DISPATCHING",
+        "to": "DIALING",
+        "guard": "line accepted; lineAttemptCount becomes 1 once"
+      },
+      {
+        "from": "DISPATCHING",
+        "to": "DISPATCH_UNKNOWN",
+        "guard": "line outcome unknown; lineAttemptCount becomes 1 once"
+      },
+      {
+        "from": "DISPATCHING",
+        "to": "FAILED",
+        "guard": "definitive line failure; lineAttemptCount becomes 1 once"
+      },
+      {
+        "from": "DIALING",
+        "to": "RINGING",
+        "guard": "provider ringing fact"
+      },
+      {
+        "from": "DIALING",
+        "to": "ANSWERED",
+        "guard": "callee answered fact"
+      },
+      {
+        "from": "DIALING",
+        "to": "FAILED",
+        "guard": "definitive failure before answer"
+      },
+      {
+        "from": "RINGING",
+        "to": "ANSWERED",
+        "guard": "callee answered fact"
+      },
+      {
+        "from": "RINGING",
+        "to": "FAILED",
+        "guard": "no answer, busy or rejected"
+      },
+      {
+        "from": "ANSWERED",
+        "to": "BRIDGED",
+        "guard": "bridge fact"
+      },
+      {
+        "from": "ANSWERED",
+        "to": "FAILED",
+        "guard": "definitive failure before bridge"
+      },
+      {
+        "from": "BRIDGED",
+        "to": "RECORDING",
+        "guard": "recording started fact"
+      },
+      {
+        "from": "BRIDGED",
+        "to": "ENDED",
+        "guard": "terminal fact"
+      },
+      {
+        "from": "RECORDING",
+        "to": "ENDED",
+        "guard": "terminal fact"
+      },
+      {
+        "from": "RECORDING",
+        "to": "FAILED",
+        "guard": "terminal fact"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "DIALING",
+        "guard": "authoritative line or CDR shows the attempt; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "ANSWERED",
+        "guard": "authoritative line or CDR shows an answer; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "ENDED",
+        "guard": "authoritative line or CDR shows completion; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "FAILED",
+        "guard": "authoritative line or CDR shows failure; never redial"
+      },
+      {
+        "from": "DISPATCH_UNKNOWN",
+        "to": "NOT_DISPATCHED",
+        "guard": "authoritative proof of no attempt; lineAttemptCount returns to 0"
+      },
+      {
+        "from": "NOT_DISPATCHED",
+        "to": "PREPARED",
+        "guard": "authorization not expired; the first dispatch is allowed"
+      },
+      {
+        "from": "NOT_DISPATCHED",
+        "to": "AUTHORIZATION_EXPIRED",
+        "guard": "deadline reached with no attempt"
+      },
+      {
+        "from": "AUTHORIZATION_EXPIRED",
+        "to": "ENDED",
+        "guard": "OUTBOUND_NOT_STARTED outbox report only"
+      },
+      {
+        "from": "FAILED",
+        "to": "FAILED",
+        "guard": "terminal; never redial"
+      },
+      {
+        "from": "ENDED",
+        "to": "ENDED",
+        "guard": "terminal; never redial"
+      }
+    ],
+    "recoveryRules": [
+      "restart reads the local operation and outbox by callId; it never mints a new callId or re-resolves for a new authorization",
+      "PREPARED may dispatch once if the deadline has not passed",
+      "DISPATCHING or DISPATCH_UNKNOWN consults authoritative line or CDR evidence and never redials",
+      "a proven NO_ATTEMPT returns NOT_DISPATCHED; if the deadline has not passed the first dispatch is allowed",
+      "a deadline reached without proof of non-dispatch stays unknown and is reconciled; it is never reported as OUTBOUND_NOT_STARTED",
+      "a B-leg started before the deadline continues under the frozen seconds",
+      "one call has exactly one B-leg"
+    ]
+  },
+  "eventOutbox": {
+    "states": [
+      "PENDING",
+      "SENT",
+      "ACKED",
+      "PERMANENT_FAILURE"
+    ],
+    "identity": "(callId,eventId); immutable payload",
+    "retransmission": "resend the identical eventId and payload; never mint a replacement identity",
+    "callEvent": {
+      "ackStatuses": [
+        "APPLIED",
+        "IGNORED",
+        "QUARANTINED"
+      ],
+      "permanentCodes": [
+        "EVENT_ID_CONFLICT",
+        "SESSION_IDENTITY_MISMATCH",
+        "CALL_UNKNOWN",
+        "IVR_ARGUMENT_INVALID",
+        "VALIDATION_FAILED"
+      ],
+      "retryableCodes": [
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL"
+      ],
+      "retryableTransport": true
+    },
+    "recordingClassification": "deferred to S3"
+  }
 }

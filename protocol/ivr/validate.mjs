@@ -52,6 +52,183 @@ const EXPECTED_EVENT_TYPES = [
   'CALL_HEARTBEAT'
 ];
 
+const EVENT_PAYLOAD_DEFINITIONS = {
+  CALLER_LEG_ANSWERED: { required: [], optional: [] },
+  CALLEE_LEG_RINGING: { required: [], optional: [] },
+  CALLEE_LEG_ANSWERED: { required: [], optional: [] },
+  BRIDGE_STARTED: { required: ['callerLegId', 'calleeLegId'], optional: [] },
+  RECORDING_STARTED: { required: [], optional: [] },
+  RECORDING_ENDED: { required: [], optional: [] },
+  CALL_TERMINATED: {
+    required: ['callerLegId', 'callerLegOutcome', 'endReason', 'authoritativeRecordingSeconds'],
+    optional: ['callerLegAnsweredAt', 'calleeLegId', 'calleeLegStartedAt', 'calleeLegAnsweredAt', 'calleeLegOutcome', 'bridgedAt', 'recordingStartedAt', 'recordingEndedAt']
+  },
+  CALL_TERMINATION_UNKNOWN: { required: ['reasonCode'], optional: [] },
+  CALL_TERMINAL_RECONCILED: {
+    required: ['callerLegId', 'callerLegOutcome', 'endReason', 'authoritativeRecordingSeconds', 'resolvesUnknownEventId'],
+    optional: ['callerLegAnsweredAt', 'calleeLegId', 'calleeLegStartedAt', 'calleeLegAnsweredAt', 'calleeLegOutcome', 'bridgedAt', 'recordingStartedAt', 'recordingEndedAt']
+  },
+  OUTBOUND_NOT_STARTED: { required: ['reasonCode'], optional: ['reservationId'] },
+  CALL_HEARTBEAT: { required: [], optional: [] }
+};
+
+const REQUIRED_LEG_EVENTS = new Set(['CALLER_LEG_ANSWERED', 'CALLEE_LEG_RINGING', 'CALLEE_LEG_ANSWERED']);
+
+function payloadFieldsFor(definition) {
+  return [...definition.required, ...definition.optional.map((field) => `${field}?`)].sort();
+}
+
+const EXPECTED_EVENT_ROWS = EXPECTED_EVENT_TYPES.map((eventType) => ({
+  eventType,
+  envelopeLegId: REQUIRED_LEG_EVENTS.has(eventType) ? 'REQUIRED' : 'ABSENT',
+  payloadFields: payloadFieldsFor(EVENT_PAYLOAD_DEFINITIONS[eventType]),
+  normalProcessingOutcome: eventType === 'CALL_HEARTBEAT' ? 'IGNORED' : 'APPLIED'
+}));
+
+const EXPECTED_END_REASONS = [
+  'CALLER_HANGUP_AFTER_BRIDGE',
+  'CALLEE_HANGUP_AFTER_BRIDGE',
+  'RECORDING_LIMIT_REACHED',
+  'CALLER_HANGUP_BEFORE_BRIDGE',
+  'CALLEE_BUSY',
+  'CALLEE_NO_ANSWER',
+  'CALLEE_REJECTED',
+  'B_LEG_FAILED',
+  'BRIDGE_FAILED'
+];
+
+const EXPECTED_QUARANTINE_REASONS = [
+  'LEG_UNKNOWN',
+  'SEQUENCE_CONFLICT',
+  'CONTRADICTORY_FACT',
+  'CALL_TERMINAL',
+  'ALREADY_TERMINAL',
+  'AUTHORIZATION_NOT_EXPIRED',
+  'OUTBOUND_ALREADY_STARTED',
+  'USE_RECONCILIATION_EVENT',
+  'NOT_UNKNOWN',
+  'HEARTBEAT_IGNORED'
+];
+
+const EXPECTED_EVENT_ENVELOPE = {
+  fields: ['eventId', 'eventType', 'legId?', 'sequenceNo?', 'occurredAt', 'payload'],
+  required: ['eventId', 'eventType', 'occurredAt', 'payload'],
+  legIdRule: 'required when envelopeLegId is REQUIRED; absent when envelopeLegId is ABSENT',
+  legTypeDerivation: 'callerLeg* maps to CALLER/INBOUND; calleeLeg* maps to CALLEE/OUTBOUND; leg_type and direction are never submitted',
+  occurredAtSemantics: 'UTC date-time IVR fact time; never used for task TTL or authorization judgement',
+  payloadRule: 'closed per eventType; unknown, missing required or extra payload fields fail with 400 IVR_ARGUMENT_INVALID',
+  payloads: EVENT_PAYLOAD_DEFINITIONS,
+  payloadRules: {
+    'CALL_TERMINATION_UNKNOWN.reasonCode': 'LINE_OUTCOME_UNKNOWN',
+    'OUTBOUND_NOT_STARTED.reasonCode': 'AUTHORIZATION_EXPIRED',
+    legOutcomes: ['ENDED', 'FAILED'],
+    timeOrder: 'callerLegAnsweredAt <= bridgedAt <= recordingStartedAt <= recordingEndedAt <= occurredAt; calleeLegStartedAt <= calleeLegAnsweredAt <= occurredAt',
+    missingLegTimes: "when a leg row is absent the terminal payload must carry that leg's start or answer time",
+    secondsWithoutRecordingStart: 'authoritativeRecordingSeconds must be 0 when recordingStartedAt is absent'
+  }
+};
+
+const EXPECTED_STATE_MACHINE_STATES = {
+  outbound_call_task: ['PENDING', 'CLAIMED', 'REPLACED', 'CANCELLED', 'EXPIRED', 'REJECTED', 'COMPLETED', 'FAILED'],
+  inbound_session: ['RECEIVED', 'CONFIRMED', 'ABANDONED', 'REJECTED'],
+  call_record: ['ACTIVE', 'ENDED', 'FAILED', 'UNKNOWN', 'REJECTED'],
+  call_leg: ['RINGING', 'ANSWERED', 'ENDED', 'FAILED'],
+  ivr_decision: ['frozen'],
+  usage_reservation: ['HELD', 'RECONCILING', 'SETTLED', 'RELEASED']
+};
+
+const EXPECTED_STATE_MACHINE_TRANSITIONS = {
+  outbound_call_task: [['PENDING', 'CLAIMED'], ['CLAIMED', 'COMPLETED'], ['CLAIMED', 'FAILED']],
+  inbound_session: [['RECEIVED', 'CONFIRMED'], ['RECEIVED', 'REJECTED'], [null, 'ABANDONED']],
+  call_record: [[null, 'ACTIVE'], [null, 'REJECTED'], ['ACTIVE', 'ENDED'], ['ACTIVE', 'FAILED'], ['ACTIVE', 'UNKNOWN'], ['UNKNOWN', 'ENDED'], ['UNKNOWN', 'FAILED']],
+  call_leg: [[null, 'RINGING'], [null, 'ANSWERED'], ['RINGING', 'ANSWERED'], ['ANSWERED', 'ENDED'], ['ANSWERED', 'FAILED']],
+  ivr_decision: [[null, 'frozen']],
+  usage_reservation: [['HELD', 'SETTLED'], ['HELD', 'RELEASED'], ['HELD', 'RECONCILING'], ['RECONCILING', 'SETTLED'], ['RECONCILING', 'RELEASED']]
+};
+
+const EXPECTED_TERMINAL_MAPPING = {
+  CALLER_HANGUP_AFTER_BRIDGE: { callStatus: 'ENDED', taskStatus: 'COMPLETED' },
+  CALLEE_HANGUP_AFTER_BRIDGE: { callStatus: 'ENDED', taskStatus: 'COMPLETED' },
+  RECORDING_LIMIT_REACHED: { callStatus: 'ENDED', taskStatus: 'COMPLETED' },
+  CALLER_HANGUP_BEFORE_BRIDGE: { callStatus: 'FAILED', taskStatus: 'FAILED' },
+  CALLEE_BUSY: { callStatus: 'FAILED', taskStatus: 'FAILED' },
+  CALLEE_NO_ANSWER: { callStatus: 'FAILED', taskStatus: 'FAILED' },
+  CALLEE_REJECTED: { callStatus: 'FAILED', taskStatus: 'FAILED' },
+  B_LEG_FAILED: { callStatus: 'FAILED', taskStatus: 'FAILED' },
+  BRIDGE_FAILED: { callStatus: 'FAILED', taskStatus: 'FAILED' },
+  LINE_OUTCOME_UNKNOWN: { callStatus: 'UNKNOWN', taskStatus: null },
+  AUTHORIZATION_EXPIRED: { callStatus: 'FAILED', taskStatus: 'FAILED' }
+};
+
+const EXPECTED_BLEG_FIELDS = [
+  'decisionId',
+  'reservationId',
+  'authorizationExpiresAt',
+  'frozenCalleeDigest',
+  'lineAttemptCount',
+  'phase',
+  'dispatchMarker',
+  'terminalEventId'
+];
+
+const EXPECTED_BLEG_PHASES = [
+  'ABSENT',
+  'PREPARED',
+  'DISPATCHING',
+  'DIALING',
+  'RINGING',
+  'ANSWERED',
+  'BRIDGED',
+  'RECORDING',
+  'DISPATCH_UNKNOWN',
+  'NOT_DISPATCHED',
+  'AUTHORIZATION_EXPIRED',
+  'FAILED',
+  'ENDED'
+];
+
+const EXPECTED_BLEG_TRANSITIONS = [
+  ['ABSENT', 'PREPARED'],
+  ['PREPARED', 'DISPATCHING'],
+  ['DISPATCHING', 'DIALING'],
+  ['DISPATCHING', 'DISPATCH_UNKNOWN'],
+  ['DISPATCHING', 'FAILED'],
+  ['DIALING', 'RINGING'],
+  ['DIALING', 'ANSWERED'],
+  ['DIALING', 'FAILED'],
+  ['RINGING', 'ANSWERED'],
+  ['RINGING', 'FAILED'],
+  ['ANSWERED', 'BRIDGED'],
+  ['ANSWERED', 'FAILED'],
+  ['BRIDGED', 'RECORDING'],
+  ['BRIDGED', 'ENDED'],
+  ['RECORDING', 'ENDED'],
+  ['RECORDING', 'FAILED'],
+  ['DISPATCH_UNKNOWN', 'DIALING'],
+  ['DISPATCH_UNKNOWN', 'ANSWERED'],
+  ['DISPATCH_UNKNOWN', 'ENDED'],
+  ['DISPATCH_UNKNOWN', 'FAILED'],
+  ['DISPATCH_UNKNOWN', 'NOT_DISPATCHED'],
+  ['NOT_DISPATCHED', 'PREPARED'],
+  ['NOT_DISPATCHED', 'AUTHORIZATION_EXPIRED'],
+  ['AUTHORIZATION_EXPIRED', 'ENDED'],
+  ['FAILED', 'FAILED'],
+  ['ENDED', 'ENDED']
+];
+
+const EXPECTED_EVENT_OUTBOX = {
+  states: ['PENDING', 'SENT', 'ACKED', 'PERMANENT_FAILURE'],
+  identity: '(callId,eventId); immutable payload',
+  retransmission: 'resend the identical eventId and payload; never mint a replacement identity',
+  callEvent: {
+    ackStatuses: ['APPLIED', 'IGNORED', 'QUARANTINED'],
+    permanentCodes: ['EVENT_ID_CONFLICT', 'SESSION_IDENTITY_MISMATCH', 'CALL_UNKNOWN', 'IVR_ARGUMENT_INVALID', 'VALIDATION_FAILED'],
+    retryableCodes: ['RATE_LIMITED', 'SERVICE_UNAVAILABLE', 'INTERNAL'],
+    retryableTransport: true
+  },
+  recordingClassification: 'deferred to S3'
+};
+
 const EXPECTED_IDENTITIES = [
   ['callId', 'IVR gateway', 'globally unique across nodes; 1-128; immutable; one callId per inbound call', 'created on first inbound; every later message requires the existing call', 'same callId and fingerprint replays; changed caller/access/node is a stable conflict', 'ivr.inbound_session.call_id; ivr.call_record.call_id; resolve path'],
   ['sessionId', 'backend', 'UUID; one per callId; immutable', 'created or reused by resolve', 'derived from callId; no client input', 'ivr.inbound_session.id'],
@@ -517,6 +694,121 @@ function deepEqual(left, right) {
   return canonicalJson(left) === canonicalJson(right);
 }
 
+function checkExact(label, actual, expected, counters, issues) {
+  if (!deepEqual(actual, expected)) {
+    counters.stage_field_missing += 1;
+    issues.push(`${label} does not exactly match the frozen S2 registry`);
+    return false;
+  }
+  return true;
+}
+
+function sortedTransitionPairs(pairs) {
+  return pairs.map(([from, to]) => canonicalJson([from, to])).sort();
+}
+
+function validateS2Registries(model, counters, issues) {
+  checkExact('model.eventEnvelope', model.eventEnvelope, EXPECTED_EVENT_ENVELOPE, counters, issues);
+  checkExact('model.endReasons', model.endReasons, EXPECTED_END_REASONS, counters, issues);
+  checkExact('model.quarantineReasons', model.quarantineReasons, EXPECTED_QUARANTINE_REASONS, counters, issues);
+
+  const stateMachines = model.stateMachines;
+  if (stateMachines === null || typeof stateMachines !== 'object' || Array.isArray(stateMachines)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.stateMachines must be an object');
+  } else {
+    const expectedAggregates = Object.keys(EXPECTED_STATE_MACHINE_STATES);
+    const actualAggregates = Object.keys(stateMachines);
+    if (!deepEqual([...actualAggregates].sort(), [...expectedAggregates, 'terminalMapping'].sort())) {
+      counters.stage_field_missing += 1;
+      issues.push('model.stateMachines aggregate set does not match the S2 registry');
+    }
+    for (const aggregate of expectedAggregates) {
+      const machine = stateMachines[aggregate];
+      if (machine === null || typeof machine !== 'object' || Array.isArray(machine)) {
+        counters.stage_field_missing += 1;
+        issues.push(`model.stateMachines.${aggregate} must be an object`);
+        continue;
+      }
+      requireExactKeys(machine, ['states', 'transitions'], `model.stateMachines.${aggregate}`, counters, issues);
+      if (!deepEqual([...(machine.states || [])].sort(), [...EXPECTED_STATE_MACHINE_STATES[aggregate]].sort())) {
+        counters.stage_field_missing += 1;
+        issues.push(`model.stateMachines.${aggregate}.states does not match the A0 state registry`);
+      }
+      if (!Array.isArray(machine.transitions) || machine.transitions.length === 0) {
+        counters.stage_field_missing += 1;
+        issues.push(`model.stateMachines.${aggregate}.transitions is empty or not an array`);
+        continue;
+      }
+      for (const [index, transition] of machine.transitions.entries()) {
+        requireExactKeys(transition, ['from', 'to', 'trigger', 'guard'], `model.stateMachines.${aggregate}.transitions[${index}]`, counters, issues);
+      }
+      for (const [from, to] of EXPECTED_STATE_MACHINE_TRANSITIONS[aggregate]) {
+        if (!machine.transitions.some((transition) => transition.from === from && transition.to === to)) {
+          counters.stage_field_missing += 1;
+          issues.push(`model.stateMachines.${aggregate} is missing transition ${from}->${to}`);
+        }
+      }
+      if (!deepEqual(
+        sortedTransitionPairs(machine.transitions.map((transition) => [transition.from, transition.to])),
+        sortedTransitionPairs(EXPECTED_STATE_MACHINE_TRANSITIONS[aggregate])
+      )) {
+        counters.stage_field_missing += 1;
+        issues.push(`model.stateMachines.${aggregate}.transitions does not exactly match the frozen transition registry`);
+      }
+    }
+    checkExact('model.stateMachines.terminalMapping', stateMachines.terminalMapping, EXPECTED_TERMINAL_MAPPING, counters, issues);
+  }
+
+  const bleg = model.blegOperation;
+  if (bleg === null || typeof bleg !== 'object' || Array.isArray(bleg)) {
+    counters.stage_field_missing += 1;
+    issues.push('model.blegOperation must be an object');
+  } else {
+    requireExactKeys(bleg, ['key', 'fields', 'lineAttemptCountValues', 'phases', 'transitions', 'recoveryRules'], 'model.blegOperation', counters, issues);
+    if (bleg.key !== 'callId') {
+      counters.stage_field_missing += 1;
+      issues.push('model.blegOperation.key must be callId');
+    }
+    checkExact('model.blegOperation.fields', bleg.fields, EXPECTED_BLEG_FIELDS, counters, issues);
+    checkExact('model.blegOperation.lineAttemptCountValues', bleg.lineAttemptCountValues, [0, 1], counters, issues);
+    checkExact('model.blegOperation.phases', bleg.phases, EXPECTED_BLEG_PHASES, counters, issues);
+    if (!Array.isArray(bleg.transitions) || bleg.transitions.length === 0) {
+      counters.stage_field_missing += 1;
+      issues.push('model.blegOperation.transitions is empty or not an array');
+    } else {
+      for (const [index, transition] of bleg.transitions.entries()) {
+        requireExactKeys(transition, ['from', 'to', 'guard'], `model.blegOperation.transitions[${index}]`, counters, issues);
+      }
+      for (const [from, to] of EXPECTED_BLEG_TRANSITIONS) {
+        if (!bleg.transitions.some((transition) => transition.from === from && transition.to === to)) {
+          counters.stage_field_missing += 1;
+          issues.push(`model.blegOperation is missing transition ${from}->${to}`);
+        }
+      }
+      if (!deepEqual(
+        sortedTransitionPairs(bleg.transitions.map((transition) => [transition.from, transition.to])),
+        sortedTransitionPairs(EXPECTED_BLEG_TRANSITIONS)
+      )) {
+        counters.stage_field_missing += 1;
+        issues.push('model.blegOperation.transitions does not exactly match the frozen transition registry');
+      }
+    }
+    if (!Array.isArray(bleg.recoveryRules) || bleg.recoveryRules.length !== 7) {
+      counters.stage_field_missing += 1;
+      issues.push('model.blegOperation.recoveryRules must contain the seven recovery decisions');
+    }
+  }
+
+  checkExact('model.eventOutbox', model.eventOutbox, EXPECTED_EVENT_OUTBOX, counters, issues);
+
+  const computedDigest = sha256(canonicalJson(model.eventTypes));
+  if (!deepEqual(model.eventRegistry, { frozenAt: 's2', sha256: computedDigest })) {
+    counters.stage_field_missing += 1;
+    issues.push('model.eventRegistry must be exactly {frozenAt:s2, sha256:<canonical eventTypes digest>}');
+  }
+}
+
 function subsetEqual(expected, actual) {
   if (expected === null || typeof expected !== 'object') {
     return expected === actual;
@@ -695,9 +987,83 @@ function parseA0DecisionFields(doc) {
   return fields;
 }
 
+const TERMINAL_CALL_STATUSES = new Set(['ENDED', 'FAILED', 'REJECTED', 'UNKNOWN']);
+const ENDED_CLASS_REASONS = new Set(['CALLER_HANGUP_AFTER_BRIDGE', 'CALLEE_HANGUP_AFTER_BRIDGE', 'RECORDING_LIMIT_REACHED']);
+const OUTBOX_PERMANENT_HTTP = new Set([400, 404, 409, 422]);
+
+function validateEventPayload(eventType, payload) {
+  const definition = EVENT_PAYLOAD_DEFINITIONS[eventType];
+  if (!definition) {
+    return 'unknown event type';
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return 'payload must be an object';
+  }
+  const allowed = new Set([...definition.required, ...definition.optional]);
+  for (const key of Object.keys(payload)) {
+    if (!allowed.has(key)) {
+      return `unknown payload field ${key}`;
+    }
+  }
+  for (const key of definition.required) {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) {
+      return `missing payload field ${key}`;
+    }
+  }
+  if (eventType === 'CALL_TERMINATION_UNKNOWN' && payload.reasonCode !== 'LINE_OUTCOME_UNKNOWN') {
+    return 'CALL_TERMINATION_UNKNOWN reasonCode must be LINE_OUTCOME_UNKNOWN';
+  }
+  if (eventType === 'OUTBOUND_NOT_STARTED' && payload.reasonCode !== 'AUTHORIZATION_EXPIRED') {
+    return 'OUTBOUND_NOT_STARTED reasonCode must be AUTHORIZATION_EXPIRED';
+  }
+  if (eventType === 'CALL_TERMINATED' || eventType === 'CALL_TERMINAL_RECONCILED') {
+    if (!EXPECTED_END_REASONS.includes(payload.endReason)) {
+      return 'endReason is not registered';
+    }
+    if (!['ENDED', 'FAILED'].includes(payload.callerLegOutcome)) {
+      return 'callerLegOutcome must be ENDED or FAILED';
+    }
+    if (payload.calleeLegOutcome !== undefined && !['ENDED', 'FAILED'].includes(payload.calleeLegOutcome)) {
+      return 'calleeLegOutcome must be ENDED or FAILED';
+    }
+    if (!Number.isInteger(payload.authoritativeRecordingSeconds) || payload.authoritativeRecordingSeconds < 0) {
+      return 'authoritativeRecordingSeconds must be a non-negative integer';
+    }
+    for (const key of ['callerLegAnsweredAt', 'calleeLegStartedAt', 'calleeLegAnsweredAt', 'bridgedAt', 'recordingStartedAt', 'recordingEndedAt']) {
+      if (payload[key] !== undefined && typeof payload[key] !== 'string') {
+        return `${key} must be a date-time string`;
+      }
+    }
+    if (eventType === 'CALL_TERMINAL_RECONCILED' && typeof payload.resolvesUnknownEventId !== 'string') {
+      return 'resolvesUnknownEventId is required';
+    }
+  }
+  if (eventType === 'BRIDGE_STARTED' && (typeof payload.callerLegId !== 'string' || typeof payload.calleeLegId !== 'string')) {
+    return 'bridge leg ids must be strings';
+  }
+  return null;
+}
+
+function terminalLegOutcomes(endReason) {
+  if (ENDED_CLASS_REASONS.has(endReason)) {
+    return { caller: 'ENDED', callee: 'ENDED' };
+  }
+  if (endReason === 'BRIDGE_FAILED') {
+    return { caller: 'ENDED', callee: 'ENDED' };
+  }
+  if (endReason === 'CALLER_HANGUP_BEFORE_BRIDGE') {
+    return { caller: 'ENDED', callee: 'FAILED' };
+  }
+  return { caller: 'ENDED', callee: 'FAILED' };
+}
+
 class ProtocolMachine {
   constructor() {
     this.calls = new Map();
+    this.eventReceipts = new Map();
+    this.outbox = new Map();
+    this.sequenceIndex = new Map();
+    this.activeDelivery = {};
     this.counts = {
       callsCreated: 0,
       sessionsCreated: 0,
@@ -712,10 +1078,932 @@ class ProtocolMachine {
       purchaseOrdersCreated: 0,
       operatorIntegrations: 0
     };
+    this.executionCounts = {
+      eventsReceived: 0,
+      eventsApplied: 0,
+      eventsIgnored: 0,
+      eventsQuarantined: 0,
+      eventsConflicted: 0,
+      eventsReplayed: 0,
+      blegOperationsCreated: 0,
+      lineAttempts: 0,
+      redialAttempts: 0,
+      terminalFactsAccepted: 0,
+      unknownFacts: 0,
+      settlements: 0,
+      releases: 0,
+      reconciling: 0,
+      reconciliations: 0,
+      usageFacts: 0,
+      outboxEntries: 0,
+      outboxAcked: 0,
+      outboxPermanent: 0,
+      outboxRetried: 0
+    };
   }
 
   countSnapshot() {
     return { ...this.counts };
+  }
+
+  executionCountSnapshot() {
+    return { ...this.counts, ...this.executionCounts };
+  }
+
+  projectExecution(callId) {
+    const call = this.calls.get(callId);
+    const outbox = [...this.outbox.values()]
+      .filter((entry) => entry.callId === callId)
+      .sort((left, right) => (left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0))
+      .map((entry) => ({ eventId: entry.eventId, eventType: entry.eventType, status: entry.status }));
+    if (!call) {
+      return { call: null, bleg: null, outbox };
+    }
+    const legs = [...call.legs.values()]
+      .sort((left, right) => (left.legId < right.legId ? -1 : left.legId > right.legId ? 1 : 0))
+      .map((leg) => ({
+        legId: leg.legId,
+        role: leg.role,
+        state: leg.state,
+        answeredAt: leg.answeredAt,
+        endedAt: leg.endedAt,
+        endReason: leg.endReason
+      }));
+    return {
+      call: {
+        exists: true,
+        status: call.status,
+        sessionStatus: call.sessionStatus,
+        task: call.task ? { taskId: call.task.taskId, status: call.task.status } : null,
+        reservation: call.reservation ? { reservationId: call.reservation.reservationId, status: call.reservation.status } : null,
+        endedAt: call.endedAt,
+        endReason: call.endReason,
+        authoritativeSeconds: call.authoritativeSeconds,
+        bridgedAt: call.bridgedAt,
+        recordingStartedAt: call.recordingStartedAt,
+        recordingEndedAt: call.recordingEndedAt,
+        unknownEventId: call.unknownEventId,
+        reconciliationEventId: call.reconciliationEventId,
+        terminalEventId: call.terminalEventId,
+        legs
+      },
+      bleg: call.bleg ? {
+        decisionId: call.bleg.decisionId,
+        reservationId: call.bleg.reservationId,
+        authorizationExpiresAt: call.bleg.authorizationExpiresAt,
+        lineAttemptCount: call.bleg.lineAttemptCount,
+        phase: call.bleg.phase,
+        dispatchMarker: call.bleg.dispatchMarker,
+        terminalEventId: call.bleg.terminalEventId
+      } : null,
+      outbox
+    };
+  }
+
+  eventFingerprint(callId, body) {
+    return sha256(canonicalJson({
+      callId,
+      eventId: body.eventId,
+      eventType: body.eventType,
+      legId: body.legId ?? null,
+      sequenceNo: body.sequenceNo ?? null,
+      occurredAt: body.occurredAt,
+      payload: body.payload
+    }));
+  }
+
+  touchOutbox(callId, body) {
+    const eventId = body.eventId;
+    let entry = this.outbox.get(eventId);
+    if (!entry) {
+      entry = {
+        eventId,
+        callId,
+        eventType: body.eventType,
+        status: 'PENDING',
+        fingerprint: this.eventFingerprint(callId, body)
+      };
+      this.outbox.set(eventId, entry);
+      this.executionCounts.outboxEntries += 1;
+    } else {
+      this.executionCounts.outboxRetried += 1;
+    }
+    return entry;
+  }
+
+  finishOutbox(entry, httpStatus) {
+    if (this.activeDelivery?.responseLost === true) {
+      entry.status = 'SENT';
+      return;
+    }
+    if (httpStatus >= 200 && httpStatus < 300) {
+      if (entry.status !== 'ACKED') {
+        entry.status = 'ACKED';
+        this.executionCounts.outboxAcked += 1;
+      }
+      return;
+    }
+    if (OUTBOX_PERMANENT_HTTP.has(httpStatus)) {
+      if (entry.status !== 'PERMANENT_FAILURE') {
+        entry.status = 'PERMANENT_FAILURE';
+        this.executionCounts.outboxPermanent += 1;
+      }
+      return;
+    }
+    entry.status = 'SENT';
+  }
+
+  advanceBleg(call, phases, nextPhase) {
+    if (call.bleg && phases.includes(call.bleg.phase)) {
+      call.bleg.phase = nextPhase;
+    }
+  }
+
+  handleEvent(callId, body, server = {}) {
+    const outboxEntry = this.touchOutbox(callId, body);
+    if (typeof body.eventId !== 'string' || body.eventId.length < 1 || body.eventId.length > 128) {
+      this.finishOutbox(outboxEntry, 422);
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (typeof body.eventType !== 'string' || body.eventType.length < 1 || body.eventType.length > 64) {
+      this.finishOutbox(outboxEntry, 422);
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (typeof body.occurredAt !== 'string') {
+      this.finishOutbox(outboxEntry, 422);
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    if (body.sequenceNo !== undefined && (!Number.isInteger(body.sequenceNo) || body.sequenceNo < 1)) {
+      this.finishOutbox(outboxEntry, 422);
+      return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+    }
+    const row = EXPECTED_EVENT_ROWS.find((item) => item.eventType === body.eventType);
+    if (!row) {
+      this.finishOutbox(outboxEntry, 400);
+      return { status: 400, problem: { code: 'IVR_ARGUMENT_INVALID' } };
+    }
+    if (row.envelopeLegId === 'REQUIRED') {
+      if (typeof body.legId !== 'string' || body.legId.length < 1 || body.legId.length > 64) {
+        this.finishOutbox(outboxEntry, 400);
+        return { status: 400, problem: { code: 'IVR_ARGUMENT_INVALID' } };
+      }
+    } else if (body.legId !== undefined) {
+      this.finishOutbox(outboxEntry, 400);
+      return { status: 400, problem: { code: 'IVR_ARGUMENT_INVALID' } };
+    }
+    if (validateEventPayload(body.eventType, body.payload)) {
+      this.finishOutbox(outboxEntry, 400);
+      return { status: 400, problem: { code: 'IVR_ARGUMENT_INVALID' } };
+    }
+    const fingerprint = this.eventFingerprint(callId, body);
+    const existing = this.eventReceipts.get(body.eventId);
+    if (existing) {
+      if (existing.callId !== callId || existing.fingerprint !== fingerprint) {
+        this.executionCounts.eventsConflicted += 1;
+        this.finishOutbox(outboxEntry, 409);
+        return { status: 409, problem: { code: 'EVENT_ID_CONFLICT' } };
+      }
+      this.executionCounts.eventsReplayed += 1;
+      this.finishOutbox(outboxEntry, 200);
+      return { status: 200, response: existing.response };
+    }
+    const call = this.calls.get(callId);
+    if (!call) {
+      this.finishOutbox(outboxEntry, 404);
+      return { status: 404, problem: { code: 'CALL_UNKNOWN' } };
+    }
+    let sequenceConflict = false;
+    if (body.sequenceNo !== undefined) {
+      const holder = this.sequenceIndex.get(`${callId}:${body.sequenceNo}`);
+      if (holder !== undefined && holder !== body.eventId) {
+        sequenceConflict = true;
+      }
+    }
+    const outcome = this.processEvent(call, body, sequenceConflict);
+    if (outcome.argument === true) {
+      this.finishOutbox(outboxEntry, 400);
+      return { status: 400, problem: { code: 'IVR_ARGUMENT_INVALID' } };
+    }
+    const receipt = {
+      callId,
+      eventId: body.eventId,
+      processingStatus: outcome.status,
+      receivedAt: server.receivedAt || body.occurredAt
+    };
+    if (outcome.reasonCode) {
+      receipt.reasonCode = outcome.reasonCode;
+    }
+    this.eventReceipts.set(body.eventId, { callId, fingerprint, response: receipt });
+    if (body.sequenceNo !== undefined && outcome.status !== 'QUARANTINED') {
+      this.sequenceIndex.set(`${callId}:${body.sequenceNo}`, body.eventId);
+    }
+    this.executionCounts.eventsReceived += 1;
+    if (outcome.status === 'APPLIED') {
+      this.executionCounts.eventsApplied += 1;
+    } else if (outcome.status === 'IGNORED') {
+      this.executionCounts.eventsIgnored += 1;
+    } else {
+      this.executionCounts.eventsQuarantined += 1;
+    }
+    this.finishOutbox(outboxEntry, 200);
+    this.assertExecutionInvariants();
+    return { status: 200, response: receipt };
+  }
+
+  processEvent(call, body, sequenceConflict) {
+    if (sequenceConflict) {
+      return { status: 'QUARANTINED', reasonCode: 'SEQUENCE_CONFLICT' };
+    }
+    switch (body.eventType) {
+      case 'CALLER_LEG_ANSWERED':
+        return this.applyLegEvent(call, body, 'CALLER');
+      case 'CALLEE_LEG_RINGING':
+        return this.applyLegEvent(call, body, 'CALLEE_RINGING');
+      case 'CALLEE_LEG_ANSWERED':
+        return this.applyLegEvent(call, body, 'CALLEE_ANSWERED');
+      case 'BRIDGE_STARTED':
+        return this.applyBridgeEvent(call, body);
+      case 'RECORDING_STARTED':
+        return this.applyRecordingStarted(call, body);
+      case 'RECORDING_ENDED':
+        return this.applyRecordingEnded(call, body);
+      case 'CALL_TERMINATED':
+        return this.applyTerminalEvent(call, body, false);
+      case 'CALL_TERMINATION_UNKNOWN':
+        return this.applyTerminationUnknown(call, body);
+      case 'CALL_TERMINAL_RECONCILED':
+        return this.applyTerminalEvent(call, body, true);
+      case 'OUTBOUND_NOT_STARTED':
+        return this.applyOutboundNotStarted(call, body);
+      case 'CALL_HEARTBEAT':
+        return { status: 'IGNORED', reasonCode: 'HEARTBEAT_IGNORED' };
+      default:
+        return { argument: true };
+    }
+  }
+
+  applyLegEvent(call, body, kind) {
+    const role = kind === 'CALLER' ? 'CALLER' : 'CALLEE';
+    const legId = body.legId;
+    const occurredAt = body.occurredAt;
+    const existing = call.legs.get(legId);
+    if (TERMINAL_CALL_STATUSES.has(call.status)) {
+      const consistent =
+        (kind === 'CALLER' && existing && existing.answeredAt === occurredAt) ||
+        (kind === 'CALLEE_RINGING' && existing && existing.startedAt === occurredAt) ||
+        (kind === 'CALLEE_ANSWERED' && existing && existing.answeredAt === occurredAt);
+      return consistent
+        ? { status: 'IGNORED', reasonCode: 'ALREADY_TERMINAL' }
+        : { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    const sameRole = [...call.legs.values()].find((leg) => leg.role === role && leg.legId !== legId);
+    if (sameRole) {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (kind === 'CALLER') {
+      if (!existing) {
+        call.legs.set(legId, {
+          legId, role, state: 'ANSWERED', startedAt: occurredAt, answeredAt: occurredAt, endedAt: null, endReason: null
+        });
+        return { status: 'APPLIED' };
+      }
+      if (existing.role !== 'CALLER' || existing.answeredAt !== occurredAt) {
+        return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+      }
+      return { status: 'IGNORED' };
+    }
+    if (kind === 'CALLEE_RINGING') {
+      if (!existing) {
+        call.legs.set(legId, {
+          legId, role, state: 'RINGING', startedAt: occurredAt, answeredAt: null, endedAt: null, endReason: null
+        });
+        this.advanceBleg(call, ['DIALING'], 'RINGING');
+        return { status: 'APPLIED' };
+      }
+      if (existing.role !== 'CALLEE') {
+        return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+      }
+      if (existing.state === 'RINGING' && existing.startedAt === occurredAt) {
+        return { status: 'IGNORED' };
+      }
+      if (existing.state === 'ANSWERED' && occurredAt <= existing.answeredAt) {
+        return { status: 'IGNORED' };
+      }
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (!existing) {
+      call.legs.set(legId, {
+        legId, role, state: 'ANSWERED', startedAt: occurredAt, answeredAt: occurredAt, endedAt: null, endReason: null
+      });
+      this.advanceBleg(call, ['DIALING', 'RINGING'], 'ANSWERED');
+      return { status: 'APPLIED' };
+    }
+    if (existing.role !== 'CALLEE') {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (existing.state === 'RINGING') {
+      if (occurredAt < existing.startedAt) {
+        return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+      }
+      existing.state = 'ANSWERED';
+      existing.answeredAt = occurredAt;
+      this.advanceBleg(call, ['DIALING', 'RINGING'], 'ANSWERED');
+      return { status: 'APPLIED' };
+    }
+    if (existing.state === 'ANSWERED' && existing.answeredAt === occurredAt) {
+      return { status: 'IGNORED' };
+    }
+    return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+  }
+
+  applyBridgeEvent(call, body) {
+    const { callerLegId, calleeLegId } = body.payload;
+    const occurredAt = body.occurredAt;
+    const callerLeg = call.legs.get(callerLegId);
+    const calleeLeg = call.legs.get(calleeLegId);
+    if (TERMINAL_CALL_STATUSES.has(call.status)) {
+      return call.bridgedAt === occurredAt
+        ? { status: 'IGNORED', reasonCode: 'ALREADY_TERMINAL' }
+        : { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    if (!callerLeg || !calleeLeg) {
+      return { status: 'QUARANTINED', reasonCode: 'LEG_UNKNOWN' };
+    }
+    if (callerLeg.role !== 'CALLER' || calleeLeg.role !== 'CALLEE') {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (callerLeg.state !== 'ANSWERED' || calleeLeg.state !== 'ANSWERED') {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (occurredAt < callerLeg.answeredAt || occurredAt < calleeLeg.answeredAt) {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (call.bridgedAt !== null) {
+      return call.bridgedAt === occurredAt
+        ? { status: 'IGNORED' }
+        : { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    call.bridgedAt = occurredAt;
+    this.advanceBleg(call, ['ANSWERED'], 'BRIDGED');
+    return { status: 'APPLIED' };
+  }
+
+  applyRecordingStarted(call, body) {
+    const occurredAt = body.occurredAt;
+    if (TERMINAL_CALL_STATUSES.has(call.status)) {
+      return call.recordingStartedAt === occurredAt
+        ? { status: 'IGNORED', reasonCode: 'ALREADY_TERMINAL' }
+        : { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    if (call.bridgedAt === null || occurredAt < call.bridgedAt) {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (call.recordingStartedAt !== null) {
+      return call.recordingStartedAt === occurredAt
+        ? { status: 'IGNORED' }
+        : { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    call.recordingStartedAt = occurredAt;
+    this.advanceBleg(call, ['BRIDGED'], 'RECORDING');
+    return { status: 'APPLIED' };
+  }
+
+  applyRecordingEnded(call, body) {
+    const occurredAt = body.occurredAt;
+    if (TERMINAL_CALL_STATUSES.has(call.status)) {
+      return call.recordingEndedAt === occurredAt
+        ? { status: 'IGNORED', reasonCode: 'ALREADY_TERMINAL' }
+        : { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    if (call.recordingStartedAt === null || occurredAt < call.recordingStartedAt) {
+      return { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (call.recordingEndedAt !== null) {
+      return call.recordingEndedAt === occurredAt
+        ? { status: 'IGNORED' }
+        : { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    call.recordingEndedAt = occurredAt;
+    return { status: 'APPLIED' };
+  }
+
+  terminalFactObject(payload, occurredAt) {
+    return {
+      occurredAt,
+      callerLegId: payload.callerLegId,
+      callerLegOutcome: payload.callerLegOutcome,
+      calleeLegId: payload.calleeLegId ?? null,
+      calleeLegOutcome: payload.calleeLegOutcome ?? null,
+      endReason: payload.endReason,
+      authoritativeRecordingSeconds: payload.authoritativeRecordingSeconds,
+      callerLegAnsweredAt: payload.callerLegAnsweredAt ?? null,
+      calleeLegStartedAt: payload.calleeLegStartedAt ?? null,
+      calleeLegAnsweredAt: payload.calleeLegAnsweredAt ?? null,
+      bridgedAt: payload.bridgedAt ?? null,
+      recordingStartedAt: payload.recordingStartedAt ?? null,
+      recordingEndedAt: payload.recordingEndedAt ?? null
+    };
+  }
+
+  validateTerminalFacts(call, payload, occurredAt) {
+    const outcomes = terminalLegOutcomes(payload.endReason);
+    if (payload.callerLegOutcome !== outcomes.caller) {
+      return 'CONTRADICTORY_FACT';
+    }
+    if (payload.calleeLegOutcome !== undefined && payload.calleeLegOutcome !== outcomes.callee) {
+      return 'CONTRADICTORY_FACT';
+    }
+    const callerExisting = call.legs.get(payload.callerLegId);
+    if (callerExisting) {
+      if (callerExisting.role !== 'CALLER') {
+        return 'CONTRADICTORY_FACT';
+      }
+      if (payload.callerLegAnsweredAt !== undefined && callerExisting.answeredAt !== payload.callerLegAnsweredAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      if (!callerExisting.answeredAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+    } else if (payload.callerLegAnsweredAt === undefined) {
+      return 'CONTRADICTORY_FACT';
+    }
+    const otherCaller = [...call.legs.values()].find((leg) => leg.role === 'CALLER' && leg.legId !== payload.callerLegId);
+    if (otherCaller) {
+      return 'CONTRADICTORY_FACT';
+    }
+    const callerAnsweredAt = callerExisting ? callerExisting.answeredAt : payload.callerLegAnsweredAt;
+    const existingCallee = [...call.legs.values()].find((leg) => leg.role === 'CALLEE');
+    if (existingCallee && payload.calleeLegId !== existingCallee.legId) {
+      return 'CONTRADICTORY_FACT';
+    }
+    let calleeStartedAt = null;
+    let calleeAnsweredAt = null;
+    if (payload.calleeLegId !== undefined) {
+      const calleeExisting = call.legs.get(payload.calleeLegId);
+      if (calleeExisting) {
+        if (calleeExisting.role !== 'CALLEE') {
+          return 'CONTRADICTORY_FACT';
+        }
+        if (payload.calleeLegStartedAt !== undefined && calleeExisting.startedAt !== payload.calleeLegStartedAt) {
+          return 'CONTRADICTORY_FACT';
+        }
+        if (payload.calleeLegAnsweredAt !== undefined && calleeExisting.answeredAt !== payload.calleeLegAnsweredAt) {
+          return 'CONTRADICTORY_FACT';
+        }
+        calleeStartedAt = calleeExisting.startedAt;
+        calleeAnsweredAt = calleeExisting.answeredAt;
+      } else {
+        if (payload.calleeLegStartedAt === undefined || payload.calleeLegAnsweredAt === undefined) {
+          return 'CONTRADICTORY_FACT';
+        }
+        calleeStartedAt = payload.calleeLegStartedAt;
+        calleeAnsweredAt = payload.calleeLegAnsweredAt;
+      }
+      if (payload.calleeLegOutcome === undefined) {
+        return 'CONTRADICTORY_FACT';
+      }
+      if (calleeAnsweredAt === null) {
+        const unansweredFailure = payload.calleeLegOutcome === 'FAILED' && payload.calleeLegAnsweredAt === undefined;
+        if (!unansweredFailure) {
+          return 'CONTRADICTORY_FACT';
+        }
+      } else if (calleeStartedAt > calleeAnsweredAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+    } else if (payload.calleeLegStartedAt !== undefined || payload.calleeLegAnsweredAt !== undefined || payload.calleeLegOutcome !== undefined) {
+      return 'CONTRADICTORY_FACT';
+    }
+    let bridgedAt = call.bridgedAt;
+    if (payload.bridgedAt !== undefined) {
+      if (call.bridgedAt !== null && call.bridgedAt !== payload.bridgedAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      if (payload.bridgedAt < callerAnsweredAt || payload.bridgedAt > occurredAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      bridgedAt = payload.bridgedAt;
+    }
+    let recordingStartedAt = call.recordingStartedAt;
+    if (payload.recordingStartedAt !== undefined) {
+      if (call.recordingStartedAt !== null && call.recordingStartedAt !== payload.recordingStartedAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      if (bridgedAt === null || payload.recordingStartedAt < bridgedAt || payload.recordingStartedAt > occurredAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      recordingStartedAt = payload.recordingStartedAt;
+    }
+    let recordingEndedAt = call.recordingEndedAt;
+    if (payload.recordingEndedAt !== undefined) {
+      if (call.recordingEndedAt !== null && call.recordingEndedAt !== payload.recordingEndedAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      if (recordingStartedAt === null || payload.recordingEndedAt < recordingStartedAt || payload.recordingEndedAt > occurredAt) {
+        return 'CONTRADICTORY_FACT';
+      }
+      recordingEndedAt = payload.recordingEndedAt;
+    }
+    if (recordingEndedAt !== null && recordingStartedAt === null) {
+      return 'CONTRADICTORY_FACT';
+    }
+    if (payload.authoritativeRecordingSeconds > 0 && recordingStartedAt === null) {
+      return 'CONTRADICTORY_FACT';
+    }
+    if (bridgedAt !== null && callerAnsweredAt > bridgedAt) {
+      return 'CONTRADICTORY_FACT';
+    }
+    return null;
+  }
+
+  settleReservation(call, seconds) {
+    if (!call.reservation) {
+      return;
+    }
+    const authorized = call.reservation.authorizedRecordingSeconds;
+    if (seconds === 0) {
+      if (call.reservation.status !== 'RELEASED') {
+        call.reservation.status = 'RELEASED';
+        call.reservationTerminalCount += 1;
+        this.executionCounts.releases += 1;
+      }
+    } else if (authorized !== null && seconds <= authorized) {
+      if (call.reservation.status !== 'SETTLED') {
+        call.reservation.status = 'SETTLED';
+        call.reservationTerminalCount += 1;
+        this.executionCounts.settlements += 1;
+        call.usageFactCount += 1;
+        if (call.usageFactCount > 1) {
+          throw new Error('more than one usage fact for a call');
+        }
+        this.executionCounts.usageFacts += 1;
+      }
+    } else if (call.reservation.status !== 'RECONCILING') {
+      call.reservation.status = 'RECONCILING';
+      this.executionCounts.reconciling += 1;
+    }
+    if (call.reservationTerminalCount > 1) {
+      throw new Error('more than one reservation terminal transition');
+    }
+  }
+
+  applyTerminalFacts(call, body, reconciled) {
+    const payload = body.payload;
+    const occurredAt = body.occurredAt;
+    const mapping = EXPECTED_TERMINAL_MAPPING[payload.endReason];
+    call.status = mapping.callStatus;
+    call.endedAt = occurredAt;
+    call.endReason = payload.endReason;
+    call.authoritativeSeconds = payload.authoritativeRecordingSeconds;
+    call.terminalEventId = body.eventId;
+    call.terminalAccepted = true;
+    call.terminalFacts = this.terminalFactObject(payload, occurredAt);
+    if (reconciled) {
+      call.reconciliationEventId = body.eventId;
+      this.executionCounts.reconciliations += 1;
+    }
+    const callerExisting = call.legs.get(payload.callerLegId);
+    if (callerExisting) {
+      callerExisting.state = payload.callerLegOutcome;
+      callerExisting.endedAt = occurredAt;
+      callerExisting.endReason = payload.endReason;
+    } else {
+      call.legs.set(payload.callerLegId, {
+        legId: payload.callerLegId,
+        role: 'CALLER',
+        state: payload.callerLegOutcome,
+        startedAt: payload.callerLegAnsweredAt,
+        answeredAt: payload.callerLegAnsweredAt,
+        endedAt: occurredAt,
+        endReason: payload.endReason
+      });
+    }
+    if (payload.calleeLegId !== undefined) {
+      const calleeExisting = call.legs.get(payload.calleeLegId);
+      if (calleeExisting) {
+        calleeExisting.state = payload.calleeLegOutcome;
+        calleeExisting.endedAt = occurredAt;
+        calleeExisting.endReason = payload.endReason;
+        if (payload.calleeLegStartedAt !== undefined) {
+          calleeExisting.startedAt = payload.calleeLegStartedAt;
+        }
+        if (payload.calleeLegAnsweredAt !== undefined) {
+          calleeExisting.answeredAt = payload.calleeLegAnsweredAt;
+        }
+      } else {
+        call.legs.set(payload.calleeLegId, {
+          legId: payload.calleeLegId,
+          role: 'CALLEE',
+          state: payload.calleeLegOutcome,
+          startedAt: payload.calleeLegStartedAt,
+          answeredAt: payload.calleeLegAnsweredAt,
+          endedAt: occurredAt,
+          endReason: payload.endReason
+        });
+      }
+    }
+    if (payload.bridgedAt !== undefined && call.bridgedAt === null) {
+      call.bridgedAt = payload.bridgedAt;
+    }
+    if (payload.recordingStartedAt !== undefined && call.recordingStartedAt === null) {
+      call.recordingStartedAt = payload.recordingStartedAt;
+    }
+    if (payload.recordingEndedAt !== undefined && call.recordingEndedAt === null) {
+      call.recordingEndedAt = payload.recordingEndedAt;
+    }
+    this.executionCounts.terminalFactsAccepted += 1;
+    if (call.bleg) {
+      call.bleg.phase = call.status === 'ENDED' ? 'ENDED' : 'FAILED';
+      call.bleg.terminalEventId = body.eventId;
+    }
+    this.settleReservation(call, payload.authoritativeRecordingSeconds);
+    if (call.task) {
+      call.task.status = mapping.taskStatus;
+    }
+  }
+
+  applyTerminalEvent(call, body, reconciled) {
+    const payload = body.payload;
+    if (reconciled) {
+      if (typeof payload.resolvesUnknownEventId !== 'string') {
+        return { argument: true };
+      }
+      if (call.status !== 'UNKNOWN') {
+        return { status: 'QUARANTINED', reasonCode: 'NOT_UNKNOWN' };
+      }
+      if (call.unknownEventId === null || payload.resolvesUnknownEventId !== call.unknownEventId) {
+        return { argument: true };
+      }
+    }
+    if (call.terminalAccepted) {
+      return this.terminalFactsMatch(call, payload, body.occurredAt)
+        ? { status: 'IGNORED', reasonCode: 'ALREADY_TERMINAL' }
+        : { status: 'QUARANTINED', reasonCode: 'CONTRADICTORY_FACT' };
+    }
+    if (call.status === 'UNKNOWN' && !reconciled) {
+      return { status: 'QUARANTINED', reasonCode: 'USE_RECONCILIATION_EVENT' };
+    }
+    if (call.status !== 'ACTIVE' && call.status !== 'UNKNOWN') {
+      return { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    const contradiction = this.validateTerminalFacts(call, payload, body.occurredAt);
+    if (contradiction) {
+      return { status: 'QUARANTINED', reasonCode: contradiction };
+    }
+    this.applyTerminalFacts(call, body, reconciled);
+    return { status: 'APPLIED' };
+  }
+
+  terminalFactsMatch(call, payload, occurredAt) {
+    return deepEqual(call.terminalFacts, this.terminalFactObject(payload, occurredAt));
+  }
+
+  applyTerminationUnknown(call, body) {
+    if (call.terminalAccepted) {
+      return { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    if (call.status === 'UNKNOWN') {
+      return { status: 'IGNORED', reasonCode: 'ALREADY_TERMINAL' };
+    }
+    if (call.status !== 'ACTIVE') {
+      return { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    call.status = 'UNKNOWN';
+    call.endedAt = null;
+    call.authoritativeSeconds = null;
+    call.endReason = 'LINE_OUTCOME_UNKNOWN';
+    call.unknownEventId = body.eventId;
+    this.executionCounts.unknownFacts += 1;
+    if (call.bleg && !['DISPATCH_UNKNOWN', 'FAILED', 'ENDED', 'AUTHORIZATION_EXPIRED'].includes(call.bleg.phase)) {
+      call.bleg.phase = 'DISPATCH_UNKNOWN';
+    }
+    return { status: 'APPLIED' };
+  }
+
+  applyOutboundNotStarted(call, body) {
+    if (call.terminalAccepted) {
+      return { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    if (call.status === 'UNKNOWN') {
+      return { status: 'QUARANTINED', reasonCode: 'USE_RECONCILIATION_EVENT' };
+    }
+    if (call.status !== 'ACTIVE') {
+      return { status: 'QUARANTINED', reasonCode: 'CALL_TERMINAL' };
+    }
+    if (!call.reservation) {
+      return { argument: true };
+    }
+    if (body.payload.reservationId !== undefined && body.payload.reservationId !== call.reservation.reservationId) {
+      return { argument: true };
+    }
+    const calleeLeg = [...call.legs.values()].find((leg) => leg.role === 'CALLEE');
+    const blegActive = call.bleg && !['PREPARED', 'NOT_DISPATCHED', 'AUTHORIZATION_EXPIRED'].includes(call.bleg.phase);
+    if (calleeLeg || call.bridgedAt !== null || call.recordingStartedAt !== null || (call.bleg && call.bleg.lineAttemptCount > 0) || blegActive) {
+      return { status: 'QUARANTINED', reasonCode: 'OUTBOUND_ALREADY_STARTED' };
+    }
+    if (body.occurredAt < call.reservation.authorizationExpiresAt) {
+      return { status: 'QUARANTINED', reasonCode: 'AUTHORIZATION_NOT_EXPIRED' };
+    }
+    call.status = 'FAILED';
+    call.endedAt = body.occurredAt;
+    call.endReason = 'AUTHORIZATION_EXPIRED';
+    call.authoritativeSeconds = 0;
+    call.terminalEventId = body.eventId;
+    call.terminalAccepted = true;
+    this.executionCounts.terminalFactsAccepted += 1;
+    if (call.task) {
+      call.task.status = 'FAILED';
+    }
+    call.reservation.status = 'RELEASED';
+    call.reservationTerminalCount += 1;
+    this.executionCounts.releases += 1;
+    if (call.bleg) {
+      call.bleg.phase = 'AUTHORIZATION_EXPIRED';
+      call.bleg.terminalEventId = body.eventId;
+    }
+    return { status: 'APPLIED' };
+  }
+
+  localBlegPrepare(callId) {
+    const call = this.calls.get(callId);
+    if (!call) {
+      return { status: 409, code: 'CALL_UNKNOWN' };
+    }
+    if (call.bleg) {
+      this.executionCounts.redialAttempts += 1;
+      return { status: 409, code: 'BLEG_OPERATION_EXISTS' };
+    }
+    if (!call.reservation) {
+      return { status: 409, code: 'NO_AUTHORIZATION' };
+    }
+    let decision = null;
+    for (const purpose of ['DIRECT_AUTHORIZATION', 'ACTIVATION_NEXT_ACTION', 'INBOUND_RESOLVE']) {
+      const frozen = call.decisions.get(purpose);
+      if (!frozen) {
+        continue;
+      }
+      if (frozen.response.action === 'DIAL_TASK_CALLEE' || (frozen.response.purpose === 'DIRECT_AUTHORIZATION' && frozen.response.action === null)) {
+        decision = frozen.response;
+        break;
+      }
+    }
+    if (!decision) {
+      return { status: 409, code: 'NO_AUTHORIZATION' };
+    }
+    const callee = decision.task?.calleeNumber || decision.authorization?.calleeNumber;
+    if (!callee) {
+      return { status: 409, code: 'NO_AUTHORIZATION' };
+    }
+    call.bleg = {
+      decisionId: decision.decisionId,
+      reservationId: call.reservation.reservationId,
+      authorizationExpiresAt: decision.authorizationExpiresAt,
+      frozenCalleeDigest: sha256(callee),
+      lineAttemptCount: 0,
+      phase: 'PREPARED',
+      dispatchMarker: null,
+      terminalEventId: null
+    };
+    this.executionCounts.blegOperationsCreated += 1;
+    return { status: 200 };
+  }
+
+  localBlegDispatch(callId, body) {
+    const call = this.calls.get(callId);
+    if (!call?.bleg) {
+      return { status: 409, code: 'BLEG_MISSING' };
+    }
+    if (call.bleg.lineAttemptCount > 0 || call.bleg.phase !== 'PREPARED') {
+      this.executionCounts.redialAttempts += 1;
+      return { status: 409, code: 'REDIAL_FORBIDDEN' };
+    }
+    if (typeof body.now !== 'string' || body.now >= call.bleg.authorizationExpiresAt) {
+      return { status: 409, code: 'AUTHORIZATION_EXPIRED' };
+    }
+    call.bleg.phase = 'DISPATCHING';
+    call.bleg.dispatchMarker = `dispatch:${callId}`;
+    return { status: 200 };
+  }
+
+  localLineOutcome(callId, body) {
+    const call = this.calls.get(callId);
+    if (!call?.bleg) {
+      return { status: 409, code: 'BLEG_MISSING' };
+    }
+    if (call.bleg.phase !== 'DISPATCHING') {
+      this.executionCounts.redialAttempts += 1;
+      return { status: 409, code: call.bleg.lineAttemptCount > 0 ? 'REDIAL_FORBIDDEN' : 'BLEG_STATE_INVALID' };
+    }
+    if (!['ACCEPTED', 'UNKNOWN', 'FAILED'].includes(body.outcome)) {
+      return { status: 409, code: 'INVALID_LINE_OUTCOME' };
+    }
+    call.bleg.lineAttemptCount = 1;
+    this.executionCounts.lineAttempts += 1;
+    if (body.outcome === 'ACCEPTED') {
+      call.bleg.phase = 'DIALING';
+    } else if (body.outcome === 'UNKNOWN') {
+      call.bleg.phase = 'DISPATCH_UNKNOWN';
+    } else {
+      call.bleg.phase = 'FAILED';
+    }
+    return { status: 200 };
+  }
+
+  localBlegReconcile(callId, body) {
+    const call = this.calls.get(callId);
+    if (!call?.bleg) {
+      return { status: 409, code: 'BLEG_MISSING' };
+    }
+    if (!['DISPATCHING', 'DISPATCH_UNKNOWN'].includes(call.bleg.phase)) {
+      this.executionCounts.redialAttempts += 1;
+      return { status: 409, code: 'REDIAL_FORBIDDEN' };
+    }
+    if (body.authoritative === 'NO_ATTEMPT') {
+      call.bleg.lineAttemptCount = 0;
+      call.bleg.phase = 'NOT_DISPATCHED';
+      if (typeof body.now === 'string' && body.now < call.bleg.authorizationExpiresAt) {
+        call.bleg.phase = 'PREPARED';
+      } else {
+        call.bleg.phase = 'AUTHORIZATION_EXPIRED';
+      }
+      return { status: 200 };
+    }
+    if (!['ATTEMPTED', 'IN_PROGRESS', 'ANSWERED', 'COMPLETED'].includes(body.authoritative)) {
+      return { status: 409, code: 'INVALID_LINE_EVIDENCE' };
+    }
+    if (call.bleg.lineAttemptCount === 0) {
+      call.bleg.lineAttemptCount = 1;
+      this.executionCounts.lineAttempts += 1;
+    }
+    if (body.authoritative === 'ATTEMPTED' || body.authoritative === 'IN_PROGRESS') {
+      call.bleg.phase = 'DIALING';
+    } else if (body.authoritative === 'ANSWERED') {
+      call.bleg.phase = 'ANSWERED';
+    } else {
+      call.bleg.phase = 'ENDED';
+    }
+    return { status: 200 };
+  }
+
+  localBlegExpire(callId, body) {
+    const call = this.calls.get(callId);
+    if (!call?.bleg) {
+      return { status: 409, code: 'BLEG_MISSING' };
+    }
+    if (call.bleg.lineAttemptCount !== 0 || !['PREPARED', 'NOT_DISPATCHED'].includes(call.bleg.phase)) {
+      return { status: 409, code: 'REDIAL_FORBIDDEN' };
+    }
+    if (typeof body.now !== 'string' || body.now < call.bleg.authorizationExpiresAt) {
+      return { status: 409, code: 'AUTHORIZATION_NOT_EXPIRED' };
+    }
+    call.bleg.phase = 'AUTHORIZATION_EXPIRED';
+    return { status: 200 };
+  }
+
+  handleLocal(operation, callId, body) {
+    let result;
+    if (operation === 'bleg.prepare') {
+      result = this.localBlegPrepare(callId);
+    } else if (operation === 'bleg.dispatch') {
+      result = this.localBlegDispatch(callId, body);
+    } else if (operation === 'bleg.reconcile') {
+      result = this.localBlegReconcile(callId, body);
+    } else if (operation === 'bleg.expire') {
+      result = this.localBlegExpire(callId, body);
+    } else if (operation === 'ivr.restart') {
+      result = { status: 200 };
+    } else {
+      throw new Error(`unknown local operation ${operation}`);
+    }
+    this.assertExecutionInvariants();
+    return result;
+  }
+
+  handleLineOutcome(callId, body) {
+    const result = this.localLineOutcome(callId, body);
+    this.assertExecutionInvariants();
+    return result;
+  }
+
+  assertExecutionInvariants() {
+    for (const call of this.calls.values()) {
+      if (call.bleg && call.bleg.lineAttemptCount !== 0 && call.bleg.lineAttemptCount !== 1) {
+        throw new Error('lineAttemptCount must be 0 or 1');
+      }
+      if (call.status === 'UNKNOWN') {
+        if (call.endedAt !== null || call.authoritativeSeconds !== null) {
+          throw new Error('UNKNOWN call must keep ended_at and authoritative seconds null');
+        }
+        if (call.reservation && ['SETTLED', 'RELEASED'].includes(call.reservation.status)) {
+          throw new Error('UNKNOWN call must not release or settle its reservation');
+        }
+      }
+      if (call.reservationTerminalCount > 1) {
+        throw new Error('reservation terminal transition happened more than once');
+      }
+      if (call.usageFactCount > 1) {
+        throw new Error('more than one usage fact for a call');
+      }
+    }
   }
 
   projectCall(callId) {
@@ -927,13 +2215,29 @@ class ProtocolMachine {
       callerBindingId: server.callerBindingId ?? null,
       nodeId: server.nodeId,
       promptVersion: body.promptVersion ?? null,
+      status: 'ACTIVE',
       sessionStatus: 'RECEIVED',
       task: null,
       reservation: null,
       decisions: new Map(),
       decisionOrder: [],
       trialGrants: 0,
-      activationConfirmations: 0
+      activationConfirmations: 0,
+      legs: new Map(),
+      bridgedAt: null,
+      recordingStartedAt: null,
+      recordingEndedAt: null,
+      endedAt: null,
+      endReason: null,
+      authoritativeSeconds: null,
+      unknownEventId: null,
+      reconciliationEventId: null,
+      terminalEventId: null,
+      terminalAccepted: false,
+      terminalFacts: null,
+      bleg: null,
+      reservationTerminalCount: 0,
+      usageFactCount: 0
     };
     this.calls.set(callId, call);
     this.counts.callsCreated += 1;
@@ -953,7 +2257,12 @@ class ProtocolMachine {
         calleeNumber: server.task.calleeNumber
       };
       call.task = { taskId: server.task.taskId, status: 'CLAIMED' };
-      call.reservation = { reservationId: server.reservationId, status: 'HELD' };
+      call.reservation = {
+        reservationId: server.reservationId,
+        status: 'HELD',
+        authorizedRecordingSeconds: server.entitlement?.authorizedRecordingSeconds ?? null,
+        authorizationExpiresAt: server.entitlement?.authorizationExpiresAt ?? null
+      };
       reservationId = server.reservationId;
       this.counts.tasksClaimed += 1;
       this.counts.reservationsCreated += 1;
@@ -1038,7 +2347,12 @@ class ProtocolMachine {
         calleeNumber: server.task.calleeNumber
       };
       call.task = { taskId: server.task.taskId, status: 'CLAIMED' };
-      call.reservation = { reservationId: server.reservationId, status: 'HELD' };
+      call.reservation = {
+        reservationId: server.reservationId,
+        status: 'HELD',
+        authorizedRecordingSeconds: server.entitlement?.authorizedRecordingSeconds ?? null,
+        authorizationExpiresAt: server.entitlement?.authorizationExpiresAt ?? null
+      };
       reservationId = server.reservationId;
       this.counts.tasksClaimed += 1;
       this.counts.reservationsCreated += 1;
@@ -1108,7 +2422,12 @@ class ProtocolMachine {
       throw new Error('direct success requires reservationId and decisionId');
     }
     server.confirmedDirectCallee = body.callee;
-    call.reservation = { reservationId: server.reservationId, status: 'HELD' };
+    call.reservation = {
+      reservationId: server.reservationId,
+      status: 'HELD',
+      authorizedRecordingSeconds: server.entitlement?.authorizedRecordingSeconds ?? null,
+      authorizationExpiresAt: server.entitlement?.authorizationExpiresAt ?? null
+    };
     this.counts.reservationsCreated += 1;
     this.counts.directConfirmations += 1;
     const response = this.buildDecision({
@@ -1136,12 +2455,16 @@ class ProtocolMachine {
     return null;
   }
 
-  handle(operation, callId, body, server) {
+  handle(operation, callId, body, server, delivery = {}) {
+    this.activeDelivery = delivery || {};
     let result;
     if (operation === 'resolveIvrInbound') {
       const allowed = ['callId', 'purpose', 'protocolVersion', 'promptVersion'];
       if (Object.keys(body).some((key) => !allowed.includes(key))) {
         return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+      }
+      if (this.activeDelivery.commitFailure === true) {
+        return { status: 503, problem: { code: 'SERVICE_UNAVAILABLE' } };
       }
       result = this.handleResolve(body, server);
     } else if (operation === 'confirmIvrActivation') {
@@ -1156,10 +2479,17 @@ class ProtocolMachine {
         return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
       }
       result = this.handleDirect(callId, body, server);
+    } else if (operation === 'ingestIvrCallEvent') {
+      const allowed = ['eventId', 'eventType', 'legId', 'sequenceNo', 'occurredAt', 'payload'];
+      if (Object.keys(body).some((key) => !allowed.includes(key))) {
+        return { status: 422, problem: { code: 'VALIDATION_FAILED' } };
+      }
+      result = this.handleEvent(callId, body, server);
     } else {
-      throw new Error(`operation ${operation} is not an S1 decision operation`);
+      throw new Error(`operation ${operation} is not an S2 fixture operation`);
     }
     this.assertInvariants();
+    this.assertExecutionInvariants();
     return result;
   }
 }
@@ -1230,6 +2560,9 @@ function validateFixture(fixture, expectedSlice, counters, issues) {
     counters.failed += 1;
     issues.push(`${fixtureLabel}: invalid schemaVersion, slice, description or steps`);
     return false;
+  }
+  if (fixture.slice === 's2') {
+    return validateS2Fixture(fixture, counters, issues);
   }
   const machine = new ProtocolMachine();
   const records = new Map();
@@ -1330,6 +2663,175 @@ function validateFixture(fixture, expectedSlice, counters, issues) {
       const counts = machine.countSnapshot();
       if (!deepEqual(step.expected.counts, counts)) {
         throw new Error('fact counts mismatch');
+      }
+      records.set(step.id, { response: result.response });
+    } catch (error) {
+      fixtureOk = false;
+      issues.push(`${stepLabel}: ${error.message}`);
+    }
+  }
+  if (fixtureOk) {
+    counters.passed += 1;
+  } else {
+    counters.failed += 1;
+  }
+  return fixtureOk;
+}
+
+function validateReceiptShape(receipt) {
+  if (receipt === null || typeof receipt !== 'object' || Array.isArray(receipt)) {
+    throw new Error('event receipt must be an object');
+  }
+  for (const key of ['callId', 'eventId', 'processingStatus', 'receivedAt']) {
+    if (!Object.prototype.hasOwnProperty.call(receipt, key)) {
+      throw new Error(`event receipt missing ${key}`);
+    }
+  }
+  if (!['APPLIED', 'QUARANTINED', 'IGNORED'].includes(receipt.processingStatus)) {
+    throw new Error(`unexpected processingStatus ${receipt.processingStatus}`);
+  }
+  if (typeof receipt.receivedAt !== 'string') {
+    throw new Error('event receipt receivedAt must be a string');
+  }
+}
+
+function validateS2Fixture(fixture, counters, issues) {
+  const fixtureLabel = fixture.id;
+  const machine = new ProtocolMachine();
+  const records = new Map();
+  const requestOperations = new Set(['resolveIvrInbound', 'confirmIvrActivation', 'authorizeIvrDirectOutbound', 'ingestIvrCallEvent']);
+  const localOperations = new Set(['bleg.prepare', 'bleg.dispatch', 'bleg.reconcile', 'bleg.expire', 'ivr.restart']);
+  let fixtureOk = true;
+  for (const [index, step] of fixture.steps.entries()) {
+    const stepLabel = `${fixtureLabel}#${index + 1}`;
+    try {
+      if (step === null || typeof step !== 'object' || Array.isArray(step)) {
+        throw new Error('step is not an object');
+      }
+      if (typeof step.id !== 'string' || step.id.length === 0 || records.has(step.id)) {
+        throw new Error('step id must be unique and non-empty');
+      }
+      const action = step.action;
+      if (!['request', 'local', 'lineOutcome', 'restart', 'assert'].includes(action)) {
+        throw new Error(`unsupported step action ${action}`);
+      }
+      const expectedKeys = ['status', 'response', 'code', 'responseEqualsStep', 'persisted', 'counts'];
+      if (step.expected === null || typeof step.expected !== 'object' || Array.isArray(step.expected)) {
+        throw new Error('expected must be an object');
+      }
+      for (const key of Object.keys(step.expected)) {
+        if (!expectedKeys.includes(key)) {
+          throw new Error(`unknown expected key ${key}`);
+        }
+      }
+      if (typeof step.expected.status !== 'number' || !step.expected.persisted || !step.expected.counts) {
+        throw new Error('expected must include status, persisted and counts');
+      }
+      const allowedKeys = action === 'request' && step.delivery !== undefined
+        ? ['id', 'action', 'operation', 'body', 'server', 'expected', 'delivery']
+        : action === 'request'
+          ? ['id', 'action', 'operation', 'body', 'server', 'expected']
+          : action === 'local'
+            ? ['id', 'action', 'operation', 'body', 'expected']
+            : ['id', 'action', 'body', 'expected'];
+      if (!deepEqual(Object.keys(step).sort(), [...allowedKeys].sort())) {
+        throw new Error(`step keys must be ${allowedKeys.join(',')}`);
+      }
+      if (step.body === null || typeof step.body !== 'object' || Array.isArray(step.body)) {
+        throw new Error('body must be an object');
+      }
+      const targetCallId = step.body.callId || step.server?.callId;
+      if (!targetCallId) {
+        throw new Error('step must identify the target call through body.callId');
+      }
+      let result;
+      if (action === 'request') {
+        if (!requestOperations.has(step.operation)) {
+          throw new Error(`S2 fixtures may call only decision and call-event operations, got ${step.operation}`);
+        }
+        if (step.server === null || typeof step.server !== 'object' || Array.isArray(step.server)) {
+          throw new Error('server context must be an object');
+        }
+        const bodyRequirements = {
+          resolveIvrInbound: ['callId', 'purpose', 'protocolVersion'],
+          confirmIvrActivation: ['eventId', 'policyCode', 'policyVersion', 'promptVersion', 'contentSha256', 'decision'],
+          authorizeIvrDirectOutbound: ['eventId', 'callee', 'promptVersion', 'confirmationKey', 'confirmationContent'],
+          ingestIvrCallEvent: ['eventId', 'eventType', 'occurredAt', 'payload']
+        };
+        for (const key of bodyRequirements[step.operation]) {
+          if (!(key in step.body)) {
+            throw new Error(`body is missing ${key}`);
+          }
+        }
+        let delivery = {};
+        if (step.delivery !== undefined) {
+          if (step.delivery === null || typeof step.delivery !== 'object' || Array.isArray(step.delivery)) {
+            throw new Error('delivery must be an object');
+          }
+          for (const key of Object.keys(step.delivery)) {
+            if (!['responseLost', 'commitFailure'].includes(key)) {
+              throw new Error(`unknown delivery key ${key}`);
+            }
+            if (typeof step.delivery[key] !== 'boolean') {
+              throw new Error(`delivery.${key} must be boolean`);
+            }
+          }
+          delivery = step.delivery;
+        }
+        result = machine.handle(step.operation, targetCallId, step.body, step.server, delivery);
+      } else if (action === 'local') {
+        if (!localOperations.has(step.operation)) {
+          throw new Error(`unknown local operation ${step.operation}`);
+        }
+        result = machine.handleLocal(step.operation, targetCallId, step.body);
+      } else if (action === 'lineOutcome') {
+        result = machine.handleLineOutcome(targetCallId, step.body);
+      } else {
+        result = { status: 200 };
+      }
+      if (result.status !== step.expected.status) {
+        throw new Error(`status ${result.status} != expected ${step.expected.status}`);
+      }
+      const actualCode = result.problem?.code ?? result.code;
+      if (step.expected.code !== undefined) {
+        if (actualCode !== step.expected.code) {
+          throw new Error(`code ${actualCode} != expected ${step.expected.code}`);
+        }
+      } else if (actualCode !== undefined) {
+        throw new Error(`unexpected code ${actualCode}`);
+      }
+      if (action === 'request' && result.status === 200) {
+        if (step.operation === 'ingestIvrCallEvent') {
+          validateReceiptShape(result.response);
+        } else {
+          const purpose = step.operation === 'resolveIvrInbound' ? 'INBOUND_RESOLVE' : step.operation === 'confirmIvrActivation' ? 'ACTIVATION_NEXT_ACTION' : 'DIRECT_AUTHORIZATION';
+          validateDecisionShape(result.response, purpose);
+        }
+        if (step.expected.responseEqualsStep !== undefined) {
+          const prior = records.get(step.expected.responseEqualsStep);
+          if (!prior || !prior.response) {
+            throw new Error(`responseEqualsStep ${step.expected.responseEqualsStep} has no prior response`);
+          }
+          if (!deepEqual(result.response, prior.response)) {
+            throw new Error('replayed response does not equal the first frozen response');
+          }
+        } else if (step.expected.response !== undefined) {
+          if (!subsetEqual(step.expected.response, result.response)) {
+            throw new Error('response subset mismatch');
+          }
+        } else {
+          throw new Error('200 request step must assert a response or responseEqualsStep');
+        }
+      } else if (step.expected.response !== undefined || step.expected.responseEqualsStep !== undefined) {
+        throw new Error('non-200 or non-request step must not assert a response');
+      }
+      const persisted = machine.projectExecution(targetCallId);
+      if (!subsetEqual(step.expected.persisted, persisted)) {
+        throw new Error('persisted projection assertion mismatch');
+      }
+      const counts = machine.executionCountSnapshot();
+      if (!subsetEqual(step.expected.counts, counts)) {
+        throw new Error('fact counter assertion mismatch');
       }
       records.set(step.id, { response: result.response });
     } catch (error) {
@@ -1457,6 +2959,13 @@ function main() {
       counters.stage_field_premature += 1;
       issues.push(`model.eventTypes[${index}]: payloadState must be DEFERRED_S2`);
     }
+  }
+  if (args.stage !== 's1') {
+    if (!deepEqual(eventTypes, EXPECTED_EVENT_ROWS)) {
+      counters.stage_field_missing += 1;
+      issues.push('model.eventTypes does not exactly match the frozen S2 four-column event registry');
+    }
+    validateS2Registries(model, counters, issues);
   }
 
   if (!Array.isArray(model.invariants) || model.invariants.length !== 15) {
@@ -1783,7 +3292,12 @@ function main() {
       name: 'protocol-event-map',
       marker: eventMarker,
       header: config.eventDocColumns,
-      expectedRows: (model.eventTypes || []).map((row) => config.eventDocColumns.map((column) => String(row[column]))),
+      expectedRows: (model.eventTypes || []).map((row) => config.eventDocColumns.map((column) => {
+        if (column === 'payloadFields' && Array.isArray(row.payloadFields)) {
+          return row.payloadFields.length === 0 ? '{}' : row.payloadFields.join(',');
+        }
+        return String(row[column]);
+      })),
       label: 'event'
     },
     {
@@ -1892,6 +3406,29 @@ function main() {
   }
   tokens.add('R-A2-A0-TASKID-TYPE');
   tokens.add('task.taskId');
+  if (args.stage !== 's1') {
+    for (const reason of model.endReasons || []) {
+      tokens.add(reason);
+    }
+    for (const reason of model.quarantineReasons || []) {
+      tokens.add(reason);
+    }
+    for (const phase of model.blegOperation?.phases || []) {
+      tokens.add(phase);
+    }
+    for (const state of model.eventOutbox?.states || []) {
+      tokens.add(state);
+    }
+    for (const aggregate of Object.keys(model.stateMachines || {})) {
+      tokens.add(aggregate);
+    }
+    for (const reason of Object.keys(model.stateMachines?.terminalMapping || {})) {
+      tokens.add(reason);
+    }
+    tokens.add('eventRegistry');
+    tokens.add('frozenAt');
+    tokens.add(sha256(canonicalJson(model.eventTypes)));
+  }
   for (const token of [...tokens].sort()) {
     if (!doc.includes(token)) {
       counters.token_missing += 1;
@@ -1960,6 +3497,9 @@ function main() {
   process.stdout.write(`doc_missing=${counters.doc_missing} doc_extra=${counters.doc_extra} doc_duplicate=${counters.doc_duplicate} doc_invalid=${counters.doc_invalid} token_missing=${counters.token_missing}\n`);
   process.stdout.write(`stage_field_missing=${counters.stage_field_missing} stage_field_premature=${counters.stage_field_premature} fixture_id_missing=${counters.fixture_id_missing} fixture_id_extra=${counters.fixture_id_extra}\n`);
   process.stdout.write(`invariants=${invariantCount}\n`);
+  if (args.stage !== 's1') {
+    process.stdout.write(`event_registry_frozen=s2 event_registry_sha256=${sha256(canonicalJson(eventTypes))}\n`);
+  }
   const failed = counters.passed !== fixtureCount
     || counters.failed !== 0
     || counters.doc_missing !== 0
