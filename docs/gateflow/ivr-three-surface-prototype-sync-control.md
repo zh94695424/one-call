@@ -7,7 +7,7 @@
 - Status: active.
 - Base: `origin/main` at `754b7dfc53c277e79c5d63e24d578a93fa557cda`.
 - Branch: `codex/ivr-prototype-sync` in an isolated managed worktree.
-- Current gate / next entry point: `accepted deepreview commit`; aggregate findings AR-01 and AR-02 are closed by independent re-review.
+- Current gate / next entry point: `push`; accepted deepreview commit and Draft PR readiness checks passed.
 - Dispatch protocol: `sub-agents`; DeepSeek authors implementation, fresh MiMo 2.6 Flash reviews.
 
 ## Binding goal confirmation
@@ -47,6 +47,8 @@
 | aggregate deepreview | failed; findings accepted | `docs/reviews/code-review-20261025-121229.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-deepreview-mimo26flash-20261025-02`, exit 0, structured success, empty stderr; verdict `fail` with AR-01 medium and AR-02 low | DeepSeek bounded fix, then fresh MiMo re-review |
 | fix | passed (aggregate return 1) | DeepSeek task `ivr-prototype-sync-aggregate-fix-ds-20261025-01`, exit 0, structured success, empty stderr; implementation artifact `Aggregate deepreview fix 1`; controller observed syntax, 47/47 shared tests, all three full runners, cross-channel, generated equality and visual inspection pass | fresh MiMo re-review of AR-01/AR-02 |
 | re-review | passed | `docs/reviews/code-review-20261025-122653.md`; fresh MiMo 2.6 Flash task `ivr-prototype-sync-aggregate-rereview-mimo26flash-20261025-01`, exit 0, structured success, empty stderr; no findings; AR-01 and AR-02 verified closed | accepted deepreview commit |
+| accepted deepreview commit | passed | `2cc0230`, `gateflow: accept IVR prototype deepreview fixes`; bounded fixes, regenerated copies, review artifacts and one updated workflow screenshot | ready-to-open-draft-PR |
+| ready-to-open-draft-PR | passed | fetched `origin/main` remains `754b7df`; merge-base is `754b7df`; GitHub auth valid; no existing PR for `codex/ivr-prototype-sync`; full branch diff check will be clean after this bookkeeping correction | push |
 
 ## Residual risks
 
@@ -67,6 +69,15 @@
 - AR-01 `closed`: the evidence-ready heading reads the client-owned dialer launch fact, and the real cross-channel unlaunched path is protected by a semantic assertion and inspected screenshot.
 - AR-02 `closed`: ordinary task claim now uses the same ownership tuple as the suspended rejection path; a same-caller foreign pending task fails `REJECT` atomically before claim or DTMF with no task/callee exposure.
 - Gate decision: create the accepted deepreview commit, then evaluate `ready-to-open-draft-PR`.
+
+## Draft PR readiness
+
+- Accepted deepreview commit: `2cc0230` (`gateflow: accept IVR prototype deepreview fixes`).
+- Target repository/base: `zh94695424/one-call`, `main` at `754b7dfc53c277e79c5d63e24d578a93fa557cda`; post-fetch merge-base matches that commit.
+- Head: `codex/ivr-prototype-sync`; no existing open or closed PR uses this head branch.
+- GitHub CLI authentication is active for `zh94695424` with repository access.
+- Required artifacts, tests, generated files and workflow-owned visual evidence are present. Remaining risks have owners: Backend/IVR integration owns production concurrency/telephony/persistence/cloud proof; Product/Legal owns final consent and recording wording.
+- Readiness decision: pass; push the branch, then create a Draft PR against `main`.
 
 ## Plan return notes
 
@@ -123,4 +134,3 @@
 - Validation accepted: call-task tests 15/15, aggregate shared tests 46/46, all three full surface runners, cross-channel, generated equality, syntax and diff checks passed; Web 1440/1024/720 and cross-channel 1280 screenshots were inspected without Toast residue.
 - Nonblocking review notes remain residual risks: this prototype does not prove production concurrency/telephony/cloud behavior; `callerTrusted: false` lacks a direct unit case but was untouched; Product/Legal owns final recording and consent copy.
 - Gate decision: create the accepted slice commit, then enter `aggregate deepreview`.
-
