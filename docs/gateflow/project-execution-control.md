@@ -4,7 +4,7 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/a3-production-security-design-spec`
+> Branch: `codex/a4-production-capacity-deployment-spec`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
@@ -26,6 +26,64 @@ The architecture design defines the authoritative coarse order:
 Before production implementation, section 18 of the design source requires code-ready specifications in this order: data model and initial schema, OpenAPI surfaces, IVR protocol, security design, capacity/deployment sizing, and the production acceptance matrix. These are delivered as bounded work units rather than one oversized implementation phase.
 
 ## Current work unit
+
+- ID: `A4-production-capacity-deployment-spec`
+- Type: architecture-sensitive capacity/deployment specification deliverable.
+- Status: in progress.
+- Base: merged `origin/main` commit `f3bcbd99a6f49cb64977358cea08e028bc634a54` (PR #5 / A3); local `main` was fast-forwarded and this dedicated A4 branch created from the same commit.
+- Current gate / next entry point: `implementation` (S1 implementation slice; accepted plan checkpoint created locally).
+- Design source: `docs/12-technology-stack-and-system-architecture.md` sections 4, 5, 12, 13, 17 and 18 item 5; accepted A0/A1/A2/A3 specifications and contracts remain binding inputs.
+
+### A4 binding goal contract
+
+- Authorization basis: the user reported PR #5 merged; the controller verified GitHub merge state and commit, then clarified that no numeric line concurrency had been approved. The user replied `了解了 你继续任务` on 2026-10-26. This authorizes continuing A4 with explicitly deferred numeric inputs; it does not approve any concurrency, retention, region, SKU, price, SLO or recovery target. The controller restated the parameterized scope and success signal before dispatch.
+- Goal: deliver a parameterized, reviewable capacity/deployment specification for the approved Tencent Cloud + private COS + existing carrier-room IVR architecture, ready to receive real workload measurements and approved operating policies.
+- Success signal: calculations identify their units, input provenance/approval status, formulas, missing prerequisites and limitations; cover IVR call legs versus complete bridged calls, business API load, recording/upload/playback bandwidth, encrypted local spool, stored media/versions/derived data, metadata/audit/queue growth, measured node capacity/failover, and backup/recovery dependencies. Missing production inputs produce an explicit incomplete/deferred result, never a procurement-ready recommendation. Small synthetic examples may test arithmetic but are never approved production values.
+- Deployment outcome: describe placement, trust/network boundaries, the existing media-gateway data path, release/rollback sequence, scaling and validation gates, backup/restore measurements and a capability-check checklist. Define the evidence required to select actual Tencent region/AZ/SKU and verify KMS/Secret Manager/CAM/COS capabilities without claiming those checks already passed.
+- Scope boundary: documentation plus a small dependency-free, deterministic calculation/validation aid and focused fixtures only if useful to verify the sizing formulas. No parallel registry of all A0/A1/A2/A3 contracts, large policy engine, or count-only success assertions. Preserve their ownership, public API/protocol/security semantics and named residual owners/destinations.
+- Non-goals: no cloud procurement/provisioning, live capability verification, production service/Java/UI implementation, migration or public contract changes, IVR replacement, microservice split, Kubernetes, legal-retention decisions, invented production defaults or a claim of production sizing/readiness. Numeric missing inputs are not silently substituted from prototypes or synthetic tests.
+- Open inputs: complete-call concurrency and inbound/outbound/shared line limits; arrival rates and call/ringing durations; real recording format/bitrate/channels; daily volumes and playback/AI load; media/metadata/audit/backup retention; outage-buffer target; measured per-node throughput and resource demand; cloud region/AZ/product capability, unit prices and budget; SLO/RPO/RTO. Owners remain Telephony/IVR, Product/Operations, Infrastructure/Security, Database/Backend and Legal as applicable. These block final production sizing and procurement, not the authorized parameterized specification.
+
+### A4 slice principle
+
+Use the fewest behaviorally verifiable increments warranted by this specification/calculator scope, preferably at most three. Do not mechanically split by file, cloud product or owner. Avoid multiplying gate/report/model scaffolding beyond what is needed to prove dimensional correctness, honest incomplete results and deployment/recovery alignment.
+
+### A4 gate record
+
+| Gate | Status | Artifact / evidence | Decision |
+| --- | --- | --- | --- |
+| preflight | passed | dedicated A4 branch at `f3bcbd99a6f49cb64977358cea08e028bc634a54`; A3 HEAD is an ancestor and its tree equals merged main; pre-existing QA screenshot changes and untracked `docs/reviews/plan-review-20261021-205118.md` are unrelated | preserve and exclude every unrelated path |
+| goal confirmation | passed for parameterized scope | user continuation after explicit concurrency clarification; binding contract above and controller scope restatement | proceed to DeepSeek plan via `sub-agents`; actual production sizing remains dependent on unapproved inputs |
+| plan | author-complete; superseded by fix-2 | initial artifact hash `0516CCBAE334F93A7AF3BCE5EC108CC0260ACA64E30EBD6F43499011343DDB37`; task `a4-capacity-plan-ds-20261026-01`, run `/tmp/sub-agents.a4-plan.zFEhV5`; exit 0, structured `success`, `is_error=false`, `stop_reason=end_turn`, empty stderr | two behavior slices; parameterized scope preserved; initial review required bounded fixes before implementation |
+| plan review 1 | failed; findings adjudicated | `docs/reviews/plan-review-20261026-062330.md`, SHA-256 `63B4F788A019F6D81C2737A043215854C47D27498BA410952B5EA225295A7B94`; task `a4-capacity-planreview-mimo26flash-20261026-01`, run `/tmp/sub-agents.a4-planreview.h3yfwY`; exit 0, structured success, `is_error=false`, `end_turn`, empty stderr | nine numbered findings F-01..F-09; initial reviewer could not read skill, so controller verified findings and provided full skill text for independent fresh re-review |
+| plan fix 1 | completed; superseded by fix 2 | `docs/gateflow/a4-production-capacity-deployment-spec-plan-fix.md`, SHA-256 `E96C0AC66D952890DC3A295B957B55B63543644510D9014767E9819801CDD3E0`; DeepSeek task `a4-capacity-planfix-ds-20261026-01`, run `/tmp/sub-agents.a4-planfix.Ydlx6l`; exit 0, valid structured success, `is_error=false`, `end_turn`, empty stderr; then-current plan hash `D81B6608CBC7582A86FA2FA1AB91ACEE73F4122EFBA6C6C69020BE950B37C9D4` | first fixes addressed F-01..F-09; independent review found five remaining dimensional/contract issues, so no implementation began |
+| plan re-review 1 | failed; findings adjudicated | `docs/reviews/plan-review-20261026-071809.md`, SHA-256 `AE9046B3DB5F081536422F209AB5B9573D1A25443D46E0CF144A9FBC932852D8`; independent MiMo review | five findings N-01..N-05 covering spool snapshot/backlog, scalar/unit rules, AI metrics, payload/wire basis, and root capability constants; bounded fix-2 authorized |
+| plan fix 2 | author-complete; controller checks passed | current plan `docs/gateflow/a4-production-capacity-deployment-spec-plan.md`, SHA-256 `671192F522153C982EB1CFAAABFBC076381D09FCE665D341446BDA703FA68D49`; `docs/gateflow/a4-production-capacity-deployment-spec-plan-fix-2.md`, SHA-256 `809B96217FCE07189248459D5CBF7925486FC41B6644FDD94CF4B3543156FCFF`; DeepSeek bounded fix | all five re-review findings addressed; fresh independent review required before acceptance |
+| plan re-review 2 | passed-with-risks; controller accepted | `docs/reviews/plan-review-20261026-074218.md`, SHA-256 `CFC006C43E18F7A977921304B0288DABBB5B26C302A4B9BEC1B4A09171F74811`; task `a4-capacity-planrereview-mimo26flash-20261026-02`; exit 0, valid JSON, `subtype=success`, `is_error=false`, 28 turns, empty stderr | N-01..N-05 and F-01..F-09 verified fixed; zero new material findings. Three non-blocking implementation interpretations accepted below; proceed to accepted plan checkpoint |
+| accepted plan commit | passed | `gateflow: accept A4 capacity deployment plan`; seven exact plan/fix/review/control paths; staged `git diff --cached --check` passed | proceed to S1 implementation; the unrelated 20261021 review, screenshots and prototype changes remain excluded |
+
+### A4 plan-review adjudication
+
+- F-01 accepted: S1 template/validation covers its seven groups; S2 adds two groups and may update the template; test API/node behavior in the slice that implements it. Assertions prove behavior, not a prescribed fixture count.
+- F-02 accepted: use measured gross recovery upload throughput and subtract contemporaneous continuing production once. Zero backlog drains in zero time; positive backlog with nonpositive net throughput cannot drain. Clarify disk capacity/free-space accounting.
+- F-03 accepted: retain headroom in N-1 arithmetic; restrict linear node multiplication to qualified homogeneous stateless pools. Stateful stores require measured normal/degraded topology capacity; resource evidence cannot be merely echoed and then certify fit. Logical media-gateway shares existing core-api/edge resources.
+- F-04 accepted: explicit typed recovery target/drill fields, valid zero RPO, deterministic `asOf`, distinct missing/excluded outcomes, and target-versus-observation comparisons. Evidence completeness never proves actual recovery.
+- F-05 accepted: explicit measured/derived upload average and peak contracts; codec rate alone is not file-upload speed. Separate payload/wire overhead and catch-up traffic.
+- F-06 accepted: metric-level partial outputs; independent derived retention/version inputs; total all-channel bitrate; legal-hold bytes are incremental outside ordinary totals.
+- F-07 accepted: capability data are caller assertions with provenance/owner/reference/date; no automatic cloud verification or A3 risk closure.
+- F-08 accepted: strict-JSON negatives plus programmatic true JS nonfinite-number probes.
+- F-09 accepted: valid explicit zero traffic yields zero demand; denominator handling belongs only to actual division.
+- Additional directly evidenced contract gaps are bounded corrections to the same success signal: specify per-leaf units/source/owner/approval and collection/output structures; Little's-law means are not guaranteed peak ports; conditional cache math cannot approve a CDN topology; independent AI/task/queue demand and database-overhead limitations remain explicit measured inputs. None selects production values, expands public contracts or adds slices.
+- Re-review 2 open questions 1-3 are accepted as bounded S1 implementation interpretations: retention `days` inputs use non-negative `NonNegativeMeasure` semantics with no new integer or upper-bound rule; report the seven S1 template-group/input-ID mapping from the implemented template without creating a parallel registry; `IDLE_ZERO_DENOMINATOR` returns metric value `0`, status `COMPLETE`, and that reason code. S1 implementation report must confirm each interpretation and tests must cover the zero-denominator behavior.
+- Re-review 2 conclusion is `pass-with-risks`; these interpretations and the production inputs/inherited cloud risks remain explicitly tracked and do not authorize production sizing, procurement, cloud verification, or readiness claims.
+
+### A4 inherited risk handling
+
+- A3 PR #5 was verified MERGED at `f3bcbd99a6f49cb64977358cea08e028bc634a54`; its historical closeout below and in its own artifact remains an immutable account of pre-merge facts.
+- All A3 named residuals remain open with their original owners/destinations until actual evidence closes them. A4 directly maps `R-A3-COS-CAPABILITY`, `R-A3-NO-WORM`, `R-A3-REGION-SKU`, `R-A3-MEDIA-GATEWAY-TRANSPORT` and `R-A3-AUDIT-VOLUME`; legal retention, key recovery and related integration/security residuals remain explicit dependencies. A static checklist or synthetic calculation cannot close a cloud/runtime risk.
+- Repository CI is not configured; independently executed static checks are evidence for this deliverable, not passing production CI, a live cloud test or a performance result.
+
+## Previous work unit: A3
 
 - ID: `A3-production-security-design-spec`
 - Type: architecture-sensitive security specification deliverable.
