@@ -1,0 +1,304 @@
+{
+  "fixtureId": "s1-03-a0-state-shapes",
+  "kind": "A0_STATE_SHAPE",
+  "expectationsList": [
+    {
+      "caseId": "a0-call-record",
+      "aggregate": "Call record",
+      "expected": {
+        "states": [
+          "ACTIVE",
+          "ENDED",
+          "FAILED",
+          "UNKNOWN",
+          "REJECTED"
+        ],
+        "edges": [
+          [
+            "ACTIVE",
+            "ENDED"
+          ],
+          [
+            "ACTIVE",
+            "FAILED"
+          ],
+          [
+            "ACTIVE",
+            "UNKNOWN"
+          ],
+          [
+            "UNKNOWN",
+            "ENDED"
+          ],
+          [
+            "UNKNOWN",
+            "FAILED"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "STANDARD",
+        "attachedNote": "`task_id` is NULL until a successful task claim assigns it exactly once from NULL to that task and is immutable thereafter; an arbitrary relink, task switch or second call is rejected."
+      }
+    },
+    {
+      "caseId": "a0-organization",
+      "aggregate": "Organization",
+      "expected": {
+        "states": [
+          "ACTIVE",
+          "SUSPENDED",
+          "DISABLED"
+        ],
+        "edges": [
+          [
+            "ACTIVE",
+            "DISABLED"
+          ],
+          [
+            "ACTIVE",
+            "SUSPENDED"
+          ],
+          [
+            "SUSPENDED",
+            "ACTIVE"
+          ],
+          [
+            "SUSPENDED",
+            "DISABLED"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "STANDARD"
+      }
+    },
+    {
+      "caseId": "a0-org-membership",
+      "aggregate": "Organization membership",
+      "expected": {
+        "states": [
+          "ACTIVE",
+          "SUSPENDED",
+          "REVOKED"
+        ],
+        "edges": [
+          [
+            "ACTIVE",
+            "REVOKED"
+          ],
+          [
+            "ACTIVE",
+            "SUSPENDED"
+          ],
+          [
+            "SUSPENDED",
+            "ACTIVE"
+          ],
+          [
+            "SUSPENDED",
+            "REVOKED"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "STANDARD"
+      }
+    },
+    {
+      "caseId": "a0-catalog-version",
+      "aggregate": "Catalog version",
+      "expected": {
+        "states": [
+          "DRAFT",
+          "ACTIVE",
+          "OFFSALE"
+        ],
+        "edges": [
+          [
+            "ACTIVE",
+            "OFFSALE"
+          ],
+          [
+            "DRAFT",
+            "ACTIVE"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "STANDARD"
+      }
+    },
+    {
+      "caseId": "a0-customer-order",
+      "aggregate": "Customer order",
+      "expected": {
+        "states": [
+          "UNPAID",
+          "UNKNOWN",
+          "PAID",
+          "CLOSED"
+        ],
+        "edges": [
+          [
+            "UNKNOWN",
+            "CLOSED"
+          ],
+          [
+            "UNKNOWN",
+            "PAID"
+          ],
+          [
+            "UNKNOWN",
+            "UNPAID"
+          ],
+          [
+            "UNPAID",
+            "CLOSED"
+          ],
+          [
+            "UNPAID",
+            "PAID"
+          ],
+          [
+            "UNPAID",
+            "UNKNOWN"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "STANDARD"
+      }
+    },
+    {
+      "caseId": "a0-payment-order",
+      "aggregate": "Payment order",
+      "expected": {
+        "states": [
+          "UNPAID",
+          "UNKNOWN",
+          "PAID",
+          "CLOSED"
+        ],
+        "edges": [
+          [
+            "UNKNOWN",
+            "CLOSED"
+          ],
+          [
+            "UNKNOWN",
+            "PAID"
+          ],
+          [
+            "UNKNOWN",
+            "UNPAID"
+          ],
+          [
+            "UNPAID",
+            "CLOSED"
+          ],
+          [
+            "UNPAID",
+            "PAID"
+          ],
+          [
+            "UNPAID",
+            "UNKNOWN"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "SHARED_EDGE_SET"
+      }
+    },
+    {
+      "caseId": "a0-subject-ownership",
+      "aggregate": "Subject ownership",
+      "expected": {
+        "states": [
+          "(owner null, owner null)",
+          "(account, null)",
+          "(null, organization)"
+        ],
+        "edges": [],
+        "derivedStates": [],
+        "classification": "PROSE_PARENTHESIZED"
+      }
+    },
+    {
+      "caseId": "a0-trial",
+      "aggregate": "Trial",
+      "expected": {
+        "states": [
+          "GRANTED"
+        ],
+        "edges": [],
+        "derivedStates": [
+          "EXHAUSTED",
+          "EXPIRED"
+        ],
+        "classification": "DERIVED_IMMUTABLE"
+      }
+    },
+    {
+      "caseId": "a0-subject-claim",
+      "aggregate": "Subject claim",
+      "expected": {
+        "states": [
+          "ACCEPTED",
+          "REJECTED",
+          "CONFLICT"
+        ],
+        "edges": [],
+        "derivedStates": [],
+        "classification": "INSERT_ONLY"
+      }
+    },
+    {
+      "caseId": "a0-ivr-decision",
+      "aggregate": "IVR decision",
+      "expected": {
+        "states": [],
+        "edges": [],
+        "derivedStates": [],
+        "classification": "FROZEN_RESULT"
+      }
+    },
+    {
+      "caseId": "a0-direct-authorization",
+      "aggregate": "Direct authorization",
+      "expected": {
+        "states": [
+          "NONE",
+          "AUTHORIZED"
+        ],
+        "edges": [
+          [
+            "NONE",
+            "AUTHORIZED"
+          ]
+        ],
+        "derivedStates": [],
+        "classification": "STATE_CELL_ARROW"
+      }
+    },
+    {
+      "caseId": "a0-unknown-arrowless",
+      "aggregate": "Customer account",
+      "negative": true,
+      "mutation": {
+        "allowedStates": "Free prose states only",
+        "transitions": "Free prose transitions only"
+      },
+      "expectedPrimaryCodes": [
+        "A5_A0_STATE_SHAPE_UNRECOGNIZED"
+      ]
+    },
+    {
+      "caseId": "a0-half-state-arrow",
+      "aggregate": "Customer account",
+      "negative": true,
+      "mutation": {
+        "allowedStates": "`ACTIVE`, `DISABLED`",
+        "transitions": "`ACTIVE → PROSE`"
+      },
+      "expectedPrimaryCodes": [
+        "A5_A0_STATE_SHAPE_UNRECOGNIZED"
+      ]
+    }
+  ]
+}

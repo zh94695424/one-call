@@ -1,0 +1,1286 @@
+{
+  "fixtureId": "s1-02-expectation-safety",
+  "kind": "MODEL_MUTATION",
+  "cases": [
+    {
+      "caseId": "terminal-mutation",
+      "mutations": [
+        {
+          "op": "setScenarioState",
+          "scenarioId": "A5-IVR-OUT_OF_ORDER-01",
+          "stepIndex": 1,
+          "expectedState": [
+            {
+              "targetRef": "A2:STATE:call_record",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "ACTIVE",
+              "basisRefs": [
+                "A0:INV:INV-19"
+              ]
+            },
+            {
+              "targetRef": "A2:STATE:usage_reservation",
+              "field": "status",
+              "op": "UNCHANGED",
+              "value": "SETTLED",
+              "basisRefs": [
+                "A0:INV:INV-19"
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_TERMINAL_MUTATION"
+      ]
+    },
+    {
+      "caseId": "post-terminal-business-write",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-IVR-OUT_OF_ORDER-01",
+          "stepIndex": 1,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A2:INV:INV-A2-05"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_TERMINAL_MUTATION"
+      ]
+    },
+    {
+      "caseId": "duplicate-second-settlement",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "stepIndex": 1,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A2:FIX:s2-02-event-duplicate-replay"
+              }
+            ]
+          }
+        },
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "EXACT",
+                "value": 2,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "audit": [],
+            "outbox": [
+              {
+                "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 2,
+                "basisRef": "A2:FIX:s2-02-event-duplicate-replay"
+              }
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DUPLICATE_SIDE_EFFECT"
+      ]
+    },
+    {
+      "caseId": "duplicate-nonzero-domain-delta",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "stepIndex": 1,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_reservation",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A2:FIX:s2-02-event-duplicate-replay"
+              }
+            ]
+          }
+        },
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              },
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_reservation",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "audit": [],
+            "outbox": [
+              {
+                "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 2,
+                "basisRef": "A2:FIX:s2-02-event-duplicate-replay"
+              }
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DUPLICATE_SIDE_EFFECT"
+      ]
+    },
+    {
+      "caseId": "out-of-order-regression",
+      "mutations": [
+        {
+          "op": "setScenarioFinal",
+          "scenarioId": "A5-IVR-OUT_OF_ORDER-01",
+          "index": 0,
+          "value": {
+            "targetRef": "A2:STATE:call_record",
+            "field": "status",
+            "op": "EQUALS",
+            "value": "ACTIVE",
+            "basisRefs": [
+              "A0:INV:INV-19"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_ORDERING_REGRESSION"
+      ]
+    },
+    {
+      "caseId": "denied-with-side-effect",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-IVR-PERMISSION_DENIED-01",
+          "stepIndex": 0,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_reservation",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-11"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": []
+          }
+        },
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-IVR-PERMISSION_DENIED-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_reservation",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-11"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DENIED_WITH_BUSINESS_EFFECT"
+      ]
+    },
+    {
+      "caseId": "unbacked-bound",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "stepIndex": 0,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:sharing.share_admission",
+                "mode": "BOUNDED",
+                "min": 0,
+                "max": 2
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": []
+          }
+        },
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:sharing.share_admission",
+                "mode": "BOUNDED",
+                "min": 0,
+                "max": 2
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EFFECT_BOUND_UNBACKED"
+      ]
+    },
+    {
+      "caseId": "effect-ledger-mismatch",
+      "mutations": [
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:sharing.share_admission",
+                "mode": "EXACT",
+                "value": 99,
+                "basisRef": "A0:INV:INV-39"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EFFECT_LEDGER_MISMATCH"
+      ]
+    },
+    {
+      "caseId": "axis-ordering-mismatch",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "path": [
+            "stimulus",
+            "orderingClass"
+          ],
+          "value": "NORMAL"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_AXIS_STIMULUS_MISMATCH"
+      ]
+    },
+    {
+      "caseId": "illegal-cleanup-delete",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-SHARE-TIMEOUT-01",
+          "path": [
+            "expected",
+            "cleanup",
+            "steps"
+          ],
+          "value": [
+            "DELETE audit.audit_fact"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_CLEANUP_ILLEGAL"
+      ]
+    },
+    {
+      "caseId": "missing-idempotency",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "path": [
+            "duplicateReplay"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_MISSING"
+      ]
+    },
+    {
+      "caseId": "transition-ref-a0-edge",
+      "mutations": [
+        {
+          "op": "setScenarioState",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "stepIndex": 0,
+          "expectedState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "transitionRef": "A0:SM:Share grant:ACTIVE->REVOKED",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ],
+          "finalState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": []
+    },
+    {
+      "caseId": "transition-ref-a0-tx-illegal",
+      "mutations": [
+        {
+          "op": "setScenarioState",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "stepIndex": 0,
+          "expectedState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "transitionRef": "A0:TX:T-S3-03",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ],
+          "finalState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_TRANSITION_REF_INVALID"
+      ]
+    },
+    {
+      "caseId": "transition-ref-unknown-edge",
+      "mutations": [
+        {
+          "op": "setScenarioState",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "stepIndex": 0,
+          "expectedState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "transitionRef": "A0:SM:Share grant:EXPIRED->ACTIVE",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ],
+          "finalState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_TRANSITION_REF_INVALID"
+      ]
+    },
+    {
+      "caseId": "transition-ref-derived-state",
+      "mutations": [
+        {
+          "op": "setScenarioState",
+          "scenarioId": "A5-ACTIV-TIMEOUT-01",
+          "stepIndex": 0,
+          "expectedState": [
+            {
+              "targetRef": "A0:SM:Trial",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "EXPIRED",
+              "transitionRef": "A0:SM:Trial:GRANTED->EXPIRED",
+              "basisRefs": [
+                "A0:INV:INV-16"
+              ]
+            }
+          ],
+          "finalState": [
+            {
+              "targetRef": "A0:SM:Trial",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "EXPIRED",
+              "basisRefs": [
+                "A0:INV:INV-16"
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_TRANSITION_REF_INVALID"
+      ]
+    },
+    {
+      "caseId": "transition-ref-omitted-nonempty",
+      "mutations": [
+        {
+          "op": "setScenarioState",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "stepIndex": 0,
+          "expectedState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ],
+          "finalState": [
+            {
+              "targetRef": "A0:SM:Share grant",
+              "field": "status",
+              "op": "EQUALS",
+              "value": "REVOKED",
+              "basisRefs": [
+                "A0:INV:INV-26"
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_MISSING"
+      ]
+    },
+    {
+      "caseId": "duplicate-tier-field",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "path": [
+            "resultSemantics",
+            "requiredEvidenceTiers"
+          ],
+          "value": []
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-projection-contradiction",
+      "mutations": [
+        {
+          "op": "setStepResponse",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "stepIndex": 0,
+          "value": {
+            "operationRef": "A1:OP:ingestIvrCallEvent",
+            "field": "processingStatus",
+            "op": "EQUALS",
+            "valueRef": "A2:PROCESSING:IGNORED",
+            "basisRefs": [
+              "A2:FIX:s2-01-task-terminal-completed"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EXTERNAL_PROJECTION_CONTRADICTION"
+      ]
+    },
+    {
+      "caseId": "duplicate-bounded-domain-delta",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "stepIndex": 1,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "BOUNDED",
+                "min": 0,
+                "max": 1,
+                "basisRef": "A2:INV:INV-A2-08"
+              }
+            ],
+            "audit": [],
+            "outbox": [
+              {
+                "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                "mode": "EXACT",
+                "value": 0,
+                "basisRef": "A2:INV:INV-A2-08"
+              }
+            ],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A2:FIX:s2-02-event-duplicate-replay"
+              }
+            ]
+          }
+        },
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "BOUNDED",
+                "min": 1,
+                "max": 2,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "audit": [],
+            "outbox": [
+              {
+                "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-19"
+              }
+            ],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 2,
+                "basisRef": "A2:FIX:s2-02-event-duplicate-replay"
+              }
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DUPLICATE_SIDE_EFFECT"
+      ]
+    },
+    {
+      "caseId": "denied-bounded-overall",
+      "mutations": [
+        {
+          "op": "pushScenarioField",
+          "scenarioId": "A5-IVR-PERMISSION_DENIED-01",
+          "path": [
+            "expected",
+            "effects",
+            "overall",
+            "domainWrites"
+          ],
+          "value": {
+            "tableRef": "A0:TABLE:entitlement_metering.usage_reservation",
+            "mode": "BOUNDED",
+            "min": 0,
+            "max": 1,
+            "basisRef": "A0:INV:INV-11"
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DENIED_WITH_BUSINESS_EFFECT"
+      ]
+    },
+    {
+      "caseId": "out-of-order-bounded-second-settlement",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-OUT_OF_ORDER-01",
+          "path": [
+            "expected",
+            "effects",
+            "overall",
+            "domainWrites",
+            0
+          ],
+          "value": {
+            "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+            "mode": "BOUNDED",
+            "min": 0,
+            "max": 2,
+            "basisRef": "A0:INV:INV-19"
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_ORDERING_REGRESSION"
+      ]
+    },
+    {
+      "caseId": "post-terminal-bounded-write",
+      "mutations": [
+        {
+          "op": "setStepDelta",
+          "scenarioId": "A5-IVR-OUT_OF_ORDER-01",
+          "stepIndex": 1,
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                "mode": "BOUNDED",
+                "min": 0,
+                "max": 1,
+                "basisRef": "A2:INV:INV-A2-05"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:ingestIvrCallEvent",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A2:FIX:s2-03-event-out-of-order"
+              }
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_TERMINAL_MUTATION"
+      ]
+    },
+    {
+      "caseId": "effect-ledger-bounded-mismatch",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "path": [
+            "expected",
+            "effects",
+            "overall",
+            "domainWrites",
+            0
+          ],
+          "value": {
+            "tableRef": "A0:TABLE:sharing.share_admission",
+            "mode": "BOUNDED",
+            "min": 5,
+            "max": 6,
+            "basisRef": "A0:INV:INV-39"
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EFFECT_LEDGER_MISMATCH"
+      ]
+    },
+    {
+      "caseId": "external-field-invalid",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "external",
+            0,
+            "field"
+          ],
+          "value": "bananaField"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-op-invalid",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "external",
+            0,
+            "op"
+          ],
+          "value": "MAGIC_OP"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-value-ref-invalid",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "external",
+            0,
+            "valueRef"
+          ],
+          "value": "banana"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-value-ref-unresolved",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "external",
+            0,
+            "valueRef"
+          ],
+          "value": "A2:ACTION:NOT_A_REAL_ACTION"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_UNRESOLVED"
+      ]
+    },
+    {
+      "caseId": "step-response-field-invalid",
+      "mutations": [
+        {
+          "op": "setStepResponse",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "stepIndex": 0,
+          "value": {
+            "operationRef": "A1:OP:ingestIvrCallEvent",
+            "field": "bananaField",
+            "op": "EQUALS",
+            "valueRef": "A2:PROCESSING:APPLIED",
+            "basisRefs": [
+              "A2:FIX:s2-01-task-terminal-completed"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "timeout-bare-timing-ref",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-TIMEOUT-01",
+          "path": [
+            "stimulus",
+            "steps",
+            0,
+            "timingRef"
+          ],
+          "value": "30"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "timeout-unresolved-timing-ref",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-TIMEOUT-01",
+          "path": [
+            "stimulus",
+            "steps",
+            0,
+            "timingRef"
+          ],
+          "value": "A3:DEFERRED:Q999"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_UNRESOLVED"
+      ]
+    },
+    {
+      "caseId": "ivr-tier-downgrade",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "requiredEvidenceTiers"
+          ],
+          "value": [
+            "STATIC_SPEC"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIER_INSUFFICIENT"
+      ]
+    },
+    {
+      "caseId": "deployment-tier-downgrade",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-DEPLOY-NORMAL-01",
+          "path": [
+            "requiredEvidenceTiers"
+          ],
+          "value": [
+            "INTEGRATION"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIER_INSUFFICIENT"
+      ]
+    },
+    {
+      "caseId": "deployment-path-tier-downgrade",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-X-DEPLOY-NORMAL-01",
+          "path": [
+            "requiredEvidenceTiers"
+          ],
+          "value": [
+            "INTEGRATION",
+            "CLOUD"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIER_INSUFFICIENT"
+      ]
+    },
+    {
+      "caseId": "missing-state-basisrefs",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "persisted",
+            0,
+            "basisRefs"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_MISSING"
+      ]
+    },
+    {
+      "caseId": "duplicate-response-outcome-invalid",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-DUPLICATE-01",
+          "path": [
+            "duplicateReplay",
+            "responseOutcome"
+          ],
+          "value": "MAGIC_OUTCOME"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-basisrefs-missing-root",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "external",
+            0,
+            "basisRefs"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_MISSING"
+      ]
+    },
+    {
+      "caseId": "external-basisrefs-missing-step",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "stimulus",
+            "steps",
+            0,
+            "expectedResponse",
+            "basisRefs"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_MISSING"
+      ]
+    },
+    {
+      "caseId": "out-of-order-split-entry-second-settlement",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-SHARE-OUT_OF_ORDER-01",
+          "path": [
+            "expected",
+            "effects",
+            "steps",
+            0,
+            "delta",
+            "domainWrites",
+            0,
+            "value"
+          ],
+          "value": 2
+        },
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-SHARE-OUT_OF_ORDER-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:sharing.share_admission",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              },
+              {
+                "tableRef": "A0:TABLE:sharing.share_admission",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:createPublicShareAdmission",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              },
+              {
+                "operationRef": "A1:OP:authorizePublicShareMedia",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              }
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_ORDERING_REGRESSION"
+      ]
+    },
+    {
+      "caseId": "out-of-order-single-count-control",
+      "mutations": [
+        {
+          "op": "setOverall",
+          "scenarioId": "A5-SHARE-OUT_OF_ORDER-01",
+          "value": {
+            "domainWrites": [
+              {
+                "tableRef": "A0:TABLE:sharing.share_admission",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              }
+            ],
+            "audit": [],
+            "outbox": [],
+            "accessEvents": [],
+            "externalCalls": [
+              {
+                "operationRef": "A1:OP:createPublicShareAdmission",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              },
+              {
+                "operationRef": "A1:OP:authorizePublicShareMedia",
+                "mode": "EXACT",
+                "value": 1,
+                "basisRef": "A0:INV:INV-39"
+              }
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": []
+    },
+    {
+      "caseId": "effect-ledger-overall-only-business-ref",
+      "mutations": [
+        {
+          "op": "pushScenarioField",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "path": [
+            "expected",
+            "effects",
+            "overall",
+            "domainWrites"
+          ],
+          "value": {
+            "tableRef": "A0:TABLE:catalog_order.customer_order",
+            "mode": "EXACT",
+            "value": 1,
+            "basisRef": "A0:INV:INV-39"
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EFFECT_LEDGER_MISMATCH"
+      ]
+    },
+    {
+      "caseId": "effect-ledger-overall-only-zero-control",
+      "mutations": [
+        {
+          "op": "pushScenarioField",
+          "scenarioId": "A5-SHARE-NORMAL-01",
+          "path": [
+            "expected",
+            "effects",
+            "overall",
+            "domainWrites"
+          ],
+          "value": {
+            "tableRef": "A0:TABLE:catalog_order.customer_order",
+            "mode": "EXACT",
+            "value": 0,
+            "basisRef": "A0:INV:INV-39"
+          }
+        }
+      ],
+      "expectedPrimaryCodes": []
+    },
+    {
+      "caseId": "timing-ref-random-table",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-TIMEOUT-01",
+          "path": [
+            "stimulus",
+            "steps",
+            0,
+            "timingRef"
+          ],
+          "value": "A0:TABLE:catalog_order.customer_order"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-basisrefs-empty-string-root",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "external",
+            0,
+            "basisRefs"
+          ],
+          "value": [
+            ""
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_INVALID"
+      ]
+    },
+    {
+      "caseId": "external-basisrefs-free-text-step",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "stimulus",
+            "steps",
+            0,
+            "expectedResponse",
+            "basisRefs"
+          ],
+          "value": [
+            "free text"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_INVALID"
+      ]
+    },
+    {
+      "caseId": "state-basisrefs-invalid",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "expected",
+            "persisted",
+            0,
+            "basisRefs"
+          ],
+          "value": [
+            ""
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_INVALID"
+      ]
+    }
+  ]
+}

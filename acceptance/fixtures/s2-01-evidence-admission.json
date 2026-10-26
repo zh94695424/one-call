@@ -1,0 +1,3169 @@
+{
+  "fixtureId": "s2-01-evidence-admission",
+  "kind": "EVIDENCE_MANIFEST",
+  "fixtureAsOf": "2026-10-26T00:00:00Z",
+  "cases": [
+    {
+      "caseId": "caller-forged-pass",
+      "expectedPrimaryCodes": [
+        "A5_CALLER_CONTROL_FORBIDDEN"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "a4ce0d1fdd953c33dd482636ae7120980d2cd5fa6002e5b989ddbd0a5b873da5",
+            "result": "PASS"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "caller-accepted",
+      "expectedPrimaryCodes": [
+        "A5_CALLER_ASSERTED_PASS"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "8751a0f765882ec90f5d5c75f23fb816c709c59353c3d2289f388a9264a98a0d",
+            "accepted": true
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "synthetic-runtime",
+      "expectedPrimaryCodes": [
+        "A5_SYNTHETIC_EVIDENCE_REJECTED"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "SYNTHETIC",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "3f310ef3b849a217d636ef7eab1f9a001cf4d67eecbdd841934693f39ad64163"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "model-fixture-as-runtime",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIER_INSUFFICIENT"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "MODEL_FIXTURE",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "aa481a9ebc45401ba7a1532c73b81383603cd9e61c303ea7433fcc8cf348932e"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "missing-line-tier",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIER_INSUFFICIENT"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IVR-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IVR-NORMAL-01",
+            "evidenceOwner": "ivr",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ivr",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ivr/test_report.json",
+                "sha256": "f6d4d4cc84188994ee8c0271c1a949637401d20a6248b8ff7009114a5ec3c249",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ivr",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ivr/db_state_export.json",
+                "sha256": "8f208c3334c5e76d39587d861944c144e424b8d9bc92edb3b6048e79493366f0",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-OUTBOX_EXPORT-ivr",
+                "role": "OUTBOX_EXPORT",
+                "locatorRef": "evidence/run/ivr/outbox_export.json",
+                "sha256": "7c1465977d536e1c9030ef8a7f7aa6779c4e485d2e611646ea04ea2ba64290d8",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ivr",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ivr/metric_snapshot.json",
+                "sha256": "fa300f2449bb15834e641ff4a4b64f08c4e746654789a17cd8575ec301ec7de6",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ivr",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ivr/log_export.json",
+                "sha256": "7c4be2775c311cefb96271d169397c1048adcec7e3a890d1bb38759eb5e34e2f",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A2:STATE:call_record",
+                "field": "status",
+                "value": "ENDED"
+              },
+              {
+                "targetRef": "A2:STATE:usage_reservation",
+                "field": "status",
+                "value": "SETTLED"
+              }
+            ],
+            "manifestDigest": "ecf3d7c4041b1d3e026217d91ae02149be270fca89343cad0d59a0d80328463b"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "bad-artifact-digest",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "not-a-digest",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "4ca942ee4d2e010db90169c8816a46bca0998d59709b1acde356ffa7bb7904fb"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "digest-mismatch",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_DIGEST_MISMATCH"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "future-timestamp",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIME_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-27T10:00:00Z",
+            "recordedAt": "2026-10-27T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-27T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-27T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-27T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-27T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "b352f92f08e7f30d6ce78a9d5e6e3e22d7834b96b697e9aaca4f5040c3f080a5"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "owner-mismatch",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_OWNER_MISMATCH"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "evidence",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "4ab208fe08067b9e5272afe55e572892898672fdc1fd5ab97912ac79ed1cc244"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "no-authority",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_AUTHORITY_MISSING"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "synthetic-authority",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_AUTHORITY_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "authorityRef": "AUTH-SYNTHETIC",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          }
+        ]
+      },
+      "mutations": [
+        {
+          "op": "setAuthorityRegistry",
+          "value": [
+            {
+              "authorityId": "AUTH-SYNTHETIC",
+              "status": "SYNTHETIC_TEST_ONLY",
+              "owner": "Product/Security/Operations",
+              "approvedAt": "2026-10-25T12:00:00Z",
+              "authorizationBasisRef": "A3:RESIDUAL:R-A3-SUPPORT-VIEW"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "caseId": "authority-row-without-basis",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_AUTHORITY_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "authorityRef": "AUTH-FORGED",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          }
+        ]
+      },
+      "mutations": [
+        {
+          "op": "setAuthorityRegistry",
+          "value": [
+            {
+              "authorityId": "AUTH-FORGED",
+              "status": "APPROVED",
+              "owner": "Product/Security/Operations",
+              "approvedAt": "2026-10-25T12:00:00Z",
+              "authorizationBasisRef": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "caseId": "accept-without-evidence",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_EVIDENCE_MISSING"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-MISSING",
+            "manifestDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "state-contradiction",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_STATE_CONTRADICTION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "DISABLED",
+                "transitionRef": "A0:SM:Customer login identity:ACTIVE->DISABLED"
+              }
+            ],
+            "manifestDigest": "93b7d2a124cf1a25fcc4f0d60288b4649c0dbb46fc203d19e328c79f35c3d7f7"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "manifest-immutability",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_IMMUTABILITY_VIOLATION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          },
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:06:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:03:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:03:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:03:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:03:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "b624bd3635513eb1bb26634c51c0949a951d16b6a09016f97fac11942bac3b6b"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "manifest-replay-same-digest",
+      "expectedPrimaryCodes": [],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          },
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": []
+      },
+      "expectAdmitted": 1,
+      "expectAdmittedState": "EVIDENCE_VALID",
+      "expectRuntimeEvidence": "EVIDENCE_SUBMITTED",
+      "expectProductionAccepted": false
+    },
+    {
+      "caseId": "count-only-acceptance",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_EVIDENCE_MISSING",
+        "A5_CALLER_CONTROL_FORBIDDEN"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-MISSING",
+            "manifestDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          }
+        ]
+      },
+      "mutations": [
+        {
+          "op": "setPath",
+          "path": [
+            "accepted"
+          ],
+          "value": true
+        }
+      ]
+    },
+    {
+      "caseId": "positive-model-evidence",
+      "expectedPrimaryCodes": [],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-MODEL-FIXTURE",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "MODEL_FIXTURE",
+            "evidenceTiers": [
+              "MODEL_FIXTURE"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident-model",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident-model/test_report.json",
+                "sha256": "5766de7aa7c73cced3f9b27ad22901d766d24e26f8701e803a8228e7f25c4b0f",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "ad0bde99d1d2c499ba0d24a177436bf8273500da52fd2c0f00b66e57ff341a54"
+          }
+        ],
+        "acceptanceRecords": []
+      },
+      "admissionOnly": true,
+      "scenarioProfiles": {
+        "A5-IDENT-NORMAL-01": {
+          "requiredEvidenceTiers": [
+            "MODEL_FIXTURE"
+          ]
+        }
+      },
+      "expectAdmitted": 1,
+      "expectAdmittedState": "EVIDENCE_VALID",
+      "expectRuntimeEvidence": "EVIDENCE_SUBMITTED",
+      "expectProductionAccepted": false
+    },
+    {
+      "caseId": "positive-runtime-evidence",
+      "expectedPrimaryCodes": [],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": []
+      },
+      "expectAdmitted": 1,
+      "expectAdmittedState": "EVIDENCE_VALID",
+      "expectRuntimeEvidence": "EVIDENCE_SUBMITTED",
+      "expectProductionAccepted": false
+    },
+    {
+      "caseId": "missing-artifact",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_ARTIFACT_MISSING"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "4f82a0f72b48a95f9486c266c771cf44e4af7f85f5f50047a03c6f30c8fc13ce"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "invalid-locator-ref",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "https://cos.example.com/bucket/key?token=secret",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "4ae29d3405c2a7e518c2b01da9358ce795f760446d96c921cc241b82927861f5"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "missing-artifact-field",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "8dce7f41c478f935e877731657bf14627318c98851bf7679500e9f0807a103e1"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "time-order",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_TIME_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:05:00Z",
+            "recordedAt": "2026-10-25T10:00:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "39cac842ce7ce7ffdd2546cf97aa3f1c4a6413b984968b48c21beeb1c4eee644"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "record-immutability",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_IMMUTABILITY_VIOLATION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-A",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "authorityRef": "AUTH-EXTERNAL-RELEASE",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          },
+          {
+            "recordId": "REC-B",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "authorityRef": "AUTH-EXTERNAL-RELEASE",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "FAIL"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "record-digest-mismatch",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_IMMUTABILITY_VIOLATION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "authorityRef": "AUTH-EXTERNAL-RELEASE",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "manifest-missing-owner",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_OWNER_MISSING"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "a40011472a9e7968ae8c58f5f80e9f552542a00cb2333b57bebf7c6806f733e5"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "manifest-invalid-shape",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_MANIFEST_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "c626a0d715d3b350794bf01836ea726a6528f91a33413833964fde4cedf4ec0b"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "owner-non-string-number",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_OWNER_MISMATCH"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": 42,
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "18bad984dfb57fa47f67ccd1d1571ea95ce14fd564cb1cd05a4bfe41ec4dd827"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "owner-non-string-object",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_OWNER_MISMATCH"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": {},
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "57fd5b0e3628c09c3860864b7a02671e53887d822effcfb6f7a0b566910ead0d"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "record-scenario-mismatch",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_IMMUTABILITY_VIOLATION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IVR-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "FAIL"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "record-scenario-mismatch-pass",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_IMMUTABILITY_VIOLATION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-IDENT-NORMAL-01",
+            "scenarioId": "A5-IVR-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "PASS",
+            "authorityRef": "AUTH-EXTERNAL-RELEASE"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "record-id-duplicate",
+      "expectedPrimaryCodes": [
+        "A5_ACCEPTANCE_IMMUTABILITY_VIOLATION"
+      ],
+      "expectAdmitted": 2,
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          },
+          {
+            "manifestId": "MAN-IVR-NORMAL-01-INTEGRATION-LINE",
+            "scenarioId": "A5-IVR-NORMAL-01",
+            "evidenceOwner": "ivr",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION",
+              "LINE"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ivr",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ivr/test_report.json",
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ivr",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ivr/db_state_export.json",
+                "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-OUTBOX_EXPORT-ivr",
+                "role": "OUTBOX_EXPORT",
+                "locatorRef": "evidence/run/ivr/outbox_export.json",
+                "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ivr",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ivr/metric_snapshot.json",
+                "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ivr",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ivr/log_export.json",
+                "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LINE_CDR-ivr",
+                "role": "LINE_CDR",
+                "locatorRef": "evidence/run/ivr/line_cdr.json",
+                "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [],
+            "manifestDigest": "ee6d28c534070160e5ad31be9b6e98550bb6386a4fc09842b2107c40654c4942"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-DUP",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "FAIL"
+          },
+          {
+            "recordId": "REC-DUP",
+            "scenarioId": "A5-IVR-NORMAL-01",
+            "manifestId": "MAN-IVR-NORMAL-01-INTEGRATION-LINE",
+            "manifestDigest": "ee6d28c534070160e5ad31be9b6e98550bb6386a4fc09842b2107c40654c4942",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "FAIL"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "fail-record-state",
+      "expectedPrimaryCodes": [],
+      "expectAdmitted": 1,
+      "expectRuntimeEvidence": "FAIL",
+      "expectProductionAccepted": false,
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791"
+          }
+        ],
+        "acceptanceRecords": [
+          {
+            "recordId": "REC-FAIL-IDENT",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "manifestDigest": "d05889965cc0ad743b941241898187cbf43f27984227c9ed4e471846f1706791",
+            "acceptedAt": "2026-10-25T12:00:00Z",
+            "result": "FAIL"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "observation-out-of-scope",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_STATE_CONTRADICTION"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Share grant",
+                "field": "status",
+                "value": "REVOKED",
+                "transitionRef": "A0:SM:Share grant:ACTIVE->REVOKED"
+              }
+            ],
+            "manifestDigest": "309c8a3191a03e688e102773af653d1e86f5557039f4b27fbcd797e3fffc1e7a"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "locator-bucket",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence-bucket/cdr/file.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "29af4bb925635a3b02683cece96e8debacdff6fd709634b5523d58b42ad8fbc6"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "locator-version",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/version-3/report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "ebc24364fd19bfb5c2f706c2e9ec4701604fc8ae29ffd54fe6aec7a3e88968c8"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "locator-bare-token",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/token/abc123",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "0f906c5a58a2507c7af4aed7f51357b17fb0655464922bd8d5638e95ffc87f2e"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "locator-bearer",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "bearer eyJhbGciOi.payload",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "e63013098c0920bf459c0ab7e426da213e5fc215d3e2a5b5405e4dd4321d2697"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "producerref-freeform",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "not-a-source-ref",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "not-a-source-ref",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "not-a-source-ref",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "not-a-source-ref",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "30d423edabad1663f88aed05bba09d62e5b9d1eb48a03052b3eff859ccfec6da"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "producerref-unrecognized-prefix",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "ZZ:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "577f1136a8bb73324835c478f620613a4b5302b116a62ba2819cf893da557ab9"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "producerref-unresolved",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:not-a-service",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "f2a7c7bbf85c38565763c464b3dc6beb2d3012858516d95c1ab466950fbee81d"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    },
+    {
+      "caseId": "redactionref-freeform",
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_REF_INVALID"
+      ],
+      "evidence": {
+        "schemaVersion": 1,
+        "asOf": "2026-10-26T00:00:00Z",
+        "manifests": [
+          {
+            "manifestId": "MAN-IDENT-NORMAL-01-INTEGRATION",
+            "scenarioId": "A5-IDENT-NORMAL-01",
+            "evidenceOwner": "customer-iam",
+            "evidenceClass": "RUNTIME",
+            "evidenceTiers": [
+              "INTEGRATION"
+            ],
+            "executedAt": "2026-10-25T10:00:00Z",
+            "recordedAt": "2026-10-25T10:05:00Z",
+            "artifacts": [
+              {
+                "artifactId": "ART-TEST_REPORT-ident",
+                "role": "TEST_REPORT",
+                "locatorRef": "evidence/run/ident/test_report.json",
+                "sha256": "a43d18110bf56ca426ce5f154c763343923e0af33276fcbd562a99524a5799fa",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "redacted-by-team"
+              },
+              {
+                "artifactId": "ART-DB_STATE_EXPORT-ident",
+                "role": "DB_STATE_EXPORT",
+                "locatorRef": "evidence/run/ident/db_state_export.json",
+                "sha256": "0a6ab61534a011ecbc2f4523a98bf646099333adde3435645e2403cbc87e2eab",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-METRIC_SNAPSHOT-ident",
+                "role": "METRIC_SNAPSHOT",
+                "locatorRef": "evidence/run/ident/metric_snapshot.json",
+                "sha256": "a54f2ad35feaf008c4243bf8de73805833fcd73604988c3a6dc83b8274250c63",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              },
+              {
+                "artifactId": "ART-LOG_EXPORT-ident",
+                "role": "LOG_EXPORT",
+                "locatorRef": "evidence/run/ident/log_export.json",
+                "sha256": "512fed7b3ed5445465847783c7fe1717a02415e81f5d0fbc2e1e3d8c7308caca",
+                "capturedAt": "2026-10-25T10:02:00Z",
+                "producerRef": "A3:SERVICE:core-api",
+                "redactionRef": "A3:INV:INV-A3-15"
+              }
+            ],
+            "observations": [
+              {
+                "targetRef": "A0:SM:Customer login identity",
+                "field": "status",
+                "value": "ACTIVE"
+              }
+            ],
+            "manifestDigest": "5e68b5293b91d5efb55f68502bedc2b7506bba9f9a1ed739ff65b09465a2a2ab"
+          }
+        ],
+        "acceptanceRecords": []
+      }
+    }
+  ]
+}
