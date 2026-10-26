@@ -1,0 +1,746 @@
+{
+  "fixtureId": "s1-01-matrix-integrity",
+  "kind": "MODEL_MUTATION",
+  "cases": [
+    {
+      "caseId": "missing-coverage-cell",
+      "mutations": [
+        {
+          "op": "removeCoverageCell",
+          "unitId": "FAM-IVR",
+          "axis": "DUPLICATE"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_COVERAGE_CELL_MISSING"
+      ]
+    },
+    {
+      "caseId": "duplicate-scenario-id",
+      "mutations": [
+        {
+          "op": "duplicateScenario",
+          "scenarioId": "A5-IVR-NORMAL-01"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DUPLICATE_ID"
+      ]
+    },
+    {
+      "caseId": "bad-source-ref",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "sourceRefs",
+            0
+          ],
+          "value": "A0:INV:INV-99"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_UNRESOLVED"
+      ]
+    },
+    {
+      "caseId": "duplicate-source-ref",
+      "mutations": [
+        {
+          "op": "pushScenarioField",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "sourceRefs"
+          ],
+          "value": "A0:INV:INV-11"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_DUPLICATE"
+      ]
+    },
+    {
+      "caseId": "illegal-applicability",
+      "mutations": [
+        {
+          "op": "setCoverageCell",
+          "unitId": "FAM-IVR",
+          "axis": "DUPLICATE",
+          "value": {
+            "state": "NOT_APPLICABLE",
+            "reasonCode": "NA-NO-AUTHZ-BOUNDARY",
+            "sourceRefs": [
+              "A4:SECTION:1.2",
+              "A4:SECTION:8.3"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_APPLICABILITY_ILLEGAL"
+      ]
+    },
+    {
+      "caseId": "unknown-na-reason",
+      "mutations": [
+        {
+          "op": "setCoverageCell",
+          "unitId": "FAM-SUBJECT",
+          "axis": "TIMEOUT",
+          "value": {
+            "state": "NOT_APPLICABLE",
+            "reasonCode": "NA-FREE-TEXT",
+            "sourceRefs": [
+              "A0:SM:Subject claim",
+              "A0:SM:Subject risk state"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_NA_REASON_UNKNOWN"
+      ]
+    },
+    {
+      "caseId": "unbacked-na",
+      "mutations": [
+        {
+          "op": "setCoverageCell",
+          "unitId": "FAM-SUBJECT",
+          "axis": "TIMEOUT",
+          "value": {
+            "state": "NOT_APPLICABLE",
+            "reasonCode": "NA-NO-CONTRACT-DEADLINE",
+            "sourceRefs": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_NA_REASON_UNBACKED"
+      ]
+    },
+    {
+      "caseId": "missing-evidence-owner",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "evidenceOwner"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_OWNER_MISSING"
+      ]
+    },
+    {
+      "caseId": "unknown-evidence-owner",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "evidenceOwner"
+          ],
+          "value": "unknown-team"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_EVIDENCE_OWNER_UNKNOWN"
+      ]
+    },
+    {
+      "caseId": "orphan-scenario",
+      "mutations": [
+        {
+          "op": "appendScenario",
+          "value": {
+            "scenarioId": "A5-IVR-NORMAL-02",
+            "coverageUnitId": "FAM-IVR",
+            "axis": "NORMAL",
+            "title": "Accepted terminal settles one usage fact and one Outbox fact",
+            "owner": "ivr",
+            "aggregateRef": "A2:STATE:call_record",
+            "service": "ivr-gateway",
+            "requiredEvidenceTiers": [
+              "INTEGRATION",
+              "LINE"
+            ],
+            "sourceRefs": [
+              "A0:INV:INV-11",
+              "A0:INV:INV-12",
+              "A0:INV:INV-13",
+              "A0:INV:INV-19",
+              "A2:INV:INV-A2-04",
+              "A2:STATE:call_record",
+              "A2:STATE:usage_reservation",
+              "A2:IDENTITY:eventId",
+              "A1:OP:resolveIvrInbound",
+              "A1:OP:ingestIvrCallEvent",
+              "A2:FIX:s2-01-task-terminal-completed",
+              "A0:OUTBOX:USAGE_SETTLED"
+            ],
+            "outcomeRefs": [
+              "A0:INV:INV-19",
+              "A2:FIX:s2-01-task-terminal-completed"
+            ],
+            "preconditions": {
+              "startingState": [
+                {
+                  "targetRef": "A2:STATE:call_record",
+                  "field": "status",
+                  "op": "EQUALS",
+                  "value": "ACTIVE",
+                  "basisRefs": [
+                    "A0:INV:INV-19"
+                  ]
+                },
+                {
+                  "targetRef": "A2:STATE:usage_reservation",
+                  "field": "status",
+                  "op": "EQUALS",
+                  "value": "HELD",
+                  "basisRefs": [
+                    "A0:INV:INV-19"
+                  ]
+                }
+              ],
+              "fixtureRefs": [
+                "A2:FIX:s2-01-task-terminal-completed"
+              ],
+              "environmentRefs": [
+                "A0:INV:INV-19"
+              ],
+              "assumptionRefs": []
+            },
+            "stimulus": {
+              "orderingClass": "NORMAL",
+              "steps": [
+                {
+                  "stepId": "terminal-1",
+                  "actorRef": "A3:SERVICE:ivr-gateway",
+                  "operationRef": "A1:OP:ingestIvrCallEvent",
+                  "identityRefs": [
+                    "A2:IDENTITY:eventId",
+                    "A2:IDENTITY:terminal fact"
+                  ],
+                  "expectedResponse": {
+                    "operationRef": "A1:OP:ingestIvrCallEvent",
+                    "field": "processingStatus",
+                    "op": "EQUALS",
+                    "valueRef": "A2:PROCESSING:APPLIED",
+                    "basisRefs": [
+                      "A2:FIX:s2-01-task-terminal-completed"
+                    ]
+                  },
+                  "expectedState": [
+                    {
+                      "targetRef": "A2:STATE:call_record",
+                      "field": "status",
+                      "op": "EQUALS",
+                      "value": "ENDED",
+                      "transitionRef": "A2:STATE:call_record:ACTIVE->ENDED",
+                      "basisRefs": [
+                        "A0:INV:INV-19"
+                      ]
+                    },
+                    {
+                      "targetRef": "A2:STATE:usage_reservation",
+                      "field": "status",
+                      "op": "EQUALS",
+                      "value": "SETTLED",
+                      "transitionRef": "A2:STATE:usage_reservation:HELD->SETTLED",
+                      "basisRefs": [
+                        "A0:INV:INV-19"
+                      ]
+                    }
+                  ],
+                  "expectedDelta": {
+                    "domainWrites": [
+                      {
+                        "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                        "mode": "EXACT",
+                        "value": 1,
+                        "basisRef": "A0:INV:INV-19"
+                      }
+                    ],
+                    "audit": [],
+                    "outbox": [
+                      {
+                        "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                        "mode": "EXACT",
+                        "value": 1,
+                        "basisRef": "A0:INV:INV-19"
+                      }
+                    ],
+                    "accessEvents": [],
+                    "externalCalls": [
+                      {
+                        "operationRef": "A1:OP:ingestIvrCallEvent",
+                        "mode": "EXACT",
+                        "value": 1,
+                        "basisRef": "A2:FIX:s2-01-task-terminal-completed"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "faultInjection": {
+                "kind": "NONE",
+                "parameterRef": "A2:IDENTITY:eventId"
+              }
+            },
+            "expected": {
+              "persisted": [
+                {
+                  "targetRef": "A2:STATE:call_record",
+                  "field": "status",
+                  "op": "EQUALS",
+                  "value": "ENDED",
+                  "basisRefs": [
+                    "A0:INV:INV-19"
+                  ]
+                },
+                {
+                  "targetRef": "A2:STATE:usage_reservation",
+                  "field": "status",
+                  "op": "EQUALS",
+                  "value": "SETTLED",
+                  "basisRefs": [
+                    "A0:INV:INV-19"
+                  ]
+                }
+              ],
+              "external": [
+                {
+                  "operationRef": "A1:OP:ingestIvrCallEvent",
+                  "field": "processingStatus",
+                  "op": "EQUALS",
+                  "valueRef": "A2:PROCESSING:APPLIED",
+                  "basisRefs": [
+                    "A2:FIX:s2-01-task-terminal-completed"
+                  ]
+                }
+              ],
+              "terminalAbsorption": {
+                "terminalStates": [
+                  "ENDED",
+                  "FAILED",
+                  "REJECTED"
+                ],
+                "postTerminalOutcome": "ABSORB",
+                "sourceRefs": [
+                  "A0:INV:INV-19"
+                ]
+              },
+              "idempotency": {
+                "identityRef": "A2:IDENTITY:eventId",
+                "sameFingerprintOutcome": "FIRST_RESULT",
+                "changedFingerprintOutcome": "CONFLICT",
+                "sourceRefs": [
+                  "A0:INV:INV-19",
+                  "A2:FIX:s2-01-task-terminal-completed"
+                ]
+              },
+              "effects": {
+                "baseline": {
+                  "domainWrites": [],
+                  "audit": [],
+                  "outbox": [],
+                  "accessEvents": [],
+                  "externalCalls": []
+                },
+                "steps": [
+                  {
+                    "stepId": "terminal-1",
+                    "delta": {
+                      "domainWrites": [
+                        {
+                          "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                          "mode": "EXACT",
+                          "value": 1,
+                          "basisRef": "A0:INV:INV-19"
+                        }
+                      ],
+                      "audit": [],
+                      "outbox": [
+                        {
+                          "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                          "mode": "EXACT",
+                          "value": 1,
+                          "basisRef": "A0:INV:INV-19"
+                        }
+                      ],
+                      "accessEvents": [],
+                      "externalCalls": [
+                        {
+                          "operationRef": "A1:OP:ingestIvrCallEvent",
+                          "mode": "EXACT",
+                          "value": 1,
+                          "basisRef": "A2:FIX:s2-01-task-terminal-completed"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "overall": {
+                  "domainWrites": [
+                    {
+                      "tableRef": "A0:TABLE:entitlement_metering.usage_fact",
+                      "mode": "EXACT",
+                      "value": 1,
+                      "basisRef": "A0:INV:INV-19"
+                    }
+                  ],
+                  "audit": [],
+                  "outbox": [
+                    {
+                      "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                      "mode": "EXACT",
+                      "value": 1,
+                      "basisRef": "A0:INV:INV-19"
+                    }
+                  ],
+                  "accessEvents": [],
+                  "externalCalls": [
+                    {
+                      "operationRef": "A1:OP:ingestIvrCallEvent",
+                      "mode": "EXACT",
+                      "value": 1,
+                      "basisRef": "A2:FIX:s2-01-task-terminal-completed"
+                    }
+                  ]
+                },
+                "zeroOrBoundedBasisRefs": [
+                  "A0:INV:INV-19"
+                ]
+              },
+              "evidence": {
+                "audit": [],
+                "outbox": [
+                  {
+                    "outboxRef": "A0:OUTBOX:USAGE_SETTLED",
+                    "expectation": "EXACT",
+                    "value": 1,
+                    "basisRef": "A0:INV:INV-19"
+                  }
+                ],
+                "observability": [
+                  {
+                    "metricCategoryRef": "DOC12:S12#IVR",
+                    "correlationRefs": [
+                      "A0:TABLE:ivr.call_event"
+                    ],
+                    "assertion": "CORRELATED_BY_TRACE_ID"
+                  }
+                ],
+                "logs": [
+                  {
+                    "boundaryRef": "A3:TB:TB7",
+                    "redactionRef": "A3:INV:INV-A3-15",
+                    "assertion": "NO_DENYLISTED_FIELD"
+                  }
+                ],
+                "accessEvents": [],
+                "zeroBasisRefs": [
+                  "A0:INV:INV-19"
+                ]
+              },
+              "cleanup": {
+                "mode": "NONE",
+                "steps": [],
+                "sourceRefs": [
+                  "A0:INV:INV-19"
+                ]
+              }
+            },
+            "evidenceOwner": "ivr",
+            "acceptanceAuthorityRef": null,
+            "resultSemantics": {
+              "specResult": "SPEC_DEFINED",
+              "runtimeResult": "NOT_RUN",
+              "acceptanceRuleRef": "A5_ACCEPT_RUNTIME_TIER_AND_AUTHORITY",
+              "failConditionRefs": [
+                "A0:INV:INV-19",
+                "A2:FIX:s2-01-task-terminal-completed"
+              ]
+            },
+            "residualIds": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_ORPHAN_SCENARIO"
+      ]
+    },
+    {
+      "caseId": "residual-no-owner",
+      "mutations": [
+        {
+          "op": "pushResidual",
+          "value": {
+            "residualId": "A5-RES-99",
+            "content": "x",
+            "owner": null,
+            "destination": "x",
+            "upstreamRefs": [
+              "DOC12:S18"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_RESIDUAL_OWNER_MISSING"
+      ]
+    },
+    {
+      "caseId": "residual-no-destination",
+      "mutations": [
+        {
+          "op": "pushResidual",
+          "value": {
+            "residualId": "A5-RES-99",
+            "content": "x",
+            "owner": "Backend/QA",
+            "destination": null,
+            "upstreamRefs": [
+              "DOC12:S18"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_RESIDUAL_DESTINATION_MISSING"
+      ]
+    },
+    {
+      "caseId": "doc-model-drift",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "title"
+          ],
+          "value": "drifted title"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_DOC_MODEL_DRIFT"
+      ]
+    },
+    {
+      "caseId": "prohibited-readiness-flag",
+      "mutations": [
+        {
+          "op": "setPath",
+          "path": [
+            "productionReady"
+          ],
+          "value": true
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_PROHIBITED_READINESS_FLAG"
+      ]
+    },
+    {
+      "caseId": "caller-production-accepted",
+      "mutations": [
+        {
+          "op": "setPath",
+          "path": [
+            "productionAccepted"
+          ],
+          "value": true
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_CALLER_CONTROL_FORBIDDEN"
+      ]
+    },
+    {
+      "caseId": "all-counts-but-unbacked-na",
+      "mutations": [
+        {
+          "op": "setCoverageCell",
+          "unitId": "FAM-SUBJECT",
+          "axis": "TIMEOUT",
+          "value": {
+            "state": "NOT_APPLICABLE",
+            "reasonCode": "NA-NO-CONTRACT-DEADLINE",
+            "sourceRefs": []
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_NA_REASON_UNBACKED"
+      ]
+    },
+    {
+      "caseId": "legacy-prototype-evidence",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "sourceRefs",
+            0
+          ],
+          "value": "docs/04"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_LEGACY_REFERENCE_FORBIDDEN"
+      ]
+    },
+    {
+      "caseId": "source-residual-ok",
+      "mutations": [
+        {
+          "op": "appendBasisRef",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "stepIndex": 0,
+          "stateIndex": 0,
+          "value": "A3:RESIDUAL:R-A3-AUDIT-VOLUME"
+        }
+      ],
+      "expectedPrimaryCodes": []
+    },
+    {
+      "caseId": "source-residual-unresolved",
+      "mutations": [
+        {
+          "op": "appendBasisRef",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "stepIndex": 0,
+          "stateIndex": 0,
+          "value": "A3:RESIDUAL:R-A3-NOPE"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SOURCE_REF_UNRESOLVED"
+      ]
+    },
+    {
+      "caseId": "owner-registry-ok",
+      "mutations": [],
+      "expectedPrimaryCodes": []
+    },
+    {
+      "caseId": "owner-upstream-ref-missing",
+      "mutations": [
+        {
+          "op": "setOwnerUpstream",
+          "ownerId": "customer-iam",
+          "value": []
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_OWNER_UPSTREAM_UNRESOLVED"
+      ]
+    },
+    {
+      "caseId": "residual-owner-unknown",
+      "mutations": [
+        {
+          "op": "pushResidual",
+          "value": {
+            "residualId": "A5-RES-99",
+            "content": "x",
+            "owner": "unknown-team",
+            "destination": "x",
+            "upstreamRefs": [
+              "DOC12:S18"
+            ]
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_RESIDUAL_OWNER_UNKNOWN"
+      ]
+    },
+    {
+      "caseId": "path-family-duplicate",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-X-IVR-NORMAL-01",
+          "path": [
+            "sourceRefs"
+          ],
+          "value": [
+            "A0:INV:INV-11",
+            "A0:INV:INV-12",
+            "A0:INV:INV-13",
+            "A0:INV:INV-19",
+            "A2:INV:INV-A2-04",
+            "A2:STATE:call_record",
+            "A2:STATE:usage_reservation",
+            "A2:IDENTITY:eventId",
+            "A1:OP:resolveIvrInbound",
+            "A1:OP:ingestIvrCallEvent",
+            "A2:FIX:s2-01-task-terminal-completed",
+            "A0:OUTBOX:USAGE_SETTLED"
+          ]
+        },
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-X-IVR-NORMAL-01",
+          "path": [
+            "outcomeRefs"
+          ],
+          "value": [
+            "A0:INV:INV-19",
+            "A2:FIX:s2-01-task-terminal-completed"
+          ]
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_PATH_FAMILY_DUPLICATE"
+      ]
+    },
+    {
+      "caseId": "service-exception-leak",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "service"
+          ],
+          "value": "deployment/capacity"
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    },
+    {
+      "caseId": "scenario-id-regex-invalid",
+      "mutations": [
+        {
+          "op": "setScenario",
+          "scenarioId": "A5-IVR-NORMAL-01",
+          "path": [
+            "scenarioId"
+          ],
+          "value": "A5-IVR-NORMAL-1"
+        },
+        {
+          "op": "setCoverageCell",
+          "unitId": "FAM-IVR",
+          "axis": "NORMAL",
+          "value": {
+            "scenarioId": "A5-IVR-NORMAL-1"
+          }
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_SCENARIO_FIELD_INVALID"
+      ]
+    }
+  ]
+}
