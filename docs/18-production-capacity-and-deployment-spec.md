@@ -1,14 +1,14 @@
-# 生产容量与部署规格（A4，S1：容量算术与未知传播）
+# 生产容量与部署规格（A4）
 
-> 状态：S1 参数化规格。**不是生产容量批准、采购依据、云能力验证或恢复证明。**
+> 状态：S1 + S2 参数化规格。**不是生产容量批准、采购依据、云能力验证或恢复证明。**
 >
 > 设计源：`docs/12-technology-stack-and-system-architecture.md` §4/§5/§13/§17/§18.5，结合 `docs/13`、`docs/14`、`docs/15`、`docs/16`、`docs/17` 的已接受边界。
 >
 > 唯一计算辅助：`deployment/capacity/calc.mjs`（Node 22 ESM、零三方依赖、确定性 `compute(input)`）。
 >
-> 唯一输入模板：`deployment/capacity/inputs.template.json`（S1 恰好 7 组，全 null typed）。
+> 唯一输入模板：`deployment/capacity/inputs.template.json`（S1 7 组 + S2 `backupRecovery`/`capabilityEvidence`，共 9 组，全 null typed）。
 >
-> 本文件 S1 只交付 §1-§6。备份/PITR/恢复依赖、云能力证据、部署/发布门禁与可发现性入口属于 S2，本文不写、不实现。
+> 本文件 S1 交付 §1-§6（容量算术与未知传播）；S2 追加 §7-§10（部署放置、发布/回滚门禁、备份/PITR/恢复依赖、云能力证据与残留）。备份/能力结论仍只是调用方证据完整性，不是云验证或恢复证明。
 
 ## 1. 状态、范围与非声明
 
@@ -37,7 +37,7 @@ a3RiskClosed: false
 synthetic: boolean
 metaStatus: UNAPPROVED_TEMPLATE | SYNTHETIC_TEST_ONLY | APPROVED_SOURCE_INPUTS
 asOf: string | null
-groups: [...]       # S1 恰好 7 组，固定顺序
+groups: [...]       # S1 7 组 + S2 2 组，固定顺序
 flags: string[]
 errors: [{ code, path }]
 ```
@@ -58,9 +58,9 @@ INVALID(4) > NOT_MET(3) > INCOMPLETE(2) > NOT_VERIFIED(1) > COMPLETE(0)
 - 缺失 metric 的 `value` 为 `null`，**不得填 0**；显式 0 是合法输入/结果。
 - 语义 verdict 字符串（如 `FIT_EVIDENCE_COMPLETE`、`ARITHMETIC_ONLY`、`NOT_MET`、`LINE_FIT_EVIDENCE_COMPLETE`）只出现在 `metric.value`，metric.status 仍取五值。
 
-### 1.4 S1 非目标与停止条件
+### 1.4 切片边界与停止条件
 
-S1 不实现、不写文档：备份/恢复依赖与能力证据、部署放置、发布/回滚、恢复门禁、README 入口（这些属于后续 S2 切片）。若后续需求需要新增公共契约、选择 Region/SKU/价格/保留期、伪造测量或把合成/估计当批准，必须停止并上报，不能由本计算器扩大范围。
+S1 只交付容量算术与未知传播（§1-§6）；备份/恢复依赖、能力证据、部署放置、发布/回滚门禁与 README 入口在 S2（§7-§10）追加。若后续需求需要新增公共契约、选择 Region/SKU/价格/保留期、伪造测量或把合成/估计当批准，必须停止并上报，不能由本计算器扩大范围。
 
 ## 2. 单位、输入契约、来源与批准
 
@@ -322,6 +322,178 @@ Spool 的所有字节/速率均为 **payload**。`SPOOL_RECOVERY_TOTAL_BYTES_PS`
 
 节点结果无 SKU/价格/Region 建议；CPU/RAM/连接/IO 或实测吞吐缺失时只能是 `NOT_VERIFIED`，绝不输出正向 deployment-fit；原始算术估计可报告但必须带 `ESTIMATE_ONLY`。本 S1 模板全 null，因此全部组 `INCOMPLETE`，不得用于采购或上线判断。
 
-## S1 明确未覆盖（S2 输入）
+## 7. 部署放置与边界
 
-以下内容属于 S2，本文与计算器均未实现：备份/PITR/恢复依赖闭包、云能力证据 fail-closed、部署放置/发布/回滚/扩缩容门禁、region/AZ/SKU/价格/保留期/SLO/RPO/RTO 选择、README 可发现性入口。它们必须在 S2 获得显式 typed input 与独立行为断言后才存在；当前任何 `productionReady`/`procurementReady`/`cloudVerified`/`a3RiskClosed` 结论仍固定为 `false`。
+### 7.1 已定架构决策（不重新选择）
+
+以下来自 `docs/12` §4/§5 的已接受设计，本规格只引用、不重新选择：
+
+- 腾讯云中国大陆地域 + 私有 VPC；`core-api`、`async-worker`、`scheduler` 保持同源模块化单体，不因容量规格拆分为微服务。
+- IVR 保持在运营商机房，拥有 SIP/RTP、A/B 路、桥接、录音和限时事实；`ivr-gateway` 与 IVR 同机房。业务服务不承载 RTP。
+- COS 私有桶、SSE-KMS、versioning 是**需求**；其能力是否可用仍待 `CV-4`/`CV-5` 与 Infrastructure/Security 证据，不由本规格声称已验证。
+- PostgreSQL 主备 + PITR；首发不要求 Kubernetes/微服务化。
+- 播放经既有 core-api/edge 的 media-gateway `Authorization: Bearer` 数据面；不新增 A1 operation，不返回永久 COS URL，不绕过 A3 bearer/generation 校验。
+- 上传沿用 A3 `CV-4` 的 single-object presigned PUT；能力不可验证即 fail closed，不降级为公共读写或永久凭证。
+
+### 7.2 容量拓扑边界
+
+- 只有显式测量为**同质无状态池**的 `core-api`/`async-worker`/`media-ai-worker` 才允许线性每节点乘法（`F-NODE-01`）。
+- `postgres`/`redis`/`rabbitmq` 使用实测正常/降级聚合容量（`F-NODE-04`），不做 active-active 节点算术。
+- `media-gateway` 逻辑容量共享在 `core-api`/edge 内（`F-NODE-05`），不得作为独立部署节点再求和。
+- 固定拓扑（2+ API、单主 scheduler、双 IVR）不是容量证明；未提供实测节点/存储/云证据时，部署门禁只能 `INCOMPLETE`/`NOT_VERIFIED`。
+
+## 8. 发布、回滚、扩缩容与门禁
+
+### 8.1 发布与回滚
+
+- 使用不可变镜像/配置版本；数据库迁移按 Flyway Expand/Contract，先服务端兼容再切客户端/IVR。
+- 应用回滚不回滚已提交数据，必须保留迁移兼容窗口；回滚计划不改变数据保留/删除政策。
+- 发布顺序：服务端兼容版本 → 客户端/IVR 切换 → 观察；任何阶段缺少已批准输入或证据即停止。
+
+### 8.2 扩缩容
+
+- 扩缩容只依据已批准输入与 `F-NODE-*` 结果；不按固定拓扑、价格直觉或未测量的“经验值”扩容。
+- 无 SKU/规格推荐；CPU/RAM/连接/IO 或每节点实测吞吐缺失时，节点结论最高 `NOT_VERIFIED`，不得输出正向 deployment-fit。
+- 原始算术估计可报告，但必须带 `ESTIMATE_ONLY`，且不等于容量认证。
+
+### 8.3 验证门（fail closed）
+
+| 门禁 | 失败关闭条件 |
+| --- | --- |
+| 模板/输入 | 9 组模板任一 required 组非 `COMPLETE`，或叶未 `APPROVED` => 不得采购或宣称可上线 |
+| 线路 | 缺合格独立峰值证据、`shortfall>0` 或峰值超 usable => 不得给线路正向裁决 |
+| 节点 | 缺实测 demand/capacity、四项资源证据、同 headroom 的 N-1/降级/共享检查 => 不得给 `FIT_EVIDENCE_COMPLETE` |
+| 存储/上传 | 缺位率/校验时长/保留期/副本策略/实测上传峰值 => 只能 `INCOMPLETE`/`NOT_VERIFIED`；不猜压缩率、保留期或 CDN 拓扑 |
+| 恢复 | 任一依赖 `NOT_MET`、缺演练观测或缺 `asOf` => 不得声称可恢复 |
+| 能力 | `CLAIMED_VERIFIED` 不是云验证；缺 owner/source/evidence/date => `INVALID`；无论是否全 claimed 均输出 `DEPLOYMENT_EVIDENCE_INCOMPLETE` |
+| root 常量 | `productionReady`/`procurementReady`/`cloudVerified`/`a3RiskClosed` 恒 `false`；调用方字段触发 `CALLER_CONTROL_FORBIDDEN` |
+
+### 8.4 停止条件
+
+若需新增公共契约、改变 IVR 媒体/播放边界、选择 region/AZ/SKU/价格/保留期/SLO/RPO/RTO、伪造测量或把合成/估计当批准，必须停止并上报。不得把 spool 起始快照与 end-of-outage backlog 混同，不得把 payload 标成 wire，不得把 load ratio 当平均在服任务数，不得把能力断言当作云验证或关闭 A3 风险。
+
+## 9. 备份、PITR 与恢复依赖闭包（F-BACKUP-01/02）
+
+### 9.1 输入与确定性比较基准
+
+顶层 `asOf` 是 `ScalarInput(iso8601)`，为恢复目标的**唯一**确定性比较基准；`compute` 不读 wall clock。`backupRecovery` 组必需 `BACKUP_DEPENDENCY[]`，固定六项 `dependencyId`：
+
+`postgresPitr`、`cosVersions`、`kmsKeyVersions`、`secretVersions`、`reconciliationOutbox`、`ivrLocalFacts`。
+
+**固定集合语义（exact set）**：上述六个 `dependencyId` 必须各出现且仅出现一次。
+
+- 当数组非空（调用方已提交子集）时，缺失的固定 ID 不得从输出消失：每个缺失 ID 输出 `backupRecovery.<dependencyId>`，状态 `INCOMPLETE`、原因 `DEPENDENCY_ABSENT`，`missing` 指向 `backupRecovery.BACKUP_DEPENDENCY.<dependencyId>`。因此任何缺失都会阻止 `closure` 达到 `BACKUP_CLOSURE_COMPLETE`（fail closed），即使已提交的子集全部 MET。数组为空或集合缺失时，由单个 `backupRecovery.dependencies` 汇总 metric 表达全部缺失。
+- 重复的 `dependencyId` 是 `INVALID` + `DEPENDENCY_DUPLICATE`（每个重复项都标记，并产生同码 root error）。输出 metric id 必须唯一；重复项使用 `backupRecovery.item<index>` 回退 id，不得互相覆盖或掩盖。
+
+每项必须提供：
+
+```text
+{
+  dependencyId: string,
+  included: boolean,                         // 普通布尔，不是 ScalarInput
+  approvedRpoSeconds: ScalarInput(seconds) >= 0,
+  approvedRtoSeconds: ScalarInput(seconds) >= 0,
+  restoreTestedAt: ScalarInput(iso8601),
+  observedRpoSeconds?: ScalarInput(seconds) >= 0,
+  observedRtoSeconds?: ScalarInput(seconds) >= 0,
+  owner: string,
+  evidenceRef: string
+}
+```
+
+- `asOf` 缺失但存在依赖项 => `ASOF_REQUIRED`，所有比较为 `INCOMPLETE`；无 `asOf` 时不做未来比较并保留 `ASOF_ABSENT_NO_FUTURE_CHECK`。
+- `restoreTestedAt` 不可解析 => `DATE_INVALID`；晚于 `asOf` => `DATE_IN_FUTURE`。两者均为 `INVALID`，不是“未知”。
+- `included` 非布尔 => `TYPE_INVALID`；负 RPO/RTO => `NEGATIVE_VALUE`。显式零 RPO/RTO 是合法目标与合法观测。
+
+### 9.2 公式与判定
+
+| ID | 计算/判定 | 语义 |
+| --- | --- | --- |
+| `F-BACKUP-01` | 六依赖逐项 typed 完整性 + 聚合 `backupRecovery.closure` | 每依赖 metric 取 `COMPLETE`/`INCOMPLETE`/`INVALID`/`NOT_MET`；聚合取最坏；全 excluded/缺失 => `copiesOnly` 语义 + `COPIES_ONLY_INCOMPLETE` |
+| `F-BACKUP-02` | 逐依赖 `observedRpoSeconds <= approvedRpoSeconds` 且 `observedRtoSeconds <= approvedRtoSeconds` | 通过 => `MET`/`COMPLETE`；超目标 => `NOT_MET` + `TARGET_NOT_MET`；缺观测 => `OBSERVATION_MISSING`/`INCOMPLETE`；零值合法 |
+
+**公式归因**：依赖 metric 的 `MET`/`NOT_MET` 比较判定归 `F-BACKUP-02`；`DEPENDENCY_EXCLUDED`/`DEPENDENCY_MISSING`/`DEPENDENCY_ABSENT`/`DEPENDENCY_DUPLICATE`/typed `INVALID` 等完整性判定归 `F-BACKUP-01`；`backupRecovery.closure` 聚合归 `F-BACKUP-01`。
+
+**区分规则**：
+
+- `included=false` => `DEPENDENCY_EXCLUDED`：该项仍保留、不是 missing，缺省字段不制造 `DEPENDENCY_MISSING` 噪音。
+- `included=true` 但字段缺失 => `DEPENDENCY_MISSING`；与 excluded 明确区分。
+- 六项全部 excluded/缺失 => `backupRecovery.closure` 值 `COPIES_ONLY` + `COPIES_ONLY_INCOMPLETE`。副本存在不等于可恢复。
+- 所有依赖 metric 均带 `EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY`：`owner`/`evidenceRef` 只是调用方证据完整性，绝不证明实际可恢复、业务一致或 key 未销毁。
+
+### 9.3 依赖矩阵（必须输入，不得声称）
+
+| 依赖 | 必须输入 | 不能声称 |
+| --- | --- | --- |
+| PostgreSQL PITR | approved RPO/RTO、restore drill observed、restoreTestedAt、owner/evidence、asOf | 有备份即恢复 |
+| COS 版本 | 原始/派生、不可变历史版本、legal hold 覆盖、版本恢复演练 observed、证据 | 逻辑字节×副本数即容量 |
+| KMS key versions | 历史 key version、recover/disable/destroy 策略、演练观测、证据 | 销毁 key 可恢复 |
+| Secret Manager versions | 版本化凭据与恢复路径、演练观测、证据 | 当前 secret 覆盖历史 |
+| Reconciliation/Outbox | 恢复后对账、Outbox 重放/去重、DLQ、观测与证据 | 数据恢复即业务一致 |
+| IVR 本地事实 | B-leg operation、spool、通话中事实的恢复/对账、观测与证据 | PG PITR 覆盖 IVR 本地 |
+
+恢复目标（approved）与演练观测（observed）是不同字段；零 RPO/RTO 是合法目标；缺演练是 `INCOMPLETE`，观测超目标是 `NOT_MET`，不是健康。`evidenceRef`/样本覆盖只是调用方证据完整性，不证明可恢复。
+
+## 10. 云能力证据清单与残留
+
+### 10.1 能力断言（F-CAP-01）
+
+`capabilityEvidence` 组包含固定 `CAPABILITY[]`：`CV-1`、`CV-2`、`CV-3`、`CV-4`、`CV-5`、`regionAzSku`。每项是断言记录，不是容量 ScalarInput：
+
+**固定集合语义（exact set）**：上述六项必须各出现且仅出现一次。
+
+- 当数组非空时，缺失项不得从输出消失：每个缺失 ID 输出 `capabilityEvidence.<capabilityId>`，状态 `INCOMPLETE`、原因 `CAPABILITY_ABSENT`，`missing` 指向 `capabilityEvidence.CAPABILITY.<capabilityId>`；缺失使该组至少为 `INCOMPLETE`，不得被读成已断言。数组为空或集合缺失时，由单个 `capabilityEvidence.summary` 汇总 metric 表达全部缺失。
+- 重复 `capabilityId` 是 `INVALID` + `CAPABILITY_DUPLICATE`（每个重复项都标记，并产生同码 root error）。输出 metric id 必须唯一；重复项使用 `capabilityEvidence.item<index>` 回退 id。
+
+```text
+{
+  capabilityId: string,
+  status: UNVERIFIED | CLAIMED_VERIFIED,
+  claimedBy?: string,
+  owner?: string,
+  source?: string,
+  evidenceRef?: string,
+  verifiedAt?: ScalarInput(iso8601)
+}
+```
+
+| 状态 | 输出 |
+| --- | --- |
+| `UNVERIFIED` | `NOT_VERIFIED`，`value="UNVERIFIED"`；不需要证据，保持未知 |
+| `CLAIMED_VERIFIED` 且 `claimedBy/owner/source/evidenceRef/verifiedAt` 齐全 | 仍 `NOT_VERIFIED`，`value="CLAIMED_VERIFIED"`；调用方断言不是验证 |
+| `CLAIMED_VERIFIED` 缺任一证据字段 | `INVALID` + `EVIDENCE_REQUIRED` |
+| `status` 未知或其他值 | `INVALID` + `TYPE_INVALID` |
+| `verifiedAt` 不可解析 / 晚于 `asOf` | `INVALID` + `DATE_INVALID` / `DATE_IN_FUTURE`；无 `asOf` 不做未来比较并保留 `ASOF_ABSENT_NO_FUTURE_CHECK` |
+
+- 无论是否全部 claimed，均输出 `DEPLOYMENT_EVIDENCE_INCOMPLETE`、`NO_CLOUD_VERIFICATION`、`A3_RISK_NOT_CLOSED`。
+- root `cloudVerified=false`、`a3RiskClosed=false` 是固定常量；调用方顶层 `cloudVerified`/`a3RiskClosed`/`productionReady`/`procurementReady`/`approved` 触发 `CALLER_CONTROL_FORBIDDEN`，能力断言本身也不能改写这两个常量。
+- `regionAzSku` 仍须 Infrastructure/Security 手工验证；本规格不选择 region/AZ/SKU、价格、storage class 或 CDN/LB 拓扑。
+
+### 10.2 待验证能力（只列，不声称）
+
+`CV-1..CV-5`（KMS、Secret Manager、CAM、COS private/SSE-KMS/versioning/presign/private endpoint/object lock、CloudAudit/log）、region/AZ/SKU、storage class、价格与预算、网络路径（专线/IPSec、COS 私网或 HTTPS）、CDN/LB media-gateway 拓扑、数据库 HA/IOPS、每节点实测吞吐/连接/IO、SLO/RPO/RTO、媒体保留与 legal hold。每项记录 `claimedBy/owner/source/evidenceRef/verifiedAt`；A4 只定义证据字段与门禁，**不声称任何能力已验证、不关闭 A3 风险**。
+
+### 10.3 残留与 owner/destination
+
+| 残留/输入 | Owner / Destination |
+| --- | --- |
+| 线路/接入号/录音格式/缓冲/时钟、上传并发与网络实测 | Telephony/IVR；线路联调 + A4 input |
+| 时长容差/SLO/超时/独立峰值观测窗口 | IVR/Backend/QA；容量与验收 |
+| COS class/object-lock/媒体保留 | Infrastructure/Security；存储/容量 |
+| 审计/Outbox 保留、DLQ、volume、queue/AI 实测 | Operations/Backend；runbook/可观测性 |
+| 数据库角色/ownership 部署执行、DB 正常/降级拓扑测量 | Platform/Database/Security；部署准备 |
+| 授权窗口/时钟偏差 | IVR/Entitlement/Backend；配置与验收 |
+| KMS 与法律保留/删除、legal hold 额外字节口径 | Security/Infrastructure、Legal/Security |
+| `CV-1..5` / region/AZ/SKU | Infrastructure/Security；能力验证证据（人工） |
+| `R-A3-COS-CAPABILITY` / `R-A3-NO-WORM` | Infrastructure/Security；存储容量/对象锁 |
+| `R-A3-REGION-SKU` | Infrastructure/Security；region/AZ/SKU/价格证据 |
+| `R-A3-MEDIA-GATEWAY-TRANSPORT`（含 CDN/LB 拓扑） | Infrastructure/Security；播放拓扑/带宽 |
+| `R-A3-AUDIT-VOLUME` | Operations/Backend；审计量/保留 |
+| `R-A3-KMS-CAPABILITY` / `R-A3-KEY-DESTRUCTION` | Security/Infrastructure；恢复策略 |
+| `R-A3-LEGAL-RETENTION` / `R-A3-MTLS-CAPABILITY` | Legal/Security、Telephony/IVR |
+| `R-A2-UPLOAD-OBSERVE` / `R-A2-EVIDENCE-HANDOFF` / `R-A2-MULTIPLE-RECORDING` | IVR/Evidence；媒体观察与证据归属 |
+| `R-A2-HEARTBEAT-VOLUME` | Telephony/Operations |
+
+### 10.4 诚实限制
+
+本规格不运行真实线路、SIP/CDR、IVR 媒体引擎、PostgreSQL/Redis/RabbitMQ、COS/KMS/Secret Manager/CAM、CDN/LB/media gateway、云审计或压测；不提供 benchmark、账单、region/SKU 或恢复实测。fixtures 只证明算术、维度、失败关闭和输出契约，不是生产验收、容量证明、云能力验证或恢复能力证明。`CLAIMED_VERIFIED` 不是云验证；节点估计不是 SKU 建议；既有 30 秒任务 TTL 只按原 owner 语义引用，本规格不重定义请求超时、授权窗口、spool 保留或审计保留。

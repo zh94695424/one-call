@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compute, S1_GROUP_IDS, S1_UNITS } from './calc.mjs';
+import { compute, S1_GROUP_IDS, S2_GROUP_IDS, S1_UNITS } from './calc.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TEMPLATE = path.join(HERE, 'inputs.template.json');
@@ -112,6 +112,9 @@ function checkMetric(metric, expected, issues) {
   if (expected.status !== undefined && metric.status !== expected.status) {
     issues.push(`${metric.id}: status ${metric.status} != ${expected.status}`);
   }
+  if (expected.formulaId !== undefined && metric.formulaId !== expected.formulaId) {
+    issues.push(`${metric.id}: formulaId ${metric.formulaId} != ${expected.formulaId}`);
+  }
   if (Object.prototype.hasOwnProperty.call(expected, 'value')) {
     if (!sameValue(metric.value, expected.value)) {
       issues.push(`${metric.id}: value ${JSON.stringify(metric.value)} != ${JSON.stringify(expected.value)}`);
@@ -132,7 +135,18 @@ function checkMetric(metric, expected, issues) {
   }
 }
 
+function checkMetricIdsUnique(output, label, issues) {
+  const seen = new Set();
+  for (const group of output.groups ?? []) {
+    for (const metric of group.metrics ?? []) {
+      if (seen.has(metric.id)) issues.push(`${label}: metric id duplicated: ${metric.id}`);
+      seen.add(metric.id);
+    }
+  }
+}
+
 function checkExpected(output, expected, issues) {
+  checkMetricIdsUnique(output, 'output', issues);
   const metrics = flattenMetrics(output);
   const root = expected.root ?? {};
   if (root.status !== undefined && output.status !== root.status) {
@@ -155,6 +169,9 @@ function checkExpected(output, expected, issues) {
     if (!candidates || candidates.length === 0) {
       issues.push(`metric ${id}: missing from output`);
       continue;
+    }
+    if (candidates.length > 1) {
+      issues.push(`metric ${id}: ${candidates.length} duplicate metrics in output`);
     }
     checkMetric(candidates[0], metricExpected, issues);
   }
@@ -207,16 +224,37 @@ function checkExpected(output, expected, issues) {
   }
 }
 
-function checkTemplateStructure(template, issues, counters) {
+function checkTemplateStructure(template, stage, issues, counters) {
   const topKeys = Object.keys(template).filter((key) => key !== 'meta' && key !== 'asOf');
-  if (topKeys.length !== S1_GROUP_IDS.length) {
-    issues.push(`template: expected ${S1_GROUP_IDS.length} groups, found ${topKeys.length}`);
+  const allowedGroups = new Set(S2_GROUP_IDS);
+  const requiredGroups = stage === 's2' ? S2_GROUP_IDS : S1_GROUP_IDS;
+  if (stage === 's2' && topKeys.length !== S2_GROUP_IDS.length) {
+    issues.push(`template: expected ${S2_GROUP_IDS.length} groups, found ${topKeys.length}`);
   }
-  for (const id of S1_GROUP_IDS) {
+  if (
+    stage === 's1' &&
+    topKeys.length !== S1_GROUP_IDS.length &&
+    topKeys.length !== S2_GROUP_IDS.length
+  ) {
+    issues.push(
+      `template: expected ${S1_GROUP_IDS.length} S1 groups (or ${S2_GROUP_IDS.length} additive groups), found ${topKeys.length}`
+    );
+  }
+  for (const id of requiredGroups) {
     if (!Object.prototype.hasOwnProperty.call(template, id)) issues.push(`template: missing group ${id}`);
   }
   for (const key of topKeys) {
-    if (!S1_GROUP_IDS.includes(key)) issues.push(`template: unexpected group/key ${key}`);
+    if (!allowedGroups.has(key)) issues.push(`template: unexpected group/key ${key}`);
+  }
+  if (stage === 's2') {
+    const dependencies = template.backupRecovery && template.backupRecovery.BACKUP_DEPENDENCY;
+    if (!Array.isArray(dependencies) || dependencies.length !== 0) {
+      issues.push('template backupRecovery.BACKUP_DEPENDENCY: must be an empty array');
+    }
+    const capabilities = template.capabilityEvidence && template.capabilityEvidence.CAPABILITY;
+    if (!Array.isArray(capabilities) || capabilities.length !== 0) {
+      issues.push('template capabilityEvidence.CAPABILITY: must be an empty array');
+    }
   }
   let leaves = 0;
   walkLeaves(template, (leaf, leafPath) => {
@@ -244,13 +282,22 @@ function checkTemplateStructure(template, issues, counters) {
   }
 }
 
-function checkTemplateComputation(template, issues, counters) {
+function checkTemplateComputation(template, stage, issues, counters) {
   const output = compute(template);
-  if (output.groups.length !== 7) issues.push(`computed template: expected 7 groups, found ${output.groups.length}`);
+  checkMetricIdsUnique(output, 'computed template', issues);
+  if (output.groups.length !== S2_GROUP_IDS.length) {
+    issues.push(`computed template: expected ${S2_GROUP_IDS.length} groups, found ${output.groups.length}`);
+  }
   output.groups.forEach((group, index) => {
-    if (group.id !== S1_GROUP_IDS[index]) {
-      issues.push(`computed template: group order ${group.id} != ${S1_GROUP_IDS[index]}`);
+    if (group.id !== S2_GROUP_IDS[index]) {
+      issues.push(`computed template: group order ${group.id} != ${S2_GROUP_IDS[index]}`);
     }
+  });
+  const checkedGroups =
+    stage === 's2'
+      ? output.groups
+      : output.groups.filter((group) => S1_GROUP_IDS.includes(group.id));
+  checkedGroups.forEach((group) => {
     if (group.status !== 'INCOMPLETE') {
       issues.push(`computed template group ${group.id}: status ${group.status} != INCOMPLETE`);
     }
@@ -264,6 +311,9 @@ function checkTemplateComputation(template, issues, counters) {
       if (metric.status === 'INVALID') issues.push(`computed template: metric ${metric.id} is INVALID`);
     }
   });
+  if (checkedGroups.length !== (stage === 's2' ? S2_GROUP_IDS.length : S1_GROUP_IDS.length)) {
+    issues.push(`computed template: checked ${checkedGroups.length} groups for stage ${stage}`);
+  }
   if (output.status !== 'INCOMPLETE') issues.push(`computed template: root status ${output.status} != INCOMPLETE`);
   if (output.productionReady !== false) issues.push('computed template: productionReady must be false');
   if (output.procurementReady !== false) issues.push('computed template: procurementReady must be false');
@@ -344,7 +394,33 @@ function probeRoles() {
   ];
 }
 
-function runNonFiniteProbes(template, issues, counters) {
+function probeBackupDependency() {
+  return {
+    dependencyId: 'postgresPitr',
+    included: true,
+    approvedRpoSeconds: probeLeaf(0, 'seconds'),
+    approvedRtoSeconds: probeLeaf(0, 'seconds'),
+    restoreTestedAt: probeLeaf('2026-10-01T00:00:00Z', 'iso8601'),
+    observedRpoSeconds: probeLeaf(0, 'seconds'),
+    observedRtoSeconds: probeLeaf(0, 'seconds'),
+    owner: 'nonfinite-probe',
+    evidenceRef: 'nonfinite-probe'
+  };
+}
+
+function probeCapability() {
+  return {
+    capabilityId: 'CV-1',
+    status: 'CLAIMED_VERIFIED',
+    claimedBy: 'nonfinite-probe',
+    owner: 'nonfinite-probe',
+    source: 'nonfinite-probe',
+    evidenceRef: 'nonfinite-probe',
+    verifiedAt: probeLeaf('2026-10-01T00:00:00Z', 'iso8601')
+  };
+}
+
+function runNonFiniteProbes(template, stage, issues, counters) {
   const base = structuredClone(template);
   base.meta = {
     status: 'SYNTHETIC_TEST_ONLY',
@@ -354,6 +430,11 @@ function runNonFiniteProbes(template, issues, counters) {
   };
   base.playback.PB_CONCURRENT_SESSIONS = probeLeaf(10, 'count');
   base.measuredNodes.MEASURED_ROLE = probeRoles();
+  if (stage === 's2') {
+    base.asOf = probeLeaf('2026-10-20T00:00:00Z', 'iso8601');
+    base.backupRecovery = { BACKUP_DEPENDENCY: [probeBackupDependency()] };
+    base.capabilityEvidence = { CAPABILITY: [probeCapability()] };
+  }
   const paths = [];
   walkLeaves(base, (leaf, leafPath) => {
     if (!NON_NUMERIC_UNITS.has(leaf.unit)) paths.push(leafPath);
@@ -387,7 +468,7 @@ function runNonFiniteProbes(template, issues, counters) {
   counters.probeLeaves = paths.length;
 }
 
-function runFixtureFile(filePath, issues, counters) {
+function runFixtureFile(filePath, allowedStages, issues, counters) {
   let fixture;
   try {
     fixture = loadJson(filePath);
@@ -397,8 +478,8 @@ function runFixtureFile(filePath, issues, counters) {
     return;
   }
   const label = path.basename(filePath);
-  if (fixture.stage !== 's1') {
-    issues.push(`${label}: stage ${fixture.stage} != s1`);
+  if (!allowedStages.has(fixture.stage)) {
+    issues.push(`${label}: stage ${fixture.stage} not in ${[...allowedStages].join(',')}`);
     counters.failed += 1;
     return;
   }
@@ -419,6 +500,13 @@ function runFixtureFile(filePath, issues, counters) {
     }
     if (!isPlainObject(testCase.expect)) caseIssues.push('case expect missing or not an object');
     const output = compute(testCase.input);
+    if (testCase.repeat === true) {
+      counters.repeatChecks += 1;
+      const repeated = compute(testCase.input);
+      if (JSON.stringify(output) !== JSON.stringify(repeated)) {
+        caseIssues.push('repeat: output is not deterministic');
+      }
+    }
     for (const key of ['productionReady', 'procurementReady', 'cloudVerified', 'a3RiskClosed']) {
       if (output[key] !== false) caseIssues.push(`root.${key} must be false`);
     }
@@ -434,6 +522,39 @@ function runFixtureFile(filePath, issues, counters) {
       process.stdout.write(`FAIL ${label}/${testCase.id}\n`);
     }
   }
+}
+
+function checkDeterminism(template, stage, issues, counters) {
+  const first = JSON.stringify(compute(template));
+  const second = JSON.stringify(compute(template));
+  counters.determinismChecks += 1;
+  if (first !== second) issues.push(`computed template (${stage}): repeated compute output differs`);
+}
+
+function checkReadmeLink(issues, counters) {
+  const readmePath = path.resolve(HERE, '..', '..', 'docs', 'README.md');
+  const exactLine =
+    '| [18-production-capacity-and-deployment-spec.md](18-production-capacity-and-deployment-spec.md) | 参数化容量、部署、恢复与证据清单 | 架构、运维、安全 |';
+  let text;
+  try {
+    text = fs.readFileSync(readmePath, 'utf8');
+  } catch (error) {
+    issues.push(`README: ${error.message}`);
+    counters.readmeLink = false;
+    return;
+  }
+  const lines = text.split(/\r?\n/);
+  const exactCount = lines.filter((line) => line === exactLine).length;
+  const linkCount = lines.filter((line) =>
+    line.includes('(18-production-capacity-and-deployment-spec.md)')
+  ).length;
+  if (exactCount !== 1) {
+    issues.push(`README: expected exactly one exact A4 discoverability line, found ${exactCount}`);
+  }
+  if (linkCount !== 1) {
+    issues.push(`README: expected exactly one A4 link line, found ${linkCount}`);
+  }
+  counters.readmeLink = exactCount === 1 && linkCount === 1;
 }
 
 function parseArgs(argv) {
@@ -469,10 +590,8 @@ function main() {
     process.stdout.write('FAIL capacity-validation (invalid-arguments)\n');
     process.exit(1);
   }
-  if (args.stage !== 's1') {
-    process.stderr.write(
-      `stage ${args.stage} is not implemented in the S1 slice; backupRecovery/capabilityEvidence are deferred to S2\n`
-    );
+  if (args.stage !== 's1' && args.stage !== 's2') {
+    process.stderr.write(`stage ${args.stage} is not implemented; use --stage s1 or --stage s2\n`);
     process.stdout.write(`FAIL capacity-validation (${args.stage})\n`);
     process.exit(1);
   }
@@ -489,7 +608,10 @@ function main() {
     probeLeaves: 0,
     cases: 0,
     passed: 0,
-    failed: 0
+    failed: 0,
+    repeatChecks: 0,
+    determinismChecks: 0,
+    readmeLink: null
   };
 
   let template = null;
@@ -500,35 +622,45 @@ function main() {
       issues.push(`template: ${error.message}`);
     }
     if (template) {
-      checkTemplateStructure(template, issues, counters);
-      checkTemplateComputation(template, issues, counters);
-      runNonFiniteProbes(template, issues, counters);
+      checkTemplateStructure(template, args.stage, issues, counters);
+      checkTemplateComputation(template, args.stage, issues, counters);
+      runNonFiniteProbes(template, args.stage, issues, counters);
+      checkDeterminism(template, args.stage, issues, counters);
     }
   }
 
+  if (args.stage === 's2') checkReadmeLink(issues, counters);
+
   if (runFixtures) {
     let files = [];
+    const fixturePattern = args.stage === 's2' ? /^s[12]-.*\.json$/ : /^s1-.*\.json$/;
+    const allowedStages = new Set(args.stage === 's2' ? ['s1', 's2'] : ['s1']);
     try {
       files = fs
         .readdirSync(fixturesPath)
-        .filter((name) => /^s1-.*\.json$/.test(name))
+        .filter((name) => fixturePattern.test(name))
         .sort();
     } catch (error) {
       issues.push(`fixtures: ${error.message}`);
     }
-    if (files.length === 0) issues.push(`fixtures: no s1-*.json files in ${fixturesPath}`);
-    for (const file of files) runFixtureFile(path.join(fixturesPath, file), issues, counters);
+    if (files.length === 0) {
+      issues.push(`fixtures: no ${args.stage === 's2' ? 's1-*/s2-*' : 's1-*'} files in ${fixturesPath}`);
+    }
+    for (const file of files) {
+      runFixtureFile(path.join(fixturesPath, file), allowedStages, issues, counters);
+    }
   }
 
+  const expectedGroups = args.stage === 's2' ? S2_GROUP_IDS.length : S1_GROUP_IDS.length;
   if (issues.length > 0) {
     for (const issue of issues) process.stderr.write(`ISSUE ${issue}\n`);
     process.stdout.write(
-      `FAIL capacity-validation stage=s1 templateLeaves=${counters.templateLeaves} probes=${counters.probes} cases=${counters.cases} passed=${counters.passed} failed=${counters.failed}\n`
+      `FAIL capacity-validation stage=${args.stage} templateLeaves=${counters.templateLeaves} probes=${counters.probes} cases=${counters.cases} passed=${counters.passed} failed=${counters.failed}\n`
     );
     process.exit(1);
   }
   process.stdout.write(
-    `PASS capacity-validation stage=s1 groups=${S1_GROUP_IDS.length} templateLeaves=${counters.templateLeaves} templateStatus=${counters.templateRootStatus} templateGroups=[${counters.templateGroupStatuses}] nullMetrics=${counters.templateNullMetrics} zeroMetrics=${counters.templateZeroMetrics} nonfiniteProbes=${counters.probes} (${counters.probeLeaves} leaves x NaN/+Infinity/-Infinity) fixtureCases=${counters.cases} passed=${counters.passed} failed=${counters.failed} productionReady=false procurementReady=false cloudVerified=false a3RiskClosed=false\n`
+    `PASS capacity-validation stage=${args.stage} groups=${expectedGroups} templateLeaves=${counters.templateLeaves} templateStatus=${counters.templateRootStatus} templateGroups=[${counters.templateGroupStatuses}] nullMetrics=${counters.templateNullMetrics} zeroMetrics=${counters.templateZeroMetrics} nonfiniteProbes=${counters.probes} (${counters.probeLeaves} leaves x NaN/+Infinity/-Infinity) fixtureCases=${counters.cases} passed=${counters.passed} failed=${counters.failed} repeatChecks=${counters.repeatChecks} determinismChecks=${counters.determinismChecks} readmeLink=${counters.readmeLink} productionReady=false procurementReady=false cloudVerified=false a3RiskClosed=false\n`
   );
 }
 

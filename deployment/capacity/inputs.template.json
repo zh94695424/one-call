@@ -881,5 +881,11 @@
       "owner": null,
       "approval": "MISSING"
     }
+  },
+  "backupRecovery": {
+    "BACKUP_DEPENDENCY": []
+  },
+  "capabilityEvidence": {
+    "CAPABILITY": []
   }
 }

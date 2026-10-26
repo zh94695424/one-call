@@ -3,16 +3,17 @@
  * A4 S1 capacity arithmetic and unknown propagation.
  *
  * Zero third-party dependencies, Node 22 ESM. `compute(input)` is deterministic
- * and never reads the wall clock, network, files or environment. It implements
- * only the named S1 formulas in docs/18 sections 1-6. Backup/recovery and cloud
- * capability formulas are deliberately absent (S2).
+ * and never reads the wall clock, network, files or environment. S1 implements
+ * docs/18 sections 1-6; S2 appends the backup/recovery and capability formulas
+ * in sections 9-10. Caller capability assertions never change the fixed root
+ * `cloudVerified=false` / `a3RiskClosed=false` constants.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SCHEMA_VERSION = 1;
-const GROUP_IDS = [
+const S1_GROUP_ID_LIST = [
   'ivrLines',
   'apiControlPlane',
   'measuredNodes',
@@ -21,6 +22,8 @@ const GROUP_IDS = [
   'growthAndAsync',
   'spool'
 ];
+const S2_GROUP_ID_LIST = [...S1_GROUP_ID_LIST, 'backupRecovery', 'capabilityEvidence'];
+const GROUP_IDS = S2_GROUP_ID_LIST;
 
 const STATUS_RANK = Object.freeze({
   COMPLETE: 0,
@@ -132,6 +135,40 @@ const PEAK_KINDS = ['inbound', 'outbound', 'shared', 'bridge'];
 const DERIVED_TYPES = ['preview', 'transcript', 'summary', 'export'];
 const META_TYPES = ['audit', 'outbox', 'callEvent', 'evidenceEvent', 'shareAccess'];
 const DB_AUX_KINDS = ['index', 'wal', 'replication', 'backup'];
+const BACKUP_DEPENDENCY_IDS = [
+  'postgresPitr',
+  'cosVersions',
+  'kmsKeyVersions',
+  'secretVersions',
+  'reconciliationOutbox',
+  'ivrLocalFacts'
+];
+const CAPABILITY_IDS = ['CV-1', 'CV-2', 'CV-3', 'CV-4', 'CV-5', 'regionAzSku'];
+const BACKUP_DEPENDENCY_FIELDS = new Set([
+  'dependencyId',
+  'included',
+  'approvedRpoSeconds',
+  'approvedRtoSeconds',
+  'restoreTestedAt',
+  'observedRpoSeconds',
+  'observedRtoSeconds',
+  'owner',
+  'evidenceRef'
+]);
+const CAPABILITY_FIELDS = new Set([
+  'capabilityId',
+  'status',
+  'claimedBy',
+  'owner',
+  'source',
+  'evidenceRef',
+  'verifiedAt'
+]);
+const CAPABILITY_LIMITATIONS = [
+  'DEPLOYMENT_EVIDENCE_INCOMPLETE',
+  'NO_CLOUD_VERIFICATION',
+  'A3_RISK_NOT_CLOSED'
+];
 
 const ROLE_COMMON_FIELDS = new Set([
   'role',
@@ -596,10 +633,10 @@ function sumOperands(operands, ctx, metricPath) {
   return { status: 'COMPLETE', value, missing: [], invalid: [], reasons, used };
 }
 
-function groupResult(id, formulaIds, unit, metrics, extraMissing = [], extraInvalid = []) {
+function groupResult(id, formulaIds, unit, metrics, extraMissing = [], extraInvalid = [], extraLimitations = []) {
   const missing = unique([...metrics.flatMap((metric) => metric.missing), ...extraMissing]);
   const invalid = unique([...metrics.flatMap((metric) => metric.invalid), ...extraInvalid]);
-  const limitations = unique(metrics.flatMap((metric) => metric.limitations));
+  const limitations = unique([...metrics.flatMap((metric) => metric.limitations), ...extraLimitations]);
   let status = worst(metrics.map((metric) => metric.status));
   if (invalid.length > 0) status = 'INVALID';
   const partial =
@@ -3717,6 +3754,585 @@ function subtractFloor(leftMetric, rightOperand, overflow, ctx, metricPath, unit
   };
 }
 
+function readAsOf(ctx, input) {
+  const rec = readLeaf(ctx, input, 'asOf', 'asOf', { type: 'string', unit: 'iso8601' });
+  if (rec.usable && !dateValid(rec.value)) {
+    invalidate(rec, ctx, 'DATE_INVALID');
+    rec.usable = false;
+    rec.value = null;
+  }
+  return { rec, value: rec.usable ? rec.value : null };
+}
+
+function readPlainString(ctx, entry, key, fieldPath) {
+  const rec = {
+    path: fieldPath,
+    present: false,
+    missing: false,
+    invalid: false,
+    usable: false,
+    value: null,
+    reasons: []
+  };
+  if (!isPlainObject(entry) || !hasOwn(entry, key) || entry[key] === null || entry[key] === undefined) {
+    rec.missing = true;
+    return rec;
+  }
+  rec.present = true;
+  if (typeof entry[key] !== 'string') {
+    rec.invalid = true;
+    rec.reasons.push('TYPE_INVALID');
+    addError(ctx, 'TYPE_INVALID', fieldPath);
+    return rec;
+  }
+  const trimmed = entry[key].trim();
+  if (trimmed === '') {
+    rec.missing = true;
+    return rec;
+  }
+  rec.value = trimmed;
+  rec.usable = true;
+  return rec;
+}
+
+function readPlainBoolean(ctx, entry, key, fieldPath) {
+  const rec = {
+    path: fieldPath,
+    present: false,
+    missing: false,
+    invalid: false,
+    usable: false,
+    value: null,
+    reasons: []
+  };
+  if (!isPlainObject(entry) || !hasOwn(entry, key) || entry[key] === null || entry[key] === undefined) {
+    rec.missing = true;
+    return rec;
+  }
+  rec.present = true;
+  if (typeof entry[key] !== 'boolean') {
+    rec.invalid = true;
+    rec.reasons.push('TYPE_INVALID');
+    addError(ctx, 'TYPE_INVALID', fieldPath);
+    return rec;
+  }
+  rec.value = entry[key];
+  rec.usable = true;
+  return rec;
+}
+
+function readDateLeaf(ctx, entry, key, fieldPath) {
+  const rec = readLeaf(ctx, entry, key, fieldPath, { type: 'string', unit: 'iso8601' });
+  if (rec.usable && !dateValid(rec.value)) {
+    invalidate(rec, ctx, 'DATE_INVALID');
+    rec.usable = false;
+  }
+  return rec;
+}
+
+function applyFutureDateCheck(rec, ctx, asOf) {
+  if (asOf.value && rec.usable && Date.parse(rec.value) > Date.parse(asOf.value)) {
+    invalidate(rec, ctx, 'DATE_IN_FUTURE');
+    rec.usable = false;
+  }
+}
+
+function computeBackupDependency(ctx, entry, index, basePath, asOf, duplicateId) {
+  const entryPath = `${basePath}[${index}]`;
+  const idFallback = `backupRecovery.item${index}`;
+  if (!isPlainObject(entry)) {
+    addError(ctx, 'TYPE_INVALID', entryPath);
+    return {
+      metric: makeMetric(ctx, {
+        id: idFallback,
+        formulaId: 'F-BACKUP-01',
+        unit: null,
+        status: 'INVALID',
+        value: null,
+        invalid: [entryPath],
+        reasons: ['TYPE_INVALID'],
+        used: [],
+        limitations: ['EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY']
+      }),
+      usablyIncluded: false
+    };
+  }
+  const unknownPaths = [];
+  checkUnknownKeys(ctx, entry, BACKUP_DEPENDENCY_FIELDS, entryPath, unknownPaths);
+
+  const depIdRec = readPlainString(ctx, entry, 'dependencyId', `${entryPath}.dependencyId`);
+  if (depIdRec.usable && !BACKUP_DEPENDENCY_IDS.includes(depIdRec.value)) {
+    invalidate(depIdRec, ctx, 'TYPE_INVALID');
+  }
+  if (duplicateId === true && depIdRec.usable && BACKUP_DEPENDENCY_IDS.includes(depIdRec.value)) {
+    invalidate(depIdRec, ctx, 'DEPENDENCY_DUPLICATE');
+  }
+  const included = readPlainBoolean(ctx, entry, 'included', `${entryPath}.included`);
+  const approvedRpo = readLeaf(ctx, entry, 'approvedRpoSeconds', `${entryPath}.approvedRpoSeconds`, {
+    type: 'number',
+    unit: 'seconds',
+    kind: 'NonNegativeMeasure'
+  });
+  const approvedRto = readLeaf(ctx, entry, 'approvedRtoSeconds', `${entryPath}.approvedRtoSeconds`, {
+    type: 'number',
+    unit: 'seconds',
+    kind: 'NonNegativeMeasure'
+  });
+  const restoreTestedAt = readDateLeaf(ctx, entry, 'restoreTestedAt', `${entryPath}.restoreTestedAt`);
+  const observedRpo = readLeaf(ctx, entry, 'observedRpoSeconds', `${entryPath}.observedRpoSeconds`, {
+    type: 'number',
+    unit: 'seconds',
+    kind: 'NonNegativeMeasure'
+  });
+  const observedRto = readLeaf(ctx, entry, 'observedRtoSeconds', `${entryPath}.observedRtoSeconds`, {
+    type: 'number',
+    unit: 'seconds',
+    kind: 'NonNegativeMeasure'
+  });
+  const owner = readPlainString(ctx, entry, 'owner', `${entryPath}.owner`);
+  const evidenceRef = readPlainString(ctx, entry, 'evidenceRef', `${entryPath}.evidenceRef`);
+
+  applyFutureDateCheck(restoreTestedAt, ctx, asOf);
+
+  const requiredRecs = [depIdRec, included, approvedRpo, approvedRto, restoreTestedAt, owner, evidenceRef];
+  const observationRecs = [observedRpo, observedRto];
+  const leafRecs = [approvedRpo, approvedRto, restoreTestedAt, observedRpo, observedRto];
+  const excluded = included.usable && included.value === false;
+  const asOfMissing = asOf.value === null && !asOf.rec.invalid;
+  const asOfInvalid = asOf.rec.invalid === true;
+
+  let invalidPaths = unique([
+    ...collectInvalid([...requiredRecs, ...observationRecs]),
+    ...unknownPaths,
+    ...(asOfInvalid ? ['asOf'] : [])
+  ]);
+  const invalidCodes = unique([
+    ...invalidReasons([...requiredRecs, ...observationRecs]),
+    ...(unknownPaths.length > 0 ? ['UNKNOWN_KEY'] : []),
+    ...(asOfInvalid ? asOf.rec.reasons : [])
+  ]);
+  let missingPaths = collectMissing(requiredRecs);
+  if (excluded) {
+    missingPaths = missingPaths.filter(
+      (missingPath) =>
+        missingPath === `${entryPath}.dependencyId` || missingPath === `${entryPath}.included`
+    );
+  }
+  const observationMissing = collectMissing(observationRecs);
+
+  let status;
+  let value = null;
+  let reasons = [];
+  if (invalidPaths.length > 0) {
+    status = 'INVALID';
+    reasons = invalidCodes;
+  } else if (excluded) {
+    status = 'INCOMPLETE';
+    reasons = ['DEPENDENCY_EXCLUDED'];
+  } else if (missingPaths.length > 0) {
+    status = 'INCOMPLETE';
+    reasons = ['DEPENDENCY_MISSING'];
+  } else if (asOfMissing) {
+    status = 'INCOMPLETE';
+    reasons = ['ASOF_REQUIRED'];
+  } else if (observationMissing.length > 0) {
+    status = 'INCOMPLETE';
+    reasons = ['OBSERVATION_MISSING'];
+  } else if (observedRpo.value > approvedRpo.value || observedRto.value > approvedRto.value) {
+    status = 'NOT_MET';
+    value = 'NOT_MET';
+    reasons = ['TARGET_NOT_MET'];
+  } else {
+    status = 'COMPLETE';
+    value = 'MET';
+  }
+
+  const metricMissing = unique([
+    ...missingPaths,
+    ...(asOfMissing && !excluded ? ['asOf'] : []),
+    ...(!excluded ? observationMissing : [])
+  ]);
+  const limitations = [
+    'EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY',
+    ...(asOfMissing ? ['ASOF_ABSENT_NO_FUTURE_CHECK'] : [])
+  ];
+  const metricId =
+    depIdRec.usable &&
+    BACKUP_DEPENDENCY_IDS.includes(depIdRec.value) &&
+    duplicateId !== true
+      ? `backupRecovery.${depIdRec.value}`
+      : idFallback;
+  // F-BACKUP-02 owns the observed-vs-approved target comparison verdict
+  // (MET/NOT_MET); every typed-completeness/excluded/missing/invalid verdict
+  // stays attributed to F-BACKUP-01.
+  const formulaId =
+    (status === 'COMPLETE' && value === 'MET') || status === 'NOT_MET'
+      ? 'F-BACKUP-02'
+      : 'F-BACKUP-01';
+  const usablyIncluded =
+    !excluded &&
+    included.usable &&
+    included.value === true &&
+    missingPaths.length === 0 &&
+    invalidPaths.length === 0;
+
+  return {
+    metric: makeMetric(ctx, {
+      id: metricId,
+      formulaId,
+      unit: null,
+      status,
+      value,
+      missing: metricMissing,
+      invalid: invalidPaths,
+      reasons,
+      used: leafRecs,
+      limitations
+    }),
+    usablyIncluded
+  };
+}
+
+function computeBackupRecovery(ctx, input, asOf) {
+  const read = readGroup(ctx, input, 'backupRecovery');
+  const group = read.value;
+  const extraInvalid = read.invalidPath ? [read.invalidPath] : [];
+  checkUnknownKeys(ctx, group, new Set(['BACKUP_DEPENDENCY']), 'backupRecovery', extraInvalid);
+
+  const collectionPath = 'backupRecovery.BACKUP_DEPENDENCY';
+  const raw = group.BACKUP_DEPENDENCY;
+  const collectionMissing = [];
+  const collectionInvalid = [];
+  let entries = [];
+  if (Array.isArray(raw)) {
+    entries = raw;
+  } else if (raw === undefined || raw === null) {
+    collectionMissing.push(collectionPath);
+  } else {
+    addError(ctx, 'TYPE_INVALID', collectionPath);
+    collectionInvalid.push(collectionPath);
+  }
+
+  const metrics = [];
+  const states = [];
+  const idCounts = new Map();
+  for (const entry of entries) {
+    if (!isPlainObject(entry) || typeof entry.dependencyId !== 'string') continue;
+    const dependencyId = entry.dependencyId.trim();
+    if (!BACKUP_DEPENDENCY_IDS.includes(dependencyId)) continue;
+    idCounts.set(dependencyId, (idCounts.get(dependencyId) ?? 0) + 1);
+  }
+  const presentIds = new Set();
+  entries.forEach((entry, index) => {
+    let duplicateId = false;
+    if (isPlainObject(entry) && typeof entry.dependencyId === 'string') {
+      const dependencyId = entry.dependencyId.trim();
+      if (BACKUP_DEPENDENCY_IDS.includes(dependencyId)) {
+        presentIds.add(dependencyId);
+        duplicateId = (idCounts.get(dependencyId) ?? 0) > 1;
+      }
+    }
+    const result = computeBackupDependency(ctx, entry, index, collectionPath, asOf, duplicateId);
+    metrics.push(result.metric);
+    states.push({ usablyIncluded: result.usablyIncluded });
+  });
+
+  const entriesEmpty = entries.length === 0;
+  const copiesOnly = entriesEmpty || states.every((state) => !state.usablyIncluded);
+  const asOfMissing = asOf.value === null && !asOf.rec.invalid;
+  if (entriesEmpty) {
+    metrics.push(
+      makeMetric(ctx, {
+        id: 'backupRecovery.dependencies',
+        formulaId: 'F-BACKUP-01',
+        unit: null,
+        status: collectionInvalid.length > 0 ? 'INVALID' : 'INCOMPLETE',
+        value: null,
+        missing: collectionMissing.length > 0 ? collectionMissing : [collectionPath],
+        invalid: collectionInvalid,
+        reasons: collectionInvalid.length > 0 ? ['TYPE_INVALID'] : [],
+        used: [],
+        limitations: ['EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY']
+      })
+    );
+  } else {
+    // Exact-set closure: each fixed dependencyId must be present exactly once.
+    // Absent IDs stay individually visible as INCOMPLETE + DEPENDENCY_ABSENT and
+    // prevent the aggregate from ever reaching BACKUP_CLOSURE_COMPLETE.
+    for (const dependencyId of BACKUP_DEPENDENCY_IDS) {
+      if (presentIds.has(dependencyId)) continue;
+      metrics.push(
+        makeMetric(ctx, {
+          id: `backupRecovery.${dependencyId}`,
+          formulaId: 'F-BACKUP-01',
+          unit: null,
+          status: 'INCOMPLETE',
+          value: null,
+          missing: [`${collectionPath}.${dependencyId}`],
+          reasons: ['DEPENDENCY_ABSENT'],
+          used: [],
+          limitations: [
+            'EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY',
+            ...(asOfMissing ? ['ASOF_ABSENT_NO_FUTURE_CHECK'] : [])
+          ]
+        })
+      );
+    }
+  }
+
+  let closureStatus;
+  if (collectionInvalid.length > 0 || metrics.some((metric) => metric.status === 'INVALID')) {
+    closureStatus = 'INVALID';
+  } else if (collectionMissing.length > 0 || entriesEmpty || copiesOnly) {
+    closureStatus = 'INCOMPLETE';
+  } else {
+    closureStatus = worst(metrics.map((metric) => metric.status));
+  }
+  let closureValue = null;
+  let closureReasons = [];
+  if (closureStatus === 'INVALID') {
+    closureValue = null;
+  } else if (copiesOnly) {
+    closureValue = 'COPIES_ONLY';
+    closureReasons = ['COPIES_ONLY_INCOMPLETE'];
+  } else if (closureStatus === 'NOT_MET') {
+    closureValue = 'NOT_MET';
+    closureReasons = ['TARGET_NOT_MET'];
+  } else if (closureStatus === 'COMPLETE') {
+    closureValue = 'BACKUP_CLOSURE_COMPLETE';
+  } else {
+    closureValue = 'DEPENDENCY_CLOSURE_INCOMPLETE';
+    if (!entriesEmpty && presentIds.size < BACKUP_DEPENDENCY_IDS.length) {
+      closureReasons = ['DEPENDENCY_ABSENT'];
+    }
+  }
+  const closureMissing = unique([...collectionMissing, ...metrics.flatMap((metric) => metric.missing)]);
+  const closureInvalid = unique([...collectionInvalid, ...metrics.flatMap((metric) => metric.invalid)]);
+  const closureLimitations = [
+    'EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY',
+    ...(asOfMissing && !entriesEmpty ? ['ASOF_ABSENT_NO_FUTURE_CHECK'] : [])
+  ];
+  metrics.push(
+    makeMetric(ctx, {
+      id: 'backupRecovery.closure',
+      formulaId: 'F-BACKUP-01',
+      unit: null,
+      status: closureStatus,
+      value: closureValue,
+      missing: closureMissing,
+      invalid: closureInvalid,
+      reasons: closureReasons,
+      used: mergeRecs(metrics),
+      limitations: closureLimitations
+    })
+  );
+
+  return groupResult(
+    'backupRecovery',
+    ['F-BACKUP-01', 'F-BACKUP-02'],
+    null,
+    metrics,
+    [],
+    extraInvalid,
+    ['EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY']
+  );
+}
+
+function computeCapabilityItem(ctx, entry, index, basePath, asOf, duplicateId) {
+  const entryPath = `${basePath}[${index}]`;
+  const idFallback = `capabilityEvidence.item${index}`;
+  if (!isPlainObject(entry)) {
+    addError(ctx, 'TYPE_INVALID', entryPath);
+    return makeMetric(ctx, {
+      id: idFallback,
+      formulaId: 'F-CAP-01',
+      unit: null,
+      status: 'INVALID',
+      value: null,
+      invalid: [entryPath],
+      reasons: ['TYPE_INVALID'],
+      used: [],
+      limitations: [...CAPABILITY_LIMITATIONS]
+    });
+  }
+  const unknownPaths = [];
+  checkUnknownKeys(ctx, entry, CAPABILITY_FIELDS, entryPath, unknownPaths);
+
+  const idRec = readPlainString(ctx, entry, 'capabilityId', `${entryPath}.capabilityId`);
+  if (idRec.usable && !CAPABILITY_IDS.includes(idRec.value)) {
+    invalidate(idRec, ctx, 'TYPE_INVALID');
+  }
+  if (duplicateId === true && idRec.usable && CAPABILITY_IDS.includes(idRec.value)) {
+    invalidate(idRec, ctx, 'CAPABILITY_DUPLICATE');
+  }
+  const statusRec = readPlainString(ctx, entry, 'status', `${entryPath}.status`);
+  let claimed = false;
+  let unverified = false;
+  if (statusRec.usable) {
+    if (statusRec.value === 'CLAIMED_VERIFIED') claimed = true;
+    else if (statusRec.value === 'UNVERIFIED') unverified = true;
+    else invalidate(statusRec, ctx, 'TYPE_INVALID');
+  }
+  const claimedBy = readPlainString(ctx, entry, 'claimedBy', `${entryPath}.claimedBy`);
+  const owner = readPlainString(ctx, entry, 'owner', `${entryPath}.owner`);
+  const source = readPlainString(ctx, entry, 'source', `${entryPath}.source`);
+  const evidenceRef = readPlainString(ctx, entry, 'evidenceRef', `${entryPath}.evidenceRef`);
+  const verifiedAt = readDateLeaf(ctx, entry, 'verifiedAt', `${entryPath}.verifiedAt`);
+  applyFutureDateCheck(verifiedAt, ctx, asOf);
+
+  const evidenceRecs = [claimedBy, owner, source, evidenceRef, verifiedAt];
+  const evidenceMissing = collectMissing(evidenceRecs);
+  const asOfMissing = asOf.value === null && !asOf.rec.invalid;
+  const asOfInvalid = asOf.rec.invalid === true;
+
+  let invalidPaths = unique([
+    ...collectInvalid([idRec, statusRec, ...evidenceRecs]),
+    ...unknownPaths,
+    ...(asOfInvalid ? ['asOf'] : [])
+  ]);
+  let invalidCodes = unique([
+    ...invalidReasons([idRec, statusRec, ...evidenceRecs]),
+    ...(unknownPaths.length > 0 ? ['UNKNOWN_KEY'] : []),
+    ...(asOfInvalid ? asOf.rec.reasons : [])
+  ]);
+
+  let status;
+  let value = null;
+  let reasons = [];
+  let missingPaths = [];
+  if (invalidPaths.length > 0) {
+    status = 'INVALID';
+    reasons = invalidCodes;
+  } else if (!idRec.usable || !statusRec.usable) {
+    status = 'INCOMPLETE';
+    missingPaths = collectMissing([idRec, statusRec]);
+  } else if (claimed && evidenceMissing.length > 0) {
+    status = 'INVALID';
+    reasons = ['EVIDENCE_REQUIRED'];
+    invalidPaths = unique([...invalidPaths, ...evidenceMissing]);
+    addError(ctx, 'EVIDENCE_REQUIRED', entryPath);
+  } else if (unverified) {
+    status = 'NOT_VERIFIED';
+    value = 'UNVERIFIED';
+  } else if (claimed) {
+    status = 'NOT_VERIFIED';
+    value = 'CLAIMED_VERIFIED';
+  } else {
+    status = 'INVALID';
+    reasons = ['TYPE_INVALID'];
+  }
+
+  const limitations = [
+    ...CAPABILITY_LIMITATIONS,
+    ...(asOfMissing ? ['ASOF_ABSENT_NO_FUTURE_CHECK'] : [])
+  ];
+  const metricId =
+    idRec.usable && CAPABILITY_IDS.includes(idRec.value) && duplicateId !== true
+      ? `capabilityEvidence.${idRec.value}`
+      : idFallback;
+  return makeMetric(ctx, {
+    id: metricId,
+    formulaId: 'F-CAP-01',
+    unit: null,
+    status,
+    value,
+    missing: missingPaths,
+    invalid: invalidPaths,
+    reasons,
+    used: [verifiedAt],
+    limitations
+  });
+}
+
+function computeCapabilityEvidence(ctx, input, asOf) {
+  const read = readGroup(ctx, input, 'capabilityEvidence');
+  const group = read.value;
+  const extraInvalid = read.invalidPath ? [read.invalidPath] : [];
+  checkUnknownKeys(ctx, group, new Set(['CAPABILITY']), 'capabilityEvidence', extraInvalid);
+
+  const collectionPath = 'capabilityEvidence.CAPABILITY';
+  const raw = group.CAPABILITY;
+  const collectionMissing = [];
+  const collectionInvalid = [];
+  let entries = [];
+  if (Array.isArray(raw)) {
+    entries = raw;
+  } else if (raw === undefined || raw === null) {
+    collectionMissing.push(collectionPath);
+  } else {
+    addError(ctx, 'TYPE_INVALID', collectionPath);
+    collectionInvalid.push(collectionPath);
+  }
+
+  const idCounts = new Map();
+  for (const entry of entries) {
+    if (!isPlainObject(entry) || typeof entry.capabilityId !== 'string') continue;
+    const capabilityId = entry.capabilityId.trim();
+    if (!CAPABILITY_IDS.includes(capabilityId)) continue;
+    idCounts.set(capabilityId, (idCounts.get(capabilityId) ?? 0) + 1);
+  }
+  const presentIds = new Set();
+  const metrics = entries.map((entry, index) => {
+    let duplicateId = false;
+    if (isPlainObject(entry) && typeof entry.capabilityId === 'string') {
+      const capabilityId = entry.capabilityId.trim();
+      if (CAPABILITY_IDS.includes(capabilityId)) {
+        presentIds.add(capabilityId);
+        duplicateId = (idCounts.get(capabilityId) ?? 0) > 1;
+      }
+    }
+    return computeCapabilityItem(ctx, entry, index, collectionPath, asOf, duplicateId);
+  });
+  const entriesEmpty = entries.length === 0;
+  if (entriesEmpty) {
+    const summaryMissing = collectionMissing.length > 0 ? collectionMissing : [collectionPath];
+    metrics.push(
+      makeMetric(ctx, {
+        id: 'capabilityEvidence.summary',
+        formulaId: 'F-CAP-01',
+        unit: null,
+        status: collectionInvalid.length > 0 ? 'INVALID' : 'INCOMPLETE',
+        value: null,
+        missing: summaryMissing,
+        invalid: collectionInvalid,
+        reasons: collectionInvalid.length > 0 ? ['TYPE_INVALID'] : [],
+        used: [],
+        limitations: [...CAPABILITY_LIMITATIONS]
+      })
+    );
+  } else {
+    // Exact-set checklist: every fixed capabilityId must be present exactly once.
+    // Omitted capabilities stay individually visible as INCOMPLETE +
+    // CAPABILITY_ABSENT instead of disappearing from the verdict.
+    for (const capabilityId of CAPABILITY_IDS) {
+      if (presentIds.has(capabilityId)) continue;
+      metrics.push(
+        makeMetric(ctx, {
+          id: `capabilityEvidence.${capabilityId}`,
+          formulaId: 'F-CAP-01',
+          unit: null,
+          status: 'INCOMPLETE',
+          value: null,
+          missing: [`${collectionPath}.${capabilityId}`],
+          reasons: ['CAPABILITY_ABSENT'],
+          used: [],
+          limitations: [...CAPABILITY_LIMITATIONS]
+        })
+      );
+    }
+  }
+
+  return groupResult(
+    'capabilityEvidence',
+    ['F-CAP-01'],
+    null,
+    metrics,
+    [],
+    extraInvalid,
+    [...CAPABILITY_LIMITATIONS]
+  );
+}
+
 export function compute(input = {}) {
   if (!isPlainObject(input)) input = {};
   const ctx = { errors: [], errorKeys: new Set(), input };
@@ -3733,8 +4349,9 @@ export function compute(input = {}) {
   }
   const meta = readMeta(ctx, input);
   const synthetic = meta.status === 'SYNTHETIC_TEST_ONLY' || scanSynthetic(input);
+  const asOf = readAsOf(ctx, input);
 
-  // Compute in dependency order, then expose the canonical seven-group order.
+  // Compute in dependency order, then expose the canonical nine-group order.
   const ivrLines = computeIvrLines(ctx, input);
   const apiControlPlane = computeApiControlPlane(ctx, input);
   const playback = computePlayback(ctx, input);
@@ -3742,6 +4359,8 @@ export function compute(input = {}) {
   const mediaIngestStorage = computeMediaIngestStorage(ctx, input, spool.metrics);
   const growthAndAsync = computeGrowthAndAsync(ctx, input);
   const measuredNodes = computeMeasuredNodes(ctx, input);
+  const backupRecovery = computeBackupRecovery(ctx, input, asOf);
+  const capabilityEvidence = computeCapabilityEvidence(ctx, input, asOf);
   const byId = {
     ivrLines,
     apiControlPlane,
@@ -3749,7 +4368,9 @@ export function compute(input = {}) {
     playback,
     mediaIngestStorage,
     growthAndAsync,
-    spool
+    spool,
+    backupRecovery,
+    capabilityEvidence
   };
   const groups = GROUP_IDS.map((id) => byId[id]);
   for (const group of groups) {
@@ -3777,7 +4398,7 @@ export function compute(input = {}) {
     a3RiskClosed: false,
     synthetic,
     metaStatus: meta.status,
-    asOf: null,
+    asOf: asOf.value,
     groups,
     flags,
     errors: ctx.errors
@@ -3814,5 +4435,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   }
 }
 
-export const S1_GROUP_IDS = GROUP_IDS;
+export const S1_GROUP_IDS = S1_GROUP_ID_LIST;
+export const S2_GROUP_IDS = S2_GROUP_ID_LIST;
 export const S1_UNITS = UNITS;
