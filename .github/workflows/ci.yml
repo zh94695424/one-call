@@ -42,15 +42,17 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21.0.13+9'
+          java-version: '21.0.13+9.0.LTS'
           cache: maven
           cache-dependency-path: backend/pom.xml
       - name: assert toolchains and jdk pin
         run: |
           grep -Fx '21.0.13+9' .java-version
+          grep -Fx 'SEMANTIC_VERSION="21.0.13+9"' "${JAVA_HOME}/release"
+          grep -Fx 'IMPLEMENTOR="Eclipse Adoptium"' "${JAVA_HOME}/release"
           ./mvnw -B -ntp -v | grep -F 'Apache Maven 3.9.9'
           ./mvnw -B -ntp -v | grep -F 'Java version: 21.0.13'
-          java -version 2>&1 | grep -F '21.0.13+9'
+          java -version 2>&1 | grep -F '21.0.13'
       - name: require docker daemon
         run: docker info
       - name: build, module checks, container smoke
