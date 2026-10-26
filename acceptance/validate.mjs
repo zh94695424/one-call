@@ -6,6 +6,7 @@
 // expectation consistency against accepted A0-A4 contracts. It never
 // executes a runtime system and never emits production acceptance.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -219,6 +220,64 @@ const UNIT_MINIMUM_TIERS = {
   'PATH-DEPLOY-ACCEPTANCE': ['INTEGRATION', 'CLOUD', 'MANUAL']
 };
 
+// S2 evidence admission contract. These are validator-owned constants so a
+// coordinated model/doc edit cannot weaken caller/synthetic/tier rejection.
+const EVIDENCE_POLICY_ID = 'A5-EVIDENCE-POLICY-V1';
+const EVIDENCE_CLASSES = new Set(['STATIC_SPEC', 'MODEL_FIXTURE', 'SYNTHETIC', 'RUNTIME']);
+const SPEC_ONLY_TIERS = ['STATIC_SPEC', 'MODEL_FIXTURE'];
+const RUNTIME_TIERS = ['INTEGRATION', 'LINE', 'CLOUD', 'MANUAL'];
+const ARTIFACT_ROLES = [
+  'AUDIT_EXPORT', 'OUTBOX_EXPORT', 'DB_STATE_EXPORT', 'METRIC_SNAPSHOT',
+  'LOG_EXPORT', 'LINE_CDR', 'CLOUD_EVIDENCE', 'MANUAL_RECORD', 'TEST_REPORT'
+];
+const ARTIFACT_FIELDS = [
+  'artifactId', 'role', 'locatorRef', 'sha256', 'capturedAt', 'producerRef', 'redactionRef'
+];
+const MANIFEST_FIELDS = [
+  'manifestId', 'scenarioId', 'evidenceOwner', 'evidenceClass', 'evidenceTiers',
+  'executedAt', 'recordedAt', 'artifacts', 'observations', 'manifestDigest'
+];
+const ACCEPTANCE_RECORD_FIELDS = [
+  'recordId', 'scenarioId', 'manifestId', 'manifestDigest', 'authorityRef', 'acceptedAt', 'result'
+];
+const AUTHORITY_FIELDS = [
+  'authorityId', 'status', 'owner', 'approvedAt', 'authorizationBasisRef'
+];
+const AUTHORITY_STATUSES = ['APPROVED', 'SYNTHETIC_TEST_ONLY'];
+const ACCEPTANCE_RECORD_RESULTS = ['PASS', 'FAIL'];
+const MANIFEST_CALLER_FIELDS = ['result', 'pass', 'productionAccepted', 'execution'];
+const MANIFEST_CALLER_ASSERTED_FIELDS = ['accepted'];
+const EVIDENCE_STATES = [
+  'NOT_RUN', 'EVIDENCE_SUBMITTED', 'EVIDENCE_REJECTED', 'EVIDENCE_VALID',
+  'BLOCKED', 'PASS', 'FAIL', 'NOT_APPLICABLE'
+];
+const ISO_Z_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+const SHA256_RE = /^[0-9a-f]{64}$/;
+const LOCATOR_FORBIDDEN = [
+  '?', 'http://', 'https://', '://', 'authorization', 'bearer', 'credential',
+  'token', 'bucket', 'version', 'access_key', 'secret', 'x-cos-', 'cos.ap-',
+  '.cos.'
+];
+const EVIDENCE_POLICY_CONTRACT = {
+  policyId: EVIDENCE_POLICY_ID,
+  evidenceClasses: [...EVIDENCE_CLASSES],
+  specOnlyTiers: [...SPEC_ONLY_TIERS],
+  runtimeTiers: [...RUNTIME_TIERS],
+  artifactRoles: [...ARTIFACT_ROLES],
+  artifactFields: [...ARTIFACT_FIELDS],
+  manifestFields: [...MANIFEST_FIELDS],
+  acceptanceRecordFields: [...ACCEPTANCE_RECORD_FIELDS],
+  acceptanceRecordResults: [...ACCEPTANCE_RECORD_RESULTS],
+  authorityFields: [...AUTHORITY_FIELDS],
+  authorityStatuses: [...AUTHORITY_STATUSES],
+  callerForbiddenFields: [...MANIFEST_CALLER_FIELDS],
+  callerAssertedFields: [...MANIFEST_CALLER_ASSERTED_FIELDS],
+  requiredStateMachine: [...EVIDENCE_STATES],
+  acceptanceRules: [...ACCEPTANCE_RULES],
+  maximumAdmittedState: 'EVIDENCE_VALID',
+  unreachableResidual: 'A5-RES-02'
+};
+
 const root = (issues, code, id = '', p = '') => issues.push({ code, path: p, id: String(id) });
 
 function isObject(value) {
@@ -235,6 +294,36 @@ function canonicalOwnerText(value) {
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/\s*\/\s*/g, '/');
+}
+// Deterministic canonical JSON: recursively sorted object keys, array order
+// preserved. Used only to derive/compare evidence manifest digests.
+function canonicalStringify(value) {
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalStringify(item)).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalStringify(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+function sha256Hex(text) {
+  return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+}
+function manifestDigestOf(manifest) {
+  const body = { ...manifest };
+  delete body.manifestDigest;
+  return sha256Hex(canonicalStringify(body));
+}
+function parseIsoZ(value) {
+  if (typeof value !== 'string' || !ISO_Z_RE.test(value)) return null;
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) ? millis : null;
+}
+function sameStringSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  const set = new Set(left);
+  return set.size === right.length && right.every((item) => set.has(item));
 }
 function sortEdges(edges) {
   return [...edges]
@@ -1144,7 +1233,8 @@ function validateRoot(ctx, model, p) {
   const allowedRoot = new Set([
     'modelVersion', 'matrixId', 'specAsOf', 'axes', 'coverageUnits',
     'notApplicableReasons', 'owners', 'executionTiers', 'coverage', 'scenarios',
-    'residuals', 'sourceBaseline', 'reasonRegistry', 'acceptanceStateMachine'
+    'residuals', 'sourceBaseline', 'reasonRegistry', 'acceptanceStateMachine',
+    'evidencePolicy', 'authorityRegistry'
   ]);
   if (!isObject(model)) {
     root(p, 'A5_MODEL_INVALID', '', 'model');
@@ -2570,6 +2660,641 @@ function validateBaseline(ctx, model, p) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// S2: acceptance evidence contract, admission and aggregate derivation.
+// Static-only. The authority registry is deliberately empty (OQ-03), so a
+// manifest can at most reach EVIDENCE_VALID; PASS/production acceptance remain
+// unreachable without a future approved external authority.
+// ---------------------------------------------------------------------------
+
+function scanForbiddenControlKeys(value, base, issues) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => scanForbiddenControlKeys(item, `${base}[${index}]`, issues));
+    return;
+  }
+  if (!isObject(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    if (MANIFEST_CALLER_FIELDS.includes(key)) {
+      root(issues, 'A5_CALLER_CONTROL_FORBIDDEN', key, `${base}.${key}`);
+    } else if (MANIFEST_CALLER_ASSERTED_FIELDS.includes(key)) {
+      root(issues, 'A5_CALLER_ASSERTED_PASS', key, `${base}.${key}`);
+    } else if (['productionReady', 'procurementReady', 'cloudVerified', 'a3RiskClosed'].includes(key)) {
+      root(issues, 'A5_PROHIBITED_READINESS_FLAG', key, `${base}.${key}`);
+    }
+    scanForbiddenControlKeys(item, `${base}.${key}`, issues);
+  }
+}
+
+function validateS2Contract(model, p) {
+  const policy = model.evidencePolicy;
+  scanForbiddenControlKeys(policy, 'model.evidencePolicy', p);
+  scanForbiddenControlKeys(model.authorityRegistry, 'model.authorityRegistry', p);
+  if (policy === undefined) {
+    root(p, 'A5_SECTION_MISSING', 'evidencePolicy', 'model.evidencePolicy');
+  } else if (!isObject(policy)) {
+    root(p, 'A5_MODEL_INVALID', 'evidencePolicy', 'model.evidencePolicy');
+  } else {
+    for (const [key, expected] of Object.entries(EVIDENCE_POLICY_CONTRACT)) {
+      const actual = policy[key];
+      if (Array.isArray(expected)) {
+        if (!sameStringSet(actual, expected)) {
+          root(p, 'A5_MODEL_INVALID', key, `model.evidencePolicy.${key}`);
+        }
+      } else if (actual !== expected) {
+        root(p, 'A5_MODEL_INVALID', key, `model.evidencePolicy.${key}`);
+      }
+    }
+    if (policy.requiredStateMachine !== undefined && model.acceptanceStateMachine?.states &&
+        !sameStringSet(policy.requiredStateMachine, model.acceptanceStateMachine.states)) {
+      root(p, 'A5_MODEL_INVALID', 'requiredStateMachine', 'model.evidencePolicy.requiredStateMachine');
+    }
+  }
+  if (!Array.isArray(model.authorityRegistry)) {
+    if (model.authorityRegistry === undefined) {
+      root(p, 'A5_SECTION_MISSING', 'authorityRegistry', 'model.authorityRegistry');
+    } else {
+      root(p, 'A5_MODEL_INVALID', 'authorityRegistry', 'model.authorityRegistry');
+    }
+  } else if (model.authorityRegistry.length > 0) {
+    // OQ-03: the static registry must be empty. No invented authority row is
+    // accepted, with or without a basis ref.
+    for (const row of model.authorityRegistry) {
+      const id = isObject(row) && isString(row.authorityId) ? row.authorityId : 'authorityRegistry';
+      root(p, 'A5_ACCEPTANCE_AUTHORITY_INVALID', id, 'model.authorityRegistry');
+    }
+  }
+}
+
+function requiredArtifactRoles(scenario, requiredTiers) {
+  const roles = new Set();
+  const runtime = requiredTiers.some((tier) => RUNTIME_TIERS.includes(tier));
+  if (!runtime) {
+    roles.add('TEST_REPORT');
+    return roles;
+  }
+  roles.add('TEST_REPORT');
+  const evidence = scenario.expected?.evidence || {};
+  if ((scenario.expected?.persisted || []).length > 0) roles.add('DB_STATE_EXPORT');
+  if ((evidence.audit || []).length > 0 || (evidence.accessEvents || []).length > 0) {
+    roles.add('AUDIT_EXPORT');
+  }
+  if ((evidence.outbox || []).length > 0) roles.add('OUTBOX_EXPORT');
+  if ((evidence.observability || []).length > 0) roles.add('METRIC_SNAPSHOT');
+  if ((evidence.logs || []).length > 0) roles.add('LOG_EXPORT');
+  for (const tier of requiredTiers) {
+    if (tier === 'LINE') roles.add('LINE_CDR');
+    else if (tier === 'CLOUD') roles.add('CLOUD_EVIDENCE');
+    else if (tier === 'MANUAL') roles.add('MANUAL_RECORD');
+  }
+  return roles;
+}
+
+function locatorAllowed(locatorRef) {
+  if (!isString(locatorRef)) return false;
+  const lower = locatorRef.toLowerCase();
+  return !LOCATOR_FORBIDDEN.some((needle) => lower.includes(needle));
+}
+
+function validateArtifact(ctx, artifact, manifest, id, issues) {
+  const where = `manifest.${id}.artifacts`;
+  if (!isObject(artifact)) {
+    root(issues, 'A5_EVIDENCE_REF_INVALID', id, where);
+    return;
+  }
+  const keys = Object.keys(artifact);
+  if (keys.some((key) => !ARTIFACT_FIELDS.includes(key)) ||
+      ARTIFACT_FIELDS.some((key) => !Object.prototype.hasOwnProperty.call(artifact, key))) {
+    root(issues, 'A5_EVIDENCE_REF_INVALID', id, where);
+    return;
+  }
+  if (!isString(artifact.artifactId)) root(issues, 'A5_EVIDENCE_REF_INVALID', id, `${where}.artifactId`);
+  if (!ARTIFACT_ROLES.includes(artifact.role)) root(issues, 'A5_EVIDENCE_REF_INVALID', id, `${where}.role`);
+  if (!locatorAllowed(artifact.locatorRef)) root(issues, 'A5_EVIDENCE_REF_INVALID', id, `${where}.locatorRef`);
+  if (!isString(artifact.sha256) || !SHA256_RE.test(artifact.sha256)) {
+    root(issues, 'A5_EVIDENCE_REF_INVALID', id, `${where}.sha256`);
+  }
+  const captured = parseIsoZ(artifact.capturedAt);
+  const executed = parseIsoZ(manifest.executedAt);
+  const recorded = parseIsoZ(manifest.recordedAt);
+  if (captured === null) {
+    root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `${where}.capturedAt`);
+  } else if (executed !== null && recorded !== null && (captured < executed || captured > recorded)) {
+    root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `${where}.capturedAt`);
+  }
+  for (const key of ['producerRef', 'redactionRef']) {
+    if (!isString(artifact[key]) || !BASIS_REF_SHAPE.test(artifact[key])) {
+      root(issues, 'A5_EVIDENCE_REF_INVALID', id, `${where}.${key}`);
+      continue;
+    }
+    // The human canonical contract requires every provenance ref to be a
+    // resolvable source ref. Free text / unknown prefixes are invalid here;
+    // a shaped ref that resolves to nothing is equally fail-closed.
+    const result = resolveRef(ctx, artifact[key]);
+    if (result.status !== 'ok') {
+      root(issues, 'A5_EVIDENCE_REF_INVALID', artifact[key], `${where}.${key}`);
+    }
+  }
+}
+
+function validateObservation(ctx, observation, scenario, id, issues) {
+  const where = `manifest.${id}.observations`;
+  if (!isObject(observation)) {
+    root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, where);
+    return;
+  }
+  if (!isString(observation.targetRef) || !isString(observation.field) ||
+      !Object.prototype.hasOwnProperty.call(observation, 'value')) {
+    root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, where);
+    return;
+  }
+  // An observation may only speak about business state the scenario itself
+  // asserts: step expected-state rows plus the final persisted projection.
+  // Claims about unrelated aggregates are out of scope and contradict the
+  // evidence contract even when the value is legal for that aggregate.
+  const assertedPairs = new Set();
+  for (const step of scenario.stimulus?.steps || []) {
+    for (const row of step.expectedState || []) {
+      if (isObject(row) && isString(row.targetRef) && isString(row.field)) {
+        assertedPairs.add(`${row.targetRef}\u0000${row.field}`);
+      }
+    }
+  }
+  for (const row of scenario.expected?.persisted || []) {
+    if (isObject(row) && isString(row.targetRef) && isString(row.field)) {
+      assertedPairs.add(`${row.targetRef}\u0000${row.field}`);
+    }
+  }
+  if (!assertedPairs.has(`${observation.targetRef}\u0000${observation.field}`)) {
+    root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:scope`);
+    return;
+  }
+  const info = machineInfo(ctx, observation.targetRef, new Map());
+  if (info && info.kind === 'machine') {
+    if (info.derivedStates.has(observation.value) || !info.states.has(observation.value)) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:value`);
+    }
+  } else if (observation.targetRef.startsWith('A0:SM:') ||
+             observation.targetRef.startsWith('A2:STATE:')) {
+    root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:targetRef`);
+  }
+  const expected = (scenario.expected?.persisted || [])
+    .find((row) => row.targetRef === observation.targetRef && row.field === observation.field);
+  if (expected) {
+    if (expected.op === 'EQUALS' && observation.value !== expected.value) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:final`);
+    }
+    if (expected.op === 'NULL' && observation.value !== null) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:final`);
+    }
+  }
+  if (observation.transitionRef !== undefined) {
+    if (!isString(observation.transitionRef)) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:transitionRef`);
+      return;
+    }
+    const parsed = parseTransitionRef(observation.transitionRef);
+    if (!parsed) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:transitionRef`);
+      return;
+    }
+    const target = parsed.kind === 'A0'
+      ? `A0:SM:${parsed.machine}`
+      : `A2:STATE:${parsed.machine}`;
+    const info2 = machineInfo(ctx, target, new Map());
+    if (!info2 || info2.kind !== 'machine' ||
+        !info2.edges.has(`${parsed.from}\u0000${parsed.to}`)) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:transitionRef`);
+      return;
+    }
+    if (machineTerminals(info2).includes(parsed.from) && parsed.from !== parsed.to) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:terminal`);
+    }
+    const terminalStates = scenario.expected?.terminalAbsorption?.terminalStates || [];
+    if (terminalStates.includes(parsed.from) && parsed.from !== parsed.to) {
+      root(issues, 'A5_EVIDENCE_STATE_CONTRADICTION', id, `${where}:terminal`);
+    }
+  }
+}
+
+function validateEvidence(ctx, model, ledger, options = {}, issues = []) {
+  const stats = {
+    manifests: 0,
+    admitted: 0,
+    records: 0,
+    blocked: 0,
+    rejected: 0,
+    admittedState: null,
+    runtimeEvidence: 'NOT_RUN',
+    productionAccepted: false
+  };
+  if (ledger === null || ledger === undefined) return stats;
+  if (!isObject(ledger)) {
+    root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', 'ledger', 'evidence');
+    stats.runtimeEvidence = 'EVIDENCE_REJECTED';
+    return stats;
+  }
+  const ledgerAllowed = new Set(['schemaVersion', 'asOf', 'manifests', 'acceptanceRecords']);
+  if (Object.keys(ledger).some((key) => !ledgerAllowed.has(key))) {
+    root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', 'ledger', 'evidence');
+  }
+  const asOf = parseIsoZ(ledger.asOf);
+  if (ledger.schemaVersion !== 1 || asOf === null) {
+    root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', 'ledger', 'evidence');
+    stats.runtimeEvidence = 'EVIDENCE_REJECTED';
+    return stats;
+  }
+  const manifests = Array.isArray(ledger.manifests) ? ledger.manifests : null;
+  const records = Array.isArray(ledger.acceptanceRecords) ? ledger.acceptanceRecords : null;
+  if (!manifests || !records) {
+    root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', 'ledger', 'evidence');
+    stats.runtimeEvidence = 'EVIDENCE_REJECTED';
+    return stats;
+  }
+  stats.manifests = manifests.length;
+  stats.records = records.length;
+
+  const scenarios = new Map((model.scenarios || []).map((scenario) => [scenario.scenarioId, scenario]));
+  const profiles = options.scenarioProfiles || {};
+  const manifestById = new Map();
+  const manifestState = new Map();
+  const callerControlled = [];
+
+  // Manifest identity conflicts are resolved first so a replay/immutability
+  // failure is reported once instead of cascading into every other check.
+  const identityGroups = new Map();
+  for (const manifest of manifests) {
+    if (!isObject(manifest) || !isString(manifest.manifestId)) continue;
+    if (!identityGroups.has(manifest.manifestId)) identityGroups.set(manifest.manifestId, []);
+    identityGroups.get(manifest.manifestId).push(manifest);
+  }
+  const conflicted = new Set();
+  for (const [manifestId, group] of identityGroups) {
+    if (group.length < 2) continue;
+    const digests = new Set(group.map((item) => String(item.manifestDigest)));
+    const bodies = new Set(group.map((item) => canonicalStringify({ ...item, manifestDigest: undefined })));
+    if (digests.size > 1 || bodies.size > 1) {
+      root(issues, 'A5_ACCEPTANCE_IMMUTABILITY_VIOLATION', manifestId, 'evidence.manifests');
+      conflicted.add(manifestId);
+    }
+  }
+
+  for (const manifest of manifests) {
+    if (!isObject(manifest)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', 'manifest', 'evidence.manifests');
+      stats.rejected += 1;
+      continue;
+    }
+    const id = isString(manifest.manifestId) ? manifest.manifestId : 'manifest';
+    if (conflicted.has(id)) {
+      stats.rejected += 1;
+      continue;
+    }
+    if (manifestById.has(id)) continue; // identical replay: admit once
+    manifestById.set(id, manifest);
+    const before = issues.length;
+
+    for (const key of MANIFEST_CALLER_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(manifest, key)) {
+        root(issues, 'A5_CALLER_CONTROL_FORBIDDEN', key, `manifest.${id}.${key}`);
+        callerControlled.push(id);
+      }
+    }
+    for (const key of MANIFEST_CALLER_ASSERTED_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(manifest, key)) {
+        root(issues, 'A5_CALLER_ASSERTED_PASS', key, `manifest.${id}.${key}`);
+        callerControlled.push(id);
+      }
+    }
+    for (const key of Object.keys(manifest)) {
+      if (!MANIFEST_FIELDS.includes(key) &&
+          !MANIFEST_CALLER_FIELDS.includes(key) &&
+          !MANIFEST_CALLER_ASSERTED_FIELDS.includes(key)) {
+        root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', key, `manifest.${id}.${key}`);
+      }
+    }
+    const coreFields = ['manifestId', 'scenarioId', 'evidenceClass', 'evidenceTiers',
+      'executedAt', 'recordedAt', 'artifacts', 'observations', 'manifestDigest'];
+    const coreMissing = coreFields.some((key) =>
+      !Object.prototype.hasOwnProperty.call(manifest, key) || manifest[key] === null);
+    if (coreMissing) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', id, `manifest.${id}`);
+      stats.rejected += 1;
+      continue;
+    }
+    // Identity fields are closed non-empty strings: a non-string manifestId
+    // or scenarioId can never be matched to a scenario/record identity.
+    if (!isString(manifest.manifestId) || !isString(manifest.scenarioId)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', id, `manifest.${id}`);
+      stats.rejected += 1;
+      continue;
+    }
+    const ownerPresent = Object.prototype.hasOwnProperty.call(manifest, 'evidenceOwner') &&
+      manifest.evidenceOwner !== null;
+    if (!ownerPresent) {
+      root(issues, 'A5_EVIDENCE_OWNER_MISSING', id, `manifest.${id}.evidenceOwner`);
+    }
+    const scenario = scenarios.get(manifest.scenarioId);
+    if (!scenario) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', manifest.scenarioId, `manifest.${id}.scenarioId`);
+      stats.rejected += 1;
+      continue;
+    }
+    if (ownerPresent &&
+        (!isString(manifest.evidenceOwner) || manifest.evidenceOwner !== scenario.evidenceOwner)) {
+      root(issues, 'A5_EVIDENCE_OWNER_MISMATCH', id, `manifest.${id}.evidenceOwner`);
+    }
+    if (!EVIDENCE_CLASSES.has(manifest.evidenceClass)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', manifest.evidenceClass, `manifest.${id}.evidenceClass`);
+    }
+    if (!Array.isArray(manifest.evidenceTiers) || manifest.evidenceTiers.length === 0 ||
+        new Set(manifest.evidenceTiers).size !== manifest.evidenceTiers.length ||
+        manifest.evidenceTiers.some((tier) => !EXECUTION_TIERS.includes(tier))) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', id, `manifest.${id}.evidenceTiers`);
+    }
+    const executedAt = parseIsoZ(manifest.executedAt);
+    const recordedAt = parseIsoZ(manifest.recordedAt);
+    if (executedAt === null) root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `manifest.${id}.executedAt`);
+    if (recordedAt === null) root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `manifest.${id}.recordedAt`);
+    if (executedAt !== null && recordedAt !== null && executedAt > recordedAt) {
+      root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `manifest.${id}.recordedAt`);
+    }
+    if ((executedAt !== null && executedAt > asOf) || (recordedAt !== null && recordedAt > asOf)) {
+      root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `manifest.${id}`);
+    }
+    if (!isString(manifest.manifestDigest) || !SHA256_RE.test(manifest.manifestDigest)) {
+      root(issues, 'A5_EVIDENCE_DIGEST_MISMATCH', id, `manifest.${id}.manifestDigest`);
+    } else if (manifestDigestOf(manifest) !== manifest.manifestDigest) {
+      root(issues, 'A5_EVIDENCE_DIGEST_MISMATCH', id, `manifest.${id}.manifestDigest`);
+    }
+    if (!Array.isArray(manifest.artifacts)) {
+      root(issues, 'A5_EVIDENCE_ARTIFACT_MISSING', id, `manifest.${id}.artifacts`);
+    } else {
+      if (manifest.artifacts.length === 0) {
+        root(issues, 'A5_EVIDENCE_ARTIFACT_MISSING', id, `manifest.${id}.artifacts`);
+      }
+      const artifactIds = new Set();
+      for (const artifact of manifest.artifacts) {
+        if (isObject(artifact) && isString(artifact.artifactId)) {
+          if (artifactIds.has(artifact.artifactId)) {
+            root(issues, 'A5_EVIDENCE_REF_INVALID', artifact.artifactId, `manifest.${id}.artifacts`);
+          }
+          artifactIds.add(artifact.artifactId);
+        }
+        validateArtifact(ctx, artifact, manifest, id, issues);
+      }
+    }
+    if (!Array.isArray(manifest.observations)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', id, `manifest.${id}.observations`);
+    } else {
+      for (const observation of manifest.observations) {
+        validateObservation(ctx, observation, scenario, id, issues);
+      }
+    }
+
+    const requiredTiers = profiles[scenario.scenarioId]?.requiredEvidenceTiers ||
+      scenario.requiredEvidenceTiers || [];
+    let tierInsufficient = false;
+    let syntheticRejected = false;
+    const providedTiers = Array.isArray(manifest.evidenceTiers) ? manifest.evidenceTiers : [];
+    if (manifest.evidenceClass === 'SYNTHETIC' &&
+        (providedTiers.some((tier) => RUNTIME_TIERS.includes(tier)) ||
+         requiredTiers.some((tier) => RUNTIME_TIERS.includes(tier)))) {
+      root(issues, 'A5_SYNTHETIC_EVIDENCE_REJECTED', id, `manifest.${id}.evidenceClass`);
+      tierInsufficient = true;
+      syntheticRejected = true;
+    } else if (manifest.evidenceClass === 'STATIC_SPEC' || manifest.evidenceClass === 'MODEL_FIXTURE') {
+      if (providedTiers.some((tier) => RUNTIME_TIERS.includes(tier)) ||
+          requiredTiers.some((tier) => RUNTIME_TIERS.includes(tier))) {
+        root(issues, 'A5_EVIDENCE_TIER_INSUFFICIENT', id, `manifest.${id}.evidenceTiers`);
+        tierInsufficient = true;
+      }
+    } else if (manifest.evidenceClass === 'RUNTIME') {
+      const provided = new Set(providedTiers);
+      if (requiredTiers.some((tier) => !provided.has(tier))) {
+        root(issues, 'A5_EVIDENCE_TIER_INSUFFICIENT', id, `manifest.${id}.evidenceTiers`);
+        tierInsufficient = true;
+      }
+    }
+    if (!tierInsufficient && Array.isArray(manifest.artifacts)) {
+      const roles = new Set(manifest.artifacts
+        .filter((artifact) => isObject(artifact) && isString(artifact.role))
+        .map((artifact) => artifact.role));
+      for (const role of requiredArtifactRoles(scenario, requiredTiers)) {
+        if (!roles.has(role)) {
+          root(issues, 'A5_EVIDENCE_ARTIFACT_MISSING', role, `manifest.${id}.artifacts`);
+        }
+      }
+    }
+
+    const manifestIssues = issues.slice(before);
+    if (manifestIssues.length > 0) {
+      const codes = new Set(manifestIssues.map((issue) => issue.code));
+      const onlyTier = tierInsufficient && !syntheticRejected &&
+        [...codes].every((code) => code === 'A5_EVIDENCE_TIER_INSUFFICIENT');
+      if (onlyTier) stats.blocked += 1;
+      else stats.rejected += 1;
+    } else {
+      stats.admitted += 1;
+      manifestState.set(id, 'EVIDENCE_VALID');
+    }
+  }
+
+  // Acceptance records must be independent of the manifest and reference an
+  // approved authority. Record identity conflicts fail closed first.
+  const recordGroups = new Map();
+  for (const record of records) {
+    if (!isObject(record) || !isString(record.scenarioId)) continue;
+    if (!recordGroups.has(record.scenarioId)) recordGroups.set(record.scenarioId, []);
+    recordGroups.get(record.scenarioId).push(record);
+  }
+  const conflictedScenarios = new Set();
+  for (const [scenarioId, group] of recordGroups) {
+    if (group.length < 2) continue;
+    const bodies = new Set(group.map((record) => canonicalStringify(record)));
+    if (bodies.size > 1) {
+      root(issues, 'A5_ACCEPTANCE_IMMUTABILITY_VIOLATION', scenarioId, 'evidence.acceptanceRecords');
+      conflictedScenarios.add(scenarioId);
+    }
+  }
+  // recordId is a terminal identity: reusing it for a different body is an
+  // immutability violation even when the scenario binding is otherwise valid.
+  const recordIdGroups = new Map();
+  for (const record of records) {
+    if (!isObject(record) || !isString(record.recordId)) continue;
+    if (!recordIdGroups.has(record.recordId)) recordIdGroups.set(record.recordId, []);
+    recordIdGroups.get(record.recordId).push(record);
+  }
+  const conflictedRecordIds = new Set();
+  for (const [recordId, group] of recordIdGroups) {
+    if (group.length < 2) continue;
+    const bodies = new Set(group.map((record) => canonicalStringify(record)));
+    if (bodies.size > 1) {
+      root(issues, 'A5_ACCEPTANCE_IMMUTABILITY_VIOLATION', recordId, 'evidence.acceptanceRecords');
+      conflictedRecordIds.add(recordId);
+    }
+  }
+
+  let passScenarios = 0;
+  const uniqueRecords = [];
+  const seenRecords = new Set();
+  for (const record of records) {
+    if (!isObject(record)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', 'record', 'evidence.acceptanceRecords');
+      continue;
+    }
+    if (conflictedScenarios.has(record.scenarioId)) continue;
+    if (isString(record.recordId) && conflictedRecordIds.has(record.recordId)) continue;
+    const body = canonicalStringify(record);
+    if (seenRecords.has(body)) continue;
+    seenRecords.add(body);
+    uniqueRecords.push(record);
+  }
+  for (const record of uniqueRecords) {
+    const id = isString(record.recordId) ? record.recordId : 'record';
+    const keys = Object.keys(record);
+    const shapeFields = ACCEPTANCE_RECORD_FIELDS.filter((key) => key !== 'authorityRef');
+    if (keys.some((key) => !ACCEPTANCE_RECORD_FIELDS.includes(key)) ||
+        shapeFields.some((key) => !Object.prototype.hasOwnProperty.call(record, key))) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', id, 'evidence.acceptanceRecords');
+      continue;
+    }
+    // Closed string identity fields: a record can only bind to an admitted
+    // manifest through non-empty string identities.
+    if (!isString(record.recordId) || !isString(record.scenarioId) ||
+        !isString(record.manifestId)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', id, 'evidence.acceptanceRecords');
+      continue;
+    }
+    if (!ACCEPTANCE_RECORD_RESULTS.includes(record.result)) {
+      root(issues, 'A5_EVIDENCE_MANIFEST_INVALID', record.result, `record.${id}.result`);
+      continue;
+    }
+    if (conflicted.has(record.manifestId)) continue;
+    const manifest = manifestById.get(record.manifestId);
+    if (!manifest) {
+      root(issues, 'A5_ACCEPTANCE_EVIDENCE_MISSING', id, `record.${id}.manifestId`);
+      continue;
+    }
+    // A record's scenarioId is part of its terminal identity: it must bind to
+    // the very scenario of the manifest it references.
+    if (record.scenarioId !== manifest.scenarioId) {
+      root(issues, 'A5_ACCEPTANCE_IMMUTABILITY_VIOLATION', id, `record.${id}.scenarioId`);
+      continue;
+    }
+    if (record.manifestDigest !== manifest.manifestDigest) {
+      root(issues, 'A5_ACCEPTANCE_IMMUTABILITY_VIOLATION', id, `record.${id}.manifestDigest`);
+      continue;
+    }
+    if (manifestState.get(record.manifestId) !== 'EVIDENCE_VALID') {
+      root(issues, 'A5_ACCEPTANCE_EVIDENCE_MISSING', id, `record.${id}.manifestId`);
+      continue;
+    }
+    const acceptedAt = parseIsoZ(record.acceptedAt);
+    const manifestRecorded = parseIsoZ(manifest.recordedAt);
+    if (acceptedAt === null || acceptedAt > asOf ||
+        (manifestRecorded !== null && acceptedAt < manifestRecorded)) {
+      root(issues, 'A5_EVIDENCE_TIME_INVALID', id, `record.${id}.acceptedAt`);
+      continue;
+    }
+    // A structurally valid FAIL record drives the admitted manifest/scenario
+    // to terminal FAIL; it grants nothing but must never be masked by an
+    // EVIDENCE_VALID roll-up. Only PASS requires an approved authority.
+    if (record.result === 'FAIL') {
+      manifestState.set(record.manifestId, 'FAIL');
+      continue;
+    }
+    if (Array.isArray(model.authorityRegistry) && model.authorityRegistry.length > 0) {
+      root(issues, 'A5_ACCEPTANCE_AUTHORITY_INVALID', id, `record.${id}.authorityRef`);
+      continue;
+    }
+    if (!isString(record.authorityRef)) {
+      root(issues, 'A5_ACCEPTANCE_AUTHORITY_MISSING', id, `record.${id}.authorityRef`);
+      continue;
+    }
+    // Empty registry (or no APPROVED row) means no authority can approve.
+    root(issues, 'A5_ACCEPTANCE_AUTHORITY_MISSING', record.authorityRef, `record.${id}.authorityRef`);
+  }
+
+  // Aggregate derivation. productionAccepted is an output; a caller field can
+  // never substitute. With the deliberately empty registry it stays false.
+  const represented = (model.coverage || []).filter((row) => row.state === 'REPRESENTED');
+  const forbidden = callerControlled.length > 0 ||
+    ['productionAccepted', 'accepted', 'result', 'pass', 'execution']
+      .some((key) => Object.prototype.hasOwnProperty.call(model, key));
+  if (!forbidden && represented.length > 0) {
+    const approved = new Map((model.authorityRegistry || [])
+      .filter((row) => isObject(row) && row.status === 'APPROVED' &&
+        isString(row.authorizationBasisRef))
+      .map((row) => [row.authorityId, row]));
+    const admittedScenarios = new Set();
+    for (const [manifestId, state] of manifestState) {
+      if (state !== 'EVIDENCE_VALID') continue;
+      const manifest = manifestById.get(manifestId);
+      if (manifest && scenarios.has(manifest.scenarioId)) admittedScenarios.add(manifest.scenarioId);
+    }
+    const passed = new Set();
+    for (const record of uniqueRecords) {
+      if (record.result !== 'PASS') continue;
+      if (!approved.has(record.authorityRef)) continue;
+      const manifest = manifestById.get(record.manifestId);
+      if (!manifest || manifestState.get(record.manifestId) !== 'EVIDENCE_VALID') continue;
+      if (record.manifestDigest !== manifest.manifestDigest) continue;
+      passed.add(record.scenarioId);
+    }
+    const everyRepresented = represented.every((row) =>
+      admittedScenarios.has(row.scenarioId) || passed.has(row.scenarioId));
+    stats.productionAccepted = everyRepresented && represented.every((row) => passed.has(row.scenarioId));
+    passScenarios = passed.size;
+  }
+  stats.passScenarios = passScenarios;
+  if (stats.admitted > 0) stats.admittedState = 'EVIDENCE_VALID';
+  if (stats.rejected > 0) stats.runtimeEvidence = 'EVIDENCE_REJECTED';
+  else if (stats.blocked > 0) stats.runtimeEvidence = 'BLOCKED';
+  else if (stats.manifests === 0) stats.runtimeEvidence = 'NOT_RUN';
+  else if ([...manifestState.values()].includes('FAIL')) stats.runtimeEvidence = 'FAIL';
+  else if (represented.length > 0 && (() => {
+    const admittedScenarios = new Set();
+    for (const [manifestId, state] of manifestState) {
+      if (state !== 'EVIDENCE_VALID') continue;
+      const manifest = manifestById.get(manifestId);
+      if (manifest) admittedScenarios.add(manifest.scenarioId);
+    }
+    return represented.every((row) => admittedScenarios.has(row.scenarioId));
+  })()) stats.runtimeEvidence = 'EVIDENCE_VALID';
+  else stats.runtimeEvidence = 'EVIDENCE_SUBMITTED';
+  return stats;
+}
+
+function checkDocLinks(docPath, readmePath, issues) {
+  const doc = fs.readFileSync(docPath, 'utf8');
+  const prose = doc.replace(/```[\s\S]*?```/g, '');
+  const base = path.dirname(docPath);
+  const linkRe = /\[[^\]]*\]\(([^)]+)\)/g;
+  let match;
+  while ((match = linkRe.exec(prose)) !== null) {
+    const target = match[1].trim();
+    if (!target || target.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
+    const filePart = target.split('#')[0];
+    if (!filePart) continue;
+    if (!fs.existsSync(path.resolve(base, filePart))) {
+      root(issues, 'A5_SOURCE_REF_UNRESOLVED', target, 'docs/19.link');
+    }
+  }
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  const navigation = '19-production-acceptance-matrix.md';
+  const expectedRow =
+    '| [19-production-acceptance-matrix.md](19-production-acceptance-matrix.md) | 生产验收矩阵、六轴覆盖与证据状态 | 架构、QA、安全、运维、产品 |';
+  const rows = readme.split('\n').filter((line) => line.includes(`](${navigation})`));
+  if (rows.length !== 1) {
+    root(issues, 'A5_DOC_MODEL_DRIFT', 'docs19-row-count', 'docs/README.md');
+  } else if (rows[0].trim() !== expectedRow) {
+    root(issues, 'A5_DOC_MODEL_DRIFT', 'docs19-row-text', 'docs/README.md');
+  }
+  if (!fs.existsSync(path.resolve(path.dirname(readmePath), navigation))) {
+    root(issues, 'A5_SOURCE_REF_UNRESOLVED', navigation, 'docs/README.md');
+  }
+}
+
 async function evaluate(ctx, model, doc) {
   const phases = [];
   const rootPhase = [];
@@ -2689,6 +3414,12 @@ function applyMutation(model, mutation) {
       owner.upstream = structuredClone(mutation.value);
       break;
     }
+    case 'setAuthorityRegistry':
+      clone.authorityRegistry = structuredClone(mutation.value);
+      break;
+    case 'setEvidencePolicy':
+      clone.evidencePolicy = structuredClone(mutation.value);
+      break;
     case 'pushResidual':
       clone.residuals.push(structuredClone(mutation.value));
       break;
@@ -2734,12 +3465,13 @@ function applyMutation(model, mutation) {
   return clone;
 }
 
-async function runFixtures(ctx, model, doc, fixtureDir) {
+async function runFixtures(ctx, model, doc, fixtureDir, stage = 's1') {
   const specs = [
     ['s1-01-matrix-integrity.json', 'MODEL_MUTATION'],
     ['s1-02-expectation-safety.json', 'MODEL_MUTATION'],
     ['s1-03-a0-state-shapes.json', 'A0_STATE_SHAPE']
   ];
+  if (stage === 's2') specs.push(['s2-01-evidence-admission.json', 'EVIDENCE_MANIFEST']);
   const results = [];
   let passed = 0;
   let failed = 0;
@@ -2770,6 +3502,42 @@ async function runFixtures(ctx, model, doc, fixtureDir) {
           failed += 1;
           fileFailed += 1;
           failures.push(`${testCase.caseId}: expected [${expected.join(',')}] exit=${expectedExit}, got [${codes.join(',')}] exit=${actualExit}`);
+        }
+      }
+    } else if (kind === 'EVIDENCE_MANIFEST') {
+      for (const testCase of fixture.cases || []) {
+        cases += 1;
+        let mutated = model;
+        for (const mutation of testCase.mutations || []) mutated = applyMutation(mutated, mutation);
+        const allIssues = [];
+        if (!testCase.admissionOnly) {
+          const s1 = await evaluate(ctx, mutated, doc);
+          allIssues.push(...s1.issues);
+        }
+        validateS2Contract(mutated, allIssues);
+        const stats = validateEvidence(ctx, mutated, testCase.evidence ?? null,
+          { scenarioProfiles: testCase.scenarioProfiles }, allIssues);
+        const codes = [...new Set(allIssues.map((issue) => issue.code))].sort();
+        const expected = [...(testCase.expectedPrimaryCodes || [])].sort();
+        const expectedExit = expected.length === 0 ? 0 : 1;
+        const actualExit = codes.length === 0 ? 0 : 1;
+        let ok = JSON.stringify(codes) === JSON.stringify(expected) && actualExit === expectedExit;
+        const expectations = [
+          ['expectAdmitted', 'admitted'],
+          ['expectBlocked', 'blocked'],
+          ['expectRuntimeEvidence', 'runtimeEvidence'],
+          ['expectProductionAccepted', 'productionAccepted'],
+          ['expectAdmittedState', 'admittedState']
+        ];
+        for (const [caseKey, statKey] of expectations) {
+          if (testCase[caseKey] !== undefined && stats[statKey] !== testCase[caseKey]) ok = false;
+        }
+        if (ok) {
+          passed += 1;
+        } else {
+          failed += 1;
+          fileFailed += 1;
+          failures.push(`${testCase.caseId}: expected [${expected.join(',')}] exit=${expectedExit}, got [${codes.join(',')}] exit=${actualExit} stats=${JSON.stringify(stats)}`);
         }
       }
     } else {
@@ -2826,14 +3594,19 @@ async function runFixtures(ctx, model, doc, fixtureDir) {
 
 function parseArgs(argv) {
   const args = {};
-  const known = new Set([
+  const knownValues = new Set([
     '--stage', '--matrix', '--doc', '--fixtures', '--a0', '--a1-bundle',
     '--a2-model', '--a2-fixtures', '--a3-model', '--a3-fixtures',
-    '--a4-calc', '--a4-fixtures'
+    '--a4-calc', '--a4-fixtures', '--evidence'
   ]);
+  const knownFlags = new Set(['--check-doc-links']);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
-    if (!known.has(key)) throw new Error(`unknown argument: ${key}`);
+    if (knownFlags.has(key)) {
+      args[key.slice(2)] = true;
+      continue;
+    }
+    if (!knownValues.has(key)) throw new Error(`unknown argument: ${key}`);
     const value = argv[i + 1];
     if (value === undefined || value.startsWith('--')) throw new Error(`missing value for ${key}`);
     args[key.slice(2)] = value;
@@ -2842,34 +3615,53 @@ function parseArgs(argv) {
   return args;
 }
 
+function failInvalid(message) {
+  process.stdout.write('FAIL acceptance-validation (invalid-arguments)\n');
+  process.stderr.write(`${message}\n`);
+  process.exitCode = 2;
+}
+
+function failIssues(stage, issues, label = '') {
+  process.stdout.write(`FAIL acceptance-validation (${stage}${label})\n`);
+  for (const issue of sortIssues(issues)) {
+    process.stderr.write(`ISSUE ${issue.code} ${issue.path} ${issue.id}\n`);
+  }
+  process.exitCode = 1;
+}
+
 async function main() {
   let args;
   try {
     args = parseArgs(process.argv.slice(2));
   } catch (error) {
-    process.stdout.write('FAIL acceptance-validation (invalid-arguments)\n');
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 2;
+    failInvalid(error.message);
     return;
   }
   const required = ['stage', 'matrix', 'doc', 'fixtures', 'a0', 'a1-bundle', 'a2-model',
     'a2-fixtures', 'a3-model', 'a3-fixtures', 'a4-calc', 'a4-fixtures'];
   for (const key of required) {
     if (!args[key]) {
-      process.stdout.write('FAIL acceptance-validation (invalid-arguments)\n');
-      process.stderr.write(`missing required argument: --${key}\n`);
-      process.exitCode = 2;
+      failInvalid(`missing required argument: --${key}`);
       return;
     }
   }
-  if (args.stage !== 's1') {
-    process.stdout.write('FAIL acceptance-validation (invalid-arguments)\n');
-    process.stderr.write(`unsupported stage: ${args.stage}\n`);
-    process.exitCode = 2;
+  if (!['s1', 's2'].includes(args.stage)) {
+    failInvalid(`unsupported stage: ${args.stage}`);
+    return;
+  }
+  if (args.stage === 's1' && args.evidence) {
+    failInvalid('--evidence is only valid with --stage s2');
+    return;
+  }
+  if (args['check-doc-links'] && args.stage !== 's2') {
+    failInvalid('--check-doc-links is only valid with --stage s2');
     return;
   }
   try {
-    for (const file of [args['a1-bundle'], args.a0, args['a2-model'], args['a3-model'], args['a4-calc'], args.matrix, args.doc]) {
+    const inputFiles = [args['a1-bundle'], args.a0, args['a2-model'], args['a3-model'],
+      args['a4-calc'], args.matrix, args.doc];
+    if (args.evidence) inputFiles.push(args.evidence);
+    for (const file of inputFiles) {
       if (!fs.existsSync(file)) throw new Error(`missing input file: ${file}`);
     }
     const a0Doc = fs.readFileSync(args.a0, 'utf8');
@@ -2897,38 +3689,65 @@ async function main() {
     const model = JSON.parse(fs.readFileSync(args.matrix, 'utf8'));
     const doc = fs.readFileSync(args.doc, 'utf8');
     const result = await evaluate(ctx, model, doc);
-    if (result.issues.length > 0) {
-      process.stdout.write(`FAIL acceptance-validation (s1)\n`);
-      for (const issue of result.issues) {
-        process.stderr.write(`ISSUE ${issue.code} ${issue.path} ${issue.id}\n`);
-      }
-      process.exitCode = 1;
+    const contractIssues = [];
+    if (args.stage === 's2') validateS2Contract(model, contractIssues);
+    const preIssues = [...result.issues, ...contractIssues];
+    if (preIssues.length > 0) {
+      failIssues(args.stage, preIssues);
       return;
     }
-    const fixtureResult = await runFixtures(ctx, model, doc, args.fixtures);
+    const fixtureResult = await runFixtures(ctx, model, doc, args.fixtures, args.stage);
     if (fixtureResult.failed > 0) {
       process.stdout.write('FAIL acceptance-validation (fixture-failure)\n');
       for (const failure of fixtureResult.failures) process.stderr.write(`${failure}\n`);
       process.exitCode = 1;
       return;
     }
-    const counters = summarize(ctx, model, fixtureResult);
-    process.stdout.write(`${counters}\nPASS acceptance-validation (s1)\n`);
+    let evidenceStats = null;
+    if (args.stage === 's2') {
+      let ledger = null;
+      if (args.evidence) {
+        try {
+          ledger = JSON.parse(fs.readFileSync(args.evidence, 'utf8'));
+        } catch (error) {
+          failIssues('s2', [{ code: 'A5_EVIDENCE_MANIFEST_INVALID', path: 'evidence', id: error.message }]);
+          return;
+        }
+      }
+      const evidenceIssues = [];
+      evidenceStats = validateEvidence(ctx, model, ledger, {}, evidenceIssues);
+      if (evidenceIssues.length > 0) {
+        failIssues('s2', evidenceIssues);
+        return;
+      }
+      if (evidenceStats.productionAccepted) {
+        failIssues('s2', [{ code: 'A5_ACCEPTANCE_AUTHORITY_INVALID', path: 'aggregate', id: 'productionAccepted' }]);
+        return;
+      }
+      if (args['check-doc-links']) {
+        const linkIssues = [];
+        checkDocLinks(args.doc, path.join(path.dirname(args.doc), 'README.md'), linkIssues);
+        if (linkIssues.length > 0) {
+          failIssues('s2', linkIssues);
+          return;
+        }
+      }
+    }
+    const counters = summarize(ctx, model, fixtureResult, args.stage, evidenceStats);
+    process.stdout.write(`${counters}\nPASS acceptance-validation (${args.stage})\n`);
   } catch (error) {
-    process.stdout.write('FAIL acceptance-validation (invalid-arguments)\n');
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 2;
+    failInvalid(error.message);
   }
 }
 
-function summarize(ctx, model, fixtureResult) {
+function summarize(ctx, model, fixtureResult, stage = 's1', evidenceStats = null) {
   const covered = (model.coverage || []).filter((row) => row.state === 'REPRESENTED').length;
   const na = (model.coverage || []).filter((row) => row.state === 'NOT_APPLICABLE').length;
   const deferred = (model.coverage || []).filter((row) => row.state === 'DEFERRED').length;
   const sourceRefs = (model.scenarios || []).reduce((sum, scenario) => sum + (scenario.sourceRefs?.length || 0), 0);
   const runtimeNotRun = (model.scenarios || []).every((scenario) => scenario.resultSemantics?.runtimeResult === 'NOT_RUN');
-  return [
-    'stage=s1',
+  const parts = [
+    `stage=${stage}`,
     `matrix=${model.matrixId}`,
     'axes=6',
     'units=16',
@@ -2959,16 +3778,31 @@ function summarize(ctx, model, fixtureResult) {
     'ordering_regression=0',
     'denied_with_business_effect=0',
     'caller_control=0',
-    'synthetic_acceptance=0',
-    `runtime_evidence=${runtimeNotRun ? 'NOT_RUN' : 'INVALID'}`,
-    'production_accepted=false',
+    'synthetic_acceptance=0'
+  ];
+  if (stage === 's2' && evidenceStats) {
+    parts.push(
+      `evidence_manifests=${evidenceStats.manifests}`,
+      `evidence_admitted=${evidenceStats.admitted}`,
+      `acceptance_records=${evidenceStats.records}`,
+      `blocked=${evidenceStats.blocked}`
+    );
+  }
+  parts.push(
+    `runtime_evidence=${stage === 's2' && evidenceStats
+      ? evidenceStats.runtimeEvidence
+      : (runtimeNotRun ? 'NOT_RUN' : 'INVALID')}`,
+    `production_accepted=${stage === 's2' && evidenceStats
+      ? (evidenceStats.productionAccepted ? 'true' : 'false')
+      : 'false'}`,
     'spec_coverage=COMPLETE',
     `fixtures=${fixtureResult.files}`,
     `passed=${fixtureResult.files}`,
     'failed=0',
     `negative=${fixtureResult.negativeFiles}`,
     'deterministic=true'
-  ].join(' ');
+  );
+  return parts.join(' ');
 }
 
 main();

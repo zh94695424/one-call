@@ -28167,5 +28167,106 @@
         "expression": "A0-A4 counts/digests/ID sets equal the frozen source baseline"
       }
     ]
-  }
+  },
+  "evidencePolicy": {
+    "policyId": "A5-EVIDENCE-POLICY-V1",
+    "evidenceClasses": [
+      "STATIC_SPEC",
+      "MODEL_FIXTURE",
+      "SYNTHETIC",
+      "RUNTIME"
+    ],
+    "specOnlyTiers": [
+      "STATIC_SPEC",
+      "MODEL_FIXTURE"
+    ],
+    "runtimeTiers": [
+      "INTEGRATION",
+      "LINE",
+      "CLOUD",
+      "MANUAL"
+    ],
+    "artifactRoles": [
+      "AUDIT_EXPORT",
+      "OUTBOX_EXPORT",
+      "DB_STATE_EXPORT",
+      "METRIC_SNAPSHOT",
+      "LOG_EXPORT",
+      "LINE_CDR",
+      "CLOUD_EVIDENCE",
+      "MANUAL_RECORD",
+      "TEST_REPORT"
+    ],
+    "artifactFields": [
+      "artifactId",
+      "role",
+      "locatorRef",
+      "sha256",
+      "capturedAt",
+      "producerRef",
+      "redactionRef"
+    ],
+    "manifestFields": [
+      "manifestId",
+      "scenarioId",
+      "evidenceOwner",
+      "evidenceClass",
+      "evidenceTiers",
+      "executedAt",
+      "recordedAt",
+      "artifacts",
+      "observations",
+      "manifestDigest"
+    ],
+    "acceptanceRecordFields": [
+      "recordId",
+      "scenarioId",
+      "manifestId",
+      "manifestDigest",
+      "authorityRef",
+      "acceptedAt",
+      "result"
+    ],
+    "acceptanceRecordResults": [
+      "PASS",
+      "FAIL"
+    ],
+    "authorityFields": [
+      "authorityId",
+      "status",
+      "owner",
+      "approvedAt",
+      "authorizationBasisRef"
+    ],
+    "authorityStatuses": [
+      "APPROVED",
+      "SYNTHETIC_TEST_ONLY"
+    ],
+    "callerForbiddenFields": [
+      "result",
+      "pass",
+      "productionAccepted",
+      "execution"
+    ],
+    "callerAssertedFields": [
+      "accepted"
+    ],
+    "requiredStateMachine": [
+      "NOT_RUN",
+      "EVIDENCE_SUBMITTED",
+      "EVIDENCE_REJECTED",
+      "EVIDENCE_VALID",
+      "BLOCKED",
+      "PASS",
+      "FAIL",
+      "NOT_APPLICABLE"
+    ],
+    "acceptanceRules": [
+      "A5_ACCEPT_RUNTIME_TIER_AND_AUTHORITY",
+      "A5_ACCEPT_NOT_APPLICABLE"
+    ],
+    "maximumAdmittedState": "EVIDENCE_VALID",
+    "unreachableResidual": "A5-RES-02"
+  },
+  "authorityRegistry": []
 }

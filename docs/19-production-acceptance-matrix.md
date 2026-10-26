@@ -10,8 +10,8 @@ A5 把 accepted A0-A4 契约映射为 9 个 critical family + 7 条 cross-system
 
 - 人类 canonical：本文。
 - 机器 canonical：`acceptance/v1/acceptance-matrix-v1.json`。
-- 校验器：`acceptance/validate.mjs`（零三方依赖 Node 22 ESM，stage s1）。
-- 对抗 fixtures：`acceptance/fixtures/s1-01-matrix-integrity.json`、`s1-02-expectation-safety.json`、`s1-03-a0-state-shapes.json`。
+- 校验器：`acceptance/validate.mjs`（零三方依赖 Node 22 ESM，stage s1/s2）。
+- 对抗 fixtures：`acceptance/fixtures/s1-01-matrix-integrity.json`、`s1-02-expectation-safety.json`、`s1-03-a0-state-shapes.json`、`s2-01-evidence-admission.json`。
 - 本文不复制 A0-A4 的完整表格/枚举；只引用稳定 ID。A5 不建立第二语义 owner。
 
 ## 3. 覆盖单元与来源
@@ -313,9 +313,101 @@ Aggregate gates：
 
 `specificationCoverageComplete` 是上述 gates 的 AND，不是 96 行计数的别名。`productionAccepted` 是 validator 输出，不是 model 输入；S1 没有 authority registry，因此 PASS/production acceptance 不可达。任何 caller 字段、synthetic runtime、tier downgrade、count-only 或 readiness flag 都被拒绝。
 
-## 9. S2 保留
+## 9. 执行证据准入、聚合结果与不可达 PASS（S2）
 
-执行证据准入、`evidencePolicy`、empty `authorityRegistry`、evidence manifest/acceptance record 与 S2 fixtures 由 S2 追加；S1 不实现、不预填、不伪造。
+S2 只做静态证据准入：证明 caller 断言、synthetic runtime、tier downgrade、count-only 完整性、伪造 authority、坏 digest/时间、状态矛盾与 replay/immutability 违规都不能变成 `PASS` 或 `productionAccepted=true`。不执行真实系统，不存储证据。
+
+### 9.1 `evidencePolicy` 与空 `authorityRegistry`
+
+模型 root additive 字段：
+
+- `evidencePolicy`：冻结的 manifest / acceptance record / authority 契约元数据。`evidenceClasses` 恰为 `STATIC_SPEC`、`MODEL_FIXTURE`、`SYNTHETIC`、`RUNTIME`；`specOnlyTiers` 为 `STATIC_SPEC`、`MODEL_FIXTURE`；`runtimeTiers` 为 `INTEGRATION`、`LINE`、`CLOUD`、`MANUAL`；`maximumAdmittedState=EVIDENCE_VALID`；`unreachableResidual=A5-RES-02`。
+- `authorityRegistry`：**必须为空数组**。这是 controller-accepted OQ-03 决定，不是 placeholder。没有 `APPROVED` 外部 authority 时 `PASS`/`productionAccepted` 故意不可达；任何非空 row（即使自带 basis）都按 `A5_ACCEPTANCE_AUTHORITY_INVALID` 拒绝，不得伪造 authority row。
+- `STATIC_SPEC`/`MODEL_FIXTURE`/`SYNTHETIC` 最多证明 `SPEC_VERIFIED`，不能替代任何 runtime tier。`RUNTIME` manifest 也只能到 `EVIDENCE_VALID`；`PASS` 需要独立 acceptance record + approved authority。
+
+### 9.2 EvidenceArtifact / EvidenceManifest / AcceptanceRecord
+
+EvidenceArtifact（`evidenceRef` object）：
+
+```text
+{ artifactId, role, locatorRef, sha256, capturedAt, producerRef, redactionRef }
+role ∈ { AUDIT_EXPORT, OUTBOX_EXPORT, DB_STATE_EXPORT, METRIC_SNAPSHOT,
+         LOG_EXPORT, LINE_CDR, CLOUD_EVIDENCE, MANUAL_RECORD, TEST_REPORT }
+sha256 = ^[0-9a-f]{64}$；capturedAt ∈ [executedAt, recordedAt]
+locatorRef 为 opaque non-secret；禁止 URL/query/COS key/bucket/version/token/bearer/credential
+producerRef/redactionRef 必须是可解析 source ref（例如 A3:SERVICE:core-api、A3:INV:INV-A3-15）；
+自由文本、未识别前缀或解析不到 => A5_EVIDENCE_REF_INVALID
+```
+
+EvidenceManifest：
+
+```text
+{ manifestId, scenarioId, evidenceOwner, evidenceClass, evidenceTiers,
+  executedAt, recordedAt, artifacts[], observations[], manifestDigest }
+```
+
+- `manifestDigest` 是排除自身后的 recursive sorted-key JSON 的 SHA-256；artifact digest 必须是 lowercase 64-hex。
+- `executedAt <= recordedAt <= asOf`，`capturedAt` 落在 `[executedAt, recordedAt]`；未来时间拒绝。
+- `manifestId`/`scenarioId` 为 closed 非空字符串；非字符串 identity 按 manifest invalid 拒绝。
+- `evidenceOwner` 缺失或为 `null` => `A5_EVIDENCE_OWNER_MISSING`；present 但非字符串，或字符串不等于 scenario 的 `evidenceOwner` => `A5_EVIDENCE_OWNER_MISMATCH`（不做类型静默放行）。静态阶段没有 approved delegation。
+- observations 的 `(targetRef, field)` 必须属于该 scenario 的 step `expectedState` 或 final `persisted` 断言；对无关 aggregate 的 state claim（即使该值在别处合法）=> `A5_EVIDENCE_STATE_CONTRADICTION`。
+- manifest root 禁止 `result`、`pass`、`productionAccepted`、`execution`；`accepted` 单独按 caller-asserted PASS 拒绝。manifest 不能携带 `PASS` 结论。
+
+AcceptanceRecord（独立记录，不由 manifest 自声明）：
+
+```text
+{ recordId, scenarioId, manifestId, manifestDigest, authorityRef, acceptedAt, result }
+result ∈ { PASS, FAIL }；acceptedAt >= manifest.recordedAt 且 <= asOf
+```
+
+- `recordId`/`scenarioId`/`manifestId` 为 closed 非空字符串；`record.scenarioId` 必须等于所引用 manifest 的 `scenarioId`。scenario 不一致、或同一 `recordId` 对应不同 body => `A5_ACCEPTANCE_IMMUTABILITY_VIOLATION`。
+- record 必须引用已准入 manifest 的同一 `manifestDigest`；没有独立 record 时 manifest 最多 `EVIDENCE_VALID`。
+- 无 manifest、无 authority 或 authority 非 approved 时不得 `PASS`。`PASS`/`FAIL` 是终态；同 scenario 的冲突 record 或同 `manifestId` 的不同 digest 一律 immutability violation。
+- 结构合法的 FAIL record 将对应已准入 manifest/scenario 转为终态 FAIL，root `runtime_evidence=FAIL`，且绝不会被 `EVIDENCE_VALID` roll-up 掩盖；不新增公开计数器。
+
+### 9.3 准入与拒绝规则
+
+| 规则 | 拒绝码 |
+| --- | --- |
+| manifest 携带 `result`/`pass`/`productionAccepted`/`execution` | `A5_CALLER_CONTROL_FORBIDDEN` |
+| manifest 携带 `accepted` | `A5_CALLER_ASSERTED_PASS` |
+| `evidenceClass=SYNTHETIC` 或 fixture-only 用于 runtime tier | `A5_SYNTHETIC_EVIDENCE_REJECTED` |
+| `STATIC_SPEC`/`MODEL_FIXTURE` 不满足 required runtime tier；或缺任一 required tier | `A5_EVIDENCE_TIER_INSUFFICIENT` |
+| evidenceOwner present 但非字符串，或字符串不等于 scenario evidenceOwner | `A5_EVIDENCE_OWNER_MISMATCH`；缺失或 `null` 为 `A5_EVIDENCE_OWNER_MISSING` |
+| required artifact role 缺失 | `A5_EVIDENCE_ARTIFACT_MISSING` |
+| artifact 字段/role/locatorRef/sha256 非法 | `A5_EVIDENCE_REF_INVALID` |
+| manifestDigest 与 canonical JSON 不符 | `A5_EVIDENCE_DIGEST_MISMATCH` |
+| 时间格式、顺序或未来时间非法 | `A5_EVIDENCE_TIME_INVALID` |
+| observation 与 scenario final persisted/edge/终态矛盾，或 `(targetRef, field)` 不在 scenario step/final 断言内 | `A5_EVIDENCE_STATE_CONTRADICTION` |
+| acceptance record 缺 authority/无 approved authority | `A5_ACCEPTANCE_AUTHORITY_MISSING` / `A5_ACCEPTANCE_AUTHORITY_INVALID` |
+| acceptance record 无对应已准入 evidence | `A5_ACCEPTANCE_EVIDENCE_MISSING` |
+| record `scenarioId` 与 manifest 不一致、reuse `recordId` 不同 body | `A5_ACCEPTANCE_IMMUTABILITY_VIOLATION` |
+| 同 manifestId 不同 digest、record digest 不符或 PASS/FAIL 冲突 | `A5_ACCEPTANCE_IMMUTABILITY_VIOLATION` |
+
+- `--evidence` 对 s2 可选；没有 ledger 时 `evidence_manifests=0`、`evidence_admitted=0`、`acceptance_records=0`、`blocked=0`、`runtime_evidence=NOT_RUN`。
+- 当前 tier 不足的 manifest 状态为 `BLOCKED`，不是 PASS，也不是静默忽略；结构/伪造/矛盾证据状态为 `EVIDENCE_REJECTED`。
+- 96 cells、90 scenarios、A2/A3/A4 fixture pass、docs 完整性、prototype QA 都不是 runtime evidence；count-only 不能产生 `EVIDENCE_VALID` 或 `productionAccepted`。
+
+### 9.4 状态机与聚合推导
+
+状态机沿用 §8（`NOT_RUN → EVIDENCE_SUBMITTED → EVIDENCE_REJECTED|EVIDENCE_VALID|BLOCKED`；`EVIDENCE_VALID → PASS|FAIL`）。静态 S2：
+
+```text
+runtimeEvidenceComplete = every represented scenario has PASS (or N/A) at required tiers
+productionAccepted = runtimeEvidenceComplete
+                     && approved authority for every represented scenario/path
+                     && no caller control fields
+```
+
+- 聚合优先级保持不变并先处理坏证据：malformed/rejected evidence => `EVIDENCE_REJECTED`；blocked evidence => `BLOCKED`；随后若存在结构合法的终态 FAIL => `FAIL`；全部 represented 已准入 => `EVIDENCE_VALID`；否则 `EVIDENCE_SUBMITTED`。`FAIL` 复用现有 summary 字段，不新增公开计数器。
+- 空 `authorityRegistry` 使 `runtimeEvidenceComplete` 与 `productionAccepted` 不可达；S2 输出恒为 `production_accepted=false`。
+- `PASS` 不由 manifest observation、fixture 通过或 `SPEC_VERIFIED` 自声明。
+
+### 9.5 对抗 fixture
+
+`acceptance/fixtures/s2-01-evidence-admission.json`（42 个聚焦 case，exact primary-code 集合）：caller-forged PASS、caller accepted、synthetic runtime、model-fixture-as-runtime、missing LINE tier、bad artifact digest、manifest digest mismatch、future timestamp、owner mismatch、owner non-string number/object、no authority、synthetic authority、authority row without basis、accept without evidence、state contradiction、out-of-scope observation、manifest/record immutability、record digest mismatch、record scenario mismatch（FAIL/PASS）、duplicate recordId、valid FAIL record（`runtime_evidence=FAIL`）、manifest replay same digest（正向）、count-only acceptance、positive MODEL_FIXTURE（仅准入，不 PASS）、positive RUNTIME（仅 `EVIDENCE_VALID`）、missing artifact、invalid locator（含 bucket/version/bare-token/bearer）、missing artifact field、time order、missing owner、invalid manifest shape、producer/redaction free text、unrecognized prefix、unresolved ref。fixture 文件见 [s2-01-evidence-admission.json](../acceptance/fixtures/s2-01-evidence-admission.json)，冻结计划见 [A5 plan](gateflow/a5-production-acceptance-matrix-spec-plan.md)。
+
+正向 control 只证明结构可准入；它们不改变真实矩阵、`authorityRegistry` 仍为空、`productionAccepted=false`。
 
 ## 10. 验证命令与诚实限制
 
@@ -335,7 +427,22 @@ node acceptance/validate.mjs --stage s1 \
   --a3-fixtures security/v1/fixtures \
   --a4-calc deployment/capacity/calc.mjs \
   --a4-fixtures deployment/capacity/fixtures
+node acceptance/validate.mjs --stage s2 \
+  --matrix acceptance/v1/acceptance-matrix-v1.json \
+  --doc docs/19-production-acceptance-matrix.md \
+  --fixtures acceptance/fixtures \
+  --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
+  --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+  --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
+  --a2-fixtures protocol/ivr/v1/fixtures \
+  --a3-model security/v1/security-design-v1.json \
+  --a3-fixtures security/v1/fixtures \
+  --a4-calc deployment/capacity/calc.mjs \
+  --a4-fixtures deployment/capacity/fixtures \
+  --check-doc-links
 ```
+
+`--stage s2` 额外接受可选 `--evidence <ledger.json>`（无 ledger 时 evidence counters 为零、`runtime_evidence=NOT_RUN`）；`--check-doc-links` 只检查本文件相对链接与 `docs/README.md` 的 docs/19 行唯一性，不访问网络。`--evidence`/`--check-doc-links` 与 s1 组合是 invalid-arguments。
 
 A1 bundle 是未跟踪生成物，唯一命令是 `( cd api/openapi && npm ci && npm run check:s3 )`。离线环境无法生成 bundle 时必须报告环境限制，不得用 fake bundle 绕过。validator 不读 network、环境变量、wall clock 或 random，不写文件。
 
@@ -364,4 +471,4 @@ A5 validator 证明矩阵覆盖完整、来源可解析、expectation 与 accept
 
 ## 12. 结论与无生产验收声明
 
-S1 输出 `specificationCoverageComplete=true`（仅在所有 semantic checks 通过后）、`runtimeEvidence=NOT_RUN`、`productionAccepted=false`。静态/model/fixture 成功只是规格证据，不是生产验收。没有 runtime/cloud/line/manual 执行，也没有 production acceptance。
+S1/S2 输出 `specificationCoverageComplete=true`（仅在所有 semantic checks 通过后）、无证据时 `runtimeEvidence=NOT_RUN`、`productionAccepted=false`。S2 即使接受结构合法的 runtime manifest，也只能到 `EVIDENCE_VALID`；空 `authorityRegistry` 使 `PASS`/production acceptance 不可达（`A5-RES-02`）。静态/model/fixture/caller/count-only 成功都只是规格证据，不是生产验收。没有 runtime/cloud/line/manual 执行，也没有 production acceptance。

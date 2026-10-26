@@ -48,6 +48,7 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 | [12-technology-stack-and-system-architecture.md](12-technology-stack-and-system-architecture.md) | 生产目标技术栈、模块化单体、IVR/网络/部署拓扑、数据真源、安全、运维和实施顺序 | 架构、前后端、IVR、测试、安全、运维 |
 | [13-ivr-call-task-and-inbound-design.md](13-ivr-call-task-and-inbound-design.md) | 小程序待拨任务、自研 IVR 呼入决策、30 秒失效、原子领取/预占、自动外呼桥接录音、通话/时长/录音上传和验收 | 产品、小程序、服务端、IVR、测试、安全 |
 | [18-production-capacity-and-deployment-spec.md](18-production-capacity-and-deployment-spec.md) | 参数化容量、部署、恢复与证据清单 | 架构、运维、安全 |
+| [19-production-acceptance-matrix.md](19-production-acceptance-matrix.md) | 生产验收矩阵、六轴覆盖与证据状态 | 架构、QA、安全、运维、产品 |
 
 ## 3. 已锁定的产品基线
 
