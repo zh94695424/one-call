@@ -8,19 +8,21 @@
 >
 > Base：A5 head `1686a22ac9f7715b876ac233d7202badccfd0569`；GitHub PR #7 merge commit 与 A5 head 同树且包含该 head 为父提交。
 >
-> Binding inputs：`docs/12-technology-stack-and-system-architecture.md` §5、§6、§14、§15 Phase A；`docs/gateflow/project-execution-control.md` 顶部 A5 binding closeout 与 next entry；`docs/14`、`docs/15`、`docs/16`、`docs/17`、`docs/18`、`docs/19` 及其 `api/`、`protocol/`、`security/`、`deployment/`、`acceptance/` machine-readable assets；`docs/gateflow/a5-production-acceptance-matrix-spec-final-closeout.md`。
+> **Revision 2026-10-27**：用户已显式将目标基线从历史 accepted plan 的 Boot 3.5.16 + Modulith 1.4.14（其 `3.5.x` OSS 支持已于 2026-06-30 结束，S1 已 fail-closed）修订为 **Spring Boot 4.1.x + Spring Modulith 2.1.x**；本轮选定精确 GA patch **Boot `4.1.2` + Modulith `2.1.2`**。**Boot 4.0.x 明令禁止，不得作为 fallback。** 历史 checkpoint `c241cbd272d2f58d4ecf7d0e66737a4c768631bf` 与 S1 BLOCKED 报告仅作历史证据，不再是实现契约。修订依据、证据与未变范围见 `docs/gateflow/pa0-production-runtime-bootstrap-plan-boot41-revision.md`。
 >
-> 本计划只创建本文件；不修改 controller、source、tests、workflow、其他 docs、screenshots、`.codex-tasks/`、`tmp/` 或 review artifacts；不 stage/commit/push、不创建/修改 PR/issue、不执行其他 Gateflow Gate。
+> Binding inputs：`docs/12-technology-stack-and-system-architecture.md` §5、§6、§14、§15 Phase A；`docs/gateflow/project-execution-control.md` 顶部 PA0 binding goal contract（controller-owned，只读）；`docs/14`、`docs/15`、`docs/16`、`docs/17`、`docs/18`、`docs/19` 及其 `api/`、`protocol/`、`security/`、`deployment/`、`acceptance/` machine-readable assets；`docs/gateflow/a5-production-acceptance-matrix-spec-final-closeout.md`。
+>
+> 本修订只修改本文件并新增 boot41 revision artifact；不修改 controller、source、tests、workflow、其他 docs、screenshots、`.codex-tasks/` 或 review artifacts；不 stage/commit/push、不创建/修改 PR/issue、不执行其他 Gateflow Gate。
 
 ## 0. 结论摘要
 
-- 交付一个**单 Maven 项目、单可启动 Spring Boot 应用、14 个 Spring Modulith 包边界、无 domain 行为**的运行时引导脚手架。14 个边界 = `docs/12` §6 的 13 个模块 + `docs/14` §3.1 的 `platform-reliability`；只创建包边界、`package-info.java`、`ModuleMarker` 和验证测试，不创建表、状态机、API、migration、认证或供应商适配器。
+- 交付一个**单 Maven 项目、单可启动 Spring Boot `4.1.2` 应用、14 个 Spring Modulith `2.1.2` 包边界、无 domain 行为**的运行时引导脚手架。硬目标线是 **Boot 4.1.x + Modulith 2.1.x**；**Boot 4.0.x、Boot 3.x、Modulith 1.x/2.0.x 均不可作为 fallback**。14 个边界 = `docs/12` §6 的 13 个模块 + `docs/14` §3.1 的 `platform-reliability`；只创建包边界、`package-info.java`、`ModuleMarker` 和验证测试，不创建表、状态机、API、migration、认证或供应商适配器。
 - Modulith 验证必须非空：测试断言**精确 14 个模块**、每个模块包有 `@ApplicationModule`、从每个 package-info 读取的 `allowedDependencies()` 与 §6.2 单一 expected map **exact set equality**（含 leaf 显式 `{}` deny-all，拒绝默认 `OPEN_TOKEN`）、`verify()` 无 cycle/forbidden/internal 违规，并用 test-only fixture 证明 cycle、禁止依赖和 internal package 访问确实被拒绝。测试代码放在应用根包之外，避免测试类被误识别成第 15 个模块。
 - PostgreSQL 路径使用 Testcontainers core + PostgreSQL JDBC driver（均 test scope）启动真实 `postgres:16` 容器，执行真实 JDBC 连接，并断言 `server_version_num >= 160000`、`information_schema` 无业务表、无 `flyway_schema_history`。默认 `verify` 不运行该 IT；只有显式 `-Pcontainer-smoke` 才运行；Docker 不可用时构建失败，不 skip。author 可报 `NOT RUN`（仅 author code-complete）；S2 accepted checkpoint 前必须由 controller 在其 Docker-capable 环境 pre-push 执行并通过；CI 先 `docker info`，再运行该 profile，并解析 failsafe XML 断言 `tests=1 skipped=0 failures=0 errors=0`，作为 post-push 附加证据。
-- 工具链固定为 Java `21.0.13+9`（Temurin，`backend/.java-version` + CI `setup-java` 精确 pin；`maven.compiler.release=21`、Enforcer `[21,22)`）、Maven 3.9.9（Maven Wrapper 3.3.2 + 固定 distribution URL + SHA-256）、Node 22.23.4（CI 精确 pin；不修改 `api/openapi/package.json` 的 `>=22` 语义）。Node 22.23.4 已由本会话 `node --version` 独立验证；Boot/Modulith/Testcontainers 的 controller-observed 版本在 §4 明确标注为**待 S1 preflight 证明**，本 plan 不把 controller observation 冒充 author proof。
+- 工具链固定为 Java `21.0.13+9`（Temurin，`backend/.java-version` + CI `setup-java` 精确 pin；`maven.compiler.release=21`、Enforcer `[21,22)`）、Maven 3.9.9（Maven Wrapper 3.3.2 + 固定 distribution URL + SHA-256）、Node 22.23.4（CI 精确 pin；不修改 `api/openapi/package.json` 的 `>=22` 语义）。**本修订已用真实 Maven Central/Spring 官方 API 与 Maven resolve/tree/Enforcer 证明** Boot `4.1.2`、Modulith `2.1.2`、Testcontainers `2.0.5`、Boot BOM PostgreSQL `42.7.14` 可解析、可收敛；Node 22.23.4 由本会话 `node --version` 验证。S1 仍须在实现执行环境重复精确 JDK/Maven/wrapper/`verify` 证据；计划期 preflight 不冒充 S1 完成。
 - 只新增一个最小 GitHub Actions workflow：两个 job（Java 运行时 job、A1-A5 contract regression job），只读权限，路径过滤排除 prototypes/screenshots，concurrency/timeout 仅作为 CI 机制。CI 成功只等于 build/static/synthetic 检查通过，不等于 carrier/IVR/Tencent Cloud/provider/load/restore/penetration/manual/production acceptance。
 - 两个 behaviorally bounded slices：**S1 Java/Maven 运行时、14 模块边界与依赖防火墙（无 Docker）**；**S2 PostgreSQL Testcontainers smoke、CI 强制执行与 A1-A5 回归接入**。不按文件、技术层、文档或团队拆分，不增加 docs-only slice。
-- 无产品/架构 scope blocker。存在明确的实现前置证据项：Boot/Modulith/Testcontainers 独立兼容性验证、Maven 3.9.9 zip SHA-256、Docker/CI 实际执行环境；它们按 owner/destination 记录并在 S1/S2 preflight fail closed，不授权 invent 版本、凭据、阈值或 acceptance authority。
+- 无产品/架构 scope blocker。Boot `4.1.x` 的官方 OSS 支持到 `2027-07-31`，在 2026-10-27 目标日期内可接受；Modulith `2.1.x` 在 Spring 官方 API 中为 `ACTIVE_UNSUPPORTED` / `support=none`（无独立 OSS/商业支持窗口），作为**已披露的 governance residual** 由 controller/release governance 接受，不由作者静默替换。剩余实现前置证据项：Maven 3.9.9 wrapper SHA-256、执行环境精确 JDK、Docker/CI 实际运行；它们按 owner/destination 记录并在 S1/S2 preflight fail closed，不授权 invent 版本、凭据、阈值或 acceptance authority。
 
 ## 1. 目标、动机、成功信号、非目标、边界与目标对齐
 
@@ -28,7 +30,7 @@
 
 在 `1686a22` 基础上建立 Phase A 的第一个有界生产平台基础，使后续 domain work 有一个可重复的 Java 运行时、可执行的模块边界、受支持的工具链和最小 CI/Testcontainers 路径：
 
-1. 建立 Java 21 + Maven + Spring Boot 3.x + Spring Modulith 的可启动、可测试单模块脚手架；
+1. 建立 Java 21 + Maven + Spring Boot `4.1.2` + Spring Modulith `2.1.2` 的可启动、可测试单模块脚手架；
 2. 把 `docs/12` §6 与 `docs/14` §3.1 的模块所有权落实为 Java 包边界，并有可执行验证；
 3. 建立最小应用入口，不实现任何 domain state machine；
 4. 建立真实 PostgreSQL Testcontainers 连接 smoke，并定义 fail-closed 的本地/CI 执行策略；
@@ -41,7 +43,7 @@
 2. **模块边界必须在 domain code 之前冻结。** `docs/12` §6 要求模块所有权、同步调用走公开应用服务、异步协作走领域事件、跨模块查询用只读投影；若等 domain work 再建立，包漂移、循环依赖和越界访问会成为既成事实。最小可执行 enforcement 是：精确模块集 + package boundary + allowed dependency cap + cycle/internal/forbidden 负向证明。
 3. **最小运行时不应吸收任何 unauthored behavior。** 加入 Spring Security、Flyway、jOOQ、Hikari 或真实 DataSource auto-config 会在没有认证/表/迁移设计的情况下改变启动行为。PA0 只证明“应用能启动”和“数据库能连通”，不证明“应用已能处理业务”。
 4. **“未运行”不能等于“通过”。** 本地无 Docker 是合法开发场景，但 CI 若允许 skip 就会把“没有执行”包装成“成功”。因此容器测试只能通过显式 profile 执行；CI 必须先证明 Docker 存在，再执行测试，并在执行后解析报告证明 `skipped=0`。author `NOT RUN` 只构成 author code-complete；S2 accepted checkpoint 必须由 controller pre-push Docker run 关闭，后续 CI 通过不能追溯替代它。
-5. **工具链版本是 foundation 的一部分，但未证明的版本不能被猜测。** Node 22.23.4 已在本会话执行 `node --version` 验证；Boot/Modulith/Testcontainers 的 controller-observed 元数据在 author 网络/执行权限被拒绝时只能作为**provisional pin + fail-closed preflight**，不能作为 author-proven compatibility。
+5. **工具链版本是 foundation 的一部分，且必须由权威证据固定。** 本修订已实际读取 Maven Central metadata/POM、Spring 官方项目 API，并用 Boot `4.1.2` + Modulith `2.1.2` 的临时 POM 执行真实 `dependency:resolve`、`dependency:tree` 与 Enforcer `validate`（全部 exit 0），因此选定 patch 与兼容性不再是猜测；但精确 JDK 安装、Maven wrapper 生成/checksum、`verify`/boot jar 与容器/CI 仍必须在 S1/S2 执行环境重新证明，不能把 preflight 冒充 slice 完成。
 
 ### 1.3 成功信号
 
@@ -67,7 +69,7 @@
 
 | Goal contract element | Plan 落点 | 验证方式 |
 | --- | --- | --- |
-| Java 21（精确 Temurin `21.0.13+9` pin）+ Maven + Boot 3.x/Modulith scaffold | §4、§5 | `.java-version`/`java -version`、wrapper/Maven version、`mvn verify`、jar boot |
+| Java 21（精确 Temurin `21.0.13+9` pin）+ Maven + Boot `4.1.x`/Modulith `2.1.x` scaffold（精确 pin `4.1.2`/`2.1.2`） | §4、§5 | `.java-version`/`java -version`、wrapper/Maven version、`mvn verify`、jar boot、resolved version assertions |
 | 模块包边界 + 可执行 Modulith 验证 | §6 | 精确 14 模块集 + annotation + `verify()` |
 | cycle/forbidden/internal 能被捕获 | §6.5 | 3 组负向 fixtures 必须抛 `Violations` |
 | 最小入口，无 domain state machine | §5.4、§11 S1 | 只有 `main`/config/markers；无 domain package code |
@@ -95,6 +97,7 @@
 | Prototypes 不是 production foundation | `docs/12` §14.2；`prototype/`、`web-prototype/`、`operations-prototype/`、`shared/onecall-business.js` | 不引用、不修改、不纳入 CI |
 | 分支与 base | 当前 branch `codex/pa0-production-runtime-bootstrap`，HEAD `1686a22ac9f7715b876ac233d7202badccfd0569` | 所有实现 slice 以该 base 为起点；不合并 PR #7、不切换分支 |
 | 预存 dirty paths | 任务开始时已有大量 modified screenshots/docs/prototypes 及 untracked `.codex-tasks/`、`docs/reviews/plan-review-20261021-205118.md` | 全部属于用户；PA0 不 stage/commit/修改；implementation 只改本计划允许路径 |
+| 目标基线已由用户修订 | 历史 accepted plan checkpoint `c241cbd` 固定 Boot 3.5.16/Modulith 1.4.14；Spring 官方 API 显示 `3.5.x` OSS 支持已于 2026-06-30 结束，S1 已按 fail-closed 报告 BLOCKED；用户于 2026-10-27 显式选择 Boot 4.1.x + Modulith 2.1.x，并禁止 Boot 4.0.x | 本计划按新目标线修订；历史 checkpoint、fix/review artifacts 与 S1 BLOCKED 报告保持不可变，仅作历史证据 |
 
 ### 2.2 设计与 A0-A5 对齐矩阵
 
@@ -119,6 +122,7 @@
 - 不把 `docs/12` §6 的 “允许依赖” 文字改写成新的产品规则；§6.2 只把它翻译成**同步 Java 边界的上限**，并明确 A0 的跨 schema `SELECT` grant 不是 Java module dependency。
 - 不把 `docs/12` §5 的 multi-module 目标提前实现为空的 worker/scheduler 模块；PA0 只有一个 deployment artifact，后续第二个 deployment unit 出现时才拆分。
 - 不把 Testcontainers/CI 的通过写成 A5 runtime evidence；A5 的 `runtimeEvidence=NOT_RUN`/`productionAccepted=false` 语义保持不变。
+- `docs/12` §2 把核心服务端写作 “Java 21 LTS、Spring Boot 3.x、Spring Modulith”；本修订按用户 2026-10-27 的显式支持治理决定选择 **Boot 4.1.x + Modulith 2.1.x**，不修改 `docs/12`，也不改变 §5/§6/§14/§15 Phase A 的架构约束。该选择不授权 Boot 4.0.x，也不授权任何 domain/provider/migration scope 扩张。
 
 ## 3. 产物布局与受影响文件
 
@@ -191,25 +195,25 @@ docs/gateflow/pa0-production-runtime-bootstrap-s2-implementation.md      # 未�
 
 ### 4.1 版本 pin
 
-| 组件 | Pin | 用途 | 证据状态（2026-10-26） |
+| 组件 | Pin | 用途 | 证据状态（2026-10-27 Asia/Shanghai；检索 UTC 2026-10-26T20:05Z–20:11Z） |
 | --- | --- | --- | --- |
-| Java | **Temurin `21.0.13+9`**（OpenJDK version `21.0.13+9-LTS`）；`maven.compiler.release=21`；Enforcer `[21,22)` | 编译/运行 | controller 于 2026-10-26 以参数化查询 Adoptium assets/feature-release API（`https://api.adoptium.net/v3/assets/feature_releases/21/ga?architecture=x64&heap_size=normal&image_type=jdk&jvm_impl=hotspot&os=linux&vendor=eclipse&page_size=5`）获得 HTTP 200，release entry 返回 `release_name=jdk-21.0.13+9`、`openjdk_version=21.0.13+9-LTS` 及 LTS metadata；本地既有 `21.0.12.1+1` **不是**所选 pin，仅作诊断；S1 前必须由执行环境选择/安装精确 JDK 并记录 `java -version` |
-| Maven | 3.9.9，经 Maven Wrapper；Enforcer `[3.9.9,4.0)` | 构建 | controller 观测 Maven 3.9.9；本会话 `mvn -version` 被权限门拒绝；wrapper preflight 必须证明 |
-| Maven Wrapper | 3.3.2，`distributionType=only-script` | 可复现 Maven 入口 | author-known GA；S1 preflight resolve/校验 |
+| Java | **Temurin `21.0.13+9`**（OpenJDK version `21.0.13+9-LTS`）；`maven.compiler.release=21`；Enforcer `[21,22)` | 编译/运行 | **author executed**：本修订以 `/tmp/pa0-tools/jdk-21.0.13+9/bin/java -version` 实际执行，输出 `openjdk version "21.0.13"` / `Temurin-21.0.13+9 (build 21.0.13+9-LTS)`，exit 0；Adoptium 参数化 API `https://api.adoptium.net/v3/assets/feature_releases/21/ga?architecture=x64&heap_size=normal&image_type=jdk&jvm_impl=hotspot&os=linux&vendor=eclipse&page_size=5` 此前返回 HTTP 200 与 `openjdk_version=21.0.13+9-LTS`。PATH 上的系统 Java 为 `21.0.12.1+1`，**不是**所选 pin，仅作诊断；S1 仍须在执行环境安装/选择精确 release 并记录 `java -version` |
+| Maven | 3.9.9，经 Maven Wrapper；Enforcer `[3.9.9,4.0)` | 构建 | **author executed**：本修订用 `/tmp/pa0-tools/apache-maven-3.9.9/bin/mvn -v`（显式 `JAVA_HOME=/tmp/pa0-tools/jdk-21.0.13+9`）取得 `Apache Maven 3.9.9` / `Java version: 21.0.13, vendor: Eclipse Adoptium`，exit 0；zip SHA-256 `4ec3f26fb1a692473aea0235c300bd20f0f9fe741947c82c1234cefd76ac3a3c`，官方 SHA-512 `8beac8d1...c4418ba` 逐字符一致；wrapper 尚未生成，S1 preflight 必须生成并固定 checksum |
+| Maven Wrapper | 3.3.2，`distributionType=only-script` | 可复现 Maven 入口 | S1 用 Maven 3.9.9 生成并记录 `distributionUrl` + `distributionSha256Sum`；不得手写 script |
 | Node | 22.23.4 精确；CI `actions/setup-node` 使用该版本 | A1-A5 contract harness | **author verified**：本会话 `node --version` = `v22.23.4` |
-| Spring Boot | 3.5.16 | parent/BOM、Spring runtime | controller 观测 Maven Central GA；author 网络验证被权限门拒绝；S1 preflight 必须证明 |
-| Spring Modulith | 1.4.14（1.4.x 对应 Boot 3.5 family） | module verification | controller 观测 Maven Central GA；author 网络验证被拒绝；S1 preflight 必须证明 |
-| Testcontainers | 2.0.5（`org.testcontainers:testcontainers` core only） | PostgreSQL container smoke | controller 观测 Maven Central GA；author 网络验证被拒绝；S1/S2 preflight 必须证明 |
-| PostgreSQL JDBC | versionless；由 Spring Boot 3.5.16 BOM 管理 | test-scope JDBC | S1 preflight dependency tree 记录实际版本 |
+| Spring Boot | **`4.1.2`**（Boot 4.1.x GA line；**不是 4.0.x**） | parent/BOM、Spring runtime | **author verified**：Maven Central `maven-metadata.xml`（HTTP 200，2026-10-22 更新）列出 `4.1.0/4.1.1/4.1.2`，`4.1.2` 是该线最高 GA（仓库 `latest` 为 `4.2.0-RC1`，是 RC，不采用）；`api.spring.io/projects/spring-boot/generations/4.1.x` HTTP 200 返回 `support=default`、`ossSupportEndDate=2027-07-31`、`latestPatch.oss=4.1.2`；`releases/4.1.2` 返回 `status=GENERAL_AVAILABILITY`、`current=true`；POM HTTP 200，Last-Modified `2026-10-22T12:03:58Z`；真实 `dependency:resolve`/`dependency:tree`/`validate` 均 exit 0 |
+| Spring Modulith | **`2.1.2`**（Modulith 2.1.x GA line） | module verification | **author verified**：Maven Central metadata 列出 `2.1.0/2.1.1/2.1.2`，`2.1.2` 是该线最高 GA（`latest` 为 `2.2.0-RC1`，是 RC，不采用）；`api.spring.io/projects/spring-modulith/generations/2.1.x` HTTP 200 返回 `linkedGenerations.spring-boot=["4.1.x"]`、`latestPatch.oss=2.1.2`、`support=none`；`api.spring.io/projects/spring-modulith` 返回 `status=ACTIVE_UNSUPPORTED`；`releases/2.1.2` 返回 `GENERAL_AVAILABILITY`、`current=true`；BOM/api/starter POM HTTP 200；真实 resolve/tree/validate exit 0；无独立 support 窗口，见 `PA0-R-14` |
+| Testcontainers | `2.0.5`（`org.testcontainers:testcontainers` core only） | PostgreSQL container smoke | **author verified**：Maven Central metadata `release=2.0.5`（HTTP 200）；Boot `4.1.2` BOM 也管理 `testcontainers.version=2.0.5`；真实 resolve/tree exit 0 |
+| PostgreSQL JDBC | versionless；由 Spring Boot `4.1.2` BOM 管理 | test-scope JDBC | **author verified**：Boot `4.1.2` dependencies POM `postgresql.version=42.7.14`；真实 tree 显示 `org.postgresql:postgresql:jar:42.7.14:test` |
 | PostgreSQL image | `postgres:16`（test-only） | container smoke | 只声明 design family “16+”；不是 production DB 版本承诺；digest 未 pin（见残留下沉） |
-| Maven Enforcer Plugin | 3.5.0 | toolchain/dependency firewall | author-known GA；S1 preflight resolve |
-| GitHub Actions | `actions/checkout@v4`、`actions/setup-java@v4`、`actions/setup-node@v4` | CI mechanics | 只使用官方 major tag；commit-SHA pinning 是 CI hardening residual |
+| Maven Enforcer Plugin | `3.6.3`（Boot `4.1.2` BOM 管理版本；显式 pin） | toolchain/dependency firewall | **author verified**：Boot 4.1.2 BOM `maven-enforcer-plugin.version=3.6.3`；Maven Central POM HTTP 200（Last-Modified `2026-05-15T10:39:16Z`，`release=3.6.3`）；真实 `validate` Rule 0–4 全 `passed`，exit 0 |
+| GitHub Actions | `actions/checkout@v4`、`actions/setup-java@v4`、`actions/setup-node@v4` | CI mechanics | 只使用官方 major tag；commit-SHA pinning 是 CI hardening residual；本修订未执行 GitHub Actions |
 
 ### 4.2 证据状态与诚实限制
 
-- **AUTHOR_VERIFIED**：Node 22.23.4（`node --version`，本会话；运行时存在）。
-- **CONTROLLER_OBSERVED**：Java 21.0.12.1（既有安装，**仅诊断，不是所选 pin**）、Temurin `21.0.13+9`（Adoptium feature-release API，2026-10-26，LTS）、Maven 3.9.9、Docker CLI 29.7.2/daemon not running、Spring Boot 3.5.16、Spring Modulith 1.4.14、Testcontainers 2.0.5（controller 于 2026-10-26 观测）。本会话的 `curl`、`git ls-remote`、`node -e`、`mvn`、`java`、`docker`、WebFetch/WebSearch 均被权限门或网络策略拒绝；因此这些条目不是 author proof。
-- **PREFLIGHT_REQUIRED**：S1 实现开始前必须用真实 Maven dependency resolution 证明 Boot/Modulith/Testcontainers/Enforcer 可解析，并记录 exact dependency tree、Boot/Modulith compatibility、Maven zip SHA-256 和 Boot 3.5 support status；同时必须在执行环境选择/安装精确 Temurin `21.0.13+9` 并以 `java -version` / `./mvnw -v` 证明 patch `21.0.13` 与 build `+9`。既有 `21.0.12.1+1` 的运行结果只能作诊断，不能作为 pin 证据。S2 必须由 controller 在其 Docker-capable 环境 pre-push 实际执行 container smoke。
+- **AUTHOR_VERIFIED（本修订实际执行）**：Node `v22.23.4`；精确 Temurin `21.0.13+9` 可执行；Maven 3.9.9 可执行；Boot `4.1.2` / Modulith `2.1.2` / Testcontainers `2.0.5` / Boot-BOM PostgreSQL `42.7.14` 可由 Maven Central 与 Spring 官方 API 读取并真实解析；Modulith `2.1.2` 的显式 `allowedDependencies = {}` deny-all 语义与 `OPEN_TOKEN` 默认值已由 published source/Javadoc 复核。
+- **PREFLIGHT_REQUIRED（S1/S2 执行环境）**：精确 JDK 安装/选择与 `java -version`、Maven wrapper 生成 + `distributionSha256Sum`、`./mvnw verify`、boot jar、jar firewall、Docker container smoke、GitHub Actions 首次真实运行。计划期 preflight 只证明版本可解析/兼容，不证明 `backend/**` 的 build/boot 或 CI 通过。
+- **环境事实（必须诚实记录）**：本 shell 的 PATH `mvn` 在未显式设置 `JAVA_HOME` 时会因 classworlds 类加载失败（`ClassNotFoundException: org.codehaus.plexus.classworlds.launcher.Launcher`）而不可用；本修订使用 `/tmp/pa0-tools/apache-maven-3.9.9` + 显式 `JAVA_HOME=/tmp/pa0-tools/jdk-21.0.13+9` 完成 preflight。该限制不改变计划：S1 必须通过 `backend/mvnw` 且由 CI `setup-java` 提供精确 JDK；不得以系统 `mvn` 或 PATH Java 替代 pin 证据。本修订执行环境 Docker CLI/server 均为 `29.1.3` 且 `docker info` exit 0，但尚无 `backend/**`/container IT，故 container smoke 仍为 `NOT RUN`；S2 的 controller pre-push `-Pcontainer-smoke verify` 要求不变。
 - 若 preflight 失败，实现停止并报告；不得替换成未证明的版本、preview/RC/milestone/snapshot，也不得通过删除测试/Enforcer 规则绕过。
 
 ### 4.3 兼容性 preflight（S1 第一步，fail closed）
@@ -221,15 +225,17 @@ docs/gateflow/pa0-production-runtime-bootstrap-s2-implementation.md      # 未�
 ./mvnw -B -ntp -U dependency:resolve
 ./mvnw -B -ntp dependency:tree \
   -Dincludes=org.springframework.boot:*,org.springframework.modulith:*,org.testcontainers:*,org.postgresql:*
+./mvnw -B -ntp validate
 ```
 
 必须断言：
 
 1. `./mvnw -v` 显示 Maven 3.9.9 和 Java `21.0.13`；`java -version` 同时包含 `21.0.13` 与 Temurin build `+9`（`21.0.13+9`），且 `backend/.java-version` 内容为精确 `21.0.13+9`。执行环境无法解析/安装该精确 release 时，S1 为 fail-closed blocker，不得回退到 `21`、`21.0.12.1+1` 或 latest；
-2. `dependency:resolve` exit 0，且 dependency tree 精确包含 `spring-boot 3.5.16`、`spring-modulith-* 1.4.14`、`testcontainers 2.0.5`；PostgreSQL driver 版本来自 Boot BOM；
-3. `dependencyConvergence` 与 `banDuplicatePomDependencyVersions` 在 `verify` 中通过；
-4. Boot 3.5.16 的官方 support/security 状态被记录；若已超出仍受支持窗口，停止并报告，不得静默升级到 Boot 4.x（超出 goal 的 “Boot 3.x”）；
-5. 任何解析/兼容/收敛失败都不得用 “latest” 或猜测版本修复；只能由 controller 提供经证明的替代 pin。
+2. `dependency:resolve` exit 0，且 dependency tree 精确包含 `spring-boot 4.1.2`、`spring-modulith-* 2.1.2`、`testcontainers 2.0.5`、`postgresql 42.7.14`；任何解析到 `org.springframework.boot:spring-boot*:3.x` 或 `4.0.x`、`org.springframework.modulith:*:1.x` 或 `2.0.x` 的结果都立即 fail closed（**Boot 4.0.x 不是允许 fallback**）；
+3. `dependencyConvergence`、`banDuplicatePomDependencyVersions` 与 Enforcer `validate` 在 `verify` 中通过；
+4. Boot `4.1.x` 的官方 support/security 状态被记录：本修订已由 `api.spring.io` 证明 `ossSupportEndDate=2027-07-31`、`latestPatch.oss=4.1.2`；Modulith `2.1.x` 为 `ACTIVE_UNSUPPORTED` / `support=none`（无独立 support 日期），该事实作为已披露 governance residual 记录，不得静默替换为 Boot 4.0.x/3.x 或 Modulith 1.x/2.0.x；若 Boot 4.1.x 在 S1 时已过 OSS 支持窗口，停止并报告；
+5. 任何解析/兼容/收敛失败都不得用 “latest” 或猜测版本修复；只能由 controller 提供经证明的替代 pin；
+6. 测试代码必须按 Modulith `2.1.2` API 编译：`ApplicationModules.stream()` 的模块类型为 `org.springframework.modulith.core.ApplicationModule`（`org.springframework.modulith.core.Module` 已不存在），模块名取 `getIdentifier().toString()`，直接依赖取 `getDirectDependencies(modules).uniqueModules()`。若 S1 解析到的 2.1.x patch 与这些 API/deny-all 行为不一致，fail closed 并上报。
 
 ### 4.4 Maven Wrapper 可复现性
 
@@ -239,10 +245,10 @@ docs/gateflow/pa0-production-runtime-bootstrap-s2-implementation.md      # 未�
 wrapperVersion=3.3.2
 distributionType=only-script
 distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.9/apache-maven-3.9.9-bin.zip
-distributionSha256Sum=<S1 preflight 从官方 Apache Maven 3.9.9 bin zip 计算的 SHA-256>
+distributionSha256Sum=4ec3f26fb1a692473aea0235c300bd20f0f9fe741947c82c1234cefd76ac3a3c
 ```
 
-- `<S1 preflight ...>` 不是占位符留到生产；S1 必须在实现报告记录该值、zip URL、retrieval date 和校验命令。若无法取得/校验 SHA-256，S1 停止为 blocked，不得省略 checksum。
+- 该 SHA-256 已由本修订实际计算：`sha256sum apache-maven-3.9.9-bin.zip` = `4ec3f26f...c3a3c`；同一 zip 的官方 `.sha512` 为 `8beac8d11ef208f1e2a8df0682b9448a9a363d2ad13ca74af43705549e72e74c9378823bf689287801cbbfc2f6ea9596201d19ccacfdfb682ee8a2ff4c4418ba`，`sha512sum` 逐字符相等。S1 仍须在实现报告重新记录该值、zip URL、retrieval date 和校验命令；若 wrapper 生成器产出不同 checksum 或无法校验，S1 停止为 blocked，不得省略 checksum。
 - 生成方式：在 controller 的 Maven 3.9.9 下执行 `mvn -N wrapper:wrapper -Dmaven=3.9.9 -Dtype=only-script`（或等价官方 wrapper 生成器），提交生成的 `mvnw`/`mvnw.cmd`/properties；随后把 properties 固定为上述值并加入校验和。不得手写未经生成的 wrapper script。
 - CI 只调用 `./mvnw`，不依赖 runner 预装 Maven；`./mvnw -v` 的版本断言是 CI 的 toolchain proof。
 - `mvnw`/`mvnw.cmd` 必须可执行（POSIX exec bit）；不提交 wrapper jar（`only-script`）。
@@ -307,7 +313,7 @@ distributionSha256Sum=<S1 preflight 从官方 Apache Maven 3.9.9 bin zip 计算�
 <parent>
   <groupId>org.springframework.boot</groupId>
   <artifactId>spring-boot-starter-parent</artifactId>
-  <version>3.5.16</version>
+  <version>4.1.2</version>
   <relativePath/>
 </parent>
 <groupId>com.onecall</groupId>
@@ -317,16 +323,18 @@ distributionSha256Sum=<S1 preflight 从官方 Apache Maven 3.9.9 bin zip 计算�
   <java.version>21</java.version>
   <maven.compiler.release>21</maven.compiler.release>
   <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-  <spring-modulith.version>1.4.14</spring-modulith.version>
+  <spring-modulith.version>2.1.2</spring-modulith.version>
   <testcontainers.version>2.0.5</testcontainers.version>
 </properties>
 ```
 
-- `dependencyManagement` 只 import `spring-modulith-bom:1.4.14`；Testcontainers core 用显式版本，不 import TC BOM，避免把无关 managed versions 带入 convergence。
-- 上述 test-scope Testcontainers/PostgreSQL 依赖在 **S1 POM** 中声明（不执行），使 S1 version preflight 能解析并记录 2.0.5；S1 不创建 container IT/profile，S2 只增加 IT 与 profile。这样 S1 的 `verify` 仍不需要 Docker。
-- `maven-enforcer-plugin:3.5.0`：`requireJavaVersion [21,22)`、`requireMavenVersion [3.9.9,4.0)`、`banDuplicatePomDependencyVersions`、`dependencyConvergence`、上述 `bannedDependencies`。
-- `spring-boot-maven-plugin` 继承 Boot parent 版本；执行 `repackage` 生成可执行 fat jar。
-- `maven-compiler-plugin`/surefire/jar 版本由 Boot parent 管理；不另造版本。
+- `dependencyManagement` 只 import `spring-modulith-bom:2.1.2`；Testcontainers core 用显式版本，不 import TC BOM，避免把无关 managed versions 带入 convergence。Boot `4.1.2` BOM 本身管理 `testcontainers.version=2.0.5`，与该显式 pin 一致（preflight 已收敛）。
+- 上述 test-scope Testcontainers/PostgreSQL 依赖在 **S1 POM** 中声明（不执行），使 S1 version preflight 能解析并记录 2.0.5 / 42.7.14；S1 不创建 container IT/profile，S2 只增加 IT 与 profile。这样 S1 的 `verify` 仍不需要 Docker。
+- `spring-modulith-starter-core:2.1.2` 将 `spring-modulith-core` 声明为 runtime scope；Maven test classpath 包含 runtime scope（本修订 `dependency:build-classpath -Dmdep.includeScope=test` 已确认 classpath 含 `spring-modulith-core-2.1.2.jar`），因此架构测试可直接使用 `org.springframework.modulith.core.ApplicationModules`，不额外添加 core 依赖。S1 仍须用真实 test-compile 证明，不得靠猜。
+- `maven-enforcer-plugin:3.6.3`（Boot `4.1.2` BOM 管理版本；显式 pin）：`requireJavaVersion [21,22)`、`requireMavenVersion [3.9.9,4.0)`、`banDuplicatePomDependencyVersions`、`dependencyConvergence`、上述 `bannedDependencies`。本修订已用 3.6.3 真实 `validate` 通过。
+- `spring-boot-maven-plugin` 继承 Boot parent 版本；执行 `repackage` 生成可执行 fat jar（Boot 4.1.2 仍为 `BOOT-INF/lib` 布局，已核对 loader 4.1.2 sources）。
+- `maven-compiler-plugin` 3.15.0、surefire/failsafe 3.5.6、jar 版本由 Boot `4.1.2` parent/BOM 管理；不另造版本。
+- Boot `4.1.2` 管理 JUnit Jupiter `6.0.3`、AssertJ `3.27.7`；测试仍使用 `org.junit.jupiter.api.Test` 与 AssertJ fluent API，不新增测试框架依赖。
 - 不加入 formatter/checkstyle/Spotless；goal 未要求，且新增工具链会增加未证明的依赖/规则。`ModuleBoundaryTests` + Enforcer + compiler release 是本 slice 的 static/build 检查。
 - 无 `maven-failsafe-plugin` 的默认绑定；它只在 `container-smoke` profile 内声明（§7.4）。
 
@@ -415,7 +423,7 @@ spring:
 
 - 该表无 cycle；PA0 代码也没有跨模块调用，因此 `verify()` 现在是 acyclic/empty-edge 状态。负向 fixtures 证明一旦加入非法边，验证会失败。
 - **未编码的 cross-cutting 边**：A0 的 platform idempotency/outbox/audit 调用、sharing 的 workspace 读取、evidence 的 subject/ivr 读取等未来实现，不在 PA0 预授权；对应 work unit 必须显式修订本表并重新评审。不得为了“以后方便”预先放宽 allowedDependencies。
-- **1.4.14 deny-all 语义（已核实，closed）**：`org.springframework.modulith.ApplicationModule.allowedDependencies()` 默认值为 `{ OPEN_TOKEN }`，其中 `OPEN_TOKEN = "¯\\_(ツ)_/¯"`，表示 unrestricted；其 published Javadoc 明确 “Declaring an empty array will allow no dependencies to other modules. To not restrict the dependencies at all, leave the attribute at its default value.” Core `ApplicationModule.getAllowedDependencies()` 只把 singleton `OPEN_TOKEN` 当作 open，其余一律构造 closed allowed dependencies，因此**显式 `allowedDependencies = {}` 是 deny-all**。证据：Spring Modulith `1.4.14` published source/Javadoc（controller 于 2026-10-26 检视）。本表所有空集合行（`customer_iam`、`subject_number`、`operations_audit`、`platform_reliability`）必须写显式 `{}`，绝不能用 bare `@ApplicationModule` 默认值。若 S1 实际解析到的 Modulith 版本对该显式形式的 published 行为与 `1.4.14` 不一致，S1 fail closed 并上报，不得改用 unrestricted、删除负向 fixture 或降低断言。
+- **2.1.2 deny-all 语义（本修订复核，closed）**：`org.springframework.modulith.ApplicationModule.allowedDependencies()` 默认值为 `{ OPEN_TOKEN }`，其中 `OPEN_TOKEN = "¯\\_(ツ)_/¯"`，表示 unrestricted；其 published Javadoc 明确 “Declaring an empty array will allow no dependencies to other modules. To not restrict the dependencies at all, leave the attribute at its default value.” Core `ApplicationModule.getAllowedDependencies()` 只把 singleton `OPEN_TOKEN` 当作 open，其余一律构造 closed allowed dependencies，因此**显式 `allowedDependencies = {}` 是 deny-all**。证据：Spring Modulith `2.1.2` `spring-modulith-api-2.1.2-sources.jar`（`org/springframework/modulith/ApplicationModule.java`，默认值 `default { OPEN_TOKEN }`）与 `spring-modulith-core-2.1.2-sources.jar`（`AllowedDependencies.isOpen` 仅接受 singleton `OPEN_TOKEN`），以及 published Javadoc `https://docs.spring.io/spring-modulith/docs/current/api/org/springframework/modulith/ApplicationModule.html`（HTTP 200，2026-10-27 检索）。本表所有空集合行（`customer_iam`、`subject_number`、`operations_audit`、`platform_reliability`）必须写显式 `{}`，绝不能用 bare `@ApplicationModule` 默认值。若 S1 实际解析到的 Modulith `2.1.x` 对该显式形式的 published 行为与 `2.1.2` 不一致，S1 fail closed 并上报，不得改用 unrestricted、删除负向 fixture 或降低断言。历史 `1.4.14` 的同类结论只作历史证据，不再作为 active pin。
 
 ### 6.3 注解、探测与非空性
 
@@ -483,7 +491,7 @@ private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
 @Test
 void discoversExactlyTheFrozenModuleSet() {
     ApplicationModules modules = ApplicationModules.of(OneCallApplication.class);
-    assertThat(modules.stream().map(Module::getName))
+    assertThat(modules.stream().map(it -> it.getIdentifier().toString()))
         .containsExactlyInAnyOrderElementsOf(EXPECTED_MODULES);
 }
 
@@ -526,9 +534,10 @@ void discoveredProductionEdgesStayInsideTheConfiguredMap() {
     ApplicationModules modules = ApplicationModules.of(OneCallApplication.class);
     Map<String, Set<String>> discovered = new HashMap<>();
     modules.stream().forEach(module -> discovered.put(
-        module.getName(),
+        module.getIdentifier().toString(),
         module.getDirectDependencies(modules)
-            .map(Module::getName)
+            .uniqueModules()
+            .map(it -> it.getIdentifier().toString())
             .collect(Collectors.toSet())));
     discovered.forEach((name, targets) -> assertThat(EXPECTED_ALLOWED.get(name))
         .as(name + " discovered edges must stay within allowedDependencies")
@@ -548,8 +557,9 @@ void verifiesNoCyclesOrBoundaryViolations() {
 - exact-map test 直接读取每个 package-info 的 `allowedDependencies()`：`ivr` 若被 widen（加 `catalog_order`）、narrow（删 `subject_number`）、omit（bare 默认 `OPEN_TOKEN`）或 change（`subject_number`→`catalog_order`），`containsExactlyInAnyOrderElementsOf` 都会失败；leaf 的默认 `OPEN_TOKEN` 还会被显式 `doesNotContain` 拒绝。
 - `discoveredProductionEdgesStayInsideTheConfiguredMap` 用 Modulith discovered direct dependency 集合作 subset 断言：先要求每个模块的 discovered edges ⊆ configured map，再要求全局 discovered edges 为空（当前只有 marker，无跨模块 code edge）。这不会削弱上面的 configured-map exact equality。
 - 实现必须在 S1 报告记录 **4 个稳定 mismatch probes** 的结果（每个 probe 修改一处 package-info、跑 `ModuleBoundaryTests` 必须失败、恢复后必须绿）：(a) widen `ivr` + `catalog_order`；(b) narrow `ivr` - `subject_number`；(c) leaf `customer_iam` 改 bare `@ApplicationModule`（默认 `OPEN_TOKEN`）；(d) change `organization_access` `customer_iam`→`ivr`。不得只记录 report hash。
-- `Module.getName()`（`org.springframework.modulith.core.Module`）在没有 `displayName` 时返回模块简单名；本计划不设置 displayName，避免 name/allowedDependencies 语义分叉。
-- 若 1.4.14 的 API 名称不同，实现可使用等价 API（含 `getDirectDependencies` 的等价形式），但必须保持 exact module set、annotation presence、exact allowed map、discovered-subset 四类断言；不得降低为 `not empty` 或 `count >= 14`。
+- **Modulith 2.1.2 API 形态（已按 published source 核对）**：`ApplicationModules.stream()` 返回 `org.springframework.modulith.core.ApplicationModule` 流；`org.springframework.modulith.core.Module` 在 2.1.2 已不存在。模块名取 `getIdentifier().toString()`（未设置 `id`/`displayName` 时为包 local name，即 `customer_iam` 等 14 个值）；`getDirectDependencies(modules)` 返回 `ApplicationModuleDependencies`，其 `uniqueModules()` 才是 `Stream<ApplicationModule>`。上面的测试代码已按该 API 冻结；实现不得再引用 `Module` 或把 `getDirectDependencies(...)` 当 `Stream`。
+- **import 名称冲突**：`org.springframework.modulith.ApplicationModule` 是注解，`org.springframework.modulith.core.ApplicationModule` 是核心类型；测试只 import 注解（用于 `ApplicationModule.class` 反射），模块流用 lambda + `getIdentifier()`，不 import core `ApplicationModule`，避免简单名冲突。
+- 若 S1 实际解析到的 Modulith `2.1.x` patch 与上述 API 不一致，实现必须 fail closed 上报，不得用反射/字符串猜测绕过；断言仍须保持 exact module set、annotation presence、exact allowed map、discovered-subset 四类，不得降低为 `not empty` 或 `count >= 14`。
 - `verify()` 同时检查 cycle、allowed dependencies 与 CLOSED module internal access。
 
 ### 6.5 负向 fixtures（必须真实失败）
@@ -569,7 +579,7 @@ assertThatThrownBy(() -> ApplicationModules.of(CycleFixtureRoot.class).verify())
 
 - 不 assert 具体 message（避免 API 文案漂移）；fixture 结构本身保证违规类型，未抛异常即测试失败。cycle fixture 中 alpha/beta 互相允许且无 internal/非法边，因此任何 `Violations` 只能来自 cycle 检测。
 - Fixtures 都在 `src/test/java`，不在 app root 下；不会进入 production jar。
-- forbidden fixture 的 consumer **必须**显式 `allowedDependencies = {}`（§6.2 已核实的 deny-all 形式）。若它不抛 `Violations`，说明实际解析的 Modulith 版本 published 行为偏离 `1.4.14`（explicit `{}` 应视为 closed），S1 必须 fail closed 上报；不得删除测试、放宽断言或改为 unrestricted。该 fixture 同时是“explicit `{}` 下 consumer→provider 边必须失败”的负向证明。
+- forbidden fixture 的 consumer **必须**显式 `allowedDependencies = {}`（§6.2 已核实的 deny-all 形式）。若它不抛 `Violations`，说明实际解析的 Modulith 版本 published 行为偏离 `2.1.2`（explicit `{}` 应视为 closed），S1 必须 fail closed 上报；不得删除测试、放宽断言或改为 unrestricted。该 fixture 同时是“explicit `{}` 下 consumer→provider 边必须失败”的负向证明。
 
 ### 6.6 dependency firewall 测试
 
@@ -699,7 +709,7 @@ jdbc:postgresql://<containerHost>:<mappedPort>/onecall
 
 - 默认 `./mvnw -B -ntp verify`：不运行 container IT，不要求 Docker；README 明确说明这不是“容器 smoke 通过”。
 - `./mvnw -B -ntp -Pcontainer-smoke verify`：必须运行 `PostgresContainerIT`；Docker 不可用/镜像拉取失败/容器启动失败 => build 非 0。**没有** `@Testcontainers(disabledWithoutDocker=true)`、`Assumptions`、`@Disabled` 或环境变量 skip。
-- `maven-failsafe-plugin` 版本优先由 Boot parent 管理；若 S1/S2 preflight 显示 Boot parent 未管理该插件，必须在 POM 中固定 preflight 解析到的 GA 版本并记录。`failIfNoTests=true` 确保 profile 激活但测试未被匹配时失败。
+- `maven-failsafe-plugin` 版本由 Boot `4.1.2` parent/BOM 管理为 `3.5.6`（本修订已核对 Boot 4.1.2 dependencies POM）；S2 不另写版本。若 S1/S2 preflight 显示实际解析版本不同，必须在 POM 中固定 preflight 解析到的 GA 版本并记录。`failIfNoTests=true` 确保 profile 激活但测试未被匹配时失败。
 - 若 author 环境 Docker daemon 未运行或 `docker` 权限被拒绝，该命令记为 `NOT RUN` 并附 exact reason；这**只允许 author code-complete**。**S2 accepted-slice checkpoint 前**，controller 必须在其 Docker-capable 环境实际执行 `./mvnw -B -ntp -Pcontainer-smoke verify` 并通过（failsafe XML `tests=1 skipped=0 failures=0 errors=0` + §7.3 SQL 断言）。controller daemon 仍不可用时，Gateflow 停止并请求启动 Docker；**不得 accept/commit S2**，也不得把该 primary proof 推迟到后续 PR/CI run。CI 首次真实运行是 post-push 附加证据（§9.6），不能替代本次 controller pre-push run。
 
 ### 7.5 证据边界
@@ -980,7 +990,7 @@ contract-regressions:
 
 ### 9.6 无法本地执行 CI 的证据边界
 
-- Author Gate 不 push、不创建/修改 PR、不触发 GitHub Actions；本会话 `docker` 也被权限门拒绝且 daemon 未运行。
+- Author Gate 不 push、不创建/修改 PR、不触发 GitHub Actions；本修订未运行 container smoke（尚无 `backend/**`/container IT）且未执行 CI，因此二者均为 `NOT RUN`。Docker `docker info` 在本修订环境可用，但这不构成 S2 证据。
 - S2 只能静态检查 workflow YAML/命令/路径，并执行本地 Java/Node 命令（若权限允许）；**不得声称 CI 已运行/通过**。CI 首次真实运行证据属于 post-push PR gate。
 - **证据不可互相替代**：S2 accepted checkpoint 的 primary proof 是 controller pre-push Docker run（§11.2 状态 2）；真实 GitHub Actions run 是 post-push 附加 workflow 证据（§11.2 状态 3）。CI 后续通过不能追溯满足 pre-push controller run，controller 本地 run 也不能替代 post-push CI 必须在 draft-PR-pass/final closeout 前通过。
 - 若 `gh`/GitHub 不可用，报告 `NOT RUN` 及 exact denial；不伪造 status check。
@@ -1008,7 +1018,7 @@ contract-regressions:
 
 ### 11.1 S1 — Java/Maven 运行时、14 模块边界与依赖防火墙（无 Docker）
 
-**行为目标**：建立一个可构建、可启动、可测试的 Java `21.0.13+9`/Boot 3.5/Modulith 单模块应用；精确冻结 14 个模块边界（含 executable allowedDependencies map）并证明 cycle/forbidden/internal 会被拒绝；不要求 Docker/DB。
+**行为目标**：建立一个可构建、可启动、可测试的 Java `21.0.13+9` / Boot `4.1.2` / Modulith `2.1.2` 单模块应用；精确冻结 14 个模块边界（含 executable allowedDependencies map）并证明 cycle/forbidden/internal 会被拒绝；不要求 Docker/DB。
 
 **允许路径**：
 
@@ -1043,7 +1053,7 @@ contract-regressions:
 5. `./mvnw -B -ntp verify` 在无 Docker 环境成功；jar 启动 exit 0 且日志含 `Started OneCallApplication`。
 6. production fat jar 不含 PostgreSQL/Testcontainers/Security/Flyway/jOOQ/Hikari jar。
 7. Enforcer toolchain/convergence/banned dependencies 通过。
-8. §4.3 version/dependency preflight 通过；Maven SHA-256 已记录。
+8. §4.3 version/dependency preflight 通过：Boot 精确 `4.1.2`、Modulith 精确 `2.1.2`、Testcontainers `2.0.5`、PostgreSQL `42.7.14`；无 Boot `4.0.x`/`3.x` 或 Modulith `1.x`/`2.0.x` 解析结果；Maven wrapper SHA-256 已记录。测试代码按 Modulith 2.1.2 API（`getIdentifier()` / `uniqueModules()`）test-compile 通过。
 
 **错误处理**：
 
@@ -1070,7 +1080,7 @@ jar tf target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/jar-index.txt
 ```
 
 - `.java-version`/`java -version`/`./mvnw -v`：精确 Temurin `21.0.13+9`（patch `21.0.13` + build `+9`）与 Maven 3.9.9。既有 `21.0.12.1+1` 仅可作诊断，不构成本条通过。
-- `dependency:resolve`/`dependency:tree`：Boot 3.5.16、Modulith 1.4.14、Testcontainers 2.0.5 可解析；PostgreSQL driver 来自 Boot BOM。
+- `dependency:resolve`/`dependency:tree`：Boot `4.1.2`、Modulith `2.1.2`、Testcontainers `2.0.5`、PostgreSQL `42.7.14` 可解析；任何 `4.0.x`/`3.x`/`1.x`/`2.0.x` 解析结果都 fail closed。
 - `verify`：BUILD SUCCESS；surefire 精确执行 ModuleBoundaryTests/OneCallApplicationTests/BootstrapDependencyBoundaryTests，无 skip；Enforcer 全绿。
 - jar：exit 0；`Started OneCallApplication`；`jar tf` 无 `BOOT-INF/lib/(spring-security|flyway|jooq|HikariCP|postgresql|testcontainers)`。
 - 不在 S1 运行/声称 container smoke 或 CI。
@@ -1175,6 +1185,9 @@ cd backend
 | 把 CI 绿当生产验收 | 对外声称 accepted/production | README/§9.5/报告 honesty；不建 evidence/authority；`productionAccepted=false` |
 | 预建空 worker/scheduler/多模块过度设计 | 无行为模块增加 gate 成本 | 单 Maven module；未来第二个 deployment artifact 再拆 |
 | 版本未证明却写成事实 | 用 controller observation 冒充 author proof | §4 三态证据；S1 preflight fail closed；报告 exact denial |
+| Boot 4.0.x 被静默替换 | 依赖/父 POM 漂移到 4.0.x，违背用户硬目标 | POM 固定 `4.1.2`；§4.3 断言 resolved tree 无 `4.0.x`；Enforcer/人工检查；发现即 fail closed |
+| Modulith 2.1 API 漂移 | 继续引用已移除的 `core.Module` 或把 `getDirectDependencies` 当 Stream，测试无法编译 | §6.4 已按 2.1.2 `getIdentifier()`/`uniqueModules()` 冻结；S1 test-compile 是硬门 |
+| Modulith support=none 被忽略 | 把 Boot 4.1 的 OSS 支持误当成 Modulith 也有同窗口 | §4.1/§13.3 显式记录 `ACTIVE_UNSUPPORTED`；controller/release governance 接受；不得静默替换目标线 |
 
 ## 13. 文档、发布、风险、开放问题、停止条件、完成报告
 
@@ -1182,7 +1195,7 @@ cd backend
 
 - 新增 `backend/README.md`：工具链、wrapper、命令、模块边界表、container/CI skip 语义、CI 证据边界、非验收声明。
 - 不新增 `docs/20`、root README、第二 spec、README index 行或 acceptance 文档。
-- 本计划是唯一 plan artifact；implementation 只新增各 slice 报告；不修改 controller。
+- 本计划是唯一 active plan artifact；`docs/gateflow/pa0-production-runtime-bootstrap-plan-boot41-revision.md` 是本次 Boot 4.1/Modulith 2.1 修订的 bounded 说明/证据文档（documentation only，不改变实现契约）。implementation 只新增各 slice 报告；不修改 controller。
 - 文档语言：中文说明 + English identifiers/enum/commands；字段和命令保持 canonical ASCII。
 
 ### 13.2 迁移/公共契约/发布声明
@@ -1196,31 +1209,32 @@ cd backend
 
 | ID | Residual | Owner | Destination |
 | --- | --- | --- | --- |
-| `PA0-R-01` | Boot 3.5.16/Modulith 1.4.14/Testcontainers 2.0.5 的独立 GA 兼容性在本 author 会话未证明（网络/执行权限被拒绝）；仅 controller-observed | Platform/CI | S1 §4.3 preflight；失败则 S1 blocked |
-| `PA0-R-02` | Maven 3.9.9 bin zip SHA-256 未在本会话取得 | Platform/CI | S1 wrapper preflight；不得省略 checksum |
-| `PA0-R-03` | author 环境 Docker daemon 未运行且 `docker` 被权限门拒绝；container smoke 不能由 author 实际执行 | Platform/CI | **controller pre-push Docker-capable run 是 S2 accepted checkpoint 前置**；daemon 不可用则 Gateflow 停止并请求启动，不以 post-push CI 替代；author 只报 `NOT RUN` |
+| `PA0-R-01` | Boot `4.1.2` / Modulith `2.1.2` / Testcontainers `2.0.5` / PostgreSQL `42.7.14` 的 GA 兼容性已由本修订真实 resolve/tree/Enforcer 证明；剩余的是 `backend/**` 实际 build/test-compile/verify 尚未执行 | Platform/CI | S1 §4.3 preflight + `verify`；失败则 S1 blocked |
+| `PA0-R-02` | Maven 3.9.9 bin zip SHA-256 已取得（`4ec3f26f...c3a3c`），但 wrapper 尚未生成/固定到 `backend/` | Platform/CI | S1 wrapper preflight 生成并复验；不得省略 checksum |
+| `PA0-R-03` | 本修订环境 Docker 可用，但尚无 `backend/**`/container IT，container smoke 未执行 | Platform/CI | **controller pre-push Docker-capable run 是 S2 accepted checkpoint 前置**；daemon 不可用则 Gateflow 停止并请求启动，不以 post-push CI 替代；author 只报 `NOT RUN` 或实际执行结果 |
 | `PA0-R-04` | GitHub Actions 首次真实运行需要 push/PR；author Gate 不执行 | Platform/CI | PA0 PR/controller gate；CI 未运行前不得声称绿 |
 | `PA0-R-05` | `postgres:16` 是 floating test tag，digest 未 pin | Backend/Platform | S2/CI hardening（可后续 pin digest）；不影响 design family 16+ |
-| `PA0-R-06` | Boot 3.5 line 的 support/security 窗口未由 controller metadata 证明 | Platform/Security | S1 preflight；若 EOL 则报告/由 release governance 决定，不静默升 Boot 4 |
+| `PA0-R-06` | Boot `4.1.x` OSS 支持到 `2027-07-31` 已由 `api.spring.io` 证明，在 2026-10-27 可接受；S1 时若已过窗口则停止 | Platform/Security | S1 preflight 记录；若 EOL 则上报 release governance；不得回退到 Boot 4.0.x/3.x |
 | `PA0-R-07` | GitHub Actions 用 major tag 而非 commit SHA，供应链 pinning 不足 | Security/Platform | CI hardening / release governance |
 | `PA0-R-08` | path-filtered workflow 与 branch protection required checks 可能交互（docs/review-only PR 不跑 checks） | Platform/CI | repository governance/branch protection 配置 |
 | `PA0-R-09` | A0 cross-cutting platform/audit/sharing/evidence 边未预授权，未来 work unit 需显式修订 allowedDependencies | Backend/Architecture | first domain work unit + architecture review |
-| `PA0-R-10` | 精确 JDK pin `Temurin 21.0.13+9` 已由 Adoptium feature-release API（2026-10-26）核实，并写入 `backend/.java-version` 与 CI `setup-java`；本机既有 `21.0.12.1+1` 不满足该 pin | Platform/CI | S1 前由执行环境选择/安装精确 release，并以 `java -version`/`./mvnw -v` 断言；无法解析 `jdk-21.0.13+9` 则 S1 fail-closed blocked（非可延后 hardening） |
+| `PA0-R-10` | 精确 JDK pin `Temurin 21.0.13+9` 已由 Adoptium API 与本修订实际执行验证（`/tmp/pa0-tools/jdk-21.0.13+9/bin/java -version`），并写入 `backend/.java-version` 与 CI `setup-java` 计划；PATH 上既有 `21.0.12.1+1` 不满足该 pin | Platform/CI | S1 前由执行环境选择/安装精确 release，并以 `java -version`/`./mvnw -v` 断言；无法解析 `jdk-21.0.13+9` 则 S1 fail-closed blocked（非可延后 hardening） |
 | `PA0-R-11` | CI 绿可能被误读为生产验收 | Backend/QA/Product | README/§9.5 + A5/release governance |
 | `PA0-R-12` | 未加入 formatter/checkstyle；本 slice 的 static check 以 Modulith/Enforcer/firewall 为界 | Backend/Platform | 后续 code-quality work unit（不在 PA0 goal） |
 | `PA0-R-13` | module allowedDependencies 是由 docs/12 §6 prose 翻译的 capacity 上限；若上游架构变化，需同步 | Architecture | architecture change control |
+| `PA0-R-14` | Spring Modulith `2.1.x` 官方项目 status=`ACTIVE_UNSUPPORTED`、generation `support=none`；**没有**独立 OSS/商业支持窗口，不能把 Boot 4.1 的 OSS 窗口当作 Modulith 的窗口。若 controller 要求每个运行时组件都有 published OSS support window，则精确 blocker 就是 `support=none`，必须由 release governance 决定，不得由 author 替换目标线 | Platform/Security + release governance | 由 controller 在 revised plan review 显式接受；S1/S2 记录 `2.1.2` resolved version 并跟踪 2.1.x patch；不得静默替换为 Modulith 2.0/1.x 或未证明版本 |
 
 ### 13.4 开放问题（typed，不阻塞 plan scope）
 
-1. **VQ-01（S1 preflight blocker）**：Boot 3.5.16 / Modulith 1.4.14 / Testcontainers 2.0.5 的独立 GA 兼容性证据。当前只有 controller 2026-10-26 observation；本会话网络/执行被拒绝。处理：S1 §4.3 用真实 Maven resolve/tree/verify 证明；失败则停止，不猜替代版本。
-2. **VQ-02（S1 preflight blocker）**：Maven 3.9.9 zip 的官方 SHA-256。处理：S1 计算/记录；无法取得则 S1 blocked。
+1. **VQ-01（部分关闭；S1 执行环境仍须验证）**：Boot `4.1.2` / Modulith `2.1.2` / Testcontainers `2.0.5` / PostgreSQL `42.7.14` 的解析/兼容性已由本修订证明；S1 仍须在 `backend/` 真实 `dependency:resolve`/`tree`/`validate`/`verify` 重放，并证明无 Boot 4.0.x/3.x 或 Modulith 1.x/2.0.x 解析结果。失败则停止，不猜替代版本。
+2. **VQ-02（SHA 已取得；wrapper 生成待 S1）**：Maven 3.9.9 zip 的 SHA-256 为 `4ec3f26f...c3a3c`，官方 SHA-512 已逐字符校验；S1 仍须生成 wrapper 并写入 `distributionSha256Sum`，无法复验则 S1 blocked。
 3. **VQ-03（S2 evidence dependency，已按三态拆分）**：controller pre-push Docker-capable run 是 S2 accepted checkpoint 的唯一前置；GitHub Actions 首次真实运行是 post-push 的 draft-PR/closeout 前置，不替代前者。author 只报告 author code-complete 与 `NOT RUN`。
 4. **VQ-04（residual）**：test image `postgres:16` 的 digest pin。处理：后续 CI hardening；不是 production DB 版本承诺。
-5. **VQ-05（preflight）**：Boot 3.5 的官方 support/security 窗口。处理：S1 记录；若不受支持，上报 release governance，不静默升 Boot 4。
+5. **VQ-05（已证明；governance residual 保留）**：Boot `4.1.x` OSS 支持至 `2027-07-31`，S1 只需在实现时复核；Modulith `2.1.x` 为 `ACTIVE_UNSUPPORTED`/`support=none`，无独立 support 窗口，由 `PA0-R-14` 在 controller/release governance 显式接受，不静默替换目标线。
 6. **VQ-06（residual）**：Actions commit-SHA pinning 与 path-filter/branch protection 配置。处理：Platform/Security CI hardening。
 7. **VQ-07（deferred）**：platform/audit/sharing/evidence 的 cross-cutting Java 边。处理：对应 domain work unit 显式修订 §6.2 并评审，PA0 不预授权。
 
-- **本次 bounded fix 已关闭**：deny-all 语义（原 review OQ-01）由 Spring Modulith `1.4.14` published source/Javadoc 证实——默认 `OPEN_TOKEN` 为 unrestricted、显式 `allowedDependencies = {}` 为 deny-all（§6.2/§6.5）；Docker 供给（原 review OQ-02）由 controller pre-push container run 要求关闭（§11.2）。VQ-02（Maven zip SHA-256）与 VQ-05（Boot 3.5 support window）仍是 fail-closed S1 preflight，不得猜测。
+- **历史 bounded fix 记录（不改写历史 artifact）**：deny-all 语义（原 review OQ-01）在历史 `1.4.14` 已核实，本修订在 `2.1.2` 重新核实——默认 `OPEN_TOKEN` 为 unrestricted、显式 `allowedDependencies = {}` 为 deny-all（§6.2/§6.5）；Docker 供给（原 review OQ-02）仍由 controller pre-push container run 要求关闭（§11.2）。历史 fix/review artifacts 保持不可变。
 - 以上其余均为 typed preflight/evidence/residual，不是 invent 许可，也不是产品 scope blocker；plan review 不依赖它们被伪造解决。
 
 ### 13.5 停止条件
@@ -1228,9 +1242,11 @@ cd backend
 实现遇到以下任一情况必须停止并报告，不得静默决定：
 
 - Boot/Modulith/Testcontainers/Enforcer 无法解析、版本不兼容、convergence 无法在不改设计的情况下通过；
+- 解析结果不是 Boot `4.1.x` / Modulith `2.1.x`，尤其是出现 Boot `4.0.x`、Boot `3.x`、Modulith `1.x` 或 Modulith `2.0.x`；
 - Maven 3.9.9 SHA-256 无法取得/校验；
 - 执行环境无法解析/安装精确 Temurin `21.0.13+9`，或 `java -version`/`./mvnw -v` 不匹配 patch `21.0.13` + build `+9`；
-- 实际解析的 Modulith 版本对显式 `allowedDependencies = {}` 的 published 行为与 `1.4.14` 不一致（例如不构成 deny-all），或需要削弱/删除负向测试；
+- 实际解析的 Modulith `2.1.x` 对显式 `allowedDependencies = {}` 的 published 行为与 `2.1.2` 不一致（例如不构成 deny-all），或 API 不提供 `getIdentifier()`/`uniqueModules()` 的等价 2.1 形态，或需要削弱/删除负向测试；
+- Boot `4.1.x` 在 S1 时已超出 `ossSupportEndDate=2027-07-31`，或 Modulith `2.1.x` 不再是 current GA；
 - 需要新增 Security/Flyway/jOOQ/Hikari/DataSource/HTTP server/schema/migration/domain code 才能让启动或 smoke 通过；
 - 需要放宽 `docker info`/report `skipped=0`/`failIfNoTests`/无 skip API 的 CI 证据；
 - 需要修改 A0-A5 assets/validators/fixtures/counts/docs 12-19 才能让回归通过；
@@ -1249,13 +1265,16 @@ toolchain evidence:
   backend/.java-version content (exact 21.0.13+9)
   java -version / ./mvnw -v exact output (patch 21.0.13 + Temurin build +9)
   Node node --version exact output
-  dependency tree: spring-boot, spring-modulith, testcontainers, postgresql
-  version evidence status: AUTHOR_VERIFIED / CONTROLLER_OBSERVED / PREFLIGHT_REQUIRED
+  dependency tree: spring-boot=4.1.2, spring-modulith=2.1.2, testcontainers=2.0.5, postgresql=42.7.14
+  forbidden_resolved_versions_absent=true (no Boot 4.0.x/3.x, Modulith 1.x/2.0.x)
+  boot_support: 4.1.x ossSupportEndDate=2027-07-31; modulith_support: ACTIVE_UNSUPPORTED/support=none
+  version evidence status: AUTHOR_VERIFIED / PREFLIGHT_REQUIRED
   Maven wrapper distributionUrl + distributionSha256Sum + retrieval date
 module inventory:
   14 names/packages, annotation presence,
   exact allowedDependencies map assertion (pass) + 4 mismatch probes (fail/restore),
-  discovered production edges subset check (empty)
+  discovered production edges subset check (empty),
+  Modulith 2.1.2 API used: getIdentifier().toString(), getDirectDependencies(...).uniqueModules()
 commands executed + exact exit code + key stdout/stderr
   (permission-denied commands: exact denial, NOT RUN, not PASS)
 semantic assertions observed:
@@ -1281,7 +1300,13 @@ CI status:
   workflow YAML/commands/paths static check result
   actual GitHub run: PASS / FAIL / NOT RUN (exact reason; never claim without run)
   note: post-push CI cannot substitute controller pre-push container run
-residual owner/destination reconciliation (PA0-R-01..13)
+residual owner/destination reconciliation (PA0-R-01..14):
+  each ID PA0-R-01 through PA0-R-14 -> owner -> destination, none omitted
+  PA0-R-14: Modulith 2.1.x ACTIVE_UNSUPPORTED/support=none ->
+    owner Platform/Security + release governance ->
+    destination controller acceptance at revised plan review;
+    S1/S2 record Modulith 2.1.2 resolved version and track 2.1.x patches,
+    no silent substitution
 honesty statement:
   only build/static/synthetic checks; no carrier/IVR media/cloud/provider/
   load/restore/penetration/manual/production acceptance; no A5 evidence
@@ -1308,6 +1333,8 @@ open questions/blockers: exact list or none
 
 为什么 14 个 marker + 14 个 package-info 不是过度设计：它们是让“精确模块集 + annotation + negative fixture”可执行的最小 metadata；没有 domain code。为什么 2 slices 不是机械拆分：S1 是无需 Docker 的本地运行时/边界行为，S2 是真实容器 + CI/跨仓库回归的执行证据边界；各自可独立验证且失败模式不同。
 
+**本次 Boot 4.1/Modulith 2.1 修订不增加能力**：不新增第三个 slice、不新增 migration/compatibility harness、不新增 provider/security/domain code；只把既有 S1/S2 的版本、POM、Modulith API 代码样例、preflight 断言、CI 期望和 residual 从已失效的 Boot 3.5/Modulith 1.4 目标线更新为经证据固定的 Boot 4.1.2/Modulith 2.1.2。14 个模块、allowedDependencies map、slice 边界、无 domain/no migration/no provider 范围保持不变。
+
 ## 15. 计划要求追踪与完成定义
 
 ### 15.1 任务要求到章节追踪
@@ -1319,6 +1346,7 @@ open questions/blockers: exact list or none
 | Design doc and A0-A5 alignment | §2.2、§2.3 |
 | Exact repository layout/affected files | §3 |
 | Exact version pins and authoritative compatibility evidence or blocking question | §4、§13.4 |
+| Boot 4.1.x/Modulith 2.1.x target revision, evidence and unchanged scope | header、§2.1、§4、revision artifact |
 | Maven structure/app entry/Modulith declaration/detection/allowed rules/verification | §5、§6 |
 | Security/Flyway/jOOQ/Hikari/PostgreSQL bootstrap handling | §5.2、§6.6 |
 | Testcontainers lifecycle/failure/skip policy; CI cannot pass unrun | §7、§9.3 |
@@ -1337,5 +1365,6 @@ open questions/blockers: exact list or none
 - 两个 behaviorally bounded slices；每个有独立行为/证据边界、精确 paths、call paths、invariants、error handling、commands、assertions 和 completion-report 要求。
 - 明确 exact planned files、14 模块表、allowedDependencies、测试/negative fixtures、POM 结构、container/CI 设计、A1-A5 命令和证据边界。
 - 明确不新增 public contract/migration/domain/security/cloud/acceptance；不修改 A0-A5/controller/prototypes/screenshots。
+- 明确硬目标为 Boot `4.1.x` + Modulith `2.1.x`（精确 `4.1.2`/`2.1.2`），Boot `4.0.x` 禁止；不增加第三 slice。
 - 明确 version/SHA/Docker/CI 的证据缺口与 fail-closed preflight；不猜测、不伪造。
 - 后续 implementation 只需按本计划生成 scaffold/tests/workflow/reports；无需重新决定产品状态、数据库 schema、认证、生产阈值或验收 authority。
