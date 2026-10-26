@@ -29,9 +29,9 @@ Before production implementation, section 18 of the design source requires code-
 
 - ID: `A4-production-capacity-deployment-spec`
 - Type: architecture-sensitive capacity/deployment specification deliverable.
-- Status: in progress.
+- Status: completed (`final closeout pass`).
 - Base: merged `origin/main` commit `f3bcbd99a6f49cb64977358cea08e028bc634a54` (PR #5 / A3); local `main` was fast-forwarded and this dedicated A4 branch created from the same commit.
-- Current gate / next entry point: `accepted PR review commit` (Draft PR #6 passed independent PR-mode deepreview with no material findings; create the protected local PR-review checkpoint before the required follow-up push).
+- Current gate / next entry point: `final closeout pass`. Draft PR #6 contains the accepted PR-review checkpoint `c942669c3fa66d967ec58749c7905b182a8c6c20`; after the user merges it, update local `main` from `origin/main` and start Phaseflow goal confirmation for `A5-production-acceptance-matrix-spec` from architecture section 18 item 6.
 - Design source: `docs/12-technology-stack-and-system-architecture.md` sections 4, 5, 12, 13, 17 and 18 item 5; accepted A0/A1/A2/A3 specifications and contracts remain binding inputs.
 
 ### A4 binding goal contract
@@ -77,7 +77,11 @@ Use the fewest behaviorally verifiable increments warranted by this specificatio
 | initial push | passed | `origin/codex/a4-production-capacity-deployment-spec` created at `068593075eaf1576d9ac89011e766e8c427247da`; the first direct HTTPS attempt timed out because local DNS resolved `github.com` to an unreachable edge, then a read-only probe verified official edge `140.82.112.3` and the push succeeded with a one-command `http.curloptResolve` override | no global Git, hosts or remote configuration was changed; proceed to Draft PR creation |
 | create draft PR | passed | Draft PR #6, `https://github.com/zh94695424/one-call/pull/6`; title `Add production capacity and deployment specification`; base `main`; head `codex/a4-production-capacity-deployment-spec`; head OID `068593075eaf1576d9ac89011e766e8c427247da`; GitHub reports `OPEN`, `isDraft=true`, `mergeStateStatus=CLEAN` | proceed to PR review; no issue closing keyword is required because A4 is an architecture-sensitive deliverable, not an issue work unit |
 | PR review | passed-with-risks; controller accepted | `docs/reviews/pr-6-review-20261026-125332.md`, SHA-256 `E40FEDC45683D5C4F58D7FCFC9D7D337717DD98E0E32A9867082F9CEB2BFFBB3`; task `a4-capacity-pr6-review-mimo26flash-20261026-01`; run `/tmp/sub-agents.a4-pr6-review.xHAJWy`; runner exit 0, valid JSON `subtype=success`, `is_error=false`, `stop_reason=end_turn`, 66 turns, empty stderr | zero P0-P3 material findings, five PR checks passed, no regression or scope drift. Controller independently verified the exact PR title/body/base/head/draft state and empty check rollup. N1 remains assigned to Backend/QA in A5 or production implementation tests; N2 needs no change; N3 reviewer limitations are closed by controller evidence. No repository CI/check is configured, so no CI pass is claimed |
-| accepted PR review commit | ready | stage exactly the PR review artifact and this control document | create the protected local checkpoint, then push it to PR #6 head before `draft-PR-pass`; unrelated screenshots and historical review remain excluded |
+| accepted PR review commit | passed | `c942669c3fa66d967ec58749c7905b182a8c6c20`, `gateflow: accept PR review for A4-production-capacity-deployment-spec`; exactly the PR review artifact and control document; staged `git diff --cached --check` passed | push this checkpoint to PR #6 head, then verify remote head and Draft PR state before entering `draft-PR-pass` |
+| final reviewed-content push | passed | local and remote branch plus PR #6 head all verified at `c942669c3fa66d967ec58749c7905b182a8c6c20`; GitHub reports Draft/Open/Clean and no configured checks | no force push or remote configuration change; CI absence remains a Platform/CI residual rather than a passing signal |
+| draft-PR-pass | passed | accepted PR review artifact and checkpoint exist, all findings are adjudicated, the follow-up push is verified, PR #6 remains Draft/Open/Clean, and no blocking question or unclassified residual remains | proceed to final closeout; no merge, approval, mark-ready, reviewer request, GitHub comment or branch deletion was performed |
+| final closeout | passed | `docs/gateflow/a4-production-capacity-deployment-spec-final-closeout.md`; final controller rerun: syntax checks exit 0, S1 86/86 with 459 probes, S2 113/113 with 471 probes/3 repeats/1 determinism/`readmeLink=true`; residual owners and destinations reconciled | A4 completed. After the user merges PR #6, update `main` from `origin/main` and begin `A5-production-acceptance-matrix-spec` goal confirmation; do not continue A5 from this unmerged branch |
+
 
 
 
