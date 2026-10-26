@@ -3,7 +3,7 @@
 - Current gate / task: `S1 review fix 1` / `a5-production-acceptance-matrix-s1-review-fix1-ds-20261026-01`
 - Initial S1 task label: `a5-production-acceptance-matrix-s1-fix1-ds-20261026-01`
 - Work unit / gate: `A5-production-acceptance-matrix-spec` / `S1 implementation` (fix 1)
-- Base commit: `e36b350` (accepted plan checkpoint `bc6ab32f12b0301b5e29b23af419d9a4fb9a7ea4`)
+- Base commit: `e36b350` (accepted plan checkpoint `bc6ab32a3f0fe3fec0d3b8504b45d8bf0184a058`)
 - Provider/model: deepseek-flash[1m]
 - Result: `PASS acceptance-validation (s1)`, exit `0`, reproducible twice.
 
