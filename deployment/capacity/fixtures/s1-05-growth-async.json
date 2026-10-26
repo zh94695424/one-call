@@ -1,0 +1,245 @@
+{
+  "id": "s1-05-growth-async",
+  "stage": "s1",
+  "description": "Metadata, database auxiliary bytes, queue backlog/drain direction and AI aggregate load ratio versus Little average in-service tasks are independent measurement surfaces.",
+  "cases": [
+    {
+      "id": "metadata-db-queue-ai",
+      "behavior": "metadata and DB aux are per-type; queue drain/bytes sign are explicit; AI loadRatio is a ratio derived from aggregate service rate, avgInServiceTasks uses mean service time, and bytes/s is independent.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "META_BY_TYPE": {
+            "audit": {"rowsPerDay": {"value": 10, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 100, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 30, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "outbox": {"rowsPerDay": {"value": 5, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 200, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 10, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "callEvent": {"rowsPerDay": {"value": 2, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 50, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "evidenceEvent": {"rowsPerDay": {"value": 1, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 500, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 20, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "shareAccess": {"rowsPerDay": {"value": 0, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 300, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}
+          },
+          "DB_AUX_BY_KIND": {
+            "index": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "wal": {"value": 2000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "replication": {"value": 3000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "backup": {"value": 4000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+          },
+          "QUEUE_ARRIVAL_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_SERVICE_TASKS_PS": {"value": 12, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_BYTES_PER_TASK": {"value": 1000, "unit": "bytesPerTask", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_INITIAL_BACKLOG_TASKS": {"value": 3000, "unit": "tasks", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_ARRIVALS_PS": {"value": 20, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_SERVICE_RATE_PS": {"value": 25, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_MEAN_SERVICE_S": {"value": 2, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_BYTES": {"value": 5000, "unit": "bytesPerTask", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.metadata.audit": {"status": "COMPLETE", "value": 30000, "unit": "bytes"},
+          "growthAndAsync.metadata.shareAccess": {"status": "COMPLETE", "value": 0, "unit": "bytes"},
+          "growthAndAsync.dbAux.index": {"status": "COMPLETE", "value": 1000, "unit": "bytes"},
+          "growthAndAsync.dbAux.backup": {"status": "COMPLETE", "value": 4000, "unit": "bytes"},
+          "growthAndAsync.dbSizingComplete": {"status": "NOT_VERIFIED", "value": false, "limitationsInclude": ["DB_SIZING_INCOMPLETE"]},
+          "growthAndAsync.queue.netTasksPerSecond": {"status": "COMPLETE", "value": 2, "unit": "tasksPerSecond"},
+          "growthAndAsync.queue.drainSeconds": {"status": "COMPLETE", "value": 1500, "unit": "seconds"},
+          "growthAndAsync.queue.backlogBytesChangePerSecond": {"status": "COMPLETE", "value": -2000, "unit": "bytesPerSecond"},
+          "growthAndAsync.ai.loadRatio": {"status": "COMPLETE", "value": 0.8, "unit": "ratio", "limitationsInclude": ["LOAD_RATIO_NOT_OCCUPANCY"]},
+          "growthAndAsync.ai.avgInServiceTasks": {"status": "COMPLETE", "value": 40, "unit": "tasks"},
+          "growthAndAsync.ai.bytesPerSecond": {"status": "COMPLETE", "value": 100000, "unit": "bytesPerSecond"}
+        },
+        "groups": {"growthAndAsync": {"status": "NOT_VERIFIED", "partial": true}},
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "queue-zero-backlog-net-zero",
+      "behavior": "Zero backlog drains in zero time; net=0 adds IDLE_ZERO_DENOMINATOR but is not BACKLOG_NOT_DRAINING when there is nothing queued.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "QUEUE_ARRIVAL_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_SERVICE_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_BYTES_PER_TASK": {"value": 1000, "unit": "bytesPerTask", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_INITIAL_BACKLOG_TASKS": {"value": 0, "unit": "tasks", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.queue.netTasksPerSecond": {"status": "COMPLETE", "value": 0, "unit": "tasksPerSecond"},
+          "growthAndAsync.queue.drainSeconds": {"status": "COMPLETE", "value": 0, "unit": "seconds", "reasonsInclude": ["IDLE_ZERO_DENOMINATOR"]},
+          "growthAndAsync.queue.backlogBytesChangePerSecond": {"status": "COMPLETE", "value": 0, "unit": "bytesPerSecond"}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "queue-backlog-not-draining",
+      "behavior": "Positive backlog with net=0 is BACKLOG_NOT_DRAINING/NOT_MET.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "QUEUE_ARRIVAL_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_SERVICE_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_BYTES_PER_TASK": {"value": 1000, "unit": "bytesPerTask", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_INITIAL_BACKLOG_TASKS": {"value": 100, "unit": "tasks", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.queue.drainSeconds": {"status": "NOT_MET", "valueNull": true, "reasonsInclude": ["BACKLOG_NOT_DRAINING"]}
+        }
+      }
+    },
+    {
+      "id": "queue-backlog-growing",
+      "behavior": "Positive backlog with net<0 is BACKLOG_GROWING/NOT_MET and the backlog byte change is positive.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "QUEUE_ARRIVAL_TASKS_PS": {"value": 12, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_SERVICE_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_BYTES_PER_TASK": {"value": 1000, "unit": "bytesPerTask", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_INITIAL_BACKLOG_TASKS": {"value": 100, "unit": "tasks", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.queue.drainSeconds": {"status": "NOT_MET", "valueNull": true, "reasonsInclude": ["BACKLOG_GROWING"]},
+          "growthAndAsync.queue.backlogBytesChangePerSecond": {"status": "COMPLETE", "value": 2000, "unit": "bytesPerSecond"}
+        }
+      }
+    },
+    {
+      "id": "queue-zero-backlog-net-negative",
+      "behavior": "Zero backlog still drains in zero time with negative net throughput, without IDLE_ZERO_DENOMINATOR.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "QUEUE_ARRIVAL_TASKS_PS": {"value": 12, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_SERVICE_TASKS_PS": {"value": 10, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "QUEUE_INITIAL_BACKLOG_TASKS": {"value": 0, "unit": "tasks", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.queue.netTasksPerSecond": {"status": "COMPLETE", "value": -2, "unit": "tasksPerSecond"},
+          "growthAndAsync.queue.drainSeconds": {"status": "COMPLETE", "value": 0, "unit": "seconds"}
+        }
+      }
+    },
+    {
+      "id": "ai-load-ratio-over-one",
+      "behavior": "loadRatio=arrivals/aggregateServiceRate=1.5 is legal, stays unit ratio, and is not average in-service tasks; avgInServiceTasks=arrivals x meanService and bytes/s is independent.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "AI_TASK_ARRIVALS_PS": {"value": 30, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_SERVICE_RATE_PS": {"value": 20, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_MEAN_SERVICE_S": {"value": 2, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_BYTES": {"value": 1000, "unit": "bytesPerTask", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.ai.loadRatio": {"status": "COMPLETE", "value": 1.5, "unit": "ratio", "limitationsInclude": ["LOAD_RATIO_NOT_OCCUPANCY"]},
+          "growthAndAsync.ai.avgInServiceTasks": {"status": "COMPLETE", "value": 60, "unit": "tasks"},
+          "growthAndAsync.ai.bytesPerSecond": {"status": "COMPLETE", "value": 30000, "unit": "bytesPerSecond"}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "ai-arrivals-zero",
+      "behavior": "arrivals=0 yields zero loadRatio/avgInService/bytes with ZERO_FACTOR_SHORT_CIRCUIT; missing unused factors remain in missing[], not silently unknown demand.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "AI_TASK_ARRIVALS_PS": {"value": 0, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.ai.loadRatio": {"status": "COMPLETE", "value": 0, "unit": "ratio", "limitationsInclude": ["ZERO_FACTOR_SHORT_CIRCUIT"], "missingInclude": ["growthAndAsync.AI_TASK_SERVICE_RATE_PS"]},
+          "growthAndAsync.ai.avgInServiceTasks": {"status": "COMPLETE", "value": 0, "unit": "tasks", "missingInclude": ["growthAndAsync.AI_MEAN_SERVICE_S"]},
+          "growthAndAsync.ai.bytesPerSecond": {"status": "COMPLETE", "value": 0, "unit": "bytesPerSecond", "missingInclude": ["growthAndAsync.AI_TASK_BYTES"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "ai-zero-denominator",
+      "behavior": "arrivals=0 with service=0 gives loadRatio 0 and IDLE_ZERO_DENOMINATOR; arrivals>0 with service=0 gives DIVISION_BY_ZERO/NOT_MET.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "AI_TASK_ARRIVALS_PS": {"value": 0, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_SERVICE_RATE_PS": {"value": 0, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.ai.loadRatio": {"status": "COMPLETE", "value": 0, "unit": "ratio", "reasonsInclude": ["IDLE_ZERO_DENOMINATOR"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "ai-positive-arrivals-zero-service",
+      "behavior": "arrivals>0 with aggregate service rate=0 is DIVISION_BY_ZERO/NOT_MET, never Infinity or a fabricated queue conclusion.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "AI_TASK_ARRIVALS_PS": {"value": 5, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_SERVICE_RATE_PS": {"value": 0, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.ai.loadRatio": {"status": "NOT_MET", "valueNull": true, "reasonsInclude": ["DIVISION_BY_ZERO"]}
+        }
+      }
+    },
+    {
+      "id": "ai-malformed-beside-zero-arrivals",
+      "behavior": "A malformed meanService/service leaf is still INVALID next to arrivals=0; zero-factor handling never swallows malformed values.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "AI_TASK_ARRIVALS_PS": {"value": 0, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_TASK_SERVICE_RATE_PS": {"value": -1, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "AI_MEAN_SERVICE_S": {"value": -1, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "growthAndAsync.ai.loadRatio": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["NEGATIVE_VALUE"]},
+          "growthAndAsync.ai.avgInServiceTasks": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["NEGATIVE_VALUE"]}
+        },
+        "errorsInclude": [
+          {"code": "NEGATIVE_VALUE", "path": "growthAndAsync.AI_TASK_SERVICE_RATE_PS"},
+          {"code": "NEGATIVE_VALUE", "path": "growthAndAsync.AI_MEAN_SERVICE_S"}
+        ]
+      }
+    },
+    {
+      "id": "fractional-retention-days",
+      "behavior": "retention days use non-negative NonNegativeMeasure semantics; fractional days are legal and produce an exact rounded-free byte result.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "META_BY_TYPE": {
+            "audit": {"rowsPerDay": {"value": 1, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 100, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 2.5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-05", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}
+          }
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.metadata.audit": {"status": "COMPLETE", "value": 250, "unit": "bytes"}
+        },
+        "errorsEmpty": true
+      }
+    }
+  ]
+}

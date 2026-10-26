@@ -1,0 +1,109 @@
+{
+  "id": "s1-08-invalid-values",
+  "stage": "s1",
+  "description": "Strict-JSON representable invalids fail with stable codes and no coercion; counterexamples prove VersionFactor 1.2, fractional channel averages and derived utilization>1 are legal semantics.",
+  "cases": [
+    {
+      "id": "negative-rate",
+      "behavior": "Negative rate is NEGATIVE_VALUE.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": -1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_IN_HOLD_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "metrics": {"ivrLines.a": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["NEGATIVE_VALUE"]}}, "errorsInclude": [{"code": "NEGATIVE_VALUE", "path": "ivrLines.IVR_IN_RATE_PS"}]}
+    },
+    {
+      "id": "count-fraction",
+      "behavior": "DiscreteCount fraction is COUNT_NOT_INTEGER.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "playback": {"PB_CONCURRENT_SESSIONS": {"value": 1.5, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "COUNT_NOT_INTEGER", "path": "playback.PB_CONCURRENT_SESSIONS"}]}
+    },
+    {
+      "id": "negative-count",
+      "behavior": "Negative DiscreteCount is NEGATIVE_VALUE, not COUNT_NOT_INTEGER.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "playback": {"PB_CONCURRENT_SESSIONS": {"value": -1, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "NEGATIVE_VALUE", "path": "playback.PB_CONCURRENT_SESSIONS"}], "errorsAbsent": ["COUNT_NOT_INTEGER"]}
+    },
+    {
+      "id": "ratio01-over-one",
+      "behavior": "Ratio01 input above 1 is RATIO_OUT_OF_RANGE.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_FAILOVER_HEADROOM_RATIO": {"value": 1.5, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "RATIO_OUT_OF_RANGE", "path": "ivrLines.IVR_FAILOVER_HEADROOM_RATIO"}]}
+    },
+    {
+      "id": "wire-overhead-one",
+      "behavior": "WireOverheadRatio must be <1; 1 is RATIO_OUT_OF_RANGE.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "mediaIngestStorage": {"UPLOAD_WIRE_OVERHEAD_RATIO": {"value": 1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "RATIO_OUT_OF_RANGE", "path": "mediaIngestStorage.UPLOAD_WIRE_OVERHEAD_RATIO"}]}
+    },
+    {
+      "id": "version-factor-below-one",
+      "behavior": "VersionFactor below 1 is RATIO_OUT_OF_RANGE.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "mediaIngestStorage": {"REC_ORIGINAL_VERSION_FACTOR": {"value": 0.5, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "RATIO_OUT_OF_RANGE", "path": "mediaIngestStorage.REC_ORIGINAL_VERSION_FACTOR"}]}
+    },
+    {
+      "id": "numeric-string-not-coerced",
+      "behavior": "A string number is TYPE_INVALID; no coercion to number.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": "10", "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "metrics": {"ivrLines.a": {"status": "INVALID", "valueNull": true}}, "errorsInclude": [{"code": "TYPE_INVALID", "path": "ivrLines.IVR_IN_RATE_PS"}]}
+    },
+    {
+      "id": "string-nan-and-infinity-not-coerced",
+      "behavior": "String NaN/Infinity are TYPE_INVALID rather than numeric non-finite values.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "playback": {"PB_BITRATE_BPS": {"value": "Infinity", "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "PB_MEAN_SECONDS": {"value": "NaN", "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "TYPE_INVALID", "path": "playback.PB_BITRATE_BPS"}, {"code": "TYPE_INVALID", "path": "playback.PB_MEAN_SECONDS"}], "errorsAbsent": ["NUMBER_NONFINITE"]}
+    },
+    {
+      "id": "unit-mismatch",
+      "behavior": "A wrong unit is UNIT_MISMATCH.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": 1, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "UNIT_MISMATCH", "path": "ivrLines.IVR_IN_RATE_PS"}]}
+    },
+    {
+      "id": "unsafe-integer-overflow",
+      "behavior": "A numeric literal above the safe-integer range is OVERFLOW_UNSAFE_INTEGER.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": 1e308, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_IN_HOLD_S": {"value": 1e308, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "errorsInclude": [{"code": "OVERFLOW_UNSAFE_INTEGER", "path": "ivrLines.IVR_IN_RATE_PS"}, {"code": "OVERFLOW_UNSAFE_INTEGER", "path": "ivrLines.IVR_IN_HOLD_S"}]}
+    },
+    {
+      "id": "ring-exceeds-occupancy",
+      "behavior": "ring > occupancy is RING_EXCEEDS_OCCUPANCY.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_OUT_RING_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_OUT_OCC_S": {"value": 5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "metrics": {"ivrLines.ringRatio": {"status": "INVALID", "reasonsInclude": ["RING_EXCEEDS_OCCUPANCY"]}}, "errorsInclude": [{"code": "RING_EXCEEDS_OCCUPANCY", "path": "ivrLines.IVR_OUT_RING_S"}]}
+    },
+    {
+      "id": "mix-sum-mismatch",
+      "behavior": "Mix class sum not equal to inbound rate is MIX_SUM_MISMATCH.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_MIX_RATE_PS": {"task": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "noTaskDtmf": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "activation": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "rejected": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "failed": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}}},
+      "expect": {"root": {"status": "INVALID"}, "metrics": {"ivrLines.mixSum": {"status": "INVALID", "reasonsInclude": ["MIX_SUM_MISMATCH"]}}, "errorsInclude": [{"code": "MIX_SUM_MISMATCH", "path": "ivrLines.IVR_MIX_RATE_PS"}]}
+    },
+    {
+      "id": "mode-limit-mismatch",
+      "behavior": "SEPARATE mode with a shared limit is MODE_LIMIT_MISMATCH.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_TRUNK_MODE": {"value": "SEPARATE_INBOUND_OUTBOUND", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_SHARED_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "metrics": {"ivrLines.mode": {"status": "INVALID", "reasonsInclude": ["MODE_LIMIT_MISMATCH"]}}, "errorsInclude": [{"code": "MODE_LIMIT_MISMATCH", "path": "ivrLines.IVR_SHARED_LIMIT_CH"}]}
+    },
+    {
+      "id": "version-factor-1.2-legal",
+      "behavior": "VersionFactor 1.2 is legal and produces exact retained bytes.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "mediaIngestStorage": {"REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "REC_PER_DAY": {"value": 10, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "REC_RETENTION_DAYS": {"value": 10, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "REC_ORIGINAL_VERSION_FACTOR": {"value": 1.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"metrics": {"mediaIngestStorage.retainedOriginalBytes": {"status": "COMPLETE", "value": 57600000, "unit": "bytes"}}, "errorsAbsent": ["RATIO_OUT_OF_RANGE"], "errorsEmpty": true}
+    },
+    {
+      "id": "derived-utilization-over-one",
+      "behavior": "Derived utilization >1 is NOT_MET, not RATIO_OUT_OF_RANGE.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": 0.5, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_IN_HOLD_S": {"value": 7.4, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_OUT_RATE_PS": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_OUT_OCC_S": {"value": 9.5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_TRUNK_MODE": {"value": "SHARED", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_SHARED_LIMIT_CH": {"value": 5, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_FAILOVER_HEADROOM_RATIO": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"metrics": {"ivrLines.utilization.shared": {"status": "NOT_MET", "value": 1.4, "unit": "ratio"}}, "errorsAbsent": ["RATIO_OUT_OF_RANGE", "NUMBER_NONFINITE"]}
+    },
+    {
+      "id": "fractional-channel-average-legal",
+      "behavior": "0.5 calls/s x 7.4 s = 3.7 channels is legal.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": 0.5, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_IN_HOLD_S": {"value": 7.4, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"metrics": {"ivrLines.a": {"status": "COMPLETE", "value": 3.7, "unit": "channels"}}, "errorsEmpty": true}
+    },
+    {
+      "id": "malformed-beside-zero-factor",
+      "behavior": "A malformed duration beside a zero rate stays INVALID.",
+      "input": {"meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "approvedBy": null, "approvedAt": null}, "ivrLines": {"IVR_IN_RATE_PS": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "IVR_IN_HOLD_S": {"value": -1, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-08", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}},
+      "expect": {"root": {"status": "INVALID"}, "metrics": {"ivrLines.a": {"status": "INVALID", "valueNull": true}}, "errorsInclude": [{"code": "NEGATIVE_VALUE", "path": "ivrLines.IVR_IN_HOLD_S"}]}
+    }
+  ]
+}

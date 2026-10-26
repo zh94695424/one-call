@@ -1,0 +1,231 @@
+{
+  "id": "s1-04-spool",
+  "stage": "s1",
+  "description": "Disk/free/existing are one outage-start snapshot; used already contains existing; end-of-outage backlog = existing + average x outage; peak occupancy adds outage production once; payload-basis drain cannot be negative or infinite.",
+  "cases": [
+    {
+      "id": "snapshot-zero-outage-production",
+      "behavior": "used=disk-free already includes existing; zero outage production yields peakOccupancy=used and backlog=existing; zero production does not produce negative capacity.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 400, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 100, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 50, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "spool.used": {"status": "COMPLETE", "value": 600, "unit": "bytes"},
+          "spool.peakOccupancy": {"status": "COMPLETE", "value": 600, "unit": "bytes"},
+          "spool.avgOccupancy": {"status": "COMPLETE", "value": 600, "unit": "bytes"},
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 100, "unit": "bytes"},
+          "spool.usable": {"status": "COMPLETE", "value": 900, "unit": "bytes"},
+          "spool.fitPeak": {"status": "COMPLETE", "value": true},
+          "spool.freeAfterPeak": {"status": "COMPLETE", "value": 300, "unit": "bytes"},
+          "spool.overflowBytes": {"status": "COMPLETE", "value": 0, "unit": "bytes"},
+          "spool.recoveryNetPayloadBytesPerSecond": {"status": "COMPLETE", "value": 50, "unit": "bytesPerSecond"},
+          "spool.drainSeconds": {"status": "COMPLETE", "value": 2, "unit": "seconds"}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "existing-zero-positive-outage-production",
+      "behavior": "existing=0 with positive same-window outage production gives end-of-outage backlog=avg x outage>0 and a positive drain, not zero.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 10000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 9000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 0, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 30, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 20, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 100, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 300, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "spool.used": {"status": "COMPLETE", "value": 1000, "unit": "bytes"},
+          "spool.outageProducedPeak": {"status": "COMPLETE", "value": 3000, "unit": "bytes"},
+          "spool.outageProducedAvg": {"status": "COMPLETE", "value": 2000, "unit": "bytes"},
+          "spool.peakOccupancy": {"status": "COMPLETE", "value": 4000, "unit": "bytes"},
+          "spool.avgOccupancy": {"status": "COMPLETE", "value": 3000, "unit": "bytes"},
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 2000, "unit": "bytes"},
+          "spool.recoveryNetPayloadBytesPerSecond": {"status": "COMPLETE", "value": 200, "unit": "bytesPerSecond"},
+          "spool.drainSeconds": {"status": "COMPLETE", "value": 10, "unit": "seconds"}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "existing-positive-zero-production",
+      "behavior": "existing>0 with zero outage production gives backlog=existing and a positive drain.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 500, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 100, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 30, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 150, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 50, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "spool.used": {"status": "COMPLETE", "value": 500, "unit": "bytes"},
+          "spool.peakOccupancy": {"status": "COMPLETE", "value": 500, "unit": "bytes"},
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 100, "unit": "bytes"},
+          "spool.drainSeconds": {"status": "COMPLETE", "value": 1, "unit": "seconds"}
+        }
+      }
+    },
+    {
+      "id": "positive-backlog-net-zero",
+      "behavior": "Positive backlog and zero net recovery throughput cannot drain.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 2000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 1000, "unit": "bytes"},
+          "spool.recoveryNetPayloadBytesPerSecond": {"status": "COMPLETE", "value": 0, "unit": "bytesPerSecond"},
+          "spool.drainSeconds": {"status": "NOT_MET", "valueNull": true, "reasonsInclude": ["DRAIN_IMPOSSIBLE"]}
+        },
+        "root": {"status": "NOT_MET"}
+      }
+    },
+    {
+      "id": "positive-backlog-net-negative",
+      "behavior": "Positive backlog and negative net recovery throughput cannot drain; the outage-start snapshot is consistent, so the NOT_MET/DRAIN_IMPOSSIBLE verdict carries no CAPACITY_INCONSISTENT error.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 2000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 50, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "NOT_MET"},
+        "metrics": {
+          "spool.used": {"status": "COMPLETE", "value": 1000, "unit": "bytes"},
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 1000, "unit": "bytes"},
+          "spool.recoveryNetPayloadBytesPerSecond": {"status": "COMPLETE", "value": -50, "unit": "bytesPerSecond"},
+          "spool.drainSeconds": {"status": "NOT_MET", "valueNull": true, "reasonsInclude": ["DRAIN_IMPOSSIBLE"]}
+        },
+        "errorsAbsent": ["CAPACITY_INCONSISTENT"],
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "capacity-inconsistent-existing",
+      "behavior": "existing greater than disk-free is CAPACITY_INCONSISTENT; existing is not silently subtracted from free a second time.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 800, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 300, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 50, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "spool.used": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["CAPACITY_INCONSISTENT"]},
+          "spool.peakOccupancy": {"status": "INVALID", "valueNull": true}
+        },
+        "errorsInclude": [{"code": "CAPACITY_INCONSISTENT", "path": "spool.SPOOL_EXISTING_BYTES"}]
+      }
+    },
+    {
+      "id": "outage-zero-invalid",
+      "behavior": "SPOOL_OUTAGE_S must be greater than zero; zero outage invalidates outage production.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 900, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 0, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 10, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 5, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 50, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "spool.outageProducedPeak": {"status": "INVALID", "valueNull": true},
+          "spool.outageProducedAvg": {"status": "INVALID", "valueNull": true}
+        },
+        "errorsInclude": [{"code": "DIVISION_BY_ZERO", "path": "spool.SPOOL_OUTAGE_S"}]
+      }
+    },
+    {
+      "id": "peak-avg-window-unqualified",
+      "behavior": "Peak and average inputs from different sources are both reported but no peak>=average assertion is made; PEAK_AVG_WINDOW_UNQUALIFIED is flagged.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "approvedBy": null, "approvedAt": null},
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 10000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 10000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 0, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 10, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "source-a", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 20, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "source-b", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 50, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-04", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "spool.outageProducedPeak": {"status": "COMPLETE", "value": 100, "unit": "bytes", "limitationsInclude": ["PEAK_AVG_WINDOW_UNQUALIFIED"]},
+          "spool.peakOccupancy": {"status": "COMPLETE", "limitationsInclude": ["PEAK_AVG_WINDOW_UNQUALIFIED"]},
+          "spool.avgOccupancy": {"status": "COMPLETE", "limitationsInclude": ["PEAK_AVG_WINDOW_UNQUALIFIED"]}
+        },
+        "errorsEmpty": true
+      }
+    }
+  ]
+}

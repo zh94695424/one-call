@@ -1,0 +1,167 @@
+{
+  "id": "s1-09-provenance-approval",
+  "stage": "s1",
+  "description": "Leaf provenance/approval is independent from meta approval; ESTIMATE cannot be APPROVED; synthetic values are labelled; caller control fields are forbidden and production/procurement/cloud/A3 constants stay false.",
+  "cases": [
+    {
+      "id": "estimate-with-missing-approval",
+      "behavior": "ESTIMATE leaves with source/owner but no approval compute normally and never display APPROVED.",
+      "input": {
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "ESTIMATE", "source": "estimate-1", "owner": "telephony", "approval": "MISSING"},
+          "IVR_IN_HOLD_S": {"value": 10, "unit": "seconds", "provenance": "ESTIMATE", "source": "estimate-1", "owner": "telephony", "approval": "MISSING"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "synthetic": false},
+        "metrics": {"ivrLines.a": {"status": "COMPLETE", "value": 10, "unit": "channels", "approvalStatus": "UNAPPROVED"}},
+        "errorsEmpty": true,
+        "flagsInclude": ["NOT_APPROVED_PRODUCTION_VALUE"]
+      }
+    },
+    {
+      "id": "meta-approval-does-not-approve-leaves",
+      "behavior": "meta APPROVED_SOURCE_INPUTS records source metadata only; ESTIMATE leaves stay UNAPPROVED.",
+      "input": {
+        "meta": {"status": "APPROVED_SOURCE_INPUTS", "source": "ops-policy-1", "approvedBy": "capacity-owner", "approvedAt": "2026-10-20T00:00:00Z"},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "ESTIMATE", "source": "estimate-1", "owner": "telephony", "approval": "UNAPPROVED"},
+          "IVR_IN_HOLD_S": {"value": 10, "unit": "seconds", "provenance": "ESTIMATE", "source": "estimate-1", "owner": "telephony", "approval": "UNAPPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"metaStatus": "APPROVED_SOURCE_INPUTS", "synthetic": false},
+        "metrics": {"ivrLines.a": {"status": "COMPLETE", "approvalStatus": "UNAPPROVED"}},
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "estimate-cannot-be-approved",
+      "behavior": "ESTIMATE + approval APPROVED is APPROVAL_INVALID.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-09", "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "ESTIMATE", "source": "estimate-1", "owner": "telephony", "approval": "APPROVED"},
+          "IVR_IN_HOLD_S": {"value": 10, "unit": "seconds", "provenance": "ESTIMATE", "source": "estimate-1", "owner": "telephony", "approval": "APPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {"ivrLines.a": {"status": "INVALID", "valueNull": true}},
+        "errorsInclude": [{"code": "APPROVAL_INVALID", "path": "ivrLines.IVR_IN_RATE_PS"}]
+      }
+    },
+    {
+      "id": "synthetic-labelled",
+      "behavior": "Any synthetic leaf makes root synthetic=true; metric approvalStatus is SYNTHETIC_TEST_ONLY and NOT_APPROVED_PRODUCTION_VALUE is flagged.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-09", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 2, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-09", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_BITRATE_BPS": {"value": 1000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-09", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"synthetic": true},
+        "metrics": {"playback.peakBitsPerSecond": {"status": "COMPLETE", "value": 2000, "approvalStatus": "SYNTHETIC_TEST_ONLY"}},
+        "flagsInclude": ["NOT_APPROVED_PRODUCTION_VALUE"],
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "measured-missing-source",
+      "behavior": "MEASURED leaves require non-empty source and owner.",
+      "input": {
+        "meta": {"status": "UNAPPROVED_TEMPLATE", "source": null, "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "MEASURED", "source": null, "owner": "telephony", "approval": "UNAPPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "errorsInclude": [{"code": "PROVENANCE_INVALID", "path": "ivrLines.IVR_IN_RATE_PS"}]
+      }
+    },
+    {
+      "id": "approved-policy-without-approval",
+      "behavior": "APPROVED_POLICY requires approval APPROVED.",
+      "input": {
+        "meta": {"status": "UNAPPROVED_TEMPLATE", "source": null, "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_FAILOVER_HEADROOM_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "APPROVED_POLICY", "source": "policy-1", "owner": "telephony", "approval": "UNAPPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "errorsInclude": [{"code": "APPROVAL_INVALID", "path": "ivrLines.IVR_FAILOVER_HEADROOM_RATIO"}]
+      }
+    },
+    {
+      "id": "approved-requires-value",
+      "behavior": "APPROVED on a missing value is APPROVAL_INVALID.",
+      "input": {
+        "meta": {"status": "UNAPPROVED_TEMPLATE", "source": null, "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": null, "unit": "callsPerSecond", "provenance": "MISSING", "source": "source-1", "owner": "telephony", "approval": "APPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "errorsInclude": [{"code": "APPROVAL_INVALID", "path": "ivrLines.IVR_IN_RATE_PS"}]
+      }
+    },
+    {
+      "id": "synthetic-requires-synthetic-approval",
+      "behavior": "SYNTHETIC_TEST_ONLY provenance requires SYNTHETIC_TEST_ONLY approval.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-09", "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-09", "owner": "synthetic", "approval": "UNAPPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "errorsInclude": [{"code": "APPROVAL_INVALID", "path": "ivrLines.IVR_IN_RATE_PS"}]
+      }
+    },
+    {
+      "id": "approved-inputs-still-not-ready",
+      "behavior": "Leaf-approved measured inputs compute APPROVED metrics but productionReady/procurementReady/cloudVerified/a3RiskClosed remain false.",
+      "input": {
+        "meta": {"status": "APPROVED_SOURCE_INPUTS", "source": "ops-policy-1", "approvedBy": "capacity-owner", "approvedAt": "2026-10-20T00:00:00Z"},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 1, "unit": "callsPerSecond", "provenance": "MEASURED", "source": "measurement-1", "owner": "telephony", "approval": "APPROVED"},
+          "IVR_IN_HOLD_S": {"value": 10, "unit": "seconds", "provenance": "MEASURED", "source": "measurement-1", "owner": "telephony", "approval": "APPROVED"}
+        }
+      },
+      "expect": {
+        "root": {"metaStatus": "APPROVED_SOURCE_INPUTS", "productionReady": false, "procurementReady": false, "cloudVerified": false, "a3RiskClosed": false},
+        "metrics": {"ivrLines.a": {"status": "COMPLETE", "value": 10, "approvalStatus": "APPROVED"}},
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "caller-control-production-ready",
+      "behavior": "Caller-supplied productionReady is CALLER_CONTROL_FORBIDDEN and cannot change the root constant.",
+      "input": {"productionReady": true, "meta": {"status": "UNAPPROVED_TEMPLATE", "source": null, "approvedBy": null, "approvedAt": null}},
+      "expect": {
+        "root": {"status": "INVALID", "productionReady": false},
+        "errorsInclude": [{"code": "CALLER_CONTROL_FORBIDDEN", "path": "productionReady"}]
+      }
+    },
+    {
+      "id": "caller-control-cloud-and-a3",
+      "behavior": "Caller-supplied procurementReady/approved/cloudVerified/a3RiskClosed are forbidden and cannot change root constants.",
+      "input": {"procurementReady": true, "approved": true, "cloudVerified": true, "a3RiskClosed": true, "meta": {"status": "UNAPPROVED_TEMPLATE", "source": null, "approvedBy": null, "approvedAt": null}},
+      "expect": {
+        "root": {"status": "INVALID", "procurementReady": false, "cloudVerified": false, "a3RiskClosed": false},
+        "errorsInclude": [
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "procurementReady"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "approved"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "cloudVerified"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "a3RiskClosed"}
+        ]
+      }
+    }
+  ]
+}

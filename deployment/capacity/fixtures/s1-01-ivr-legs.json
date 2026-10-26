@@ -1,0 +1,185 @@
+{
+  "id": "s1-01-ivr-legs",
+  "stage": "s1",
+  "description": "A/B/bridge legs are independent, fractional channel means are legal, shared versus separate limits are checked, observed peaks are parallel evidence only, and stable invalid cases fail closed.",
+  "cases": [
+    {
+      "id": "fractional-legs-and-separate-limits",
+      "behavior": "0.5 calls/s x 7.4 s = 3.7 channels; A/B/bridge differ; separate limits use their own usable capacity; synthetic demand never yields LINE_FIT_EVIDENCE_COMPLETE.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 0.5, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_HOLD_S": {"value": 7.4, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RATE_PS": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_OCC_S": {"value": 9.5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RING_S": {"value": 2.5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_BRIDGE_RATE_PS": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_BRIDGE_MEAN_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_TRUNK_MODE": {"value": "SEPARATE_INBOUND_OUTBOUND", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_LIMIT_CH": {"value": 5, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_FAILOVER_HEADROOM_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_MIX_RATE_PS": {
+            "task": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "noTaskDtmf": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "activation": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "rejected": {"value": 0.05, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "failed": {"value": 0.05, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+          },
+          "IVR_OBSERVED_PEAK": {
+            "inbound": {"count": {"value": 4, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "windowSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "scope": "separate-inbound-peak"},
+            "outbound": {"count": {"value": 3, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "windowSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "scope": "separate-outbound-peak"},
+            "bridge": {"count": {"value": 2, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "windowSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "scope": "bridge-parallel-only"}
+          }
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "metrics": {
+          "ivrLines.a": {"status": "COMPLETE", "value": 3.7, "unit": "channels", "limitationsInclude": ["AVERAGE_NOT_PEAK"]},
+          "ivrLines.b": {"status": "COMPLETE", "value": 1.9, "unit": "channels"},
+          "ivrLines.bridgePorts": {"status": "COMPLETE", "value": 6, "unit": "bridgePorts"},
+          "ivrLines.lineDemand.inbound": {"status": "COMPLETE", "value": 3.7, "unit": "channels"},
+          "ivrLines.lineDemand.outbound": {"status": "COMPLETE", "value": 1.9, "unit": "channels"},
+          "ivrLines.usable.inbound": {"status": "COMPLETE", "value": 9, "unit": "channels"},
+          "ivrLines.usable.outbound": {"status": "COMPLETE", "value": 4.5, "unit": "channels"},
+          "ivrLines.utilization.inbound": {"status": "COMPLETE", "value": 0.4111111111111111, "unit": "ratio"},
+          "ivrLines.shortfall.inbound": {"status": "COMPLETE", "value": 0, "unit": "channels"},
+          "ivrLines.verdict.inbound": {"status": "NOT_VERIFIED", "value": "ARITHMETIC_ONLY", "limitationsInclude": ["LINE_RECOMMENDATION_UNVERIFIED"], "reasonsInclude": []},
+          "ivrLines.observedPeak.inbound": {"status": "COMPLETE", "value": 4, "unit": "count"},
+          "ivrLines.ringRatio": {"status": "COMPLETE", "value": 0.2631578947368421, "unit": "ratio"},
+          "ivrLines.mixSum": {"status": "COMPLETE", "value": 0.5, "unit": "callsPerSecond"}
+        },
+        "groups": {"ivrLines": {"status": "NOT_VERIFIED", "partial": true}},
+        "flagsInclude": ["LINE_RECOMMENDATION_UNVERIFIED", "AVERAGE_NOT_PEAK", "NOT_APPROVED_PRODUCTION_VALUE"],
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "shared-mode-utilization-over-one",
+      "behavior": "SHARED demand is A+B; derived utilization may exceed 1 and yields NOT_MET, not RATIO_OUT_OF_RANGE; shortfall is exact.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 0.5, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_HOLD_S": {"value": 7.4, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RATE_PS": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_OCC_S": {"value": 9.5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RING_S": {"value": 2.5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_BRIDGE_RATE_PS": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_BRIDGE_MEAN_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_TRUNK_MODE": {"value": "SHARED", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_SHARED_LIMIT_CH": {"value": 5, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_FAILOVER_HEADROOM_RATIO": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_MIX_RATE_PS": {
+            "task": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "noTaskDtmf": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "activation": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "rejected": {"value": 0.05, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "failed": {"value": 0.05, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+          },
+          "IVR_OBSERVED_PEAK": {
+            "shared": {"count": {"value": 6, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "windowSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "scope": "shared-peak"}
+          }
+        }
+      },
+      "expect": {
+        "root": {"status": "NOT_MET"},
+        "metrics": {
+          "ivrLines.lineDemand.shared": {"status": "COMPLETE", "value": 5.6, "unit": "channels"},
+          "ivrLines.usable.shared": {"status": "COMPLETE", "value": 4, "unit": "channels"},
+          "ivrLines.utilization.shared": {"status": "NOT_MET", "value": 1.4, "unit": "ratio", "reasonsInclude": ["TARGET_NOT_MET"]},
+          "ivrLines.shortfall.shared": {"status": "NOT_MET", "value": 1.6, "unit": "channels"},
+          "ivrLines.verdict.shared": {"status": "NOT_MET", "value": "NOT_MET"}
+        },
+        "errorsAbsent": ["RATIO_OUT_OF_RANGE", "NUMBER_NONFINITE"],
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "explicit-zero-traffic-is-legal",
+      "behavior": "Explicit zero call rates and zero B-leg occupation produce legal zero metrics; 0/0 ring ratio is zero with IDLE_ZERO_DENOMINATOR; zero demand is not a fit.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_HOLD_S": {"value": 7, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RATE_PS": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_OCC_S": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RING_S": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_BRIDGE_RATE_PS": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_BRIDGE_MEAN_S": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_TRUNK_MODE": {"value": "SEPARATE_INBOUND_OUTBOUND", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_FAILOVER_HEADROOM_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_MIX_RATE_PS": {
+            "task": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "noTaskDtmf": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "activation": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "rejected": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "failed": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+          },
+          "IVR_OBSERVED_PEAK": {
+            "inbound": {"count": {"value": 0, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "windowSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "scope": "zero-peak"},
+            "outbound": {"count": {"value": 0, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "windowSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01-peak", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "scope": "zero-peak"}
+          }
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "metrics": {
+          "ivrLines.a": {"status": "COMPLETE", "value": 0, "unit": "channels", "limitationsInclude": ["ZERO_FACTOR_SHORT_CIRCUIT"]},
+          "ivrLines.b": {"status": "COMPLETE", "value": 0, "unit": "channels"},
+          "ivrLines.bridgePorts": {"status": "COMPLETE", "value": 0, "unit": "bridgePorts"},
+          "ivrLines.utilization.inbound": {"status": "COMPLETE", "value": 0, "unit": "ratio"},
+          "ivrLines.verdict.inbound": {"status": "NOT_VERIFIED", "value": "ARITHMETIC_ONLY", "reasonsInclude": ["ZERO_DEMAND_NOT_A_FIT"]},
+          "ivrLines.ringRatio": {"status": "COMPLETE", "value": 0, "unit": "ratio", "reasonsInclude": ["IDLE_ZERO_DENOMINATOR"]},
+          "ivrLines.mixSum": {"status": "COMPLETE", "value": 0, "unit": "callsPerSecond"}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "invalid-ring-mix-and-mode-limit",
+      "behavior": "ring>occ, mix sum mismatch and mode/limit mismatch each produce their stable INVALID code.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "approvedBy": null, "approvedAt": null},
+        "ivrLines": {
+          "IVR_IN_RATE_PS": {"value": 0.5, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_HOLD_S": {"value": 7.4, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RATE_PS": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_OCC_S": {"value": 5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_RING_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_TRUNK_MODE": {"value": "SEPARATE_INBOUND_OUTBOUND", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_IN_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_OUT_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_SHARED_LIMIT_CH": {"value": 10, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_FAILOVER_HEADROOM_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "IVR_MIX_RATE_PS": {
+            "task": {"value": 0.2, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "noTaskDtmf": {"value": 0.1, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "activation": {"value": 0.05, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "rejected": {"value": 0.05, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "failed": {"value": 0, "unit": "callsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+          }
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "ivrLines.ringRatio": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["RING_EXCEEDS_OCCUPANCY"]},
+          "ivrLines.mixSum": {"status": "INVALID", "reasonsInclude": ["MIX_SUM_MISMATCH"]},
+          "ivrLines.mode": {"status": "INVALID", "reasonsInclude": ["MODE_LIMIT_MISMATCH"]}
+        },
+        "errorsInclude": [
+          {"code": "RING_EXCEEDS_OCCUPANCY", "path": "ivrLines.IVR_OUT_RING_S"},
+          {"code": "MIX_SUM_MISMATCH", "path": "ivrLines.IVR_MIX_RATE_PS"},
+          {"code": "MODE_LIMIT_MISMATCH", "path": "ivrLines.IVR_SHARED_LIMIT_CH"}
+        ]
+      }
+    }
+  ]
+}

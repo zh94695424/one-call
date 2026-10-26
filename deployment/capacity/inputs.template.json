@@ -1,0 +1,885 @@
+{
+  "meta": {
+    "status": "UNAPPROVED_TEMPLATE",
+    "source": null,
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "asOf": {
+    "value": null,
+    "unit": "iso8601",
+    "provenance": "MISSING",
+    "source": null,
+    "owner": null,
+    "approval": "MISSING"
+  },
+  "ivrLines": {
+    "IVR_IN_RATE_PS": {
+      "value": null,
+      "unit": "callsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_IN_HOLD_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_OUT_RATE_PS": {
+      "value": null,
+      "unit": "callsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_OUT_OCC_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_OUT_RING_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_BRIDGE_RATE_PS": {
+      "value": null,
+      "unit": "callsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_BRIDGE_MEAN_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_TRUNK_MODE": {
+      "value": null,
+      "unit": "enum",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_IN_LIMIT_CH": {
+      "value": null,
+      "unit": "channels",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_OUT_LIMIT_CH": {
+      "value": null,
+      "unit": "channels",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_SHARED_LIMIT_CH": {
+      "value": null,
+      "unit": "channels",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_FAILOVER_HEADROOM_RATIO": {
+      "value": null,
+      "unit": "ratio",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "IVR_MIX_RATE_PS": {
+      "task": {
+        "value": null,
+        "unit": "callsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "noTaskDtmf": {
+        "value": null,
+        "unit": "callsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "activation": {
+        "value": null,
+        "unit": "callsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "rejected": {
+        "value": null,
+        "unit": "callsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "failed": {
+        "value": null,
+        "unit": "callsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      }
+    },
+    "IVR_OBSERVED_PEAK": {
+      "inbound": {
+        "count": {
+          "value": null,
+          "unit": "count",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "windowSeconds": {
+          "value": null,
+          "unit": "seconds",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "scope": null
+      },
+      "outbound": {
+        "count": {
+          "value": null,
+          "unit": "count",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "windowSeconds": {
+          "value": null,
+          "unit": "seconds",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "scope": null
+      },
+      "shared": {
+        "count": {
+          "value": null,
+          "unit": "count",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "windowSeconds": {
+          "value": null,
+          "unit": "seconds",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "scope": null
+      },
+      "bridge": {
+        "count": {
+          "value": null,
+          "unit": "count",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "windowSeconds": {
+          "value": null,
+          "unit": "seconds",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "scope": null
+      }
+    }
+  },
+  "apiControlPlane": {
+    "API_RATE_PS": {
+      "customer": {
+        "value": null,
+        "unit": "requestsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "operations": {
+        "value": null,
+        "unit": "requestsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "ivrControl": {
+        "value": null,
+        "unit": "requestsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "publicShare": {
+        "value": null,
+        "unit": "requestsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "providerCallback": {
+        "value": null,
+        "unit": "requestsPerSecond",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      }
+    },
+    "API_MEAN_SERVICE_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "API_DB_TXN_MEAN_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    }
+  },
+  "measuredNodes": {
+    "MEASURED_ROLE": []
+  },
+  "playback": {
+    "PB_CONCURRENT_SESSIONS": {
+      "value": null,
+      "unit": "count",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "PB_BITRATE_BPS": {
+      "value": null,
+      "unit": "bitsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "PB_SESSIONS_PER_DAY": {
+      "value": null,
+      "unit": "countPerDay",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "PB_MEAN_SECONDS": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "PB_CDN_CACHE_HIT_RATIO": {
+      "value": null,
+      "unit": "ratio",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    }
+  },
+  "mediaIngestStorage": {
+    "REC_BITRATE_BPS": {
+      "value": null,
+      "unit": "bitsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_CODEC": {
+      "value": null,
+      "unit": "enum",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_SAMPLE_RATE_HZ": {
+      "value": null,
+      "unit": "hertz",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_BIT_DEPTH": {
+      "value": null,
+      "unit": "bit",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_CHANNELS": {
+      "value": null,
+      "unit": "channels",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_MEAN_VALIDATED_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_PER_DAY": {
+      "value": null,
+      "unit": "countPerDay",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_ORIGINAL_VERSION_FACTOR": {
+      "value": null,
+      "unit": "ratio",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_RETENTION_DAYS": {
+      "value": null,
+      "unit": "days",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_DERIVED_BY_TYPE": {
+      "preview": {
+        "state": null,
+        "bytesPerOriginalByte": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "versionFactor": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "transcript": {
+        "state": null,
+        "bytesPerOriginalByte": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "versionFactor": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "summary": {
+        "state": null,
+        "bytesPerOriginalByte": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "versionFactor": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "export": {
+        "state": null,
+        "bytesPerOriginalByte": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "versionFactor": {
+          "value": null,
+          "unit": "ratio",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      }
+    },
+    "REC_LEGAL_HOLD_EXTRA_BYTES": {
+      "value": null,
+      "unit": "bytes",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "REC_BACKUP_COPY_FACTOR": {
+      "value": null,
+      "unit": "ratio",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "UPLOAD_CONCURRENT_PEAK": {
+      "value": null,
+      "unit": "count",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "UPLOAD_PER_STREAM_WIRE_BPS": {
+      "value": null,
+      "unit": "bitsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "UPLOAD_MEASURED_PEAK_WIRE_BPS": {
+      "value": null,
+      "unit": "bitsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "UPLOAD_WIRE_OVERHEAD_RATIO": {
+      "value": null,
+      "unit": "ratio",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "UPLOAD_COMBINED_MEASURED_WIRE_BPS": {
+      "value": null,
+      "unit": "bitsPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    }
+  },
+  "growthAndAsync": {
+    "META_BY_TYPE": {
+      "audit": {
+        "rowsPerDay": {
+          "value": null,
+          "unit": "countPerDay",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "bytesPerRow": {
+          "value": null,
+          "unit": "bytes",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "outbox": {
+        "rowsPerDay": {
+          "value": null,
+          "unit": "countPerDay",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "bytesPerRow": {
+          "value": null,
+          "unit": "bytes",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "callEvent": {
+        "rowsPerDay": {
+          "value": null,
+          "unit": "countPerDay",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "bytesPerRow": {
+          "value": null,
+          "unit": "bytes",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "evidenceEvent": {
+        "rowsPerDay": {
+          "value": null,
+          "unit": "countPerDay",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "bytesPerRow": {
+          "value": null,
+          "unit": "bytes",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      },
+      "shareAccess": {
+        "rowsPerDay": {
+          "value": null,
+          "unit": "countPerDay",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "bytesPerRow": {
+          "value": null,
+          "unit": "bytes",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        },
+        "retentionDays": {
+          "value": null,
+          "unit": "days",
+          "provenance": "MISSING",
+          "source": null,
+          "owner": null,
+          "approval": "MISSING"
+        }
+      }
+    },
+    "DB_AUX_BY_KIND": {
+      "index": {
+        "value": null,
+        "unit": "bytes",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "wal": {
+        "value": null,
+        "unit": "bytes",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "replication": {
+        "value": null,
+        "unit": "bytes",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      },
+      "backup": {
+        "value": null,
+        "unit": "bytes",
+        "provenance": "MISSING",
+        "source": null,
+        "owner": null,
+        "approval": "MISSING"
+      }
+    },
+    "QUEUE_ARRIVAL_TASKS_PS": {
+      "value": null,
+      "unit": "tasksPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "QUEUE_SERVICE_TASKS_PS": {
+      "value": null,
+      "unit": "tasksPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "QUEUE_BYTES_PER_TASK": {
+      "value": null,
+      "unit": "bytesPerTask",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "QUEUE_INITIAL_BACKLOG_TASKS": {
+      "value": null,
+      "unit": "tasks",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "AI_TASK_ARRIVALS_PS": {
+      "value": null,
+      "unit": "tasksPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "AI_TASK_SERVICE_RATE_PS": {
+      "value": null,
+      "unit": "tasksPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "AI_MEAN_SERVICE_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "AI_TASK_BYTES": {
+      "value": null,
+      "unit": "bytesPerTask",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    }
+  },
+  "spool": {
+    "SPOOL_DISK_BYTES": {
+      "value": null,
+      "unit": "bytes",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_FREE_BYTES": {
+      "value": null,
+      "unit": "bytes",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_EXISTING_BYTES": {
+      "value": null,
+      "unit": "bytes",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_NEW_PEAK_BYTES_PS": {
+      "value": null,
+      "unit": "bytesPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_NEW_AVG_BYTES_PS": {
+      "value": null,
+      "unit": "bytesPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_OUTAGE_S": {
+      "value": null,
+      "unit": "seconds",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_HEADROOM_RATIO": {
+      "value": null,
+      "unit": "ratio",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_RECOVERY_TOTAL_BYTES_PS": {
+      "value": null,
+      "unit": "bytesPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    },
+    "SPOOL_CONTINUING_BYTES_PS": {
+      "value": null,
+      "unit": "bytesPerSecond",
+      "provenance": "MISSING",
+      "source": null,
+      "owner": null,
+      "approval": "MISSING"
+    }
+  }
+}
