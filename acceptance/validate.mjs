@@ -6,6 +6,7 @@
 // expectation consistency against accepted A0-A4 contracts. It never
 // executes a runtime system and never emits production acceptance.
 
+import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1251,9 +1252,19 @@ function validateRoot(ctx, model, p) {
       root(p, 'A5_PROHIBITED_READINESS_FLAG', key, `model.${key}`);
     }
   }
+  // Aggregate coverage is validator-derived. A caller/model root field that
+  // asserts it is a count-only shortcut, never evidence of the full gate AND.
+  // Recognized here so it does not also degrade to A5_SECTION_EXTRA.
+  const prohibitedCountOnly = ['specificationCoverageComplete', 'specCoverageComplete'];
+  for (const key of prohibitedCountOnly) {
+    if (Object.prototype.hasOwnProperty.call(model, key)) {
+      root(p, 'A5_COUNT_ONLY_COVERAGE', key, `model.${key}`);
+    }
+  }
   for (const key of Object.keys(model)) {
     if (!allowedRoot.has(key) && !prohibitedCaller.includes(key) &&
-        !['productionReady', 'procurementReady', 'cloudVerified', 'a3RiskClosed'].includes(key)) {
+        !['productionReady', 'procurementReady', 'cloudVerified', 'a3RiskClosed'].includes(key) &&
+        !prohibitedCountOnly.includes(key)) {
       root(p, 'A5_SECTION_EXTRA', key, `model.${key}`);
     }
   }
@@ -3599,7 +3610,7 @@ function parseArgs(argv) {
     '--a2-model', '--a2-fixtures', '--a3-model', '--a3-fixtures',
     '--a4-calc', '--a4-fixtures', '--evidence'
   ]);
-  const knownFlags = new Set(['--check-doc-links']);
+  const knownFlags = new Set(['--check-doc-links', '--determinism-probe']);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     if (knownFlags.has(key)) {
@@ -3637,6 +3648,16 @@ async function main() {
     failInvalid(error.message);
     return;
   }
+  // A top-level invocation never trusts its own single run. It compares two
+  // isolated probe runs and only then publishes deterministic=true.
+  if (!args['determinism-probe']) {
+    runDeterminismGate();
+    return;
+  }
+  await runValidation(args);
+}
+
+async function runValidation(args) {
   const required = ['stage', 'matrix', 'doc', 'fixtures', 'a0', 'a1-bundle', 'a2-model',
     'a2-fixtures', 'a3-model', 'a3-fixtures', 'a4-calc', 'a4-fixtures'];
   for (const key of required) {
@@ -3740,7 +3761,71 @@ async function main() {
   }
 }
 
-function summarize(ctx, model, fixtureResult, stage = 's1', evidenceStats = null) {
+const PROBE_FLAG = '--determinism-probe';
+const PROBE_MARKER = 'deterministic=probe';
+// Bounded but large enough for full validator diagnostics on stdout/stderr.
+const PROBE_MAX_BUFFER = 64 * 1024 * 1024;
+
+function spawnProbe(entry, childArgs) {
+  return spawnSync(process.execPath, [entry, ...childArgs], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    maxBuffer: PROBE_MAX_BUFFER
+  });
+}
+
+function probeResultUsable(run) {
+  return Boolean(run) && run.error === undefined && run.signal === null &&
+    Number.isInteger(run.status) && typeof run.stdout === 'string' &&
+    typeof run.stderr === 'string';
+}
+
+function failDeterminism() {
+  failIssues('determinism', [{
+    code: 'A5_DETERMINISM_FAILURE',
+    path: 'determinism.probe',
+    id: 'two-probe'
+  }]);
+}
+
+function runDeterminismGate() {
+  const entry = process.argv[1] ? path.resolve(process.argv[1]) : '';
+  if (!entry || !fs.existsSync(entry)) {
+    failDeterminism();
+    return;
+  }
+  const childArgs = [...process.argv.slice(2), PROBE_FLAG];
+  const first = spawnProbe(entry, childArgs);
+  const second = spawnProbe(entry, childArgs);
+  if (!probeResultUsable(first) || !probeResultUsable(second)) {
+    failDeterminism();
+    return;
+  }
+  if (first.status !== second.status ||
+      first.stdout !== second.stdout || first.stderr !== second.stderr) {
+    failDeterminism();
+    return;
+  }
+  // Identical failure: relay the validator's own diagnosis instead of masking
+  // the real cause with a determinism error.
+  if (first.status !== 0) {
+    process.stdout.write(first.stdout);
+    process.stderr.write(first.stderr);
+    process.exitCode = first.status;
+    return;
+  }
+  const probeMarkers = first.stdout.split(PROBE_MARKER).length - 1;
+  if (probeMarkers !== 1 || first.stdout.includes('deterministic=true')) {
+    failDeterminism();
+    return;
+  }
+  process.stdout.write(first.stdout.replace(PROBE_MARKER, 'deterministic=true'));
+  process.stderr.write(first.stderr);
+  process.exitCode = 0;
+}
+
+function summarize(ctx, model, fixtureResult, stage = 's1', evidenceStats = null,
+  deterministic = PROBE_MARKER) {
   const covered = (model.coverage || []).filter((row) => row.state === 'REPRESENTED').length;
   const na = (model.coverage || []).filter((row) => row.state === 'NOT_APPLICABLE').length;
   const deferred = (model.coverage || []).filter((row) => row.state === 'DEFERRED').length;
@@ -3800,7 +3885,7 @@ function summarize(ctx, model, fixtureResult, stage = 's1', evidenceStats = null
     `passed=${fixtureResult.files}`,
     'failed=0',
     `negative=${fixtureResult.negativeFiles}`,
-    'deterministic=true'
+    deterministic
   );
   return parts.join(' ');
 }

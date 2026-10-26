@@ -313,6 +313,8 @@ Aggregate gates：
 
 `specificationCoverageComplete` 是上述 gates 的 AND，不是 96 行计数的别名。`productionAccepted` 是 validator 输出，不是 model 输入；S1 没有 authority registry，因此 PASS/production acceptance 不可达。任何 caller 字段、synthetic runtime、tier downgrade、count-only 或 readiness flag 都被拒绝。
 
+`A5_COUNT_ONLY_COVERAGE` 是 caller aggregate-coverage guard：model root 出现 `specificationCoverageComplete` 或 `specCoverageComplete`（调用方/模型自带的聚合覆盖断言）即拒绝，且不再叠加 `A5_SECTION_EXTRA`。该 guard 只拒绝这种 root 捷径，不替代任何 root/ID/ref/owner/coverage/semantic/doc/baseline 检查；`all-counts-but-unbacked-na`（S1）与 count-only acceptance（S2）继续证明计数不能绕过底层语义/证据 gate。
+
 ## 9. 执行证据准入、聚合结果与不可达 PASS（S2）
 
 S2 只做静态证据准入：证明 caller 断言、synthetic runtime、tier downgrade、count-only 完整性、伪造 authority、坏 digest/时间、状态矛盾与 replay/immutability 违规都不能变成 `PASS` 或 `productionAccepted=true`。不执行真实系统，不存储证据。
@@ -445,6 +447,8 @@ node acceptance/validate.mjs --stage s2 \
 `--stage s2` 额外接受可选 `--evidence <ledger.json>`（无 ledger 时 evidence counters 为零、`runtime_evidence=NOT_RUN`）；`--check-doc-links` 只检查本文件相对链接与 `docs/README.md` 的 docs/19 行唯一性，不访问网络。`--evidence`/`--check-doc-links` 与 s1 组合是 invalid-arguments。
 
 A1 bundle 是未跟踪生成物，唯一命令是 `( cd api/openapi && npm ci && npm run check:s3 )`。离线环境无法生成 bundle 时必须报告环境限制，不得用 fake bundle 绕过。validator 不读 network、环境变量、wall clock 或 random，不写文件。
+
+Determinism 由 CLI 自身验证，而不是硬编码：顶层调用先用 `process.execPath` 和当前 validator entry path 启动两次隔离子进程，参数与顶层完全相同并追加内部 `--determinism-probe`，保持 cwd，不读 env/wall clock/network/random。每次 probe 走完整 validation path（全部输入、A0-A4 context、fixtures、evidence 与 `--check-doc-links`），成功时只输出一个非最终标记 `deterministic=probe`，永不输出 `deterministic=true`。父进程逐字节比较两次 exit status/stdout/stderr；launch 失败、signal/status 不可用、输出不一致，或成功输出不含恰好一个 probe 标记时，fail closed 为 `A5_DETERMINISM_FAILURE`（稳定 path `determinism.probe`、id `two-probe`，exit 1，不输出 PASS）。两次一致且失败时原样转发第一次失败；两次一致且成功时仅把唯一 probe 标记替换为 `deterministic=true` 并保持 exit status。该检查只证明同一输入下 validator 输出确定，不证明任何外部 runtime 行为。
 
 A5 validator 证明矩阵覆盖完整、来源可解析、expectation 与 accepted state/effect 语义不矛盾、静态/model 证据不能升级为 runtime PASS；**不证明**真实 DB/锁/事务、Redis/RabbitMQ/COS/KMS/CAM、支付、IVR 线路/B-leg/录音、跨节点 callId、真实恢复、SLO/RPO/RTO、容量/云能力、安全渗透、脱敏配置或任何 runtime 行为。
 

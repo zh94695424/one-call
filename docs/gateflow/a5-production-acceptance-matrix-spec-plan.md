@@ -918,9 +918,9 @@ node acceptance/validate.mjs --stage s2 ... [same args] \
    - `locatorRef` 黑名单/`sha256`/digest/time；
    - observations 不得包含 scenario expected 之外的 business state mutation；矛盾 => `A5_EVIDENCE_STATE_CONTRADICTION`；
    - `acceptanceRecord` 必须独立于 manifest，引用 authority + digest；无 authority => 保持 EVIDENCE_VALID 且 `productionAccepted=false`，不是 PASS；缺 required tier => BLOCKED。
-10. **Count-only guard**：`specificationCoverageComplete` 只能由 §7.3 的 AND 计算；任何 shortcut 读取 fixture count/coverage count 直接置 true => `A5_COUNT_ONLY_COVERAGE`（代码级 fail-safe，不允许）。
+10. **Count-only guard**：`specificationCoverageComplete` 只能由 §7.3 的 AND 计算。model root 不接受调用方/模型聚合覆盖字段 `specificationCoverageComplete`、`specCoverageComplete`：任一出现即按 `A5_COUNT_ONLY_COVERAGE`（caller aggregate-coverage guard）拒绝，且不再叠加 `A5_SECTION_EXTRA`。该 guard 不替代任何 root/ID/ref/owner/coverage/semantic/doc/baseline 检查；`all-counts-but-unbacked-na`（S1）与 S2 count-only acceptance case 继续证明计数不能绕过底层语义/证据 gate。
 11. **Doc parity**：每个 marker block 的 header/row/column 与 model 投影逐项比较；缺/多/重复/顺序错 => `A5_DOC_MODEL_DRIFT` / `A5_DOC_MARKER_*`。
-12. **Determinism**：同一输入重复运行两次，canonical output 相同；否则 `A5_DETERMINISM_FAILURE`。
+12. **Determinism**：顶层 CLI 在发布 `deterministic=true` 前执行 two-probe 契约。用 `process.execPath` 和当前 validator entry path 启动两次隔离子进程，原始参数完全相同并追加内部 `--determinism-probe`，保持 cwd，不读 env/wall clock/network/random。probe 运行完整 validation path（全部输入、A0-A4 context、fixtures、evidence、doc-link），成功时只输出一个非最终标记 `deterministic=probe`，永不输出 `deterministic=true`。父进程逐字节比较两次 exit status/stdout/stderr；launch 失败、signal/status 不可用、输出不一致，或成功输出不含恰好一个 probe 标记 => `A5_DETERMINISM_FAILURE`（稳定 path `determinism.probe`、id `two-probe`，exit 1，无 PASS 输出）。两次一致且失败 => 原样转发第一次失败；两次一致且成功 => 仅替换唯一 probe 标记为 `deterministic=true`，转发 stdout/stderr 一次并保持 child exit status。只证明同一输入 validator 输出确定性，不检查外部 runtime 系统。
 13. **Path/family uniqueness**：按 §4.2 的 pair map，对每个 path scenario 找到同 axis 且状态为 `REPRESENTED` 的 paired family scenario。要求 `set(sourceRefs(path)) − set(sourceRefs(family))` 非空且 `set(outcomeRefs(path)) − set(outcomeRefs(family))` 非空；否则 `A5_PATH_FAMILY_DUPLICATE`。只做 exact ref set difference，不做文本相似度匹配。`PATH-DEPLOY-*` 另需人工/评审确认 expected 是 A4→A5 boundary observation（§11 S1 完成条件）。
 14. **External projection reconciliation**：按 §4.6 的 `(operationRef, field)` 规则，最后匹配 step 必须与 root external 一致；否则 `A5_EXTERNAL_PROJECTION_CONTRADICTION`。
 15. **Single tier source**：`requiredEvidenceTiers` 只在 scenario root；`resultSemantics` 字段集合封闭，出现第二副本 => `A5_SCENARIO_FIELD_INVALID`。tier 比对只读 root。
@@ -1014,6 +1014,8 @@ ISSUE <CODE> <path> <id>
 | `doc-model-drift` | change scenario title only | `A5_DOC_MODEL_DRIFT` |
 | `prohibited-readiness-flag` | set root `productionReady=true` | `A5_PROHIBITED_READINESS_FLAG` |
 | `caller-production-accepted` | set root `productionAccepted=true` | `A5_CALLER_CONTROL_FORBIDDEN` |
+| `count-only-root-specification-coverage-complete` | set root `specificationCoverageComplete=true` | `A5_COUNT_ONLY_COVERAGE`（不叠加 `A5_SECTION_EXTRA`） |
+| `count-only-root-spec-coverage-complete` | set root `specCoverageComplete=true` | `A5_COUNT_ONLY_COVERAGE`（不叠加 `A5_SECTION_EXTRA`） |
 | `all-counts-but-unbacked-na` | 96 rows/90 scenarios but one N/A unbacked | `A5_NA_REASON_UNBACKED`（证明 count-only 失败） |
 | `legacy-prototype-evidence` | sourceRef=`docs/04`/prototype | `A5_LEGACY_REFERENCE_FORBIDDEN` |
 | `source-residual-ok` | scenario basisRef 使用 `A3:RESIDUAL:R-A3-AUDIT-VOLUME`（`docs/17` §20 真源） | exit 0（正向 control；18 行内解析） |
@@ -1178,7 +1180,7 @@ node acceptance/validate.mjs --stage s2 \
 - `caller_control=0`、`caller_asserted_pass=0`、`synthetic_acceptance=0`、`count_only=0`；
 - `evidence_manifests=0`、`evidence_admitted=0`、`acceptance_records=0`、`runtime_evidence=NOT_RUN`；
 - `production_accepted=false`、`spec_coverage=COMPLETE`；
-- 两次运行 summary 完全相同（deterministic）。
+- 两次外部运行 summary 完全相同；validator 内部 two-probe 契约（§8.3.12）必须在两次隔离 probe 的 exit status/stdout/stderr 逐字节一致且各含恰好一个 `deterministic=probe` 后才输出 `deterministic=true`，否则 `A5_DETERMINISM_FAILURE`。该断言只证明同一输入 validator 输出确定性。
 
 ### 10.3 文档/链接/scope 检查
 
@@ -1201,6 +1203,7 @@ node acceptance/validate.mjs --stage s2 ... [same] --check-doc-links
 - A3 residual 必须核对 `docs/17` §20 的 18 行与 owner/destination 非空，不只看某个 ref 能打印。
 - A0 state/edge 必须核对 §4.9.1 的 31 行与代表行 expected map，不只看 `A0:SM` 能解析。
 - A0-A4 regression 必须核对计数/摘要/negative 数，不只看 `PASS` 字符串。
+- `deterministic=true` 必须核对来自 two-probe 契约：两次隔离 probe 的完整输出逐字节一致、各含恰好一个 `deterministic=probe`，父进程才替换为 `deterministic=true`；不只看单次运行的字符串。
 
 ## 11. 实施切片（2）
 

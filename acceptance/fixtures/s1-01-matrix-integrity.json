@@ -562,6 +562,36 @@
       ]
     },
     {
+      "caseId": "count-only-root-specification-coverage-complete",
+      "mutations": [
+        {
+          "op": "setPath",
+          "path": [
+            "specificationCoverageComplete"
+          ],
+          "value": true
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_COUNT_ONLY_COVERAGE"
+      ]
+    },
+    {
+      "caseId": "count-only-root-spec-coverage-complete",
+      "mutations": [
+        {
+          "op": "setPath",
+          "path": [
+            "specCoverageComplete"
+          ],
+          "value": true
+        }
+      ],
+      "expectedPrimaryCodes": [
+        "A5_COUNT_ONLY_COVERAGE"
+      ]
+    },
+    {
       "caseId": "all-counts-but-unbacked-na",
       "mutations": [
         {
