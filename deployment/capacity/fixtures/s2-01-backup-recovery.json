@@ -1,0 +1,543 @@
+{
+  "stage": "s2",
+  "fixture": "s2-01-backup-recovery",
+  "syntheticOnly": true,
+  "cases": [
+    {
+      "id": "complete-zero-rpo-rto",
+      "behavior": "six included dependencies, approved and observed zero RPO/RTO, valid asOf => dependency closure COMPLETE; evidence completeness is not recoverability",
+      "repeat": true,
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            },
+            {
+              "dependencyId": "cosVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/cos"
+            },
+            {
+              "dependencyId": "kmsKeyVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/kms"
+            },
+            {
+              "dependencyId": "secretVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/secret"
+            },
+            {
+              "dependencyId": "reconciliationOutbox",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/outbox"
+            },
+            {
+              "dependencyId": "ivrLocalFacts",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/ivr-local"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "synthetic": true},
+        "groups": {"backupRecovery": {"status": "COMPLETE", "partial": false}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "COMPLETE", "value": "MET", "formulaId": "F-BACKUP-02"},
+          "backupRecovery.cosVersions": {"status": "COMPLETE", "value": "MET", "formulaId": "F-BACKUP-02"},
+          "backupRecovery.ivrLocalFacts": {"status": "COMPLETE", "value": "MET", "formulaId": "F-BACKUP-02"},
+          "backupRecovery.closure": {"status": "COMPLETE", "value": "BACKUP_CLOSURE_COMPLETE", "formulaId": "F-BACKUP-01", "limitationsInclude": ["EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY"]}
+        },
+        "flagsInclude": ["EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY", "DEPLOYMENT_EVIDENCE_INCOMPLETE", "NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED"],
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "observation-missing",
+      "behavior": "included dependency without a restore drill observation is INCOMPLETE with OBSERVATION_MISSING, not a healthy target",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 30, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 90, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            },
+            {
+              "dependencyId": "cosVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/cos"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"backupRecovery": {"status": "INCOMPLETE", "partial": true}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "COMPLETE", "value": "MET", "formulaId": "F-BACKUP-02"},
+          "backupRecovery.cosVersions": {"status": "INCOMPLETE", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["OBSERVATION_MISSING"], "missingInclude": ["backupRecovery.BACKUP_DEPENDENCY[1].observedRpoSeconds", "backupRecovery.BACKUP_DEPENDENCY[1].observedRtoSeconds"]},
+          "backupRecovery.closure": {"status": "INCOMPLETE", "value": "DEPENDENCY_CLOSURE_INCOMPLETE", "formulaId": "F-BACKUP-01"}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "excluded-distinct-from-missing",
+      "behavior": "included=false is DEPENDENCY_EXCLUDED (with no missing-field noise), while included=true without required fields is DEPENDENCY_MISSING",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": false
+            },
+            {
+              "dependencyId": "cosVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "evidenceRef": "drill://s2-01/cos"
+            },
+            {
+              "dependencyId": "kmsKeyVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/kms"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"backupRecovery": {"status": "INCOMPLETE", "partial": true}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INCOMPLETE", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_EXCLUDED"], "missingInclude": []},
+          "backupRecovery.cosVersions": {"status": "INCOMPLETE", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_MISSING"], "missingInclude": ["backupRecovery.BACKUP_DEPENDENCY[1].approvedRtoSeconds", "backupRecovery.BACKUP_DEPENDENCY[1].owner"]},
+          "backupRecovery.kmsKeyVersions": {"status": "COMPLETE", "value": "MET", "formulaId": "F-BACKUP-02"},
+          "backupRecovery.closure": {"status": "INCOMPLETE", "value": "DEPENDENCY_CLOSURE_INCOMPLETE", "formulaId": "F-BACKUP-01"}
+        },
+        "flagsInclude": ["EVIDENCE_COMPLETENESS_NOT_RECOVERABILITY"],
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "copies-only-incomplete",
+      "behavior": "all dependencies explicitly excluded => copiesOnly closure INCOMPLETE with COPIES_ONLY_INCOMPLETE, not a recovered dependency",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {"dependencyId": "postgresPitr", "included": false},
+            {"dependencyId": "cosVersions", "included": false},
+            {"dependencyId": "kmsKeyVersions", "included": false},
+            {"dependencyId": "secretVersions", "included": false},
+            {"dependencyId": "reconciliationOutbox", "included": false},
+            {"dependencyId": "ivrLocalFacts", "included": false}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"backupRecovery": {"status": "INCOMPLETE", "partial": false}},
+        "metrics": {
+          "backupRecovery.closure": {"status": "INCOMPLETE", "value": "COPIES_ONLY", "formulaId": "F-BACKUP-01", "reasonsInclude": ["COPIES_ONLY_INCOMPLETE"]},
+          "backupRecovery.postgresPitr": {"status": "INCOMPLETE", "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_EXCLUDED"], "missingInclude": []}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "observed-exceeds-target",
+      "behavior": "observed RPO/RTO above approved target => NOT_MET + TARGET_NOT_MET, never a healthy restore",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 180, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "NOT_MET"},
+        "groups": {"backupRecovery": {"status": "NOT_MET"}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "NOT_MET", "value": "NOT_MET", "formulaId": "F-BACKUP-02", "reasonsInclude": ["TARGET_NOT_MET"]},
+          "backupRecovery.closure": {"status": "NOT_MET", "value": "NOT_MET", "formulaId": "F-BACKUP-01", "reasonsInclude": ["TARGET_NOT_MET"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "asof-required",
+      "behavior": "dependencies without explicit asOf => ASOF_REQUIRED and no future-date check, deterministic (no wall clock)",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"backupRecovery": {"status": "INCOMPLETE"}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INCOMPLETE", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["ASOF_REQUIRED"], "missingInclude": ["asOf"], "limitationsInclude": ["ASOF_ABSENT_NO_FUTURE_CHECK"]},
+          "backupRecovery.closure": {"status": "INCOMPLETE", "value": "DEPENDENCY_CLOSURE_INCOMPLETE", "formulaId": "F-BACKUP-01", "limitationsInclude": ["ASOF_ABSENT_NO_FUTURE_CHECK"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "restore-date-in-future",
+      "behavior": "restoreTestedAt later than explicit asOf => DATE_IN_FUTURE INVALID",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-11-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "groups": {"backupRecovery": {"status": "INVALID"}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["DATE_IN_FUTURE"]}
+        },
+        "errorsInclude": [{"code": "DATE_IN_FUTURE", "path": "backupRecovery.BACKUP_DEPENDENCY[0].restoreTestedAt"}]
+      }
+    },
+    {
+      "id": "bad-included-boolean",
+      "behavior": "included must be a plain boolean; a string is TYPE_INVALID",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": "yes",
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["TYPE_INVALID"]}
+        },
+        "errorsInclude": [{"code": "TYPE_INVALID", "path": "backupRecovery.BACKUP_DEPENDENCY[0].included"}]
+      }
+    },
+    {
+      "id": "negative-target",
+      "behavior": "negative RPO target is NEGATIVE_VALUE INVALID",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": -1, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["NEGATIVE_VALUE"]}
+        },
+        "errorsInclude": [{"code": "NEGATIVE_VALUE", "path": "backupRecovery.BACKUP_DEPENDENCY[0].approvedRpoSeconds"}]
+      }
+    },
+    {
+      "id": "bad-restore-date",
+      "behavior": "unparseable restoreTestedAt is DATE_INVALID, never coerced",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "not-a-date", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["DATE_INVALID"]}
+        },
+        "errorsInclude": [{"code": "DATE_INVALID", "path": "backupRecovery.BACKUP_DEPENDENCY[0].restoreTestedAt"}]
+      }
+    },
+    {
+      "id": "bad-asof-date",
+      "behavior": "invalid top-level asOf is DATE_INVALID at the root and invalidates dependency comparisons",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "not-a-date", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["DATE_INVALID"]}
+        },
+        "errorsInclude": [{"code": "DATE_INVALID", "path": "asOf"}]
+      }
+    },
+    {
+      "id": "subset-complete-is-not-closure",
+      "behavior": "one fully-MET dependency cannot complete the fixed six-ID closure; each absent ID is visible as INCOMPLETE + DEPENDENCY_ABSENT",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 120, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 30, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 90, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"backupRecovery": {"status": "INCOMPLETE", "partial": true}},
+        "metrics": {
+          "backupRecovery.postgresPitr": {"status": "COMPLETE", "value": "MET", "formulaId": "F-BACKUP-02"},
+          "backupRecovery.cosVersions": {"status": "INCOMPLETE", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_ABSENT"], "missingInclude": ["backupRecovery.BACKUP_DEPENDENCY.cosVersions"]},
+          "backupRecovery.ivrLocalFacts": {"status": "INCOMPLETE", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_ABSENT"], "missingInclude": ["backupRecovery.BACKUP_DEPENDENCY.ivrLocalFacts"]},
+          "backupRecovery.closure": {"status": "INCOMPLETE", "value": "DEPENDENCY_CLOSURE_INCOMPLETE", "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_ABSENT"]}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "duplicate-dependency-id-invalid",
+      "behavior": "duplicate dependencyId values are INVALID with DEPENDENCY_DUPLICATE and cannot reach BACKUP_CLOSURE_COMPLETE; absent fixed IDs stay visible",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg"
+            },
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-01/pg-duplicate"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "groups": {"backupRecovery": {"status": "INVALID"}},
+        "metrics": {
+          "backupRecovery.item0": {"status": "INVALID", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_DUPLICATE"]},
+          "backupRecovery.item1": {"status": "INVALID", "valueNull": true, "formulaId": "F-BACKUP-01", "reasonsInclude": ["DEPENDENCY_DUPLICATE"]},
+          "backupRecovery.cosVersions": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["DEPENDENCY_ABSENT"]},
+          "backupRecovery.closure": {"status": "INVALID", "valueNull": true}
+        },
+        "errorsInclude": [
+          {"code": "DEPENDENCY_DUPLICATE", "path": "backupRecovery.BACKUP_DEPENDENCY[0].dependencyId"},
+          {"code": "DEPENDENCY_DUPLICATE", "path": "backupRecovery.BACKUP_DEPENDENCY[1].dependencyId"}
+        ]
+      }
+    },
+    {
+      "id": "nonempty-none-of-fixed-ids-present",
+      "behavior": "a non-empty array of unknown dependencyId values leaves every required ID absent/invalid; closure is INVALID and all six absences are visible",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-01", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {"dependencyId": "legacyPitr", "included": true},
+            {"dependencyId": "legacyCos", "included": true}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "groups": {"backupRecovery": {"status": "INVALID"}},
+        "metrics": {
+          "backupRecovery.item0": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["TYPE_INVALID"]},
+          "backupRecovery.item1": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["TYPE_INVALID"]},
+          "backupRecovery.postgresPitr": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["DEPENDENCY_ABSENT"]},
+          "backupRecovery.ivrLocalFacts": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["DEPENDENCY_ABSENT"]},
+          "backupRecovery.closure": {"status": "INVALID", "valueNull": true}
+        },
+        "errorsInclude": [
+          {"code": "TYPE_INVALID", "path": "backupRecovery.BACKUP_DEPENDENCY[0].dependencyId"},
+          {"code": "TYPE_INVALID", "path": "backupRecovery.BACKUP_DEPENDENCY[1].dependencyId"}
+        ]
+      }
+    }
+  ]
+}

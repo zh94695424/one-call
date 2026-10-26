@@ -1,0 +1,165 @@
+{
+  "id": "s1-02-recording-storage",
+  "stage": "s1",
+  "description": "Total all-channel recording bitrate, server-validated duration, retention/version independence, derived types, legal-hold extra bytes and backup copy factor are computed without internal COS copy multipliers.",
+  "cases": [
+    {
+      "id": "full-channel-bitrate-retention-version",
+      "behavior": "64000 bps x 60 s x 100/day x 30 days x 1.2 = exact retained bytes; VersionFactor 1.2 is legal; legal hold is added once outside version; backup factor is independent.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 100, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_RETENTION_DAYS": {"value": 30, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_ORIGINAL_VERSION_FACTOR": {"value": 1.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_DERIVED_BY_TYPE": {
+            "preview": {"state": "DISABLED", "bytesPerOriginalByte": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "transcript": {"state": "DISABLED", "bytesPerOriginalByte": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "summary": {"state": "DISABLED", "bytesPerOriginalByte": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "export": {"state": "DISABLED", "bytesPerOriginalByte": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}
+          },
+          "REC_LEGAL_HOLD_EXTRA_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_BACKUP_COPY_FACTOR": {"value": 2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.recordingBitsPerSecond": {"status": "COMPLETE", "value": 64000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.bytesPerRecording": {"status": "COMPLETE", "value": 480000, "unit": "bytes"},
+          "mediaIngestStorage.dailyOriginalBytes": {"status": "COMPLETE", "value": 48000000, "unit": "bytesPerDay"},
+          "mediaIngestStorage.retainedOriginalBytes": {"status": "COMPLETE", "value": 1728000000, "unit": "bytes"},
+          "mediaIngestStorage.derived.preview": {"status": "COMPLETE", "value": 0, "unit": "bytes", "limitationsInclude": ["ZERO_FACTOR_SHORT_CIRCUIT"]},
+          "mediaIngestStorage.derivedDaily.transcript": {"status": "COMPLETE", "value": 0, "unit": "bytesPerDay"},
+          "mediaIngestStorage.logicalMediaBytes": {"status": "COMPLETE", "value": 1728001000, "unit": "bytes"},
+          "mediaIngestStorage.backupMediaBytes": {"status": "COMPLETE", "value": 3456002000, "unit": "bytes"}
+        },
+        "errorsAbsent": ["RATIO_OUT_OF_RANGE", "NUMBER_NONFINITE"],
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "pcm-fallback-and-derived-partial",
+      "behavior": "8000 Hz x 16 bit x 1 channel PCM fallback = 128000 bps; hertz/bit units are accepted; produced derived types have independent ratios/retention/version; disabled is explicit zero; missing derived type stays unknown.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_CODEC": {"value": "PCM_LINEAR", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_SAMPLE_RATE_HZ": {"value": 8000, "unit": "hertz", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_BIT_DEPTH": {"value": 16, "unit": "bit", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_CHANNELS": {"value": 1, "unit": "channels", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 10, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_RETENTION_DAYS": {"value": 5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_ORIGINAL_VERSION_FACTOR": {"value": 1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_DERIVED_BY_TYPE": {
+            "preview": {"state": "PRODUCED", "bytesPerOriginalByte": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "versionFactor": {"value": 1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "transcript": {"state": "PRODUCED", "bytesPerOriginalByte": {"value": 0.05, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "versionFactor": {"value": 1.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "summary": {"state": "DISABLED", "bytesPerOriginalByte": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}
+          }
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.recordingBitsPerSecond": {"status": "COMPLETE", "value": 128000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.bytesPerRecording": {"status": "COMPLETE", "value": 960000, "unit": "bytes"},
+          "mediaIngestStorage.dailyOriginalBytes": {"status": "COMPLETE", "value": 9600000, "unit": "bytesPerDay"},
+          "mediaIngestStorage.retainedOriginalBytes": {"status": "COMPLETE", "value": 48000000, "unit": "bytes"},
+          "mediaIngestStorage.derivedDaily.preview": {"status": "COMPLETE", "value": 960000, "unit": "bytesPerDay"},
+          "mediaIngestStorage.derived.preview": {"status": "COMPLETE", "value": 4800000, "unit": "bytes"},
+          "mediaIngestStorage.derivedDaily.transcript": {"status": "COMPLETE", "value": 480000, "unit": "bytesPerDay"},
+          "mediaIngestStorage.derived.transcript": {"status": "COMPLETE", "value": 2880000, "unit": "bytes"},
+          "mediaIngestStorage.derived.summary": {"status": "COMPLETE", "value": 0, "unit": "bytes"},
+          "mediaIngestStorage.derived.export": {"status": "INCOMPLETE", "valueNull": true},
+          "mediaIngestStorage.logicalMediaBytes": {"status": "INCOMPLETE", "valueNull": true}
+        },
+        "groups": {"mediaIngestStorage": {"status": "INCOMPLETE", "partial": true}},
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "compressed-codec-without-bitrate",
+      "behavior": "A compressed codec without measured total bitrate is INCOMPLETE; no compression-ratio guess is made.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_CODEC": {"value": "OPUS", "unit": "enum", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 10, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.recordingBitsPerSecond": {"status": "INCOMPLETE", "valueNull": true, "missingInclude": ["mediaIngestStorage.REC_BITRATE_BPS"]}
+        },
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "metadata-five-types-independent",
+      "behavior": "metadata audit/outbox/callEvent/evidenceEvent/shareAccess are independent; missing callEvent remains unknown while shareAccess explicit zero is a legal zero.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "META_BY_TYPE": {
+            "audit": {"rowsPerDay": {"value": 10, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 100, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 30, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "outbox": {"rowsPerDay": {"value": 5, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 200, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 10, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "evidenceEvent": {"rowsPerDay": {"value": 1, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 500, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 20, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}},
+            "shareAccess": {"rowsPerDay": {"value": 0, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "bytesPerRow": {"value": 300, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}, "retentionDays": {"value": 5, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}}
+          }
+        }
+      },
+      "expect": {
+        "metrics": {
+          "growthAndAsync.metadata.audit": {"status": "COMPLETE", "value": 30000, "unit": "bytes"},
+          "growthAndAsync.metadata.outbox": {"status": "COMPLETE", "value": 10000, "unit": "bytes"},
+          "growthAndAsync.metadata.callEvent": {"status": "INCOMPLETE", "valueNull": true},
+          "growthAndAsync.metadata.evidenceEvent": {"status": "COMPLETE", "value": 10000, "unit": "bytes"},
+          "growthAndAsync.metadata.shareAccess": {"status": "COMPLETE", "value": 0, "unit": "bytes", "limitationsInclude": ["ZERO_FACTOR_SHORT_CIRCUIT"]}
+        },
+        "groups": {"growthAndAsync": {"status": "INCOMPLETE", "partial": true}}
+      }
+    },
+    {
+      "id": "disabled-without-explicit-zero",
+      "behavior": "A DISABLED derived type without an explicit provenance-bearing zero is INVALID.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_DERIVED_BY_TYPE": {"preview": {"state": "DISABLED"}}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "mediaIngestStorage.derivedDaily.preview": {"status": "INVALID", "reasonsInclude": ["PROVENANCE_INVALID"]},
+          "mediaIngestStorage.derived.preview": {"status": "INVALID"}
+        },
+        "errorsInclude": [{"code": "PROVENANCE_INVALID", "path": "mediaIngestStorage.REC_DERIVED_BY_TYPE.preview.bytesPerOriginalByte"}]
+      }
+    },
+    {
+      "id": "version-factor-below-one-invalid",
+      "behavior": "REC_ORIGINAL_VERSION_FACTOR=0.5 is RATIO_OUT_OF_RANGE, distinct from legal 1.2.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 10, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_RETENTION_DAYS": {"value": 30, "unit": "days", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_ORIGINAL_VERSION_FACTOR": {"value": 0.5, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {"mediaIngestStorage.retainedOriginalBytes": {"status": "INVALID", "valueNull": true}},
+        "errorsInclude": [{"code": "RATIO_OUT_OF_RANGE", "path": "mediaIngestStorage.REC_ORIGINAL_VERSION_FACTOR"}]
+      }
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+{
+  "stage": "s2",
+  "fixture": "s2-02-capability-assertion",
+  "syntheticOnly": true,
+  "cases": [
+    {
+      "id": "all-unverified",
+      "behavior": "all fixed capability entries UNVERIFIED stay NOT_VERIFIED; fixed root cloudVerified/a3RiskClosed remain false",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "synthetic": true, "cloudVerified": false, "a3RiskClosed": false},
+        "groups": {"capabilityEvidence": {"status": "NOT_VERIFIED", "partial": false}},
+        "metrics": {
+          "capabilityEvidence.CV-1": {"status": "NOT_VERIFIED", "value": "UNVERIFIED"},
+          "capabilityEvidence.CV-5": {"status": "NOT_VERIFIED", "value": "UNVERIFIED"},
+          "capabilityEvidence.regionAzSku": {"status": "NOT_VERIFIED", "value": "UNVERIFIED", "limitationsInclude": ["NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED", "DEPLOYMENT_EVIDENCE_INCOMPLETE"]}
+        },
+        "flagsInclude": ["DEPLOYMENT_EVIDENCE_INCOMPLETE", "NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED"],
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "claimed-complete-is-still-not-verified",
+      "behavior": "a caller CLAIMED_VERIFIED capability with complete evidence is still NOT_VERIFIED, never COMPLETE or cloud-verified",
+      "repeat": true,
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {
+              "capabilityId": "CV-1",
+              "status": "CLAIMED_VERIFIED",
+              "claimedBy": "synthetic-claimant",
+              "owner": "synthetic-owner",
+              "source": "s2-02",
+              "evidenceRef": "evidence://s2-02/CV-1",
+              "verifiedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "cloudVerified": false, "a3RiskClosed": false},
+        "groups": {"capabilityEvidence": {"status": "NOT_VERIFIED"}},
+        "metrics": {
+          "capabilityEvidence.CV-1": {"status": "NOT_VERIFIED", "value": "CLAIMED_VERIFIED", "limitationsInclude": ["NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED", "DEPLOYMENT_EVIDENCE_INCOMPLETE"]}
+        },
+        "flagsInclude": ["DEPLOYMENT_EVIDENCE_INCOMPLETE", "NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED"],
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "claimed-missing-evidence",
+      "behavior": "CLAIMED_VERIFIED without owner/evidenceRef => INVALID with EVIDENCE_REQUIRED",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {
+              "capabilityId": "CV-2",
+              "status": "CLAIMED_VERIFIED",
+              "claimedBy": "synthetic-claimant",
+              "source": "s2-02",
+              "verifiedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "capabilityEvidence.CV-2": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["EVIDENCE_REQUIRED"], "invalidInclude": ["capabilityEvidence.CAPABILITY[0].owner", "capabilityEvidence.CAPABILITY[0].evidenceRef"]}
+        },
+        "errorsInclude": [{"code": "EVIDENCE_REQUIRED", "path": "capabilityEvidence.CAPABILITY[0]"}]
+      }
+    },
+    {
+      "id": "claimed-future-verification",
+      "behavior": "verifiedAt later than explicit asOf => DATE_IN_FUTURE INVALID",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {
+              "capabilityId": "CV-3",
+              "status": "CLAIMED_VERIFIED",
+              "claimedBy": "synthetic-claimant",
+              "owner": "synthetic-owner",
+              "source": "s2-02",
+              "evidenceRef": "evidence://s2-02/CV-3",
+              "verifiedAt": {"value": "2026-11-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "capabilityEvidence.CV-3": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["DATE_IN_FUTURE"]}
+        },
+        "errorsInclude": [{"code": "DATE_IN_FUTURE", "path": "capabilityEvidence.CAPABILITY[0].verifiedAt"}]
+      }
+    },
+    {
+      "id": "caller-cannot-rewrite-root",
+      "behavior": "top-level productionReady/procurementReady/approved/cloudVerified/a3RiskClosed are CALLER_CONTROL_FORBIDDEN and the fixed constants remain false",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "productionReady": true,
+        "procurementReady": true,
+        "approved": true,
+        "cloudVerified": true,
+        "a3RiskClosed": true
+      },
+      "expect": {
+        "root": {"status": "INVALID", "productionReady": false, "procurementReady": false, "cloudVerified": false, "a3RiskClosed": false},
+        "errorsInclude": [
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "productionReady"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "procurementReady"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "approved"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "cloudVerified"},
+          {"code": "CALLER_CONTROL_FORBIDDEN", "path": "a3RiskClosed"}
+        ]
+      }
+    },
+    {
+      "id": "no-asof-no-future-comparison",
+      "behavior": "without asOf no wall-clock or future comparison happens; the claim stays NOT_VERIFIED with ASOF_ABSENT_NO_FUTURE_CHECK",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {
+              "capabilityId": "CV-4",
+              "status": "CLAIMED_VERIFIED",
+              "claimedBy": "synthetic-claimant",
+              "owner": "synthetic-owner",
+              "source": "s2-02",
+              "evidenceRef": "evidence://s2-02/CV-4",
+              "verifiedAt": {"value": "2026-12-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"capabilityEvidence": {"status": "NOT_VERIFIED"}},
+        "metrics": {
+          "capabilityEvidence.CV-4": {"status": "NOT_VERIFIED", "value": "CLAIMED_VERIFIED", "limitationsInclude": ["ASOF_ABSENT_NO_FUTURE_CHECK"]}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "invalid-capability-status",
+      "behavior": "unknown capability status is TYPE_INVALID, never treated as verified",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {"capabilityId": "CV-5", "status": "VERIFIED"},
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "capabilityEvidence.CV-5": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["TYPE_INVALID"]}
+        },
+        "errorsInclude": [{"code": "TYPE_INVALID", "path": "capabilityEvidence.CAPABILITY[0].status"}]
+      }
+    },
+    {
+      "id": "missing-fixed-capabilities-visible",
+      "behavior": "omitted fixed capability IDs are individually visible as INCOMPLETE + CAPABILITY_ABSENT, never silently absent from the checklist",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"capabilityEvidence": {"status": "INCOMPLETE"}},
+        "metrics": {
+          "capabilityEvidence.CV-1": {"status": "NOT_VERIFIED", "value": "UNVERIFIED"},
+          "capabilityEvidence.CV-2": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["CAPABILITY_ABSENT"], "missingInclude": ["capabilityEvidence.CAPABILITY.CV-2"]},
+          "capabilityEvidence.regionAzSku": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["CAPABILITY_ABSENT"]}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "duplicate-capability-id-invalid",
+      "behavior": "duplicate capabilityId values are INVALID with CAPABILITY_DUPLICATE; omitted fixed IDs stay visible and no duplicate metric id is emitted",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-02", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "groups": {"capabilityEvidence": {"status": "INVALID"}},
+        "metrics": {
+          "capabilityEvidence.item0": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["CAPABILITY_DUPLICATE"]},
+          "capabilityEvidence.item1": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["CAPABILITY_DUPLICATE"]},
+          "capabilityEvidence.CV-2": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["CAPABILITY_ABSENT"]}
+        },
+        "errorsInclude": [
+          {"code": "CAPABILITY_DUPLICATE", "path": "capabilityEvidence.CAPABILITY[0].capabilityId"},
+          {"code": "CAPABILITY_DUPLICATE", "path": "capabilityEvidence.CAPABILITY[1].capabilityId"}
+        ]
+      }
+    }
+  ]
+}

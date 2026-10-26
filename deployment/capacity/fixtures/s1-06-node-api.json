@@ -1,0 +1,546 @@
+{
+  "id": "s1-06-node-api",
+  "stage": "s1",
+  "description": "API control-plane totals/in-flight estimates and measured node roles: stateless per-node arithmetic with N-1, stateful degraded topology, shared media-gateway capacity, resource evidence and role verdicts.",
+  "cases": [
+    {
+      "id": "api-total-and-in-flight",
+      "behavior": "Five API classes sum to total requests/s; in-flight uses mean service; DB transaction in-flight is an estimate with TXN_PER_REQUEST_NOT_MEASURED.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "apiControlPlane": {
+          "API_RATE_PS": {
+            "customer": {"value": 0.1, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "operations": {"value": 0.2, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "ivrControl": {"value": 0.3, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "publicShare": {"value": 0.4, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+            "providerCallback": {"value": 0.5, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+          },
+          "API_MEAN_SERVICE_S": {"value": 2, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "API_DB_TXN_MEAN_S": {"value": 0.5, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "apiControlPlane.totalRate": {"status": "COMPLETE", "value": 1.5, "unit": "requestsPerSecond"},
+          "apiControlPlane.inFlight": {"status": "COMPLETE", "value": 3, "unit": "requests"},
+          "apiControlPlane.dbTxnInFlightEstimate": {"status": "COMPLETE", "value": 0.75, "unit": "transactions", "limitationsInclude": ["TXN_PER_REQUEST_NOT_MEASURED"]}
+        },
+        "groups": {"apiControlPlane": {"status": "COMPLETE"}},
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "stateless-required-and-nminus-one",
+      "behavior": "requiredNodes=ceil(demand/(perNodeRate x (1-headroom))); N-1 uses the same headroom; synthetic evidence is ARITHMETIC_ONLY, not FIT_EVIDENCE_COMPLETE.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 3, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.requiredNodes": {"status": "COMPLETE", "value": 1, "unit": "nodes"},
+          "measuredNodes.core-api.nMinusOne": {"status": "COMPLETE", "value": true, "unit": "boolean"},
+          "measuredNodes.core-api.resourceEvidence": {"status": "COMPLETE", "value": true, "unit": "boolean"},
+          "measuredNodes.core-api": {"status": "NOT_VERIFIED", "value": "ARITHMETIC_ONLY"}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "deployed-below-required",
+      "behavior": "deployedNodes below requiredNodes is DEPLOYED_BELOW_REQUIRED/NOT_MET.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 37, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.requiredNodes": {"status": "COMPLETE", "value": 3, "unit": "nodes"},
+          "measuredNodes.core-api.nMinusOne": {"status": "NOT_MET", "value": false, "reasonsInclude": ["DEPLOYED_BELOW_REQUIRED"]},
+          "measuredNodes.core-api": {"status": "NOT_MET", "value": "NOT_MET"}
+        }
+      }
+    },
+    {
+      "id": "nminus-one-impossible",
+      "behavior": "Fewer than two deployed nodes cannot satisfy an N-1 test.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 1, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.nMinusOne": {"status": "NOT_MET", "value": false, "reasonsInclude": ["N_MINUS_ONE_IMPOSSIBLE"]},
+          "measuredNodes.core-api": {"status": "NOT_MET", "value": "NOT_MET"}
+        }
+      }
+    },
+    {
+      "id": "stateful-normal-and-degraded",
+      "behavior": "Stateful roles use measured normal/degraded aggregate capacity; no active-active node arithmetic is allowed.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "postgres",
+              "demandUnit": "transactionsPerSecond",
+              "demandQuantity": {"value": 100, "unit": "transactionsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredNormalTopologyCapacity": {"value": 120, "unit": "transactionsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredDegradedTopologyCapacity": {"value": 90, "unit": "transactionsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {
+              "role": "redis",
+              "demandUnit": "opsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "opsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredNormalTopologyCapacity": {"value": 12, "unit": "opsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredDegradedTopologyCapacity": {"value": 11, "unit": "opsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {
+              "role": "rabbitmq",
+              "demandUnit": "messagesPerSecond",
+              "demandQuantity": {"value": 20, "unit": "messagesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredNormalTopologyCapacity": {"value": 22, "unit": "messagesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredDegradedTopologyCapacity": {"value": 21, "unit": "messagesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.postgres.normalFit": {"status": "COMPLETE", "value": true},
+          "measuredNodes.postgres.degradedFit": {"status": "NOT_MET", "value": false},
+          "measuredNodes.postgres": {"status": "NOT_MET", "value": "NOT_MET"},
+          "measuredNodes.redis.normalFit": {"status": "COMPLETE", "value": true},
+          "measuredNodes.rabbitmq.normalFit": {"status": "COMPLETE", "value": true}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "gateway-shared-capacity",
+      "behavior": "media-gateway uses shared core-api/edge sessions capacity and PB_CONCURRENT_SESSIONS, never per-node arithmetic.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 80, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "media-gateway",
+              "demandUnit": "sessions",
+              "sharedCoreApiEdgeCapacity": {"value": 100, "unit": "sessions", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.media-gateway.sharedFit": {"status": "COMPLETE", "value": true, "limitationsInclude": ["SHARED_MEDIA_GATEWAY"]},
+          "measuredNodes.media-gateway": {"status": "NOT_VERIFIED", "value": "ARITHMETIC_ONLY"}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "gateway-node-arithmetic-forbidden",
+      "behavior": "perNodeRate on media-gateway is INVALID with SHARED_CAPACITY_NODE_ARITHMETIC_FORBIDDEN.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 80, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "media-gateway",
+              "demandUnit": "sessions",
+              "sharedCoreApiEdgeCapacity": {"value": 100, "unit": "sessions", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 10, "unit": "sessions", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {"measuredNodes.media-gateway": {"status": "INVALID", "valueNull": true, "reasonsInclude": ["SHARED_CAPACITY_NODE_ARITHMETIC_FORBIDDEN"]}},
+        "errorsInclude": [{"code": "SHARED_CAPACITY_NODE_ARITHMETIC_FORBIDDEN", "path": "measuredNodes.MEASURED_ROLE[0].perNodeRate"}]
+      }
+    },
+    {
+      "id": "resource-evidence-missing",
+      "behavior": "Missing CPU/RAM/connection/IOPS evidence or ref/date makes the resource check NOT_VERIFIED and blocks FIT_EVIDENCE_COMPLETE.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.resourceEvidence": {"status": "NOT_VERIFIED", "valueNull": true, "reasonsInclude": ["RESOURCE_EVIDENCE_MISSING"]},
+          "measuredNodes.core-api": {"status": "NOT_VERIFIED", "value": "NOT_VERIFIED", "limitationsInclude": ["RESOURCE_EVIDENCE_MISSING"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "resource-headroom-insufficient",
+      "behavior": "measured utilization + headroom > 1 is RESOURCE_HEADROOM_INSUFFICIENT/NOT_MET.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.95, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.resourceEvidence": {"status": "NOT_MET", "value": false, "reasonsInclude": ["RESOURCE_HEADROOM_INSUFFICIENT"]},
+          "measuredNodes.core-api": {"status": "NOT_MET", "value": "NOT_MET"}
+        }
+      }
+    },
+    {
+      "id": "input-utilization-over-one-is-invalid",
+      "behavior": "An input measured utilization above 1 is a Ratio01 RATIO_OUT_OF_RANGE, unlike derived utilization>1 which is NOT_MET.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 1.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "errorsInclude": [{"code": "RATIO_OUT_OF_RANGE", "path": "measuredNodes.MEASURED_ROLE[0].measuredCpuUtilization"}]
+      }
+    },
+    {
+      "id": "deployed-nodes-fraction",
+      "behavior": "deployedNodes is DiscreteCount; a fraction is COUNT_NOT_INTEGER.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 2.5, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "errorsInclude": [{"code": "COUNT_NOT_INTEGER", "path": "measuredNodes.MEASURED_ROLE[0].deployedNodes"}]
+      }
+    },
+    {
+      "id": "estimate-input-is-arithmetic-only",
+      "behavior": "ESTIMATE demand/capacity can be computed but cannot produce FIT_EVIDENCE_COMPLETE.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "ESTIMATE", "source": "s1-06-estimate", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "MEASURED", "source": "s1-06", "owner": "synthetic", "approval": "UNAPPROVED"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.requiredNodes": {"status": "COMPLETE", "value": 1, "unit": "nodes"},
+          "measuredNodes.core-api": {"status": "NOT_VERIFIED", "value": "ARITHMETIC_ONLY", "limitationsInclude": ["ESTIMATE_ONLY"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "fully-measured-fit-evidence",
+      "behavior": "All measured demand/capacity/resource evidence yields FIT_EVIDENCE_COMPLETE, but still no production/procurement approval or SKU recommendation.",
+      "input": {
+        "meta": {"status": "APPROVED_SOURCE_INPUTS", "source": "s1-06-measured", "approvedBy": "capacity-owner", "approvedAt": "2026-10-20T00:00:00Z"},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "MEASURED", "source": "s1-06", "owner": "telephony", "approval": "UNAPPROVED"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "MEASURED", "source": "s1-06", "owner": "platform", "approval": "UNAPPROVED"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api": {"status": "COMPLETE", "value": "FIT_EVIDENCE_COMPLETE"}
+        },
+        "errorsEmpty": true,
+        "forbiddenOutputStrings": ["sku"]
+      }
+    },
+    {
+      "id": "zero-demand-not-a-fit",
+      "behavior": "Zero measured demand is legal but yields ARITHMETIC_ONLY with ZERO_DEMAND_NOT_A_FIT.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 0, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": {"value": 20, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredCpuUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredRamUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredConnectionsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredIopsUtilization": {"value": 0.2, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "resourceEvidenceRef": "s1-06-evidence",
+              "measuredAt": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.core-api.requiredNodes": {"status": "COMPLETE", "value": 0, "unit": "nodes", "reasonsInclude": ["ZERO_DEMAND_NOT_A_FIT"]},
+          "measuredNodes.core-api": {"status": "NOT_VERIFIED", "value": "ARITHMETIC_ONLY", "reasonsInclude": ["ZERO_DEMAND_NOT_A_FIT"]}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "media-ai-worker-required-with-ai-input",
+      "behavior": "When AI task arrivals are present, media-ai-worker is a required role and its absence is ROLE_NOT_DECLARED.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "growthAndAsync": {
+          "AI_TASK_ARRIVALS_PS": {"value": 1, "unit": "tasksPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "measuredNodes": {"MEASURED_ROLE": []}
+      },
+      "expect": {
+        "metrics": {
+          "measuredNodes.media-ai-worker": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["ROLE_NOT_DECLARED"], "limitationsInclude": ["ROLE_NOT_DECLARED"]}
+        },
+        "groups": {"measuredNodes": {"status": "INCOMPLETE"}}
+      }
+    },
+    {
+      "id": "invalid-dominates-missing-in-node-fit",
+      "behavior": "A non-object leaf is both missing and invalid; nMinusOne, stateful normalFit, and sharedFit must report INVALID (STATUS_RANK/requiredNodes ordering), never NOT_VERIFIED/MEASUREMENT_REQUIRED.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 80, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "core-api",
+              "demandUnit": "requestsPerSecond",
+              "demandQuantity": {"value": 10, "unit": "requestsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "perNodeRate": 20,
+              "deployedNodes": {"value": 2, "unit": "nodes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {
+              "role": "postgres",
+              "demandUnit": "transactionsPerSecond",
+              "demandQuantity": {"value": 100, "unit": "transactionsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "measuredNormalTopologyCapacity": 120,
+              "measuredDegradedTopologyCapacity": {"value": 90, "unit": "transactionsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {
+              "role": "media-gateway",
+              "demandUnit": "sessions",
+              "sharedCoreApiEdgeCapacity": 100,
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {
+          "measuredNodes.core-api.nMinusOne": {"status": "INVALID", "valueNull": true, "invalidInclude": ["measuredNodes.MEASURED_ROLE[0].perNodeRate"], "reasonsInclude": ["TYPE_INVALID"]},
+          "measuredNodes.postgres.normalFit": {"status": "INVALID", "valueNull": true, "invalidInclude": ["measuredNodes.MEASURED_ROLE[1].measuredNormalTopologyCapacity"], "reasonsInclude": ["TYPE_INVALID"]},
+          "measuredNodes.media-gateway.sharedFit": {"status": "INVALID", "valueNull": true, "invalidInclude": ["measuredNodes.MEASURED_ROLE[2].sharedCoreApiEdgeCapacity"], "reasonsInclude": ["TYPE_INVALID"]}
+        },
+        "errorsInclude": [
+          {"code": "TYPE_INVALID", "path": "measuredNodes.MEASURED_ROLE[0].perNodeRate"},
+          {"code": "TYPE_INVALID", "path": "measuredNodes.MEASURED_ROLE[1].measuredNormalTopologyCapacity"},
+          {"code": "TYPE_INVALID", "path": "measuredNodes.MEASURED_ROLE[2].sharedCoreApiEdgeCapacity"}
+        ]
+      }
+    },
+    {
+      "id": "gateway-demand-mismatch",
+      "behavior": "A media-gateway demandQuantity that differs from PB_CONCURRENT_SESSIONS is ROLE_FIELD_MISMATCH.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 80, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "measuredNodes": {
+          "MEASURED_ROLE": [
+            {
+              "role": "media-gateway",
+              "demandUnit": "sessions",
+              "demandQuantity": {"value": 90, "unit": "sessions", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "sharedCoreApiEdgeCapacity": {"value": 100, "unit": "sessions", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "headroomRatio": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-06", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INVALID"},
+        "metrics": {"measuredNodes.media-gateway.sharedFit": {"status": "INVALID", "reasonsInclude": ["ROLE_FIELD_MISMATCH"]}},
+        "errorsInclude": [{"code": "ROLE_FIELD_MISMATCH", "path": "measuredNodes.MEASURED_ROLE[0].demandQuantity"}]
+      }
+    }
+  ]
+}

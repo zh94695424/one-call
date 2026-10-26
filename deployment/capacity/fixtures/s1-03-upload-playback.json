@@ -1,0 +1,222 @@
+{
+  "id": "s1-03-upload-playback",
+  "stage": "s1",
+  "description": "Daily upload average is a payload lower bound, concurrent upload wire peak is independent of the codec, overhead estimates are labelled, catch-up payload and wire are separate, and playback CDN arithmetic is conditional.",
+  "cases": [
+    {
+      "id": "upload-layers-and-playback",
+      "behavior": "daily payload = bytes/day x 8 / 86400; peak wire = concurrent x per-stream; payload estimate uses explicit overhead; catch-up = net x 8 and wire estimate uses the same overhead; playback concurrency/daily/origin are distinct.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 100, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_CONCURRENT_PEAK": {"value": 4, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_PER_STREAM_WIRE_BPS": {"value": 500000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_WIRE_OVERHEAD_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000000000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 900000000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 10000000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 2000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 1000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 100, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 5000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 1000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 50, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_BITRATE_BPS": {"value": 500000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_SESSIONS_PER_DAY": {"value": 1000, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_MEAN_SECONDS": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_CDN_CACHE_HIT_RATIO": {"value": 0.9, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.upload.dailyAveragePayload": {"status": "COMPLETE", "value": 4444.444444444444, "unit": "bitsPerSecond", "limitationsInclude": ["AVERAGE_NOT_PEAK"]},
+          "mediaIngestStorage.upload.peakWire": {"status": "COMPLETE", "value": 2000000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.upload.ongoingWire": {"status": "COMPLETE", "value": 2000000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.upload.peakPayloadEstimate": {"status": "COMPLETE", "value": 1800000, "unit": "bitsPerSecond", "limitationsInclude": ["ESTIMATE_ONLY"]},
+          "mediaIngestStorage.upload.backlogCatchUpPayloadBits": {"status": "COMPLETE", "value": 32000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.upload.backlogCatchUpWireEstimate": {"status": "COMPLETE", "value": 35555.555555555555, "unit": "bitsPerSecond", "limitationsInclude": ["ESTIMATE_ONLY"]},
+          "spool.used": {"status": "COMPLETE", "value": 100000000, "unit": "bytes"},
+          "spool.peakOccupancy": {"status": "COMPLETE", "value": 100200000, "unit": "bytes"},
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 10100000, "unit": "bytes"},
+          "spool.drainSeconds": {"status": "COMPLETE", "value": 2525, "unit": "seconds"},
+          "playback.peakBitsPerSecond": {"status": "COMPLETE", "value": 25000000, "unit": "bitsPerSecond"},
+          "playback.dailyPayloadBytes": {"status": "COMPLETE", "value": 3750000000, "unit": "bytesPerDay"},
+          "playback.originBytesPerDay": {"status": "COMPLETE", "value": 375000000, "unit": "bytesPerDay", "limitationsInclude": ["CONDITIONAL_CACHE_SCENARIO", "NO_CDN_TOPOLOGY_APPROVAL"]}
+        },
+        "groups": {"spool": {"status": "COMPLETE"}, "playback": {"status": "COMPLETE"}},
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "peak-inputs-missing",
+      "behavior": "Missing concurrent peak without an explicit measured peak yields PEAK_INPUTS_MISSING and INCOMPLETE rather than a zero-factor shortcut.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 100, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_PER_STREAM_WIRE_BPS": {"value": 500000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_WIRE_OVERHEAD_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.upload.peakWire": {"status": "INCOMPLETE", "valueNull": true, "reasonsInclude": ["PEAK_INPUTS_MISSING"], "limitationsInclude": ["PEAK_INPUTS_MISSING"], "missingInclude": ["mediaIngestStorage.UPLOAD_CONCURRENT_PEAK"]},
+          "mediaIngestStorage.upload.peakPayloadEstimate": {"status": "INCOMPLETE", "valueNull": true},
+          "mediaIngestStorage.upload.ongoingWire": {"status": "INCOMPLETE", "valueNull": true}
+        },
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "explicit-measured-peak-preferred",
+      "behavior": "UPLOAD_MEASURED_PEAK_WIRE_BPS takes precedence over concurrent x per-stream.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "UPLOAD_MEASURED_PEAK_WIRE_BPS": {"value": 3000000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_CONCURRENT_PEAK": {"value": 1, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_PER_STREAM_WIRE_BPS": {"value": 1, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_WIRE_OVERHEAD_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.upload.peakWire": {"status": "COMPLETE", "value": 3000000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.upload.peakPayloadEstimate": {"status": "COMPLETE", "value": 2700000, "unit": "bitsPerSecond"}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "overhead-missing-wire-incomplete",
+      "behavior": "Without explicit wire overhead, peak payload and catch-up payload already estimated from wire stay unknown while catch-up payload remains COMPLETE; payload is never labelled wire.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 100, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_CONCURRENT_PEAK": {"value": 4, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_PER_STREAM_WIRE_BPS": {"value": 500000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 1000000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 0, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 200, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 100, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 5000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 1000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "mediaIngestStorage.upload.peakWire": {"status": "COMPLETE", "value": 2000000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.upload.peakPayloadEstimate": {"status": "INCOMPLETE", "valueNull": true, "missingInclude": ["mediaIngestStorage.UPLOAD_WIRE_OVERHEAD_RATIO"]},
+          "mediaIngestStorage.upload.backlogCatchUpPayloadBits": {"status": "COMPLETE", "value": 32000, "unit": "bitsPerSecond"},
+          "mediaIngestStorage.upload.backlogCatchUpWireEstimate": {"status": "INCOMPLETE", "valueNull": true, "missingInclude": ["mediaIngestStorage.UPLOAD_WIRE_OVERHEAD_RATIO"]}
+        },
+        "noInvalidMetrics": true
+      }
+    },
+    {
+      "id": "zero-backlog-catch-up",
+      "behavior": "Zero backlog with zero net throughput drains in zero time and produces zero catch-up payload/wire.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "REC_BITRATE_BPS": {"value": 64000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_MEAN_VALIDATED_S": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "REC_PER_DAY": {"value": 100, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_CONCURRENT_PEAK": {"value": 0, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_PER_STREAM_WIRE_BPS": {"value": 0, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "UPLOAD_WIRE_OVERHEAD_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 1000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 0, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 100, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 0, "unit": "bytes"},
+          "spool.drainSeconds": {"status": "COMPLETE", "value": 0, "unit": "seconds", "reasonsInclude": ["IDLE_ZERO_DENOMINATOR"]},
+          "mediaIngestStorage.upload.backlogCatchUpPayloadBits": {"status": "COMPLETE", "value": 0, "unit": "bitsPerSecond", "limitationsInclude": ["ZERO_FACTOR_SHORT_CIRCUIT"]},
+          "mediaIngestStorage.upload.backlogCatchUpWireEstimate": {"status": "COMPLETE", "value": 0, "unit": "bitsPerSecond"}
+        },
+        "errorsEmpty": true
+      }
+    },
+    {
+      "id": "playback-cache-ratio-missing",
+      "behavior": "Missing CDN cache-hit ratio leaves origin bytes unknown; no CDN topology or default hit ratio is assumed.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 50, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_BITRATE_BPS": {"value": 500000, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_SESSIONS_PER_DAY": {"value": 1000, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_MEAN_SECONDS": {"value": 60, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "metrics": {
+          "playback.dailyPayloadBytes": {"status": "COMPLETE", "value": 3750000000, "unit": "bytesPerDay"},
+          "playback.originBytesPerDay": {"status": "INCOMPLETE", "valueNull": true, "missingInclude": ["playback.PB_CDN_CACHE_HIT_RATIO"], "limitationsInclude": ["CONDITIONAL_CACHE_SCENARIO", "NO_CDN_TOPOLOGY_APPROVAL"]}
+        },
+        "groups": {"playback": {"status": "INCOMPLETE", "partial": true}}
+      }
+    },
+    {
+      "id": "catch-up-drain-impossible",
+      "behavior": "Positive end-of-outage backlog with nonpositive net recovery throughput produces zero catch-up plus DRAIN_IMPOSSIBLE/NOT_MET.",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "approvedBy": null, "approvedAt": null},
+        "mediaIngestStorage": {
+          "UPLOAD_WIRE_OVERHEAD_RATIO": {"value": 0.1, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        },
+        "spool": {
+          "SPOOL_DISK_BYTES": {"value": 1000000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_FREE_BYTES": {"value": 900000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_EXISTING_BYTES": {"value": 10000, "unit": "bytes", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_PEAK_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_NEW_AVG_BYTES_PS": {"value": 0, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03-spool-window", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_OUTAGE_S": {"value": 10, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_HEADROOM_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_RECOVERY_TOTAL_BYTES_PS": {"value": 1000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "SPOOL_CONTINUING_BYTES_PS": {"value": 1000, "unit": "bytesPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s1-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "NOT_MET"},
+        "metrics": {
+          "spool.recoveryBacklog": {"status": "COMPLETE", "value": 10000, "unit": "bytes"},
+          "spool.recoveryNetPayloadBytesPerSecond": {"status": "COMPLETE", "value": 0, "unit": "bytesPerSecond"},
+          "spool.drainSeconds": {"status": "NOT_MET", "valueNull": true, "reasonsInclude": ["DRAIN_IMPOSSIBLE"]},
+          "mediaIngestStorage.upload.backlogCatchUpPayloadBits": {"status": "NOT_MET", "value": 0, "unit": "bitsPerSecond", "reasonsInclude": ["DRAIN_IMPOSSIBLE"]},
+          "mediaIngestStorage.upload.backlogCatchUpWireEstimate": {"status": "NOT_MET", "value": 0, "unit": "bitsPerSecond"}
+        }
+      }
+    }
+  ]
+}

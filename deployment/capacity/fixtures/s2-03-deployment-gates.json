@@ -1,0 +1,183 @@
+{
+  "stage": "s2",
+  "fixture": "s2-03-deployment-gates",
+  "syntheticOnly": true,
+  "cases": [
+    {
+      "id": "gates-fail-closed-empty",
+      "behavior": "missing node/storage/cloud evidence keeps deployment gates incomplete; no positive deployment-fit or SKU recommendation is emitted",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "approvedBy": null, "approvedAt": null}
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "productionReady": false, "procurementReady": false, "cloudVerified": false, "a3RiskClosed": false},
+        "groups": {"backupRecovery": {"status": "INCOMPLETE"}, "capabilityEvidence": {"status": "INCOMPLETE"}},
+        "flagsInclude": ["DEPLOYMENT_EVIDENCE_INCOMPLETE", "NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED"],
+        "errorsEmpty": true,
+        "forbiddenOutputStrings": ["FIT_EVIDENCE_COMPLETE"]
+      }
+    },
+    {
+      "id": "arithmetic-complete-but-not-production-ready",
+      "behavior": "complete backup arithmetic and a claimed capability never set productionReady/procurementReady/cloudVerified/a3RiskClosed",
+      "repeat": true,
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "backupRecovery": {
+          "BACKUP_DEPENDENCY": [
+            {
+              "dependencyId": "postgresPitr",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-03/pg"
+            },
+            {
+              "dependencyId": "cosVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-03/cos"
+            },
+            {
+              "dependencyId": "kmsKeyVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-03/kms"
+            },
+            {
+              "dependencyId": "secretVersions",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-03/secret"
+            },
+            {
+              "dependencyId": "reconciliationOutbox",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-03/outbox"
+            },
+            {
+              "dependencyId": "ivrLocalFacts",
+              "included": true,
+              "approvedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "approvedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "restoreTestedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRpoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "observedRtoSeconds": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+              "owner": "synthetic",
+              "evidenceRef": "drill://s2-03/ivr-local"
+            }
+          ]
+        },
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {
+              "capabilityId": "CV-1",
+              "status": "CLAIMED_VERIFIED",
+              "claimedBy": "synthetic-claimant",
+              "owner": "synthetic-owner",
+              "source": "s2-03",
+              "evidenceRef": "evidence://s2-03/CV-1",
+              "verifiedAt": {"value": "2026-10-01T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+            },
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "productionReady": false, "procurementReady": false, "cloudVerified": false, "a3RiskClosed": false},
+        "groups": {"backupRecovery": {"status": "COMPLETE"}, "capabilityEvidence": {"status": "NOT_VERIFIED"}},
+        "metrics": {
+          "backupRecovery.closure": {"status": "COMPLETE", "value": "BACKUP_CLOSURE_COMPLETE", "formulaId": "F-BACKUP-01"},
+          "capabilityEvidence.CV-1": {"status": "NOT_VERIFIED", "value": "CLAIMED_VERIFIED"}
+        },
+        "flagsInclude": ["DEPLOYMENT_EVIDENCE_INCOMPLETE", "NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED"],
+        "errorsEmpty": true,
+        "noInvalidMetrics": true,
+        "forbiddenOutputStrings": ["FIT_EVIDENCE_COMPLETE"]
+      }
+    },
+    {
+      "id": "region-sku-unverified-gate",
+      "behavior": "unverified region/AZ/SKU evidence is NOT_VERIFIED and keeps deployment evidence incomplete; no SKU or region value is invented",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "approvedBy": null, "approvedAt": null},
+        "asOf": {"value": "2026-10-20T00:00:00Z", "unit": "iso8601", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+        "capabilityEvidence": {
+          "CAPABILITY": [
+            {"capabilityId": "CV-1", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-2", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-3", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-4", "status": "UNVERIFIED"},
+            {"capabilityId": "CV-5", "status": "UNVERIFIED"},
+            {"capabilityId": "regionAzSku", "status": "UNVERIFIED"}
+          ]
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE", "productionReady": false, "procurementReady": false, "cloudVerified": false, "a3RiskClosed": false},
+        "groups": {"capabilityEvidence": {"status": "NOT_VERIFIED"}},
+        "metrics": {
+          "capabilityEvidence.regionAzSku": {"status": "NOT_VERIFIED", "value": "UNVERIFIED", "limitationsInclude": ["DEPLOYMENT_EVIDENCE_INCOMPLETE"]}
+        },
+        "flagsInclude": ["DEPLOYMENT_EVIDENCE_INCOMPLETE", "NO_CLOUD_VERIFICATION", "A3_RISK_NOT_CLOSED"],
+        "errorsEmpty": true,
+        "forbiddenOutputStrings": ["FIT_EVIDENCE_COMPLETE"]
+      }
+    },
+    {
+      "id": "s1-formula-regression-zero-playback",
+      "behavior": "stage s2 keeps S1 arithmetic intact: zero playback inputs produce a legal zero, not a missing value",
+      "input": {
+        "meta": {"status": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "approvedBy": null, "approvedAt": null},
+        "playback": {
+          "PB_CONCURRENT_SESSIONS": {"value": 0, "unit": "count", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_BITRATE_BPS": {"value": 0, "unit": "bitsPerSecond", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_SESSIONS_PER_DAY": {"value": 0, "unit": "countPerDay", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_MEAN_SECONDS": {"value": 0, "unit": "seconds", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"},
+          "PB_CDN_CACHE_HIT_RATIO": {"value": 0, "unit": "ratio", "provenance": "SYNTHETIC_TEST_ONLY", "source": "s2-03", "owner": "synthetic", "approval": "SYNTHETIC_TEST_ONLY"}
+        }
+      },
+      "expect": {
+        "root": {"status": "INCOMPLETE"},
+        "groups": {"playback": {"status": "COMPLETE"}},
+        "metrics": {
+          "playback.peakBitsPerSecond": {"status": "COMPLETE", "value": 0, "unit": "bitsPerSecond"},
+          "playback.dailyPayloadBytes": {"status": "COMPLETE", "value": 0, "unit": "bytesPerDay"},
+          "playback.originBytesPerDay": {"status": "COMPLETE", "value": 0, "unit": "bytesPerDay"}
+        },
+        "errorsEmpty": true,
+        "noInvalidMetrics": true
+      }
+    }
+  ]
+}
