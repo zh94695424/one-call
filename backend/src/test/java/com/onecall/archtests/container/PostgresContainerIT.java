@@ -39,8 +39,10 @@ import org.testcontainers.utility.DockerImageName;
  * idempotency/Outbox first-result and transaction atomicity; audit append-only, reason/denylist,
  * fixed-search-path (V001 functions, the six V002 guards and the four subject_number functions)
  * and privilege boundaries; the PA2 S3 runtime/cross-module privilege matrix and last-enabled-admin
- * serialization protocol (transient SQL, no database function); plus the PA3 S1 exact V003
- * catalog/guard inventory and owner/PUBLIC/runtime ACL matrix. There is no skip path: an
+ * serialization protocol (transient SQL, no database function); the PA3 S1 exact V003
+ * catalog/guard inventory and owner/PUBLIC/runtime ACL matrix; and the PA3 S2 V003 subject
+ * owner/real-name, binding lifecycle/active-number, append-only claim, risk revision and
+ * active-binding concurrency backstops. There is no skip path: an
  * unavailable Docker daemon, failed image pull, failed container start, JDBC failure, Flyway
  * failure or assertion failure fails the Maven build. The password is generated per JVM run and
  * never persisted.
@@ -1262,6 +1264,36 @@ class PostgresContainerIT {
             assertV003PublicAclIsZero(connection);
             assertV003GuardFunctionExecuteBoundaries(connection);
         }
+    }
+
+    // PA3 V003 S2: executable data, lifecycle and concurrency backstops. Methods 21-24 run in a
+    // single rolled-back transaction (savepoints isolate expected failures), so no test row,
+    // especially no append-only claim row, survives. The concurrency method commits only
+    // deletable binding/subject rows and removes them FK-safely.
+    @Test
+    void subjectOwnerSetOnceAndRealNameSeparation() throws Exception {
+        assertSubjectOwnerSetOnceAndRealNameSeparation();
+    }
+
+    @Test
+    void bindingLifecycleTerminalityAndActiveNumberUniqueness() throws Exception {
+        assertBindingLifecycleTerminalityAndActiveNumberUniqueness();
+    }
+
+    @Test
+    void appendOnlyClaimAndForeignKeyBackstops() throws Exception {
+        assertAppendOnlyClaimAndForeignKeyBackstops();
+    }
+
+    @Test
+    void riskOpenClearReopenRevisionProtocol() throws Exception {
+        assertRiskOpenClearReopenRevisionProtocol();
+    }
+
+    @Test
+    void concurrentActiveBindingUniquenessHasOneWinner() throws Exception {
+        runConcurrentActiveBindingCommitRace();
+        runConcurrentActiveBindingRollbackRace();
     }
 
     /**
@@ -6106,6 +6138,836 @@ class PostgresContainerIT {
             assertThat(queryLong(connection,
                     "SELECT count(*) FROM organization_access.organization WHERE id = ?",
                     organizationId)).isZero();
+        }
+    }
+
+    private static void resetToMigrationIdentity(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("RESET ROLE");
+        }
+        assertThat(queryString(connection, "SELECT current_user")).isEqualTo(DB_USER);
+    }
+
+    private static int insertSubject(Connection connection, UUID id, String source)
+            throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO subject_number.business_subject (id, source) VALUES (?, ?)",
+                id, source);
+    }
+
+    private static int insertBinding(
+            Connection connection,
+            UUID id,
+            UUID subjectId,
+            String numberType,
+            String ciphertext,
+            String hmac,
+            String masked,
+            String status,
+            OffsetDateTime verifiedAt,
+            int revision) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO subject_number.caller_number_binding (id, subject_id, number_type, "
+                        + "number_ciphertext, number_hmac, number_masked, status, verified_at, revision) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, subjectId, numberType, ciphertext, hmac, masked, status, verifiedAt, revision);
+    }
+
+    private static int insertClaim(
+            Connection connection,
+            UUID id,
+            UUID subjectId,
+            UUID accountId,
+            UUID organizationId,
+            String verificationMethod,
+            String verificationRef,
+            String requestId,
+            String status,
+            OffsetDateTime riskCheckedAt,
+            OffsetDateTime verifiedAt) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO subject_number.subject_claim (id, subject_id, account_id, "
+                        + "organization_id, verification_method, verification_ref_ciphertext, "
+                        + "request_id, status, risk_checked_at, verified_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, subjectId, accountId, organizationId, verificationMethod, verificationRef,
+                requestId, status, riskCheckedAt, verifiedAt);
+    }
+
+    private static int insertRisk(
+            Connection connection,
+            UUID id,
+            UUID bindingId,
+            String riskType,
+            String state,
+            String source,
+            OffsetDateTime observedAt,
+            OffsetDateTime clearedAt,
+            int revision) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO subject_number.subject_risk_state (id, caller_number_binding_id, "
+                        + "risk_type, state, source, observed_at, cleared_at, revision) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                id, bindingId, riskType, state, source, observedAt, clearedAt, revision);
+    }
+
+    private static void assertSubjectOwnerSetOnceAndRealNameSeparation() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        String hmac = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "S2 Subject Customer"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "S2 Subject Organization"))
+                        .isEqualTo(1);
+
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT real_name_status FROM subject_number.business_subject WHERE id = ?",
+                        subjectId)).isEqualTo("UNVERIFIED");
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ? "
+                                + "AND owner_account_id IS NULL AND owner_organization_id IS NULL "
+                                + "AND revision = 1", subjectId)).isEqualTo(1);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.business_subject SET owner_account_id = ?, "
+                                + "revision = revision + 1, updated_at = now() "
+                                + "WHERE id = ? AND revision = 1", accountId, subjectId)).isEqualTo(1);
+                assertThat(queryUuid(connection,
+                        "SELECT owner_account_id::text FROM subject_number.business_subject "
+                                + "WHERE id = ?", subjectId)).isEqualTo(accountId);
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM subject_number.business_subject WHERE id = ?", subjectId))
+                        .isEqualTo(2);
+
+                expectSqlFailure(connection, "P0001", "SUBJECT_OWNER_IMMUTABLE",
+                        "UPDATE subject_number.business_subject SET owner_account_id = ?, "
+                                + "revision = revision + 1, updated_at = now() WHERE id = ?",
+                        UUID.randomUUID(), subjectId);
+                expectSqlFailure(connection, "P0001", "SUBJECT_OWNER_IMMUTABLE",
+                        "UPDATE subject_number.business_subject SET owner_account_id = NULL, "
+                                + "revision = revision + 1, updated_at = now() WHERE id = ?",
+                        subjectId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.business_subject SET owner_organization_id = ? "
+                                + "WHERE id = ?", organizationId, subjectId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.business_subject SET real_name_status = 'VERIFIED', "
+                                + "real_name_verified_at = now() WHERE id = ?", subjectId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "INSERT INTO subject_number.business_subject (id, owner_account_id, source) "
+                                + "VALUES (?, ?, 'IVR')", UUID.randomUUID(), accountId);
+
+                assertThat(insertBinding(connection, bindingId, subjectId, "MOBILE",
+                        "v1.s2.subject.ciphertext", hmac, "138****0001", "ACTIVE",
+                        OffsetDateTime.now(ZoneOffset.UTC), 1)).isEqualTo(1);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.caller_number_binding SET number_hmac = ? WHERE id = ?",
+                        randomSha256(), bindingId);
+
+                switchLocalRole(connection, "subject_identity_verification_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.business_subject SET real_name_status = 'VERIFIED', "
+                                + "real_name_verified_at = now(), revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ? AND revision = 2", subjectId))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT real_name_status FROM subject_number.business_subject WHERE id = ?",
+                        subjectId)).isEqualTo("VERIFIED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM subject_number.business_subject WHERE id = ?", subjectId))
+                        .isEqualTo(3);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.business_subject SET owner_account_id = ? WHERE id = ?",
+                        UUID.randomUUID(), subjectId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.business_subject SET source = 'WEB' WHERE id = ?",
+                        subjectId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "INSERT INTO subject_number.business_subject (id, source) VALUES (?, 'IVR')",
+                        UUID.randomUUID());
+
+                switchLocalRole(connection, "subject_number_owner");
+                expectSqlFailure(connection, "P0001", "SUBJECT_OWNER_IMMUTABLE",
+                        "UPDATE subject_number.business_subject SET real_name_status = 'UNVERIFIED', "
+                                + "real_name_verified_at = NULL, revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ?", subjectId);
+                expectSqlFailure(connection, "P0001", "SUBJECT_OWNER_IMMUTABLE",
+                        "UPDATE subject_number.business_subject SET source = 'WEB' WHERE id = ?",
+                        subjectId);
+
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_subject_single_owner",
+                                "INSERT INTO subject_number.business_subject "
+                                        + "(id, owner_account_id, owner_organization_id, source) "
+                                        + "VALUES (?, ?, ?, 'IVR')",
+                                UUID.randomUUID(), accountId, organizationId),
+                        checkProbe("ck_subject_source",
+                                "INSERT INTO subject_number.business_subject (id, source) "
+                                        + "VALUES (?, 'BAD')", UUID.randomUUID()),
+                        checkProbe("ck_subject_real_name_status",
+                                "INSERT INTO subject_number.business_subject "
+                                        + "(id, source, real_name_status) VALUES (?, 'IVR', 'BAD')",
+                                UUID.randomUUID()),
+                        checkProbe("ck_subject_real_name_shape",
+                                "INSERT INTO subject_number.business_subject "
+                                        + "(id, source, real_name_status) VALUES (?, 'IVR', 'VERIFIED')",
+                                UUID.randomUUID()),
+                        checkProbe("ck_subject_revision",
+                                "INSERT INTO subject_number.business_subject "
+                                        + "(id, source, revision) VALUES (?, 'IVR', 0)",
+                                UUID.randomUUID()),
+                        checkProbe("ck_subject_time_order",
+                                "INSERT INTO subject_number.business_subject "
+                                        + "(id, source, created_at, updated_at) "
+                                        + "VALUES (?, 'IVR', now(), now() - interval '1 second')",
+                                UUID.randomUUID()));
+                List<String> probed = new ArrayList<>();
+                for (CheckProbe probe : probes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all six business_subject named checks have a violating probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                V003_CHECK_DEF_MAP.get("business_subject").keySet());
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?", bindingId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+        }
+    }
+
+    private static void assertBindingLifecycleTerminalityAndActiveNumberUniqueness() throws Exception {
+        UUID subjectA = UUID.randomUUID();
+        UUID subjectB = UUID.randomUUID();
+        UUID activeBinding = UUID.randomUUID();
+        String activeHmac = randomSha256();
+        String ciphertext = "v1.s2.binding.ciphertext";
+        String masked = "139****0002";
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectA, "MINIAPP")).isEqualTo(1);
+                assertThat(insertSubject(connection, subjectB, "WEB")).isEqualTo(1);
+                assertThat(insertBinding(connection, activeBinding, subjectA, "MOBILE", ciphertext,
+                        activeHmac, masked, "ACTIVE", OffsetDateTime.now(ZoneOffset.UTC), 1))
+                        .isEqualTo(1);
+                assertThat(insertBinding(connection, UUID.randomUUID(), subjectB, "MOBILE", ciphertext,
+                        randomSha256(), masked, "DISABLED", null, 1)).isEqualTo(1);
+
+                String probeSql = "INSERT INTO subject_number.caller_number_binding "
+                        + "(id, subject_id, number_type, number_ciphertext, number_hmac, "
+                        + "number_masked, status, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_binding_number_type", probeSql,
+                                UUID.randomUUID(), subjectA, "BAD", ciphertext, randomSha256(), masked,
+                                "DISABLED", 1),
+                        checkProbe("ck_binding_number_ciphertext", probeSql,
+                                UUID.randomUUID(), subjectA, "MOBILE", "plain", randomSha256(), masked,
+                                "DISABLED", 1),
+                        checkProbe("ck_binding_number_hmac", probeSql,
+                                UUID.randomUUID(), subjectA, "MOBILE", ciphertext, "A".repeat(64),
+                                masked, "DISABLED", 1),
+                        checkProbe("ck_binding_number_masked", probeSql,
+                                UUID.randomUUID(), subjectA, "MOBILE", ciphertext, randomSha256(), "",
+                                "DISABLED", 1),
+                        checkProbe("ck_binding_status", probeSql,
+                                UUID.randomUUID(), subjectA, "MOBILE", ciphertext, randomSha256(), masked,
+                                "BAD", 1),
+                        checkProbe("ck_binding_verified_shape", probeSql,
+                                UUID.randomUUID(), subjectA, "MOBILE", ciphertext, randomSha256(), masked,
+                                "ACTIVE", 1),
+                        checkProbe("ck_binding_revision", probeSql,
+                                UUID.randomUUID(), subjectA, "MOBILE", ciphertext, randomSha256(), masked,
+                                "DISABLED", 0));
+                List<String> probed = new ArrayList<>();
+                for (CheckProbe probe : probes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all seven caller_number_binding named checks have a violating probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                V003_CHECK_DEF_MAP.get("caller_number_binding").keySet());
+
+                expectSqlFailure(connection, "23505", "uq_binding_active_number",
+                        "INSERT INTO subject_number.caller_number_binding (id, subject_id, "
+                                + "number_type, number_ciphertext, number_hmac, number_masked, status, "
+                                + "verified_at) VALUES (?, ?, 'MOBILE', ?, ?, ?, 'ACTIVE', now())",
+                        UUID.randomUUID(), subjectB, ciphertext, activeHmac, masked);
+
+                String subjectNumberHmac = randomSha256();
+                assertThat(insertBinding(connection, UUID.randomUUID(), subjectA, "MOBILE", ciphertext,
+                        subjectNumberHmac, masked, "DISABLED", null, 1)).isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_binding_subject_number",
+                        "INSERT INTO subject_number.caller_number_binding (id, subject_id, "
+                                + "number_type, number_ciphertext, number_hmac, number_masked, status) "
+                                + "VALUES (?, ?, 'MOBILE', ?, ?, ?, 'DISABLED')",
+                        UUID.randomUUID(), subjectA, ciphertext, subjectNumberHmac, masked);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.caller_number_binding SET status = 'DISABLED', "
+                                + "revision = revision + 1 WHERE id = ? AND status = 'ACTIVE' "
+                                + "AND revision = 1", activeBinding)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM subject_number.caller_number_binding WHERE id = ?",
+                        activeBinding)).isEqualTo("DISABLED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM subject_number.caller_number_binding WHERE id = ?",
+                        activeBinding)).isEqualTo(2);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.caller_number_binding SET status = 'ACTIVE', "
+                                + "verified_at = now(), revision = revision + 1 WHERE id = ? "
+                                + "AND status = 'DISABLED' AND revision = 2", activeBinding))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM subject_number.caller_number_binding WHERE id = ?",
+                        activeBinding)).isEqualTo("ACTIVE");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM subject_number.caller_number_binding WHERE id = ?",
+                        activeBinding)).isEqualTo(3);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.caller_number_binding SET status = 'RETIRED', "
+                                + "revision = revision + 1 WHERE id = ? AND status = 'ACTIVE' "
+                                + "AND revision = 3", activeBinding)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM subject_number.caller_number_binding WHERE id = ?",
+                        activeBinding)).isEqualTo("RETIRED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM subject_number.caller_number_binding WHERE id = ?",
+                        activeBinding)).isEqualTo(4);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.caller_number_binding SET status = 'DISABLED', "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1",
+                        activeBinding)).isZero();
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.caller_number_binding SET status = 'RETIRED', "
+                                + "revision = revision + 1 WHERE id = ? AND status = 'ACTIVE' "
+                                + "AND revision = 4", activeBinding)).isZero();
+
+                switchLocalRole(connection, "subject_number_owner");
+                expectSqlFailure(connection, "P0001", "CALLER_NUMBER_BINDING_IMMUTABLE",
+                        "UPDATE subject_number.caller_number_binding SET number_hmac = ? WHERE id = ?",
+                        randomSha256(), activeBinding);
+                switchLocalRole(connection, "subject_number_role");
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.caller_number_binding SET number_hmac = ? WHERE id = ?",
+                        randomSha256(), activeBinding);
+
+                expectSqlFailure(connection, "23503", "fk_binding_subject",
+                        "INSERT INTO subject_number.caller_number_binding (id, subject_id, "
+                                + "number_type, number_ciphertext, number_hmac, number_masked, status) "
+                                + "VALUES (?, ?, 'MOBILE', ?, ?, ?, 'DISABLED')",
+                        UUID.randomUUID(), UUID.randomUUID(), ciphertext, randomSha256(), masked);
+
+                resetToMigrationIdentity(connection);
+                expectSqlFailure(connection, "23503", "fk_binding_subject",
+                        "DELETE FROM subject_number.business_subject WHERE id = ?", subjectA);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.caller_number_binding "
+                            + "WHERE subject_id IN (?, ?)", subjectA, subjectB)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id IN (?, ?)",
+                    subjectA, subjectB)).isZero();
+        }
+    }
+
+    private static void assertAppendOnlyClaimAndForeignKeyBackstops() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID acceptedClaim = UUID.randomUUID();
+        String acceptedRequest = "s2-claim-" + UUID.randomUUID();
+        OffsetDateTime riskCheckedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime verifiedAt = riskCheckedAt.plusSeconds(1);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "S2 Claim Customer"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "S2 Claim Organization"))
+                        .isEqualTo(1);
+
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                UUID probeSubject = UUID.randomUUID();
+                assertThat(insertSubject(connection, probeSubject, "WEB")).isEqualTo(1);
+                assertThat(insertClaim(connection, acceptedClaim, subjectId, accountId, null,
+                        "SMS", "v1.s2.claim.ref", acceptedRequest, "ACCEPTED",
+                        riskCheckedAt, verifiedAt)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.subject_claim WHERE id = ? "
+                                + "AND status = 'ACCEPTED' AND verified_at IS NOT NULL", acceptedClaim))
+                        .isEqualTo(1);
+
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.subject_claim SET status = 'REJECTED' WHERE id = ?",
+                        acceptedClaim);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "DELETE FROM subject_number.subject_claim WHERE id = ?", acceptedClaim);
+
+                switchLocalRole(connection, "subject_number_owner");
+                expectSqlFailure(connection, "P0001", "SUBJECT_CLAIM_APPEND_ONLY",
+                        "UPDATE subject_number.subject_claim SET status = 'REJECTED' WHERE id = ?",
+                        acceptedClaim);
+                expectSqlFailure(connection, "P0001", "SUBJECT_CLAIM_APPEND_ONLY",
+                        "DELETE FROM subject_number.subject_claim WHERE id = ?", acceptedClaim);
+                switchLocalRole(connection, "subject_number_role");
+
+                String probeSql = "INSERT INTO subject_number.subject_claim "
+                        + "(id, subject_id, account_id, verification_method, "
+                        + "verification_ref_ciphertext, request_id, status, risk_checked_at, "
+                        + "verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                OffsetDateTime earlyVerifiedAt = riskCheckedAt.minusSeconds(3600);
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_claim_verification_method", probeSql,
+                                UUID.randomUUID(), probeSubject, accountId, "BAD", "v1.s2.claim.ref",
+                                "s2-claim-method-" + UUID.randomUUID(), "REJECTED", riskCheckedAt,
+                                null),
+                        checkProbe("ck_claim_verification_ref", probeSql,
+                                UUID.randomUUID(), probeSubject, accountId, "SMS", "plain",
+                                "s2-claim-ref-" + UUID.randomUUID(), "REJECTED", riskCheckedAt, null),
+                        checkProbe("ck_claim_request_id", probeSql,
+                                UUID.randomUUID(), probeSubject, accountId, "SMS", "v1.s2.claim.ref",
+                                "", "REJECTED", riskCheckedAt, null),
+                        checkProbe("ck_claim_status", probeSql,
+                                UUID.randomUUID(), probeSubject, accountId, "SMS", "v1.s2.claim.ref",
+                                "s2-claim-status-" + UUID.randomUUID(), "BAD", riskCheckedAt, null),
+                        checkProbe("ck_claim_verified_shape", probeSql,
+                                UUID.randomUUID(), probeSubject, accountId, "SMS", "v1.s2.claim.ref",
+                                "s2-claim-shape-" + UUID.randomUUID(), "ACCEPTED", riskCheckedAt,
+                                null),
+                        checkProbe("ck_claim_verified_after_risk", probeSql,
+                                UUID.randomUUID(), probeSubject, accountId, "SMS", "v1.s2.claim.ref",
+                                "s2-claim-order-" + UUID.randomUUID(), "ACCEPTED", riskCheckedAt,
+                                earlyVerifiedAt));
+                List<String> probed = new ArrayList<>();
+                for (CheckProbe probe : probes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all six subject_claim named checks have a violating probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                V003_CHECK_DEF_MAP.get("subject_claim").keySet());
+
+                expectSqlFailure(connection, "23505", "uq_claim_accepted_subject_account",
+                        "INSERT INTO subject_number.subject_claim (id, subject_id, account_id, "
+                                + "verification_method, verification_ref_ciphertext, request_id, "
+                                + "status, risk_checked_at, verified_at) "
+                                + "VALUES (?, ?, ?, 'SMS', 'v1.s2.claim.ref', ?, 'ACCEPTED', ?, ?)",
+                        UUID.randomUUID(), subjectId, accountId,
+                        "s2-claim-dup-" + UUID.randomUUID(), riskCheckedAt, verifiedAt);
+
+                expectSqlFailure(connection, "23505", "uq_claim_request",
+                        "INSERT INTO subject_number.subject_claim (id, subject_id, account_id, "
+                                + "verification_method, verification_ref_ciphertext, request_id, "
+                                + "status, risk_checked_at) "
+                                + "VALUES (?, ?, ?, 'SMS', 'v1.s2.claim.ref', ?, 'REJECTED', ?)",
+                        UUID.randomUUID(), subjectId, accountId, acceptedRequest, riskCheckedAt);
+
+                expectSqlFailure(connection, "23503", "fk_claim_subject",
+                        "INSERT INTO subject_number.subject_claim (id, subject_id, account_id, "
+                                + "verification_method, verification_ref_ciphertext, request_id, "
+                                + "status, risk_checked_at) "
+                                + "VALUES (?, ?, ?, 'SMS', 'v1.s2.claim.ref', ?, 'REJECTED', ?)",
+                        UUID.randomUUID(), UUID.randomUUID(), accountId,
+                        "s2-claim-subject-parent-" + UUID.randomUUID(), riskCheckedAt);
+                expectSqlFailure(connection, "23503", "fk_claim_account",
+                        "INSERT INTO subject_number.subject_claim (id, subject_id, account_id, "
+                                + "verification_method, verification_ref_ciphertext, request_id, "
+                                + "status, risk_checked_at) "
+                                + "VALUES (?, ?, ?, 'SMS', 'v1.s2.claim.ref', ?, 'REJECTED', ?)",
+                        UUID.randomUUID(), subjectId, UUID.randomUUID(),
+                        "s2-claim-account-parent-" + UUID.randomUUID(), riskCheckedAt);
+                expectSqlFailure(connection, "23503", "fk_claim_organization",
+                        "INSERT INTO subject_number.subject_claim (id, subject_id, account_id, "
+                                + "organization_id, verification_method, verification_ref_ciphertext, "
+                                + "request_id, status, risk_checked_at) "
+                                + "VALUES (?, ?, ?, ?, 'SMS', 'v1.s2.claim.ref', ?, 'REJECTED', ?)",
+                        UUID.randomUUID(), subjectId, accountId, UUID.randomUUID(),
+                        "s2-claim-org-parent-" + UUID.randomUUID(), riskCheckedAt);
+
+                assertThat(insertClaim(connection, UUID.randomUUID(), subjectId, accountId,
+                        organizationId, "MANUAL_REVIEW", "v1.s2.claim.org-ref",
+                        "s2-claim-org-" + UUID.randomUUID(), "REJECTED", riskCheckedAt, null))
+                        .isEqualTo(1);
+
+                resetToMigrationIdentity(connection);
+                expectSqlFailure(connection, "23503", "fk_claim_subject",
+                        "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
+                expectSqlFailure(connection, "23503", "fk_claim_account",
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                expectSqlFailure(connection, "23503", "fk_claim_organization",
+                        "DELETE FROM organization_access.organization WHERE id = ?", organizationId);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.subject_claim "
+                            + "WHERE subject_id = ? OR account_id = ?", subjectId, accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+        }
+    }
+
+    private static void assertRiskOpenClearReopenRevisionProtocol() throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID riskId = UUID.randomUUID();
+        String hmac = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                assertThat(insertBinding(connection, bindingId, subjectId, "MOBILE",
+                        "v1.s2.risk.ciphertext", hmac, "138****0024", "ACTIVE",
+                        OffsetDateTime.now(ZoneOffset.UTC), 1)).isEqualTo(1);
+                assertThat(insertRisk(connection, riskId, bindingId, "CONFLICT", "OPEN",
+                        "CLAIM_CHECK", OffsetDateTime.now(ZoneOffset.UTC), null, 1)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT state FROM subject_number.subject_risk_state WHERE id = ?", riskId))
+                        .isEqualTo("OPEN");
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.subject_risk_state WHERE id = ? "
+                                + "AND cleared_at IS NULL AND revision = 1", riskId)).isEqualTo(1);
+
+                String probeSql = "INSERT INTO subject_number.subject_risk_state "
+                        + "(id, caller_number_binding_id, risk_type, state, source, observed_at, "
+                        + "cleared_at, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                OffsetDateTime observedAt = OffsetDateTime.now(ZoneOffset.UTC);
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_risk_type", probeSql,
+                                UUID.randomUUID(), bindingId, "BAD", "OPEN", "CLAIM_CHECK",
+                                observedAt, null, 1),
+                        checkProbe("ck_risk_state", probeSql,
+                                UUID.randomUUID(), bindingId, "RECYCLED", "BAD", "CLAIM_CHECK",
+                                observedAt, null, 1),
+                        checkProbe("ck_risk_source", probeSql,
+                                UUID.randomUUID(), bindingId, "RECYCLED", "OPEN", "BAD",
+                                observedAt, null, 1),
+                        checkProbe("ck_risk_cleared_shape", probeSql,
+                                UUID.randomUUID(), bindingId, "RECYCLED", "CLEARED", "CLAIM_CHECK",
+                                observedAt, null, 1),
+                        checkProbe("ck_risk_cleared_after_observed", probeSql,
+                                UUID.randomUUID(), bindingId, "RECYCLED", "CLEARED", "CLAIM_CHECK",
+                                observedAt, observedAt.minusSeconds(60), 1),
+                        checkProbe("ck_risk_revision", probeSql,
+                                UUID.randomUUID(), bindingId, "RECYCLED", "OPEN", "CLAIM_CHECK",
+                                observedAt, null, 0));
+                List<String> probed = new ArrayList<>();
+                for (CheckProbe probe : probes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all six subject_risk_state named checks have a violating probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                V003_CHECK_DEF_MAP.get("subject_risk_state").keySet());
+
+                expectSqlFailure(connection, "23505", "uq_risk_binding_type",
+                        "INSERT INTO subject_number.subject_risk_state "
+                                + "(id, caller_number_binding_id, risk_type, source) "
+                                + "VALUES (?, ?, 'CONFLICT', 'OPERATIONS')",
+                        UUID.randomUUID(), bindingId);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.subject_risk_state SET state = 'CLEARED', "
+                                + "cleared_at = GREATEST(observed_at, clock_timestamp()), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND state = 'OPEN' AND revision = 1", riskId))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT state FROM subject_number.subject_risk_state WHERE id = ?", riskId))
+                        .isEqualTo("CLEARED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM subject_number.subject_risk_state WHERE id = ?", riskId))
+                        .isEqualTo(2);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.subject_risk_state SET state = 'OPEN', "
+                                + "cleared_at = NULL, revision = revision + 1 "
+                                + "WHERE id = ? AND state = 'CLEARED' AND revision = 2", riskId))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT state FROM subject_number.subject_risk_state WHERE id = ?", riskId))
+                        .isEqualTo("OPEN");
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.subject_risk_state WHERE id = ? "
+                                + "AND cleared_at IS NULL AND revision = 3", riskId)).isEqualTo(1);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.subject_risk_state SET state = 'CLEARED', "
+                                + "cleared_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1", riskId)).isZero();
+                assertThat(executeUpdate(connection,
+                        "UPDATE subject_number.subject_risk_state SET state = 'CLEARED', "
+                                + "cleared_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND state = 'CLEARED' AND revision = 3", riskId))
+                        .isZero();
+
+                switchLocalRole(connection, "subject_number_owner");
+                expectSqlFailure(connection, "P0001", "SUBJECT_RISK_STATE_IMMUTABLE",
+                        "UPDATE subject_number.subject_risk_state SET risk_type = 'RECYCLED' "
+                                + "WHERE id = ?", riskId);
+                switchLocalRole(connection, "subject_number_role");
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE subject_number.subject_risk_state SET risk_type = 'RECYCLED' "
+                                + "WHERE id = ?", riskId);
+
+                expectSqlFailure(connection, "23503", "fk_risk_binding",
+                        "INSERT INTO subject_number.subject_risk_state "
+                                + "(id, caller_number_binding_id, risk_type, source) "
+                                + "VALUES (?, ?, 'RECYCLED', 'IMPORT')",
+                        UUID.randomUUID(), UUID.randomUUID());
+
+                resetToMigrationIdentity(connection);
+                expectSqlFailure(connection, "23503", "fk_risk_binding",
+                        "DELETE FROM subject_number.caller_number_binding WHERE id = ?", bindingId);
+
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_namespace WHERE nspname IN "
+                                + "('catalog_order','ivr','entitlement_metering','activation_consent',"
+                                + "'evidence','sharing')"))
+                        .as("OPEN risk state creates no dialing/IVR schema")
+                        .isZero();
+                assertThat(toRegclass(connection, "ivr.call_task")).isNull();
+                assertThat(toRegclass(connection, "ivr.call_session")).isNull();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.subject_risk_state WHERE id = ?", riskId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?", bindingId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
+                    .isZero();
+        }
+    }
+
+    private static void commitSubjects(UUID... subjectIds) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "subject_number_role");
+                for (UUID subjectId : subjectIds) {
+                    assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
+    private static void cleanupCommittedBindingsAndSubjects(
+            List<UUID> bindingIds, List<UUID> subjectIds) throws SQLException {
+        try (Connection connection = openConnection();
+                Statement timeout = connection.createStatement()) {
+            timeout.execute("SET statement_timeout = 20000");
+            for (UUID id : bindingIds) {
+                executeUpdate(connection,
+                        "DELETE FROM subject_number.caller_number_binding WHERE id = ?", id);
+            }
+            for (UUID id : subjectIds) {
+                executeUpdate(connection,
+                        "DELETE FROM subject_number.business_subject WHERE id = ?", id);
+            }
+            for (UUID id : bindingIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : subjectIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", id))
+                        .isZero();
+            }
+        }
+    }
+
+    private static void runConcurrentActiveBindingCommitRace() throws Exception {
+        UUID subjectA = UUID.randomUUID();
+        UUID subjectB = UUID.randomUUID();
+        UUID winnerBinding = UUID.randomUUID();
+        UUID loserBinding = UUID.randomUUID();
+        String hmac = randomSha256();
+        String ciphertext = "v1.s2.race.commit.ciphertext";
+        String masked = "137****0025";
+        String winnerApplication = "pa3-s2-binding-commit-winner";
+        String loserApplication = "pa3-s2-binding-commit-loser";
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        List<UUID> bindingIds = List.of(winnerBinding, loserBinding);
+        List<UUID> subjectIds = List.of(subjectA, subjectB);
+        try {
+            commitSubjects(subjectA, subjectB);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "subject_number_role");
+                assertThat(insertBinding(winner, winnerBinding, subjectA, "MOBILE", ciphertext,
+                        hmac, masked, "ACTIVE", OffsetDateTime.now(ZoneOffset.UTC), 1)).isEqualTo(1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "subject_number_role", loserApplication);
+                Future<Integer> loserFuture = executor.submit(() -> insertBinding(
+                        loser, loserBinding, subjectB, "MOBILE", ciphertext, hmac, masked, "ACTIVE",
+                        OffsetDateTime.now(ZoneOffset.UTC), 1));
+                awaitBlockedBackend(loserApplication);
+
+                winner.commit();
+                try {
+                    awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                    fail("the active-number union loser must not commit a second ACTIVE row");
+                } catch (SQLException exception) {
+                    assertThat(exception.getSQLState()).isEqualTo("23505");
+                    assertThat(exception.getMessage()).contains("uq_binding_active_number");
+                }
+                loser.rollback();
+                setLocalRole(loser, "subject_number_role");
+                assertThat(queryString(loser,
+                        "SELECT id::text FROM subject_number.caller_number_binding "
+                                + "WHERE number_hmac = ? AND status = 'ACTIVE'", hmac))
+                        .isEqualTo(winnerBinding.toString());
+                loser.rollback();
+            }
+
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.caller_number_binding "
+                                + "WHERE number_hmac = ? AND status = 'ACTIVE'", hmac)).isEqualTo(1);
+                assertThat(queryString(verify,
+                        "SELECT id::text FROM subject_number.caller_number_binding "
+                                + "WHERE number_hmac = ? AND status = 'ACTIVE'", hmac))
+                        .isEqualTo(winnerBinding.toString());
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                        loserBinding)).isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedBindingsAndSubjects(bindingIds, subjectIds);
+        }
+    }
+
+    private static void runConcurrentActiveBindingRollbackRace() throws Exception {
+        UUID subjectA = UUID.randomUUID();
+        UUID subjectB = UUID.randomUUID();
+        UUID winnerBinding = UUID.randomUUID();
+        UUID loserBinding = UUID.randomUUID();
+        String hmac = randomSha256();
+        String ciphertext = "v1.s2.race.rollback.ciphertext";
+        String masked = "137****0026";
+        String winnerApplication = "pa3-s2-binding-rollback-winner";
+        String loserApplication = "pa3-s2-binding-rollback-loser";
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        List<UUID> bindingIds = List.of(winnerBinding, loserBinding);
+        List<UUID> subjectIds = List.of(subjectA, subjectB);
+        try {
+            commitSubjects(subjectA, subjectB);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "subject_number_role");
+                assertThat(insertBinding(winner, winnerBinding, subjectA, "MOBILE", ciphertext,
+                        hmac, masked, "ACTIVE", OffsetDateTime.now(ZoneOffset.UTC), 1)).isEqualTo(1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "subject_number_role", loserApplication);
+                Future<Integer> loserFuture = executor.submit(() -> insertBinding(
+                        loser, loserBinding, subjectB, "MOBILE", ciphertext, hmac, masked, "ACTIVE",
+                        OffsetDateTime.now(ZoneOffset.UTC), 1));
+                awaitBlockedBackend(loserApplication);
+
+                winner.rollback();
+                assertThat(awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS))
+                        .as("the active-number loser inserts after the winner rolls back")
+                        .isEqualTo(1);
+                loser.commit();
+            }
+
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.caller_number_binding "
+                                + "WHERE number_hmac = ? AND status = 'ACTIVE'", hmac)).isEqualTo(1);
+                assertThat(queryString(verify,
+                        "SELECT id::text FROM subject_number.caller_number_binding "
+                                + "WHERE number_hmac = ? AND status = 'ACTIVE'", hmac))
+                        .isEqualTo(loserBinding.toString());
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                        winnerBinding)).isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedBindingsAndSubjects(bindingIds, subjectIds);
         }
     }
 

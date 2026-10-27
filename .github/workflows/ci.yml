@@ -95,6 +95,11 @@ jobs:
               "lastEnabledAdminTransactionIsSerializedAndFailsClosed",
               "v003SubjectNumberCatalogAndGuardsAreExact",
               "v003OwnerPublicAndRuntimeAclsAreExact",
+              "subjectOwnerSetOnceAndRealNameSeparation",
+              "bindingLifecycleTerminalityAndActiveNumberUniqueness",
+              "appendOnlyClaimAndForeignKeyBackstops",
+              "riskOpenClearReopenRevisionProtocol",
+              "concurrentActiveBindingUniquenessHasOneWinner",
           }
           if int(suite.get("tests", "0")) != len(expected):
               sys.exit("container IT did not report the V003 test count")
