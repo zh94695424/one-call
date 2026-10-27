@@ -4,7 +4,7 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa0-production-runtime-bootstrap`
+> Branch: `codex/pa1-v001-persistence-foundation`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
@@ -26,6 +26,50 @@ The architecture design defines the authoritative coarse order:
 Before production implementation, section 18 of the design source requires code-ready specifications in this order: data model and initial schema, OpenAPI surfaces, IVR protocol, security design, capacity/deployment sizing, and the production acceptance matrix. These are delivered as bounded work units rather than one oversized implementation phase.
 
 ## Current work unit
+
+- ID: `PA1-v001-persistence-foundation`
+- Type: architecture-sensitive persistence-foundation feature work unit.
+- Status: in progress.
+- Base: merged PR #8 / `main` commit `9fe3619af968d896400742d90df819bb66d868bd`; its tree is `8978b18eb6a74aee12746fa047d931b6372bb3f1` and contains the accepted PA0 runtime scaffold.
+- Current gate / next entry point: `accepted plan commit`. Goal confirmation and independent MiMo Flash plan review passed on 2026-10-27. The next action is to create the protected PA1 plan checkpoint, record its hash, then enter S1 implementation. No implementation begins before that checkpoint.
+- Design source: `docs/12-technology-stack-and-system-architecture.md` sections 5, 6, 14, 15 Phase A and 18 item 1; the accepted A0 schema contract in `docs/14-production-data-model-and-flyway-schema-spec.md` sections 3, 4, 5, 6.1, 7, 10.1-10.8, 10.10, 11.1, 11.3 and 12 remains binding.
+
+### PA1 binding goal contract
+
+- Authorization basis: the user confirmed the proposed `PA1-v001-persistence-foundation` goal after PR #8 merged and the controller synchronized local `main` to `9fe3619af968d896400742d90df819bb66d868bd`.
+- Goal: implement the accepted A0 V001 PostgreSQL persistence foundation required by subsequent modules, without implementing any later migration wave or product domain behavior.
+- Success signals: Flyway applies V001 to a clean PostgreSQL 16 Testcontainers database without skipping; exactly the V001 schemas, roles, three tables, append-only audit guard and four declared SQL functions/grants are present; tests prove idempotency `NEW/REPLAY/CONFLICT` and finalize-once behavior, Outbox same-key replay/conflict and transactional rollback, audit append-only behavior, fixed `search_path`, owner/`PUBLIC` execution boundaries, and migration failure is visible rather than silently skipped. Default verification and the container profile both pass.
+- Scope boundary: backend persistence foundation for only `V001__platform_schemas_roles_idempotency_outbox_audit.sql`, its Flyway/PostgreSQL runtime wiring, and focused PostgreSQL 16 tests of the accepted V001 contract. V001 may create the empty later-domain schemas and NOLOGIN roles explicitly required by the frozen migration order, but no V002+ tables or domain behavior.
+- Non-goals: no V002-V009 migrations; no customer/employee identity, organization, subject, number, activation, consent, IVR, trial, catalog, order, payment, evidence, sharing, or operations workflows; no API, UI, cloud resource, secrets, production role provisioning, queue/dispatcher, or guessed Q17/Q23 deployment values. No changes to A0's accepted table/function contracts or later-wave behavior.
+- Direct evidence: the accepted A0 spec defines the exact V001 wave, tables, four functions, grants, fixed search paths, denylist and V001 verification requirements. The backend currently contains only the Boot 4.1.2 / Modulith 2.1.2 runtime scaffold and architecture/container tests; `backend/README.md` states it has no domain behavior, table or migration, and `backend/pom.xml` currently excludes Flyway and JDBC dependencies.
+- First-principles judgment: this is the smallest useful next persistence increment because V001 supplies the transaction-safe idempotency, Outbox and audit primitives needed by every later domain wave; implementing those frozen primitives before identity/domain tables avoids duplicating reliability behavior. The work is constrained to the already accepted V001 contract.
+- Blocking open questions: none for planning. Q17/Q23 production migration-role and `SECURITY DEFINER` deployment provisioning remain explicit deferred inputs; they are not to be guessed and do not block local Testcontainers verification.
+
+### PA1 slice principle
+
+Keep implementation slices behaviorally verifiable and as few as practical, normally no more than three. A slice must establish and test an observable V001 contract boundary; do not split mechanically by file, module or technology. No V002+ work may be pulled into a slice.
+
+### PA1 gate record
+
+| Gate | Status | Artifact / evidence | Decision |
+| --- | --- | --- | --- |
+| preflight | passed | PR #8 is merged; `main`, `origin/main` and GitHub all identify `9fe3619af968d896400742d90df819bb66d868bd`. The PA1 managed worktree is clean at this base on `codex/pa1-v001-persistence-foundation`. Existing prototype screenshot changes, `.codex-tasks` and `docs/reviews/plan-review-20261021-205118.md` remain untouched in the original worktree. | Use the isolated PA1 worktree; do not move or stage the existing dirty files. |
+| goal confirmation | passed | The user confirmed the V001-only objective after the controller stated its motivation, success signals, exact scope, non-goals, code evidence and deferred production inputs. | Binding scope contract established. Proceed to `plan`, not implementation. |
+| plan | author-complete; controller intake passed | `docs/gateflow/pa1-v001-persistence-foundation-plan.md`, SHA-256 `B3EF442258BD09A01435C292D5077B1C51C657A34FB71A7C880A55FA9693234A`; task `pa1-v001-plan-ds-20261027-01`; run `/tmp/pa1-v001-plan-20261027-01`; runner exit `0`, `subtype=success`, `is_error=false`, `stop_reason=end_turn`, non-empty result and empty stderr. Windows-side `git status` confirmed that the agent added only the plan artifact; `docs/14`, source, tests and CI were untouched. | Three behavior/evidence slices are proposed: S1 complete runnable V001 migration/inventory/failure visibility, S2 idempotency plus Outbox semantics, S3 append-only audit plus privilege/search-path boundaries. The controller confirmed the six V001 schemas and section 3.1 roles match `docs/14` section 11.3. Independent review must still challenge test-scope Flyway isolation, exact DDL/grant executability, failure-test isolation, concurrency assertions, scope drift and the three-slice cost before acceptance. |
+| plan review | passed with accepted bounded risks | `docs/reviews/plan-review-20261027-093407.md`, SHA-256 `E171524399E1B65AEA5E3F16BC3098879A2B8C0D98592E311F354EC9A06F0423`; task `pa1-v001-planreview-mimo26flash-20261027-01`; run `/tmp/sub-agents.pa1-planreview.sjExkx`; runner exit `0`, `subtype=success`, `is_error=false`, `stop_reason=end_turn`, non-empty result and empty stderr. The review conclusion is `pass-with-risks`; the artifact is timestamped and contains the required evidence/findings/residual-risk sections. | Controller accepted F-PA1-PR-01 as a mandatory S1 implementation clarification, F-PA1-PR-02 as a mandatory S1 completion-report evidence item, and F-PA1-PR-03 as a low-risk S2/S3 verification obligation. R-15/OQ-PR-01 is closed: `docs/14` §2.1 requires own-schema `USAGE` and governs the executable grant set even where §10.8's table is abbreviated. OQ-PR-02 is deferred to implementation intake; OQ-PR-03 is closed by the S1 clarification below. No plan fix/re-review is required; next gate is `accepted plan commit`. |
+| accepted plan commit | in progress | Intended command: `git commit -m "gateflow: accept plan for PA1-v001-persistence-foundation"`; stage only the PA1 plan, review artifact and this control document. | Create the protected local checkpoint; record the resulting commit hash in a follow-up control-document checkpoint before S1. |
+
+### PA1 plan review adjudication
+
+- **F-PA1-PR-01 — accepted, mandatory implementation clarification (S1):** the broken-migration proof must use an isolated Flyway history schema/table and a non-colliding test migration version; it must assert that the first valid DDL actually executed and is absent after rollback. A mere `FlywayException` caused by shared history/version collision is not acceptance evidence. Owner/destination: Backend, S1 implementation and code review.
+- **F-PA1-PR-02 — accepted, mandatory evidence (S1):** keep `BootstrapDependencyBoundaryTests` unchanged and record a negative surefire-classpath probe in the implementation completion report, in addition to the Enforcer scope probe and fat-jar check. Owner/destination: Backend/Platform, S1 completion report.
+- **F-PA1-PR-03 — accepted-risk:** keep the shared container but scope all row counts to method-local keys, exclude Flyway/system metadata from inventory, and clean temporary schemas/roles in `finally` paths. Owner/destination: Backend/QA, S2/S3 implementation and review.
+- **R-15/OQ-PR-01 — accepted/rejected as resolved:** `docs/14` §2.1 is binding and requires each module runtime role to receive `USAGE` on its own schema without `CREATE`; the plan must preserve this grant even where §10.8 focuses on table/function grants. This is not a new privilege beyond the frozen contract.
+- **OQ-PR-02 — deferred-with-owner:** the implementation completion artifact filename is fixed at implementation intake by the controller; this does not block the accepted plan checkpoint. Owner/destination: Phaseflow, PA1 implementation gate.
+
+The review found no goal drift, V002+ leakage, production-provisioning guess, or structural slice defect. The plan is accepted as the binding implementation handoff only with the above S1/S2/S3 obligations; implementation agents may not invent a different failure-test isolation or privilege boundary.
+
+## Previous work unit: PA0 production runtime bootstrap
 
 - ID: `PA0-production-runtime-bootstrap`
 - Type: architecture-sensitive platform-foundation implementation work unit.
