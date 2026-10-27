@@ -32,10 +32,12 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * PA1 S1 PostgreSQL 16 migration, inventory and failure-visibility proof. There is no skip path:
- * an unavailable Docker daemon, failed image pull, failed container start, JDBC failure, Flyway
- * failure or assertion failure fails the Maven build. The password is generated per JVM run and
- * never persisted.
+ * PA1 S1/S2/S3 PostgreSQL 16 proof for the frozen V001 contract: migration, inventory and
+ * failure-visibility; idempotency/Outbox first-result and transaction atomicity; and audit
+ * append-only, reason/denylist, fixed-search-path and privilege boundaries. There is no skip
+ * path: an unavailable Docker daemon, failed image pull, failed container start, JDBC failure,
+ * Flyway failure or assertion failure fails the Maven build. The password is generated per JVM
+ * run and never persisted.
  */
 class PostgresContainerIT {
 
@@ -100,6 +102,24 @@ class PostgresContainerIT {
             "platform.idempotency_record",
             "platform.outbox_event",
             "audit.audit_fact");
+
+    private static final List<String> DISPATCHER_UPDATE_COLUMNS = List.of(
+            "status", "attempt_count", "available_at", "published_at", "revision");
+
+    private static final List<String> DISPATCHER_UNDECLARED_COLUMNS = List.of(
+            "id", "event_domain", "dedupe_key", "aggregate_type", "aggregate_id",
+            "event_type", "payload_redacted", "payload_ciphertext", "payload_sha256");
+
+    private static final Map<String, String> DISPATCHER_UNDECLARED_VALUES = Map.ofEntries(
+            Map.entry("id", "pg_catalog.gen_random_uuid()"),
+            Map.entry("event_domain", "'ACTIVATION'"),
+            Map.entry("dedupe_key", "'decoy-dedupe-key'"),
+            Map.entry("aggregate_type", "'DECOY'"),
+            Map.entry("aggregate_id", "pg_catalog.gen_random_uuid()"),
+            Map.entry("event_type", "'DECOY_EVENT'"),
+            Map.entry("payload_redacted", "'{}'::jsonb"),
+            Map.entry("payload_ciphertext", "NULL"),
+            Map.entry("payload_sha256", "'" + "a".repeat(64) + "'"));
 
     private static final String RUNTIME_ROLE = "subject_number_role";
     private static final String LOSER_COMMIT_APPLICATION = "pa1-s2-race-commit";
@@ -498,6 +518,453 @@ class PostgresContainerIT {
                 "{\"phone\":\"13800000000\"}", null, payloadSha256, "protected plaintext");
     }
 
+    @Test
+    void auditIsAppendOnlyAndRuntimeWritesAreDenied() throws Exception {
+        UUID appendedObjectId = UUID.randomUUID();
+        UUID directInsertObjectId = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+            UUID auditId = callAppendFact(
+                    connection, appendedObjectId, "SERVICE", "AUDIT_APPEND_GRANTED", null, null);
+            assertThat(auditId).as("a granted runtime role appends an audit fact").isNotNull();
+
+            setLocalRole(connection, "audit_reader_role");
+            assertThat(countAuditRows(connection, appendedObjectId))
+                    .as("audit_reader_role can read the appended row").isEqualTo(1);
+
+            connection.rollback();
+            assertThat(countAuditRows(connection, appendedObjectId))
+                    .as("a caller rollback removes the audit row").isZero();
+        }
+
+        try (Connection connection = openConnection()) {
+            setSessionRole(connection, "customer_iam_role");
+            expectSqlState(connection, "42501", null, () -> execute(connection,
+                    "INSERT INTO audit.audit_fact "
+                            + "(id, occurred_at, actor_type, actor_id, action_code, object_type, object_id) "
+                            + "VALUES (?, now(), 'SERVICE', ?, 'DIRECT_INSERT', 'ORDER', ?)",
+                    UUID.randomUUID(), UUID.randomUUID(), directInsertObjectId));
+        }
+        assertThat(countAuditRows(directInsertObjectId))
+                .as("a domain role cannot insert directly into audit.audit_fact").isZero();
+
+        try (Connection connection = openConnection()) {
+            setSessionRole(connection, "audit_reader_role");
+            expectSqlState(connection, "42501", null, () -> executeUpdate(connection,
+                    "UPDATE audit.audit_fact SET request_id = 'mutated' WHERE object_id = ?", appendedObjectId));
+            expectSqlState(connection, "42501", null, () -> executeUpdate(connection,
+                    "DELETE FROM audit.audit_fact WHERE object_id = ?", appendedObjectId));
+            expectSqlState(connection, "42501", null,
+                    () -> execute(connection, "TRUNCATE audit.audit_fact"));
+        }
+
+        UUID ownerUpdateObjectId = UUID.randomUUID();
+        assertOwnerAuditMutationIsRejected(ownerUpdateObjectId, "UPDATE");
+        UUID ownerDeleteObjectId = UUID.randomUUID();
+        assertOwnerAuditMutationIsRejected(ownerDeleteObjectId, "DELETE");
+
+        assertThat(countAuditRows(appendedObjectId))
+                .as("no audit row survives the append/rollback path").isZero();
+    }
+
+    @Test
+    void auditReasonAndDenylistRulesAreEnforced() throws Exception {
+        assertAuditReasonRequired("EMPLOYEE", "CUSTOMER_VIEW", "employee actor");
+        assertAuditReasonRequired("SERVICE", "RISK_STATE_CHANGE", "high-risk service action");
+
+        UUID validReasonObjectId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+            UUID auditId = callAppendFact(
+                    connection, validReasonObjectId, "EMPLOYEE", "CUSTOMER_VIEW", "CUSTOMER_REQUEST", null);
+            assertThat(auditId).as("an employee append with a reason succeeds").isNotNull();
+            setLocalRole(connection, "audit_reader_role");
+            assertThat(countAuditRows(connection, validReasonObjectId))
+                    .as("the valid-reason row exists before rollback").isEqualTo(1);
+            connection.rollback();
+            assertThat(countAuditRows(connection, validReasonObjectId))
+                    .as("the valid-reason rollback leaves no row").isZero();
+        }
+
+        UUID protectedKeyObjectId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+            expectFailure(connection, "AUDIT_ARGUMENT_INVALID", () -> callAppendFact(
+                    connection, protectedKeyObjectId, "SERVICE", "SNAPSHOT_WRITE", null,
+                    "{\"phone\":\"13800000000\"}"));
+        }
+        assertThat(countAuditRows(protectedKeyObjectId))
+                .as("a protected JSON key is rejected with no audit row").isZero();
+
+        UUID maskedObjectId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+            UUID auditId = callAppendFact(
+                    connection, maskedObjectId, "SERVICE", "SNAPSHOT_WRITE", null,
+                    "{\"calleeNumberMasked\":\"138****0000\",\"summary\":\"redacted\"}");
+            assertThat(auditId).as("an approved masked snapshot is accepted").isNotNull();
+            setLocalRole(connection, "audit_reader_role");
+            assertThat(countAuditRows(connection, maskedObjectId))
+                    .as("the masked-snapshot row exists before rollback").isEqualTo(1);
+            connection.rollback();
+            assertThat(countAuditRows(connection, maskedObjectId))
+                    .as("the masked-snapshot rollback leaves no row").isZero();
+        }
+    }
+
+    @Test
+    void functionsHaveFixedSearchPathAndNoTransactionControl() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
+                            + "|| pg_get_userbyid(p.proowner) || '|' "
+                            + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                            + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE (n.nspname = 'platform' AND p.proname IN "
+                            + "('idempotency_begin','idempotency_complete','outbox_append')) "
+                            + "OR (n.nspname = 'audit' AND p.proname = 'append_fact') ORDER BY 1"))
+                    .containsExactly(
+                            "audit.append_fact|true|audit_owner|search_path=audit, pg_temp",
+                            "platform.idempotency_begin|true|platform_reliability_owner"
+                                    + "|search_path=platform, pg_temp",
+                            "platform.idempotency_complete|true|platform_reliability_owner"
+                                    + "|search_path=platform, pg_temp",
+                            "platform.outbox_append|true|platform_reliability_owner"
+                                    + "|search_path=platform, pg_temp");
+
+            // A PL/pgSQL body uses ordinary BEGIN/END block delimiters, so this assertion
+            // matches only transaction-control statements, never BEGIN/END themselves.
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE ((n.nspname = 'platform' AND p.proname IN "
+                            + "('idempotency_begin','idempotency_complete','outbox_append')) "
+                            + "OR (n.nspname = 'audit' AND p.proname = 'append_fact')) "
+                            + "AND p.prosrc ~* "
+                            + "'\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
+                    .as("declared functions contain no transaction-control statement")
+                    .isZero();
+
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname FROM pg_proc p "
+                            + "JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE ((n.nspname = 'platform' AND p.proname IN "
+                            + "('idempotency_begin','idempotency_complete','outbox_append')) "
+                            + "OR (n.nspname = 'audit' AND p.proname = 'append_fact')) "
+                            + "AND p.prosrc LIKE '%pg_catalog.gen_random_uuid()%' ORDER BY 1"))
+                    .containsExactly(
+                            "audit.append_fact",
+                            "platform.idempotency_begin",
+                            "platform.outbox_append");
+
+            assertThat(queryLong(
+                    connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
+                    .as("issue_first_trial is a V006 function absent from V001")
+                    .isZero();
+        }
+    }
+
+    @Test
+    void ownerPublicAndRoleExecutionBoundariesAreExact() throws Exception {
+        String eventDomain = "IVR_EVENT";
+        String dedupeKey = "s3-dispatcher-" + UUID.randomUUID();
+        UUID aggregateId = UUID.randomUUID();
+        String payloadSha256 = randomSha256();
+
+        try {
+            try (Connection connection = openConnection()) {
+                assertThat(queryStrings(
+                        connection,
+                        "SELECT rolname || ':' || rolcanlogin || ':' || rolsuper || ':' "
+                                + "|| rolcreatedb || ':' || rolcreaterole FROM pg_roles "
+                                + "WHERE rolname IN ('platform_reliability_owner','audit_owner',"
+                                + "'customer_iam_owner','organization_access_owner',"
+                                + "'operations_iam_owner','subject_number_owner') ORDER BY rolname"))
+                        .containsExactly(
+                                "audit_owner:false:false:false:false",
+                                "customer_iam_owner:false:false:false:false",
+                                "operations_iam_owner:false:false:false:false",
+                                "organization_access_owner:false:false:false:false",
+                                "platform_reliability_owner:false:false:false:false",
+                                "subject_number_owner:false:false:false:false");
+
+                assertThat(queryLong(
+                        connection,
+                        "SELECT count(*) FROM pg_namespace n, "
+                                + "aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a "
+                                + "WHERE n.nspname IN ('public','platform','audit','customer_iam',"
+                                + "'organization_access','operations_iam','subject_number') "
+                                + "AND a.grantee = 0"))
+                        .as("PUBLIC has no schema USAGE or CREATE").isZero();
+                assertThat(queryLong(
+                        connection,
+                        "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                                + "aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a "
+                                + "WHERE n.nspname IN ('platform','audit') "
+                                + "AND c.relkind IN ('r','p') AND a.grantee = 0"))
+                        .as("PUBLIC has no table privilege").isZero();
+                assertThat(queryLong(
+                        connection,
+                        "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                                + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+                                + "WHERE n.nspname IN ('platform','audit') AND a.grantee = 0"))
+                        .as("PUBLIC has no function EXECUTE").isZero();
+
+                for (String role : PLATFORM_USAGE_ROLES) {
+                    assertThat(hasSchema(connection, role, "platform", "USAGE"))
+                            .as("%s platform USAGE", role).isTrue();
+                    assertThat(hasSchema(connection, role, "platform", "CREATE"))
+                            .as("%s platform CREATE", role).isFalse();
+                }
+                for (String role : AUDIT_USAGE_ROLES) {
+                    assertThat(hasSchema(connection, role, "audit", "USAGE"))
+                            .as("%s audit USAGE", role).isTrue();
+                    assertThat(hasSchema(connection, role, "audit", "CREATE"))
+                            .as("%s audit CREATE", role).isFalse();
+                }
+                assertThat(hasSchema(connection, "platform_reliability_role", "audit", "USAGE")).isFalse();
+                assertThat(hasSchema(connection, "platform_dispatcher_role", "audit", "USAGE")).isFalse();
+                assertThat(hasSchema(connection, "audit_reader_role", "platform", "USAGE")).isFalse();
+                assertThat(hasSchema(connection, "subject_identity_verification_role", "platform", "USAGE"))
+                        .isFalse();
+                assertThat(hasSchema(connection, "operations_service_role", "platform", "USAGE")).isFalse();
+
+                for (String role : DOMAIN_ROLES) {
+                    for (String function : PLATFORM_FUNCTIONS) {
+                        assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                                .as("%s EXECUTE %s", role, function).isTrue();
+                    }
+                    assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
+                            .as("%s EXECUTE audit.append_fact", role).isTrue();
+                }
+                for (String role : List.of(
+                        "subject_identity_verification_role", "operations_service_role")) {
+                    assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
+                            .as("%s EXECUTE audit.append_fact", role).isTrue();
+                    for (String function : PLATFORM_FUNCTIONS) {
+                        assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                                .as("%s must not EXECUTE %s", role, function).isFalse();
+                    }
+                }
+                for (String role : List.of(
+                        "platform_reliability_role", "platform_dispatcher_role", "audit_reader_role")) {
+                    for (String function : PLATFORM_FUNCTIONS) {
+                        assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                                .as("%s must not EXECUTE %s", role, function).isFalse();
+                    }
+                    assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
+                            .as("%s must not EXECUTE audit.append_fact", role).isFalse();
+                }
+
+                assertTablePrivileges(connection, "platform_reliability_role",
+                        "platform.idempotency_record", true, false, false, false, false);
+                assertTablePrivileges(connection, "platform_reliability_role",
+                        "platform.outbox_event", true, false, false, false, false);
+                assertTablePrivileges(connection, "platform_reliability_role",
+                        "audit.audit_fact", false, false, false, false, false);
+                assertTablePrivileges(connection, "platform_dispatcher_role",
+                        "platform.outbox_event", true, false, false, false, false);
+                assertTablePrivileges(connection, "platform_dispatcher_role",
+                        "platform.idempotency_record", false, false, false, false, false);
+                assertTablePrivileges(connection, "platform_dispatcher_role",
+                        "audit.audit_fact", false, false, false, false, false);
+                assertTablePrivileges(connection, "audit_reader_role",
+                        "audit.audit_fact", true, false, false, false, false);
+                assertTablePrivileges(connection, "audit_reader_role",
+                        "platform.idempotency_record", false, false, false, false, false);
+                assertTablePrivileges(connection, "audit_reader_role",
+                        "platform.outbox_event", false, false, false, false, false);
+                for (String role : List.of(
+                        "customer_iam_role", "organization_access_role", "operations_iam_role",
+                        "subject_number_role", "subject_identity_verification_role",
+                        "operations_service_role")) {
+                    for (String table : S1_TABLES) {
+                        assertTablePrivileges(connection, role, table, false, false, false, false, false);
+                    }
+                }
+
+                for (String column : DISPATCHER_UPDATE_COLUMNS) {
+                    assertThat(hasColumn(
+                            connection, "platform_dispatcher_role", "platform.outbox_event", column, "UPDATE"))
+                            .as("dispatcher UPDATE %s", column).isTrue();
+                }
+                for (String column : DISPATCHER_UNDECLARED_COLUMNS) {
+                    assertThat(hasColumn(
+                            connection, "platform_dispatcher_role", "platform.outbox_event", column, "UPDATE"))
+                            .as("dispatcher must not UPDATE %s", column).isFalse();
+                }
+                assertThat(hasColumn(
+                        connection, "platform_reliability_role", "platform.outbox_event", "status", "UPDATE"))
+                        .isFalse();
+            }
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                setLocalRole(connection, RUNTIME_ROLE);
+                UUID outboxId = callOutboxAppend(
+                        connection, eventDomain, dedupeKey, "CALL", aggregateId, "CALL_EVENT",
+                        "{\"eventType\":\"DISPATCHER\"}", null, payloadSha256);
+                assertThat(outboxId).isNotNull();
+                connection.commit();
+            }
+
+            try (Connection connection = openConnection()) {
+                setSessionRole(connection, "platform_dispatcher_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "UPDATE platform.outbox_event SET status = 'PUBLISHED', "
+                                + "attempt_count = attempt_count + 1, available_at = now(), "
+                                + "published_at = now(), revision = revision + 1 "
+                                + "WHERE event_domain = ? AND dedupe_key = ?", eventDomain, dedupeKey))
+                        .as("the dispatcher updates exactly the five declared columns").isEqualTo(1);
+            }
+
+            StoredOutbox published = readOutbox(eventDomain, dedupeKey);
+            assertThat(published.status()).isEqualTo("PUBLISHED");
+            assertThat(published.attemptCount()).isEqualTo(1);
+            assertThat(published.publishedAt()).isNotNull();
+            assertThat(published.revision()).isEqualTo(2);
+
+            try (Connection connection = openConnection()) {
+                setSessionRole(connection, "platform_dispatcher_role");
+                for (String column : DISPATCHER_UNDECLARED_COLUMNS) {
+                    String value = DISPATCHER_UNDECLARED_VALUES.get(column);
+                    expectSqlState(connection, "42501", null, () -> execute(
+                            connection,
+                            "UPDATE platform.outbox_event SET " + column + " = " + value
+                                    + " WHERE event_domain = ? AND dedupe_key = ?", eventDomain, dedupeKey));
+                }
+                expectSqlState(connection, "42501", null, () -> execute(
+                        connection,
+                        "DELETE FROM platform.outbox_event WHERE event_domain = ? AND dedupe_key = ?",
+                        eventDomain, dedupeKey));
+                expectSqlState(connection, "42501", null,
+                        () -> execute(connection, "TRUNCATE platform.outbox_event"));
+            }
+
+            assertThat(readOutbox(eventDomain, dedupeKey))
+                    .as("denied dispatcher mutations leave the row unchanged")
+                    .isEqualTo(published);
+        } finally {
+            try (Connection connection = openConnection();
+                    PreparedStatement prepared = connection.prepareStatement(
+                            "DELETE FROM platform.outbox_event WHERE event_domain = ? AND dedupe_key = ?")) {
+                prepared.setString(1, eventDomain);
+                prepared.setString(2, dedupeKey);
+                prepared.executeUpdate();
+            }
+        }
+    }
+
+    @Test
+    void hostileSearchPathCannotRedirectFunctionEffects() throws Exception {
+        String decoySchema = "pa1_decoy_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String scope = "PURCHASE";
+        String key = "s3-hostile-search-path-" + UUID.randomUUID();
+        String fingerprint = randomFingerprint();
+
+        try {
+            try (Connection connection = openConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("CREATE SCHEMA " + decoySchema);
+                statement.execute("CREATE TABLE " + decoySchema + ".idempotency_record ("
+                        + "id uuid NOT NULL PRIMARY KEY, scope text NOT NULL, idempotency_key text NOT NULL)");
+                statement.execute("CREATE FUNCTION " + decoySchema + ".idempotency_begin("
+                        + "p_scope text, p_key text, p_fingerprint text) RETURNS TABLE ("
+                        + "record_id uuid, revision integer, outcome text, result_type text, "
+                        + "result_id uuid, result_snapshot jsonb, result_sha256 text) "
+                        + "LANGUAGE plpgsql AS $decoy$ BEGIN "
+                        + "INSERT INTO " + decoySchema + ".idempotency_record (id, scope, idempotency_key) "
+                        + "VALUES (pg_catalog.gen_random_uuid(), p_scope, p_key); "
+                        + "RETURN QUERY SELECT NULL::uuid, 666, 'DECOY'::text, NULL::text, "
+                        + "NULL::uuid, NULL::jsonb, NULL::text; END; $decoy$");
+            }
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                setLocalRole(connection, RUNTIME_ROLE);
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("SET LOCAL search_path = " + decoySchema + ", pg_catalog");
+                }
+                assertThat(queryString(connection, "SELECT current_setting('search_path')"))
+                        .as("the caller-controlled search_path points at the decoy schema")
+                        .contains(decoySchema);
+
+                BeginResult result = callIdempotencyBegin(connection, scope, key, fingerprint);
+                assertThat(result.outcome())
+                        .as("the schema-qualified real function cannot be redirected to the decoy")
+                        .isEqualTo("NEW");
+                assertThat(result.revision()).isEqualTo(1);
+                connection.commit();
+            }
+
+            assertThat(countIdempotencyRows(scope, key))
+                    .as("the real platform.idempotency_record receives exactly one row")
+                    .isEqualTo(1);
+            try (Connection connection = openConnection()) {
+                assertThat(queryLong(
+                        connection, "SELECT count(*) FROM " + decoySchema + ".idempotency_record"))
+                        .as("the decoy table remains untouched").isZero();
+            }
+        } finally {
+            try (Connection connection = openConnection();
+                    Statement statement = connection.createStatement()) {
+                statement.execute("DROP SCHEMA IF EXISTS " + decoySchema + " CASCADE");
+            }
+            try (Connection connection = openConnection();
+                    PreparedStatement prepared = connection.prepareStatement(
+                            "DELETE FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?")) {
+                prepared.setString(1, scope);
+                prepared.setString(2, key);
+                prepared.executeUpdate();
+            }
+        }
+    }
+
+    private static void assertOwnerAuditMutationIsRejected(UUID objectId, String operation) throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, "audit_owner");
+            execute(connection,
+                    "INSERT INTO audit.audit_fact "
+                            + "(id, occurred_at, actor_type, actor_id, action_code, object_type, object_id) "
+                            + "VALUES (?, now(), 'SERVICE', ?, 'OWNER_MUTATION_PROBE', 'ORDER', ?)",
+                    UUID.randomUUID(), UUID.randomUUID(), objectId);
+
+            if ("UPDATE".equals(operation)) {
+                expectFailure(connection, "AUDIT_APPEND_ONLY", () -> executeUpdate(connection,
+                        "UPDATE audit.audit_fact SET request_id = 'owner-mutated' WHERE object_id = ?",
+                        objectId));
+            } else {
+                expectFailure(connection, "AUDIT_APPEND_ONLY", () -> executeUpdate(connection,
+                        "DELETE FROM audit.audit_fact WHERE object_id = ?", objectId));
+            }
+        }
+        assertThat(countAuditRows(objectId))
+                .as("the owner %s attempt is rejected and its probe row is rolled back", operation)
+                .isZero();
+    }
+
+    private static void assertAuditReasonRequired(String actorType, String actionCode, String caseName)
+            throws Exception {
+        UUID objectId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+            expectFailure(connection, "AUDIT_REASON_REQUIRED",
+                    () -> callAppendFact(connection, objectId, actorType, actionCode, null, null));
+        }
+        assertThat(countAuditRows(objectId))
+                .as("rejected audit append '%s' leaves no row", caseName)
+                .isZero();
+    }
+
     private static void runConcurrentCommitRace() throws Exception {
         String scope = "IVR_CONFIRM";
         String key = "s2-race-commit-" + UUID.randomUUID();
@@ -808,6 +1275,82 @@ class PostgresContainerIT {
                     connection,
                     "SELECT count(*) FROM platform.outbox_event WHERE event_domain = ? AND dedupe_key = ?",
                     eventDomain, dedupeKey);
+        }
+    }
+
+    private static long countAuditRows(Connection connection, UUID objectId) throws SQLException {
+        return queryLong(connection, "SELECT count(*) FROM audit.audit_fact WHERE object_id = ?", objectId);
+    }
+
+    private static long countAuditRows(UUID objectId) throws SQLException {
+        try (Connection connection = openConnection()) {
+            return countAuditRows(connection, objectId);
+        }
+    }
+
+    private static UUID callAppendFact(
+            Connection connection,
+            UUID objectId,
+            String actorType,
+            String actionCode,
+            String reasonCode,
+            String afterSnapshot) throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT audit.append_fact(CAST(? AS timestamptz), ?, ?, ?, 'ORDER', ?, ?, NULL, "
+                        + "CAST(? AS jsonb), NULL, NULL)")) {
+            prepared.setObject(1, OffsetDateTime.now(ZoneOffset.UTC));
+            prepared.setString(2, actorType);
+            prepared.setObject(3, UUID.randomUUID());
+            prepared.setString(4, actionCode);
+            prepared.setObject(5, objectId);
+            prepared.setString(6, reasonCode);
+            prepared.setString(7, afterSnapshot);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).isTrue();
+                UUID id = (UUID) resultSet.getObject(1);
+                assertThat(resultSet.next()).isFalse();
+                return id;
+            }
+        }
+    }
+
+    private static void setSessionRole(Connection connection, String role) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET ROLE " + role);
+        }
+        assertThat(queryString(connection, "SELECT current_user")).isEqualTo(role);
+    }
+
+    private static void execute(Connection connection, String sql, Object... parameters) throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(sql)) {
+            bind(prepared, parameters);
+            prepared.execute();
+        }
+    }
+
+    private static int executeUpdate(Connection connection, String sql, Object... parameters)
+            throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(sql)) {
+            bind(prepared, parameters);
+            return prepared.executeUpdate();
+        }
+    }
+
+    private static void expectSqlState(
+            Connection connection, String expectedSqlState, String messageFragment, SqlAction action)
+            throws SQLException {
+        try {
+            action.run();
+            fail("expected SQL failure " + expectedSqlState + " but the call succeeded");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for %s", expectedSqlState)
+                    .isEqualTo(expectedSqlState);
+            if (messageFragment != null) {
+                assertThat(exception.getMessage())
+                        .as("message for %s", expectedSqlState)
+                        .contains(messageFragment);
+            }
         }
     }
 
