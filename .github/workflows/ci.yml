@@ -75,8 +75,8 @@ jobs:
               sys.exit(f"expected one container IT report, got {len(failsafe)}")
           suite = failsafe[0]
           expected = {
-              "v001MigratesCleanPostgres16WithoutSkipping",
-              "v001InventoryMatchesTheFrozenContract",
+              "v001ThenV002MigrateCleanPostgres16WithoutSkipping",
+              "v001AndV002InventoryMatchesTheFrozenContract",
               "brokenMigrationFailsVisibly",
               "idempotencyNewReplayConflictAndFinalizeOnce",
               "committedNewIdempotencyRowIsAlertableAndRolledBackWritesLeaveNoRow",
