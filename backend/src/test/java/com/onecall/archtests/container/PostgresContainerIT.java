@@ -16,6 +16,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
 import org.flywaydb.core.api.output.MigrateResult;
@@ -95,6 +100,12 @@ class PostgresContainerIT {
             "platform.idempotency_record",
             "platform.outbox_event",
             "audit.audit_fact");
+
+    private static final String RUNTIME_ROLE = "subject_number_role";
+    private static final String LOSER_COMMIT_APPLICATION = "pa1-s2-race-commit";
+    private static final String LOSER_ROLLBACK_APPLICATION = "pa1-s2-race-rollback";
+    private static final Duration BLOCK_DETECTION_TIMEOUT = Duration.ofSeconds(15);
+    private static final long FUTURE_TIMEOUT_SECONDS = 30;
 
     private static final GenericContainer<?> POSTGRES =
             new GenericContainer<>(DockerImageName.parse("postgres:16"))
@@ -211,6 +222,694 @@ class PostgresContainerIT {
         } finally {
             cleanupBrokenSchemas();
         }
+    }
+
+    @Test
+    void idempotencyNewReplayConflictAndFinalizeOnce() throws Exception {
+        String scope = "PURCHASE";
+        String key = "s2-idempotency-" + UUID.randomUUID();
+        String fingerprint = randomFingerprint();
+        UUID resultId = UUID.randomUUID();
+        String resultSnapshot = "{\"order\":\"ok\"}";
+        String resultSha256 = randomSha256();
+
+        UUID recordId;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult created = callIdempotencyBegin(connection, scope, key, fingerprint);
+            assertThat(created.outcome()).isEqualTo("NEW");
+            assertThat(created.revision()).isEqualTo(1);
+            assertThat(created.recordId()).isNotNull();
+            assertThat(created.resultType()).isNull();
+            assertThat(created.resultId()).isNull();
+            assertThat(created.resultSnapshot()).isNull();
+            assertThat(created.resultSha256()).isNull();
+            recordId = created.recordId();
+
+            assertThat(callIdempotencyComplete(
+                    connection, recordId, 1, "PURCHASE_RESULT", resultId, resultSnapshot, resultSha256))
+                    .as("complete finalizes the first NEW result exactly once")
+                    .isEqualTo("COMPLETED");
+            connection.commit();
+        }
+
+        StoredIdempotency completed = readIdempotency(scope, key);
+        assertThat(completed.status()).isEqualTo("COMPLETED");
+        assertThat(completed.revision()).isEqualTo(2);
+        assertThat(completed.resultType()).isEqualTo("PURCHASE_RESULT");
+        assertThat(completed.resultId()).isEqualTo(resultId);
+        assertThat(completed.resultSha256()).isEqualTo(resultSha256);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult replay = callIdempotencyBegin(connection, scope, key, fingerprint);
+            assertThat(replay.outcome()).isEqualTo("REPLAY");
+            assertThat(replay.recordId()).isEqualTo(recordId);
+            assertThat(replay.revision()).isEqualTo(2);
+            assertThat(replay.resultType()).isEqualTo("PURCHASE_RESULT");
+            assertThat(replay.resultId()).isEqualTo(resultId);
+            assertThat(replay.resultSnapshot()).isEqualTo(completed.resultSnapshot());
+            assertThat(replay.resultSha256()).isEqualTo(resultSha256);
+            connection.rollback();
+        }
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult conflict = callIdempotencyBegin(
+                    connection, scope, key, randomFingerprint());
+            assertThat(conflict.outcome()).isEqualTo("CONFLICT");
+            assertThat(conflict.recordId()).isNull();
+            assertThat(conflict.revision()).isNull();
+            assertThat(conflict.resultType()).isNull();
+            assertThat(conflict.resultId()).isNull();
+            assertThat(conflict.resultSnapshot()).isNull();
+            assertThat(conflict.resultSha256()).isNull();
+            connection.rollback();
+        }
+
+        assertThat(readIdempotency(scope, key))
+                .as("a changed fingerprint must not modify the stored first result")
+                .isEqualTo(completed);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            assertThat(callIdempotencyComplete(
+                    connection, recordId, 2, "PURCHASE_RESULT", resultId, resultSnapshot, resultSha256))
+                    .as("the same result hash is an idempotent completion, not a second write")
+                    .isEqualTo("ALREADY_COMPLETED");
+            connection.rollback();
+        }
+
+        assertThat(readIdempotency(scope, key)).isEqualTo(completed);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            expectFailure(connection, "IDEMPOTENCY_CONFLICT", () -> callIdempotencyComplete(
+                    connection, recordId, 2, "PURCHASE_RESULT", resultId, resultSnapshot, randomSha256()));
+        }
+
+        assertThat(readIdempotency(scope, key))
+                .as("a different result hash must never overwrite the stored first result")
+                .isEqualTo(completed);
+
+        String staleKey = "s2-idempotency-stale-" + UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult fresh = callIdempotencyBegin(connection, scope, staleKey, fingerprint);
+            assertThat(fresh.outcome()).isEqualTo("NEW");
+            assertThat(fresh.revision()).isEqualTo(1);
+
+            expectFailure(connection, "IDEMPOTENCY_CONFLICT", () -> callIdempotencyComplete(
+                    connection, fresh.recordId(), 2, "PURCHASE_RESULT", resultId, resultSnapshot, resultSha256));
+        }
+
+        assertThat(countIdempotencyRows(scope, staleKey))
+                .as("the rolled-back stale-revision NEW row must leave no row")
+                .isZero();
+        assertThat(countIdempotencyRows(scope, key))
+                .as("exactly one method-local idempotency row remains")
+                .isEqualTo(1);
+        assertThat(readIdempotency(scope, key)).isEqualTo(completed);
+    }
+
+    @Test
+    void committedNewIdempotencyRowIsAlertableAndRolledBackWritesLeaveNoRow() throws Exception {
+        String scope = "IVR_CONFIRM";
+        String key = "s2-committed-new-" + UUID.randomUUID();
+        String fingerprint = randomFingerprint();
+
+        UUID recordId;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult created = callIdempotencyBegin(connection, scope, key, fingerprint);
+            assertThat(created.outcome()).isEqualTo("NEW");
+            assertThat(created.revision()).isEqualTo(1);
+            recordId = created.recordId();
+            connection.commit();
+        }
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            expectFailure(connection, "IDEMPOTENCY_INCOMPLETE",
+                    () -> callIdempotencyBegin(connection, scope, key, fingerprint));
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM platform.idempotency_record "
+                            + "WHERE status = 'NEW' AND scope = ? AND idempotency_key = ?",
+                    scope, key))
+                    .as("the committed NEW row is visible to the alert predicate")
+                    .isEqualTo(1);
+            assertThat(queryString(
+                    connection,
+                    "SELECT id::text FROM platform.idempotency_record "
+                            + "WHERE status = 'NEW' AND scope = ? AND idempotency_key = ?",
+                    scope, key))
+                    .isEqualTo(recordId.toString());
+            assertThat(queryBoolean(
+                    connection,
+                    "SELECT indisvalid FROM pg_index WHERE indexrelid = "
+                            + "'platform.ix_idempotency_new_alert'::regclass"))
+                    .as("ix_idempotency_new_alert must be a valid index")
+                    .isTrue();
+            assertAlertIndexUsed(connection);
+        }
+
+        String beginOnlyKey = "s2-begin-only-rollback-" + UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult created = callIdempotencyBegin(connection, scope, beginOnlyKey, fingerprint);
+            assertThat(created.outcome()).isEqualTo("NEW");
+            connection.rollback();
+        }
+        assertThat(countIdempotencyRows(scope, beginOnlyKey))
+                .as("begin-only rollback must leave no idempotency row")
+                .isZero();
+
+        String beginCompleteKey = "s2-begin-complete-rollback-" + UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            BeginResult created = callIdempotencyBegin(connection, scope, beginCompleteKey, fingerprint);
+            assertThat(created.outcome()).isEqualTo("NEW");
+            assertThat(callIdempotencyComplete(
+                    connection, created.recordId(), 1, "IVR_CONFIRM_RESULT",
+                    UUID.randomUUID(), "{\"activation\":\"ok\"}", randomSha256()))
+                    .isEqualTo("COMPLETED");
+            connection.rollback();
+        }
+        assertThat(countIdempotencyRows(scope, beginCompleteKey))
+                .as("begin-plus-complete rollback must leave no idempotency row")
+                .isZero();
+    }
+
+    @Test
+    void concurrentIdempotencyRetryObservesOneWinner() throws Exception {
+        runConcurrentCommitRace();
+        runConcurrentRollbackRace();
+    }
+
+    @Test
+    void outboxReplayConflictRollbackAndDenylist() throws Exception {
+        String domain = "IVR_EVENT";
+        String key = "s2-outbox-" + UUID.randomUUID();
+        UUID aggregateId = UUID.randomUUID();
+        String aggregateType = "CALL";
+        String eventType = "CALL_EVENT";
+        String payload = "{\"eventType\":\"REPLAY\"}";
+        String payloadSha256 = randomSha256();
+
+        UUID firstId;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            firstId = callOutboxAppend(
+                    connection, domain, key, aggregateType, aggregateId, eventType, payload, null, payloadSha256);
+            assertThat(firstId).isNotNull();
+            connection.commit();
+        }
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            assertThat(callOutboxAppend(
+                    connection, domain, key, aggregateType, aggregateId, eventType, payload, null, payloadSha256))
+                    .as("same domain/dedupe key and hash returns the original outbox id")
+                    .isEqualTo(firstId);
+            connection.commit();
+        }
+
+        StoredOutbox stored = readOutbox(domain, key);
+        assertThat(countOutboxRows(domain, key)).isEqualTo(1);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            expectFailure(connection, "OUTBOX_DEDUPE_CONFLICT", () -> callOutboxAppend(
+                    connection, domain, key, aggregateType, aggregateId, eventType, payload, null, randomSha256()));
+        }
+        assertThat(readOutbox(domain, key))
+                .as("a changed payload hash must not modify the stored outbox row")
+                .isEqualTo(stored);
+        assertThat(countOutboxRows(domain, key)).isEqualTo(1);
+
+        String rolledBackKey = "s2-outbox-rollback-" + UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            callOutboxAppend(
+                    connection, domain, rolledBackKey, aggregateType, aggregateId, eventType, payload, null, payloadSha256);
+            connection.rollback();
+        }
+        assertThat(countOutboxRows(domain, rolledBackKey))
+                .as("a caller rollback must leave no outbox row")
+                .isZero();
+
+        assertOutboxRejected(domain, aggregateType, aggregateId, eventType,
+                null, null, payloadSha256, "missing payload");
+        assertOutboxRejected(domain, aggregateType, aggregateId, eventType,
+                null, "not-a-v1-envelope", payloadSha256, "bad ciphertext envelope");
+        assertOutboxRejected(domain, aggregateType, aggregateId, eventType,
+                "{\"phone\":\"13800000000\"}", null, payloadSha256, "protected plaintext");
+    }
+
+    private static void runConcurrentCommitRace() throws Exception {
+        String scope = "IVR_CONFIRM";
+        String key = "s2-race-commit-" + UUID.randomUUID();
+        String fingerprint = randomFingerprint();
+        UUID resultId = UUID.randomUUID();
+        String resultSnapshot = "{\"race\":\"commit\"}";
+        String resultSha256 = randomSha256();
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection winnerConnection = openConnection();
+                Connection loserConnection = openConnection()) {
+            winnerConnection.setAutoCommit(false);
+            setLocalRole(winnerConnection, RUNTIME_ROLE);
+            BeginResult winner = callIdempotencyBegin(winnerConnection, scope, key, fingerprint);
+            assertThat(winner.outcome()).isEqualTo("NEW");
+            assertThat(winner.revision()).isEqualTo(1);
+            assertThat(callIdempotencyComplete(
+                    winnerConnection, winner.recordId(), 1, "RACE_RESULT",
+                    resultId, resultSnapshot, resultSha256))
+                    .isEqualTo("COMPLETED");
+
+            loserConnection.setAutoCommit(false);
+            configureBlockedLoser(loserConnection, LOSER_COMMIT_APPLICATION);
+            Future<BeginResult> loserFuture = executor.submit(
+                    () -> callIdempotencyBegin(loserConnection, scope, key, fingerprint));
+            awaitBlockedBackend(LOSER_COMMIT_APPLICATION);
+
+            winnerConnection.commit();
+            BeginResult loser = awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+            loserConnection.commit();
+
+            assertThat(loser.outcome()).isEqualTo("REPLAY");
+            assertThat(loser.recordId()).isEqualTo(winner.recordId());
+            assertThat(loser.revision()).isEqualTo(2);
+            assertThat(loser.resultType()).isEqualTo("RACE_RESULT");
+            assertThat(loser.resultId()).isEqualTo(resultId);
+            assertThat(loser.resultSha256()).isEqualTo(resultSha256);
+            assertThat(List.of(winner.outcome(), loser.outcome()))
+                    .as("exactly one contender observes NEW")
+                    .containsExactly("NEW", "REPLAY");
+
+            StoredIdempotency stored = readIdempotency(scope, key);
+            assertThat(stored.id()).isEqualTo(winner.recordId());
+            assertThat(stored.status()).isEqualTo("COMPLETED");
+            assertThat(stored.revision()).isEqualTo(2);
+            assertThat(stored.resultSha256()).isEqualTo(resultSha256);
+            assertThat(loser.resultSnapshot()).isEqualTo(stored.resultSnapshot());
+            assertThat(countIdempotencyRows(scope, key)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static void runConcurrentRollbackRace() throws Exception {
+        String scope = "IVR_CONFIRM";
+        String key = "s2-race-rollback-" + UUID.randomUUID();
+        String fingerprint = randomFingerprint();
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection winnerConnection = openConnection();
+                Connection loserConnection = openConnection()) {
+            winnerConnection.setAutoCommit(false);
+            setLocalRole(winnerConnection, RUNTIME_ROLE);
+            BeginResult winner = callIdempotencyBegin(winnerConnection, scope, key, fingerprint);
+            assertThat(winner.outcome()).isEqualTo("NEW");
+            assertThat(winner.revision()).isEqualTo(1);
+
+            loserConnection.setAutoCommit(false);
+            configureBlockedLoser(loserConnection, LOSER_ROLLBACK_APPLICATION);
+            Future<BeginResult> loserFuture = executor.submit(
+                    () -> callIdempotencyBegin(loserConnection, scope, key, fingerprint));
+            awaitBlockedBackend(LOSER_ROLLBACK_APPLICATION);
+
+            winnerConnection.rollback();
+            BeginResult loser = awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+            loserConnection.commit();
+
+            assertThat(winner.outcome()).isEqualTo("NEW");
+            assertThat(loser.outcome()).isEqualTo("NEW");
+            assertThat(loser.revision()).isEqualTo(1);
+            StoredIdempotency stored = readIdempotency(scope, key);
+            assertThat(stored.id()).isEqualTo(loser.recordId());
+            assertThat(stored.status()).isEqualTo("NEW");
+            assertThat(stored.revision()).isEqualTo(1);
+            assertThat(stored.resultType()).isNull();
+            assertThat(countIdempotencyRows(scope, key)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static void assertOutboxRejected(
+            String domain,
+            String aggregateType,
+            UUID aggregateId,
+            String eventType,
+            String payloadRedacted,
+            String payloadCiphertext,
+            String payloadSha256,
+            String caseName) throws Exception {
+        String key = "s2-outbox-invalid-" + UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setLocalRole(connection, RUNTIME_ROLE);
+
+            expectFailure(connection, "OUTBOX_PAYLOAD_INVALID", () -> callOutboxAppend(
+                    connection, domain, key, aggregateType, aggregateId, eventType,
+                    payloadRedacted, payloadCiphertext, payloadSha256));
+        }
+        assertThat(countOutboxRows(domain, key))
+                .as("rejected outbox case '%s' must leave no row", caseName)
+                .isZero();
+    }
+
+    private static void configureBlockedLoser(Connection connection, String applicationName) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET LOCAL statement_timeout = 20000");
+            statement.execute("SET LOCAL application_name = '" + applicationName + "'");
+            statement.execute("SET LOCAL ROLE " + RUNTIME_ROLE);
+        }
+        assertThat(queryString(connection, "SELECT current_user")).isEqualTo(RUNTIME_ROLE);
+        assertThat(queryString(connection, "SELECT current_setting('application_name')"))
+                .isEqualTo(applicationName);
+    }
+
+    private static void awaitBlockedBackend(String applicationName) throws Exception {
+        long deadline = System.nanoTime() + BLOCK_DETECTION_TIMEOUT.toNanos();
+        try (Connection monitor = openConnection()) {
+            while (System.nanoTime() < deadline) {
+                long blocked = queryLong(
+                        monitor,
+                        "SELECT count(*) FROM pg_stat_activity WHERE application_name = ? "
+                                + "AND state = 'active' AND wait_event_type = 'Lock'",
+                        applicationName);
+                if (blocked > 0) {
+                    return;
+                }
+                Thread.sleep(50L);
+            }
+        }
+        fail("loser backend '" + applicationName + "' did not reach a lock wait within "
+                + BLOCK_DETECTION_TIMEOUT.toSeconds() + "s");
+    }
+
+    private static BeginResult awaitFuture(Future<BeginResult> future, long timeoutSeconds) throws Exception {
+        try {
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof Exception causeException) {
+                throw causeException;
+            }
+            throw exception;
+        }
+    }
+
+    private static BeginResult callIdempotencyBegin(
+            Connection connection, String scope, String key, String fingerprint) throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT record_id, revision, outcome, result_type, result_id, result_snapshot, result_sha256 "
+                        + "FROM platform.idempotency_begin(?, ?, ?)")) {
+            prepared.setString(1, scope);
+            prepared.setString(2, key);
+            prepared.setString(3, fingerprint);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).isTrue();
+                BeginResult result = new BeginResult(
+                        (UUID) resultSet.getObject(1),
+                        (Integer) resultSet.getObject(2),
+                        resultSet.getString(3),
+                        resultSet.getString(4),
+                        (UUID) resultSet.getObject(5),
+                        resultSet.getString(6),
+                        resultSet.getString(7));
+                assertThat(resultSet.next()).as("idempotency_begin returns exactly one row").isFalse();
+                return result;
+            }
+        }
+    }
+
+    private static String callIdempotencyComplete(
+            Connection connection,
+            UUID recordId,
+            int expectedRevision,
+            String resultType,
+            UUID resultId,
+            String resultSnapshot,
+            String resultSha256) throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT platform.idempotency_complete(?, ?, ?, ?, CAST(? AS jsonb), ?)")) {
+            prepared.setObject(1, recordId);
+            prepared.setInt(2, expectedRevision);
+            prepared.setString(3, resultType);
+            prepared.setObject(4, resultId);
+            prepared.setString(5, resultSnapshot);
+            prepared.setString(6, resultSha256);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).isTrue();
+                String outcome = resultSet.getString(1);
+                assertThat(resultSet.next()).isFalse();
+                return outcome;
+            }
+        }
+    }
+
+    private static UUID callOutboxAppend(
+            Connection connection,
+            String eventDomain,
+            String dedupeKey,
+            String aggregateType,
+            UUID aggregateId,
+            String eventType,
+            String payloadRedacted,
+            String payloadCiphertext,
+            String payloadSha256) throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT platform.outbox_append(?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?)")) {
+            prepared.setString(1, eventDomain);
+            prepared.setString(2, dedupeKey);
+            prepared.setString(3, aggregateType);
+            prepared.setObject(4, aggregateId);
+            prepared.setString(5, eventType);
+            prepared.setString(6, payloadRedacted);
+            prepared.setString(7, payloadCiphertext);
+            prepared.setString(8, payloadSha256);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).isTrue();
+                UUID id = (UUID) resultSet.getObject(1);
+                assertThat(resultSet.next()).isFalse();
+                return id;
+            }
+        }
+    }
+
+    private static StoredIdempotency readIdempotency(String scope, String key) throws SQLException {
+        try (Connection connection = openConnection();
+                PreparedStatement prepared = connection.prepareStatement(
+                        "SELECT id, scope, idempotency_key, request_fingerprint, status, result_type, "
+                                + "result_id, result_snapshot, result_sha256, created_at, completed_at, revision "
+                                + "FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?")) {
+            prepared.setString(1, scope);
+            prepared.setString(2, key);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).as("exactly one method-local idempotency row").isTrue();
+                StoredIdempotency stored = new StoredIdempotency(
+                        (UUID) resultSet.getObject(1),
+                        resultSet.getString(2),
+                        resultSet.getString(3),
+                        resultSet.getString(4),
+                        resultSet.getString(5),
+                        resultSet.getString(6),
+                        (UUID) resultSet.getObject(7),
+                        resultSet.getString(8),
+                        resultSet.getString(9),
+                        resultSet.getObject(10, OffsetDateTime.class),
+                        resultSet.getObject(11, OffsetDateTime.class),
+                        resultSet.getInt(12));
+                assertThat(resultSet.next()).as("no second method-local idempotency row").isFalse();
+                return stored;
+            }
+        }
+    }
+
+    private static StoredOutbox readOutbox(String eventDomain, String dedupeKey) throws SQLException {
+        try (Connection connection = openConnection();
+                PreparedStatement prepared = connection.prepareStatement(
+                        "SELECT id, event_domain, dedupe_key, aggregate_type, aggregate_id, event_type, "
+                                + "payload_redacted, payload_ciphertext, payload_sha256, status, attempt_count, "
+                                + "available_at, published_at, revision "
+                                + "FROM platform.outbox_event WHERE event_domain = ? AND dedupe_key = ?")) {
+            prepared.setString(1, eventDomain);
+            prepared.setString(2, dedupeKey);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).as("exactly one method-local outbox row").isTrue();
+                StoredOutbox stored = new StoredOutbox(
+                        (UUID) resultSet.getObject(1),
+                        resultSet.getString(2),
+                        resultSet.getString(3),
+                        resultSet.getString(4),
+                        (UUID) resultSet.getObject(5),
+                        resultSet.getString(6),
+                        resultSet.getString(7),
+                        resultSet.getString(8),
+                        resultSet.getString(9),
+                        resultSet.getString(10),
+                        resultSet.getInt(11),
+                        resultSet.getObject(12, OffsetDateTime.class),
+                        resultSet.getObject(13, OffsetDateTime.class),
+                        resultSet.getInt(14));
+                assertThat(resultSet.next()).as("no second method-local outbox row").isFalse();
+                return stored;
+            }
+        }
+    }
+
+    private static long countIdempotencyRows(String scope, String key) throws SQLException {
+        try (Connection connection = openConnection()) {
+            return queryLong(
+                    connection,
+                    "SELECT count(*) FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?",
+                    scope, key);
+        }
+    }
+
+    private static long countOutboxRows(String eventDomain, String dedupeKey) throws SQLException {
+        try (Connection connection = openConnection()) {
+            return queryLong(
+                    connection,
+                    "SELECT count(*) FROM platform.outbox_event WHERE event_domain = ? AND dedupe_key = ?",
+                    eventDomain, dedupeKey);
+        }
+    }
+
+    private static void assertAlertIndexUsed(Connection connection) throws SQLException {
+        connection.setAutoCommit(false);
+        try {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("SET LOCAL enable_seqscan = off");
+            }
+            String plan = queryString(
+                    connection,
+                    "EXPLAIN (FORMAT JSON) SELECT id FROM platform.idempotency_record "
+                            + "WHERE status = 'NEW' ORDER BY created_at");
+            assertThat(plan)
+                    .as("the committed-NEW alert query must use ix_idempotency_new_alert")
+                    .contains("ix_idempotency_new_alert");
+        } finally {
+            connection.rollback();
+            connection.setAutoCommit(true);
+        }
+    }
+
+    private static void setLocalRole(Connection connection, String role) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET LOCAL ROLE " + role);
+        }
+        assertThat(queryString(connection, "SELECT current_user")).isEqualTo(role);
+    }
+
+    private static void expectFailure(Connection connection, String expectedCode, SqlAction action)
+            throws SQLException {
+        try {
+            try {
+                action.run();
+                fail("expected SQL failure " + expectedCode + " but the call succeeded");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState())
+                        .as("SQLSTATE for %s", expectedCode)
+                        .isEqualTo("P0001");
+                assertThat(exception.getMessage())
+                        .as("stable error code for %s", expectedCode)
+                        .contains(expectedCode);
+            }
+        } finally {
+            connection.rollback();
+        }
+    }
+
+    private static String randomSha256() {
+        return UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private static String randomFingerprint() {
+        return randomSha256();
+    }
+
+    @FunctionalInterface
+    private interface SqlAction {
+        void run() throws SQLException;
+    }
+
+    private record BeginResult(
+            UUID recordId,
+            Integer revision,
+            String outcome,
+            String resultType,
+            UUID resultId,
+            String resultSnapshot,
+            String resultSha256) {
+    }
+
+    private record StoredIdempotency(
+            UUID id,
+            String scope,
+            String key,
+            String fingerprint,
+            String status,
+            String resultType,
+            UUID resultId,
+            String resultSnapshot,
+            String resultSha256,
+            OffsetDateTime createdAt,
+            OffsetDateTime completedAt,
+            int revision) {
+    }
+
+    private record StoredOutbox(
+            UUID id,
+            String eventDomain,
+            String dedupeKey,
+            String aggregateType,
+            UUID aggregateId,
+            String eventType,
+            String payloadRedacted,
+            String payloadCiphertext,
+            String payloadSha256,
+            String status,
+            int attemptCount,
+            OffsetDateTime availableAt,
+            OffsetDateTime publishedAt,
+            int revision) {
     }
 
     private static void assertCleanBeforeMigration() throws Exception {

@@ -1,6 +1,6 @@
-# onecall-runtime（PA0 / PA1 S1）
+# onecall-runtime（PA0 / PA1 S1 + S2）
 
-Phase A 生产运行时引导脚手架。本工程包含运行时入口、14 个 Spring Modulith 包边界、架构/依赖防火墙测试，以及 PA1 S1 的 V001 PostgreSQL 16 migration、精确 inventory 和 fail-visible delivery 验证。V001 只创建 S1 的六个 schema（其中四个为空）、15 个 NOLOGIN 角色、`platform`/`audit` 三张表、append-only audit guard 和四个 `SECURITY DEFINER` 函数；**不包含 S2/S3 domain 行为、V002+ migration、运行时 DataSource/Flyway、API、认证、供应商或云集成**。
+Phase A 生产运行时引导脚手架。本工程包含运行时入口、14 个 Spring Modulith 包边界、架构/依赖防火墙测试，以及 PA1 S1 的 V001 PostgreSQL 16 migration、精确 inventory 和 fail-visible delivery 验证，并在同一 V001 上提供 PA1 S2 的 idempotency/Outbox 行为与事务原子性证据。V001 只创建 S1 的六个 schema（其中四个为空）、15 个 NOLOGIN 角色、`platform`/`audit` 三张表、append-only audit guard 和四个 `SECURITY DEFINER` 函数；**不包含 S3 audit/security 行为矩阵、V002+ migration、运行时 DataSource/Flyway、API、认证、供应商或云集成**。
 
 ## 工具链 pin
 
@@ -47,7 +47,7 @@ jar tf target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/jar-index.txt
 - 应用启动后输出 `Started OneCallApplication` 并以 `0` 退出（无 web server、无 DB、无调度线程）。
 - production fat jar 不包含 `spring-security`、`flyway`、`jooq`、`HikariCP`、`postgresql`、`testcontainers` 库。
 
-## PA1 S1 命令：PostgreSQL container smoke
+## PA1 S1/S2 命令：PostgreSQL container smoke
 
 ```bash
 cd backend
@@ -55,11 +55,13 @@ cd backend
 ```
 
 - 只在显式 `container-smoke` profile 下运行 `PostgresContainerIT`：启动真实 `postgres:16` 容器（`onecall`/`onecall`，密码为每次 JVM 运行生成的 UUID，不落盘、不写日志），先断言 clean database，再执行 Flyway `classpath:db/migration`。
-- S1 恰好包含三个容器测试方法：`v001MigratesCleanPostgres16WithoutSkipping`（恰好应用一个 V001、`validate()` 通过、重复 migrate 为零、以已授权角色成功调用四个 V001 函数后回滚）、`v001InventoryMatchesTheFrozenContract`（六个 schema/owner、15 个角色属性、三张表列/命名 check/index、五个函数/trigger、精确 schema/table/column/function grant、无 V002+ 对象）和 `brokenMigrationFailsVisibly`（隔离 history schema/table + 非冲突 version，断言 sentinel 来自故意失败语句且前置 valid DDL 的 marker table 回滚后不存在）。
+- S1/S2 恰好包含七个容器测试方法。三个 S1 方法：`v001MigratesCleanPostgres16WithoutSkipping`（恰好应用一个 V001、`validate()` 通过、重复 migrate 为零、以已授权角色成功调用四个 V001 函数后回滚）、`v001InventoryMatchesTheFrozenContract`（六个 schema/owner、15 个角色属性、三张表列/命名 check/index、五个函数/trigger、精确 schema/table/column/function grant、无 V002+ 对象）和 `brokenMigrationFailsVisibly`（隔离 history schema/table + 非冲突 version，断言 sentinel 来自故意失败语句且前置 valid DDL 的 marker table 回滚后不存在）。
+- 四个 S2 方法：`idempotencyNewReplayConflictAndFinalizeOnce`（`NEW` revision 1 空结果、complete 一次性成功、同 key/同 fingerprint `REPLAY` 返回首次结果、同 key/改 fingerprint `CONFLICT` 无副作用、同 hash 重复为 `ALREADY_COMPLETED`、改 hash/过期 revision 为 `IDEMPOTENCY_CONFLICT`，存储行不变且方法局部仅一行）、`committedNewIdempotencyRowIsAlertableAndRolledBackWritesLeaveNoRow`（committed `NEW` 使下次 begin 抛 `IDEMPOTENCY_INCOMPLETE`，`ix_idempotency_new_alert` 可查到该行，begin-only 与 begin+complete 回滚均不留下行）、`concurrentIdempotencyRetryObservesOneWinner`（两个连接经 latch/阻塞探测竞争同一 key：winner commit 时 loser 为 `REPLAY`，winner rollback 时 loser 为 `NEW`；最终仅一行且仅一个 `NEW` winner）和 `outboxReplayConflictRollbackAndDenylist`（同 domain/dedupe key 同 hash 返回原 id 且一行、改 hash 抛 `OUTBOX_DEDUPE_CONFLICT` 且存储行不变、调用方回滚不留行、缺失 payload/坏 envelope/受保护明文均抛 `OUTBOX_PAYLOAD_INVALID` 且不留行）。
+- S2 断言全部按方法局部 key 范围计数；共享容器中其他方法或历史行不影响断言。并发用例使用两个连接、`pg_stat_activity` 阻塞探测、`statement_timeout` 与 future 超时，不依赖仅靠 sleep 的时序断言。
 - **fail-closed**：Docker daemon 不可用、镜像拉取失败、容器启动失败、JDBC 连接失败、Flyway 失败或任一断言失败都使 Maven build 非 0。没有 `@Disabled`、`Assumptions`、`disabledWithoutDocker` 或环境变量 skip。
 - `maven-failsafe-plugin` 只在 `container-smoke` profile 内绑定，`failIfNoTests=true`；若 profile 激活但测试未被匹配，build 失败。
-- 默认 `./mvnw -B -ntp verify` 成功**不等于** container smoke 通过；只有 `-Pcontainer-smoke verify` 的 failsafe 结果（S1 恰好 3 个 test、`skipped=0 failures=0 errors=0`）才算容器证据。
-- V001 的创建顺序、checksum 和 inventory 是 S1 证据；S2 idempotency/Outbox 行为矩阵和 S3 audit/security 行为矩阵尚未实现，不得由本 README 或 S1 报告声称通过。
+- 默认 `./mvnw -B -ntp verify` 成功**不等于** container smoke 通过；只有 `-Pcontainer-smoke verify` 的 failsafe 结果（S1/S2 恰好 7 个 test、`skipped=0 failures=0 errors=0`）才算容器证据。
+- V001 的创建顺序、checksum 和 inventory 是 S1 证据；S2 证据只覆盖 idempotency/Outbox first-result 与事务原子性。S3 audit/security 行为矩阵尚未实现，不得由本 README 或 S2 报告声称通过。
 - `postgres:16` 是 test-only fixture（design family `16+`），不是 production DB 版本承诺；digest 尚未 pin。Testcontainers superuser 仅用于 `CREATE ROLE`/`SET LOCAL ROLE` 测试，不是 Q17/Q23 production provisioning。
 
 ## 模块边界
@@ -92,7 +94,7 @@ cd backend
 ## CI（`.github/workflows/ci.yml`）
 
 - 两个 job、只读权限（`contents: read`），只在 `backend/**`、contract assets（`api/openapi/**`、`protocol/**`、`security/**`、`deployment/capacity/**`、`acceptance/**`）、本 workflow 与顶层 `docs/*.md` 变化时触发；prototype/screenshot-only 变更不触发。
-- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`，随后解析 failsafe/surefire XML（S1 恰好 3 个具名 container test、`skipped=0`），并执行 boot jar smoke 与 production jar firewall。
+- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`，随后解析 failsafe/surefire XML（S1/S2 恰好 7 个具名 container test、`skipped=0`），并执行 boot jar smoke 与 production jar firewall。
 - `contract-regressions`：Node `22.23.4` 精确 pin、`npm ci` + `npm run check:s3`，以及 A2/A3/A4/A5 既有 validator 命令（不修改其 fixtures/语义）。
 - `docker info` 在任何 Maven/容器步骤之前；Docker 不可用时 job 立即失败，不会出现“测试被 skip 但 job 绿”。
 
