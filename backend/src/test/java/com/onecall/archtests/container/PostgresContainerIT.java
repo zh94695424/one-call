@@ -37,9 +37,11 @@ import org.testcontainers.utility.DockerImageName;
  * exact V001+V002 inventory (including the F-PA2-PR-01 34-check normalized pg_get_constraintdef
  * map) and failure-visibility; idempotency/Outbox first-result and transaction atomicity; and
  * audit append-only, reason/denylist, fixed-search-path (V001 functions plus the six V002 guards)
- * and privilege boundaries. There is no skip path: an unavailable Docker daemon, failed image
- * pull, failed container start, JDBC failure, Flyway failure or assertion failure fails the Maven
- * build. The password is generated per JVM run and never persisted.
+ * and privilege boundaries, plus the PA2 S3 runtime/cross-module privilege matrix and the
+ * last-enabled-admin serialization protocol (transient SQL, no database function). There is no
+ * skip path: an unavailable Docker daemon, failed image pull, failed container start, JDBC
+ * failure, Flyway failure or assertion failure fails the Maven build. The password is generated
+ * per JVM run and never persisted.
  */
 class PostgresContainerIT {
 
@@ -1107,6 +1109,673 @@ class PostgresContainerIT {
         runConcurrentIdentityCollisionRollbackRace();
         runConcurrentMembershipCollisionCommitRace();
         runConcurrentMembershipCollisionRollbackRace();
+    }
+
+    @Test
+    void runtimeAndCrossModulePrivilegesAreExactAndWritesDenied() throws Exception {
+        assertRuntimeAndCrossModulePrivilegesAreExactAndWritesDenied();
+    }
+
+    @Test
+    void lastEnabledAdminTransactionIsSerializedAndFailsClosed() throws Exception {
+        assertOperationsIamRoleCanForUpdateWithColumnUpdate();
+        assertLastEnabledAdminSequentialFailClosedAndRevisionIncrements();
+        runConcurrentLastEnabledAdminMutationRace();
+    }
+
+    /**
+     * S3 T-S1-09 last-enabled-admin protocol as exact transient SQL (no database function):
+     * advisory lock, target row FOR UPDATE, enabled-admin count, then either a conditional
+     * revision update or a stable LAST_ENABLED_ADMIN failure. The caller must already run in a
+     * transactional connection with {@code SET LOCAL ROLE operations_iam_role}.
+     */
+    private static final String ADMIN_MUTATION_ADVISORY_LOCK_SQL =
+            "SELECT pg_advisory_xact_lock(hashtextextended('operations_iam.admin_mutation', 0))";
+
+    private enum AdminMutationAction {
+        DISABLE, DEMOTE
+    }
+
+    private static void assertRuntimeAndCrossModulePrivilegesAreExactAndWritesDenied()
+            throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID identityId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID membershipId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                assertOwnedTableRuntimePrivileges(
+                        connection, accountId, identityId, profileId,
+                        organizationId, membershipId, employeeId);
+                assertCrossModuleRuntimePrivileges(
+                        connection, accountId, organizationId, membershipId, employeeId);
+                assertSchemaCreateDeniedAtRuntime(connection);
+                assertGuardFunctionRuntimeExecuteBoundaries(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertSchemaUsageExactAndNoCreate(connection);
+            assertGuardFunctionCatalogExecuteBoundaries(connection);
+        }
+    }
+
+    private static void assertOwnedTableRuntimePrivileges(
+            Connection connection,
+            UUID accountId,
+            UUID identityId,
+            UUID profileId,
+            UUID organizationId,
+            UUID membershipId,
+            UUID employeeId) throws SQLException {
+        switchLocalRole(connection, "customer_iam_role");
+        assertThat(insertCustomerAccount(connection, accountId, "S3 Priv Customer")).isEqualTo(1);
+        assertThat(insertAuthIdentity(connection, identityId, accountId, "PHONE",
+                "s3-priv-scope", "v1.s3.priv.cipher", randomSha256())).isEqualTo(1);
+        assertThat(insertIdentityProfile(connection, profileId, accountId)).isEqualTo(1);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                .isEqualTo(1);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                .isEqualTo(1);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                .isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.customer_account SET display_name = ?, status = status, "
+                        + "updated_at = now(), revision = revision + 1 WHERE id = ? AND revision = 1",
+                "S3 Priv Customer Updated", accountId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.auth_identity SET status = status, verified_at = verified_at, "
+                        + "key_version = key_version, revision = revision + 1 "
+                        + "WHERE id = ? AND revision = 1", identityId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.identity_profile SET revision = revision + 1 "
+                        + "WHERE id = ? AND revision = 1", profileId)).isEqualTo(1);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.customer_account SET id = ? WHERE id = ?",
+                UUID.randomUUID(), accountId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET account_id = ? WHERE id = ?",
+                accountId, identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.identity_profile SET account_id = ? WHERE id = ?",
+                accountId, profileId);
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+        expectSqlFailure(connection, "42501", null,
+                "TRUNCATE customer_iam.customer_account");
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM customer_iam.auth_identity WHERE id = ?", identityId);
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM customer_iam.identity_profile WHERE id = ?", profileId);
+
+        switchLocalRole(connection, "organization_access_role");
+        assertThat(insertOrganization(connection, organizationId, "S3 Priv Org")).isEqualTo(1);
+        assertThat(insertMembership(connection, membershipId, organizationId, accountId, "MEMBER"))
+                .isEqualTo(1);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM organization_access.organization WHERE id = ?", organizationId))
+                .isEqualTo(1);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?",
+                membershipId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE organization_access.organization SET display_name = ?, status = status, "
+                        + "updated_at = now(), revision = revision + 1 WHERE id = ? AND revision = 1",
+                "S3 Priv Org Updated", organizationId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE organization_access.organization_membership SET role = 'MEMBER', "
+                        + "department_label = ?, status = status, revision = revision + 1 "
+                        + "WHERE id = ? AND revision = 1", "S3 Priv Dept", membershipId))
+                .isEqualTo(1);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization SET id = ? WHERE id = ?",
+                UUID.randomUUID(), organizationId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization_membership SET organization_id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM organization_access.organization WHERE id = ?", organizationId);
+        expectSqlFailure(connection, "42501", null,
+                "TRUNCATE organization_access.organization");
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM organization_access.organization_membership WHERE id = ?", membershipId);
+
+        switchLocalRole(connection, "operations_iam_role");
+        assertThat(insertEmployee(connection, employeeId, randomSha256(), "s3***priv",
+                "onecall-ops", randomSha256(), "S3 Priv Ops", "OPS")).isEqualTo(1);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                .isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE operations_iam.employee_account SET display_name = ?, status = status, "
+                        + "role = role, revision = revision + 1 WHERE id = ? AND revision = 1",
+                "S3 Priv Ops Updated", employeeId)).isEqualTo(1);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE operations_iam.employee_account SET login_name_hmac = ? WHERE id = ?",
+                randomSha256(), employeeId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE operations_iam.employee_account SET id = ? WHERE id = ?",
+                UUID.randomUUID(), employeeId);
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM operations_iam.employee_account WHERE id = ?", employeeId);
+        expectSqlFailure(connection, "42501", null,
+                "TRUNCATE operations_iam.employee_account");
+    }
+
+    private static void assertCrossModuleRuntimePrivileges(
+            Connection connection,
+            UUID accountId,
+            UUID organizationId,
+            UUID membershipId,
+            UUID employeeId) throws SQLException {
+        switchLocalRole(connection, "customer_iam_role");
+        assertThat(queryStrings(connection,
+                "SELECT id, display_name, status FROM organization_access.organization WHERE id = ?",
+                organizationId)).hasSize(1);
+        assertThat(queryStrings(connection,
+                "SELECT organization_id, account_id, role, status "
+                        + "FROM organization_access.organization_membership WHERE account_id = ?",
+                accountId)).hasSize(1);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT revision FROM organization_access.organization WHERE id = ?", organizationId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM organization_access.organization WHERE id = ? FOR UPDATE", organizationId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM organization_access.organization_membership WHERE account_id = ?",
+                accountId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT account_id FROM organization_access.organization_membership "
+                        + "WHERE account_id = ? FOR UPDATE",
+                accountId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization SET status = 'DISABLED' WHERE id = ?",
+                organizationId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization_membership SET status = 'SUSPENDED' WHERE id = ?",
+                membershipId);
+        expectSqlFailure(connection, "42501", null,
+                "INSERT INTO organization_access.organization (id, display_name) VALUES (?, 'X')",
+                UUID.randomUUID());
+        expectSqlFailure(connection, "42501", null,
+                "DELETE FROM organization_access.organization WHERE id = ?", organizationId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM operations_iam.employee_account WHERE id = ?", employeeId);
+
+        switchLocalRole(connection, "organization_access_role");
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM customer_iam.customer_account WHERE id = ?", accountId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM operations_iam.employee_account WHERE id = ?", employeeId);
+
+        switchLocalRole(connection, "operations_iam_role");
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM customer_iam.customer_account WHERE id = ?", accountId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM organization_access.organization WHERE id = ?", organizationId);
+
+        switchLocalRole(connection, "subject_number_role");
+        assertThat(queryStrings(connection,
+                "SELECT id, status FROM customer_iam.customer_account WHERE id = ?", accountId))
+                .hasSize(1);
+        assertThat(queryStrings(connection,
+                "SELECT id, status FROM organization_access.organization WHERE id = ?", organizationId))
+                .hasSize(1);
+        assertThat(queryStrings(connection,
+                "SELECT organization_id, account_id, role, status "
+                        + "FROM organization_access.organization_membership WHERE account_id = ?",
+                accountId)).hasSize(1);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT display_name FROM customer_iam.customer_account WHERE id = ?", accountId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM customer_iam.customer_account WHERE id = ? FOR UPDATE", accountId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT display_name FROM organization_access.organization WHERE id = ?", organizationId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM organization_access.organization WHERE id = ? FOR UPDATE", organizationId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT id FROM organization_access.organization_membership WHERE account_id = ?",
+                accountId);
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT account_id FROM organization_access.organization_membership "
+                        + "WHERE account_id = ? FOR UPDATE",
+                accountId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.customer_account SET status = 'DISABLED' WHERE id = ?", accountId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization SET status = 'DISABLED' WHERE id = ?", organizationId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization_membership SET status = 'SUSPENDED' WHERE id = ?",
+                membershipId);
+    }
+
+    private static void assertSchemaCreateDeniedAtRuntime(Connection connection) throws SQLException {
+        switchLocalRole(connection, "customer_iam_role");
+        expectSqlFailure(connection, "42501", null,
+                "CREATE TABLE customer_iam.s3_runtime_probe_forbidden (x int)");
+        switchLocalRole(connection, "organization_access_role");
+        expectSqlFailure(connection, "42501", null,
+                "CREATE TABLE organization_access.s3_runtime_probe_forbidden (x int)");
+        switchLocalRole(connection, "operations_iam_role");
+        expectSqlFailure(connection, "42501", null,
+                "CREATE TABLE operations_iam.s3_runtime_probe_forbidden (x int)");
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("RESET ROLE");
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_class WHERE relname = 's3_runtime_probe_forbidden'"))
+                .isZero();
+    }
+
+    private static void assertGuardFunctionRuntimeExecuteBoundaries(Connection connection)
+            throws SQLException {
+        switchLocalRole(connection, "customer_iam_role");
+        Savepoint owningGuard = connection.setSavepoint("s3-owning-guard");
+        try {
+            execute(connection, "SELECT customer_iam.guard_customer_account()");
+            fail("expected the owning runtime guard invocation to fail outside trigger context");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("owning runtime role must pass the guard EXECUTE check")
+                    .isNotEqualTo("42501");
+            assertThat(exception.getMessage().toLowerCase(java.util.Locale.ROOT))
+                    .as("owning runtime guard reaches the trigger-context guard")
+                    .contains("trigger");
+        } finally {
+            connection.rollback(owningGuard);
+        }
+
+        switchLocalRole(connection, "subject_number_role");
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT customer_iam.guard_customer_account()");
+        switchLocalRole(connection, "operations_iam_role");
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT customer_iam.guard_customer_account()");
+        switchLocalRole(connection, "organization_access_role");
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT operations_iam.guard_employee_account()");
+        switchLocalRole(connection, "customer_iam_role");
+        expectSqlQueryFailure(connection, "42501",
+                "SELECT operations_iam.guard_employee_account()");
+    }
+
+    private static void assertSchemaUsageExactAndNoCreate(Connection connection) throws SQLException {
+        Map<String, List<String>> schemaUsageRoles = new java.util.LinkedHashMap<>();
+        schemaUsageRoles.put("customer_iam", List.of("customer_iam_role", "subject_number_role"));
+        schemaUsageRoles.put("organization_access",
+                List.of("organization_access_role", "customer_iam_role", "subject_number_role"));
+        schemaUsageRoles.put("operations_iam", List.of("operations_iam_role"));
+        List<String> runtimeRoles = List.of(
+                "customer_iam_role", "organization_access_role", "operations_iam_role",
+                "subject_number_role");
+        for (Map.Entry<String, List<String>> entry : schemaUsageRoles.entrySet()) {
+            String schema = entry.getKey();
+            for (String role : runtimeRoles) {
+                assertThat(hasSchema(connection, role, schema, "USAGE"))
+                        .as("%s USAGE %s", role, schema)
+                        .isEqualTo(entry.getValue().contains(role));
+                assertThat(hasSchema(connection, role, schema, "CREATE"))
+                        .as("%s must not CREATE in %s", role, schema)
+                        .isFalse();
+            }
+            assertThat(hasSchema(connection, "public", schema, "USAGE"))
+                    .as("PUBLIC USAGE %s", schema).isFalse();
+            assertThat(hasSchema(connection, "public", schema, "CREATE"))
+                    .as("PUBLIC CREATE %s", schema).isFalse();
+        }
+    }
+
+    private static void assertGuardFunctionCatalogExecuteBoundaries(Connection connection)
+            throws SQLException {
+        Map<String, String> guardFunctionGrantRole = Map.of(
+                "customer_iam.guard_customer_account()", "customer_iam_role",
+                "customer_iam.guard_auth_identity()", "customer_iam_role",
+                "customer_iam.guard_identity_profile()", "customer_iam_role",
+                "organization_access.guard_organization()", "organization_access_role",
+                "organization_access.guard_membership()", "organization_access_role",
+                "operations_iam.guard_employee_account()", "operations_iam_role");
+        List<String> runtimeRoles = List.of(
+                "customer_iam_role", "organization_access_role", "operations_iam_role",
+                "subject_number_role");
+        for (Map.Entry<String, String> entry : guardFunctionGrantRole.entrySet()) {
+            String function = entry.getKey();
+            String grantedRole = entry.getValue();
+            assertThat(hasFunction(connection, grantedRole, function, "EXECUTE"))
+                    .as("%s EXECUTE %s", grantedRole, function).isTrue();
+            assertThat(hasFunction(connection, "public", function, "EXECUTE"))
+                    .as("PUBLIC must not EXECUTE %s", function).isFalse();
+            for (String role : runtimeRoles) {
+                if (role.equals(grantedRole)) {
+                    continue;
+                }
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s must not EXECUTE %s", role, function).isFalse();
+            }
+        }
+    }
+
+    private static void assertOperationsIamRoleCanForUpdateWithColumnUpdate() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "operations_iam_role");
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "s3***lock",
+                        "onecall-ops", randomSha256(), "S3 Lock Probe", "OPS")).isEqualTo(1);
+                assertThat(queryUuid(connection,
+                        "SELECT id FROM operations_iam.employee_account WHERE id = ? FOR UPDATE",
+                        employeeId)).isEqualTo(employeeId);
+                assertThat(executeUpdate(connection,
+                        "UPDATE operations_iam.employee_account SET display_name = ?, "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1",
+                        "S3 Lock Probe Updated", employeeId)).isEqualTo(1);
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static void assertLastEnabledAdminSequentialFailClosedAndRevisionIncrements()
+            throws Exception {
+        List<UUID> allEmployeeIds = new ArrayList<>();
+        assertNoLeftoverEnabledAdministrators();
+        try {
+            UUID keepAdmin = UUID.randomUUID();
+            UUID disableTarget = UUID.randomUUID();
+            allEmployeeIds.add(keepAdmin);
+            allEmployeeIds.add(disableTarget);
+            commitEmployees(List.of(keepAdmin, disableTarget));
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    setLocalRole(connection, "operations_iam_role");
+                    runLastEnabledAdminMutation(connection, disableTarget, AdminMutationAction.DISABLE, 1);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryString(verify,
+                        "SELECT status || '|' || role || '|' || revision "
+                                + "FROM operations_iam.employee_account WHERE id = ?", disableTarget))
+                        .isEqualTo("DISABLED|ADMIN|2");
+                assertThat(queryString(verify,
+                        "SELECT status || '|' || role || '|' || revision "
+                                + "FROM operations_iam.employee_account WHERE id = ?", keepAdmin))
+                        .isEqualTo("ACTIVE|ADMIN|1");
+            }
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    setLocalRole(connection, "operations_iam_role");
+                    expectLastEnabledAdminFailure(connection, keepAdmin, AdminMutationAction.DISABLE, 1);
+                    expectLastEnabledAdminFailure(connection, keepAdmin, AdminMutationAction.DEMOTE, 1);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryString(verify,
+                        "SELECT status || '|' || role || '|' || revision "
+                                + "FROM operations_iam.employee_account WHERE id = ?", keepAdmin))
+                        .as("failed last-admin mutations must change nothing")
+                        .isEqualTo("ACTIVE|ADMIN|1");
+            }
+            cleanupCommittedRaceRows(
+                    List.of(), List.of(), List.of(), List.of(), List.of(),
+                    List.of(keepAdmin, disableTarget));
+            assertNoLeftoverEnabledAdministrators();
+
+            UUID demoteKeepAdmin = UUID.randomUUID();
+            UUID demoteTarget = UUID.randomUUID();
+            allEmployeeIds.add(demoteKeepAdmin);
+            allEmployeeIds.add(demoteTarget);
+            commitEmployees(List.of(demoteKeepAdmin, demoteTarget));
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    setLocalRole(connection, "operations_iam_role");
+                    runLastEnabledAdminMutation(connection, demoteTarget, AdminMutationAction.DEMOTE, 1);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryString(verify,
+                        "SELECT status || '|' || role || '|' || revision "
+                                + "FROM operations_iam.employee_account WHERE id = ?", demoteTarget))
+                        .isEqualTo("ACTIVE|OPS|2");
+                assertThat(queryString(verify,
+                        "SELECT status || '|' || role || '|' || revision "
+                                + "FROM operations_iam.employee_account WHERE id = ?", demoteKeepAdmin))
+                        .isEqualTo("ACTIVE|ADMIN|1");
+            }
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    setLocalRole(connection, "operations_iam_role");
+                    expectLastEnabledAdminFailure(connection, demoteKeepAdmin, AdminMutationAction.DEMOTE, 1);
+                    expectLastEnabledAdminFailure(connection, demoteKeepAdmin, AdminMutationAction.DISABLE, 1);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryString(verify,
+                        "SELECT status || '|' || role || '|' || revision "
+                                + "FROM operations_iam.employee_account WHERE id = ?", demoteKeepAdmin))
+                        .as("failed last-admin demote/disable must change nothing")
+                        .isEqualTo("ACTIVE|ADMIN|1");
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM operations_iam.employee_account "
+                                + "WHERE role = 'ADMIN' AND status = 'ACTIVE' AND id IN (?, ?)",
+                        demoteKeepAdmin, demoteTarget))
+                        .isEqualTo(1);
+            }
+        } finally {
+            cleanupCommittedRaceRows(
+                    List.of(), List.of(), List.of(), List.of(), List.of(), allEmployeeIds);
+        }
+    }
+
+    private static void runConcurrentLastEnabledAdminMutationRace() throws Exception {
+        UUID winnerTarget = UUID.randomUUID();
+        UUID loserTarget = UUID.randomUUID();
+        String winnerApplication = "pa2-s3-admin-race-winner";
+        String loserApplication = "pa2-s3-admin-race-loser";
+        List<UUID> employeeIds = List.of(winnerTarget, loserTarget);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            assertNoLeftoverEnabledAdministrators();
+            commitEmployees(employeeIds);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "operations_iam_role");
+                runLastEnabledAdminMutation(winner, winnerTarget, AdminMutationAction.DISABLE, 1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "operations_iam_role", loserApplication);
+                Future<Void> loserFuture = executor.submit(() -> {
+                    try {
+                        runLastEnabledAdminMutation(loser, loserTarget, AdminMutationAction.DISABLE, 1);
+                        loser.rollback();
+                        fail("expected LAST_ENABLED_ADMIN after the winner committed");
+                        return null;
+                    } catch (SQLException exception) {
+                        loser.rollback();
+                        assertThat(exception.getSQLState())
+                                .as("concurrent last-admin SQLSTATE")
+                                .isEqualTo("P0001");
+                        assertThat(exception.getMessage())
+                                .as("concurrent last-admin stable error")
+                                .contains("LAST_ENABLED_ADMIN");
+                        return null;
+                    }
+                });
+                awaitBlockedBackend(loserApplication);
+                winner.commit();
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+
+                try (Connection verify = openConnection()) {
+                    assertThat(queryString(verify,
+                            "SELECT status || '|' || role || '|' || revision "
+                                    + "FROM operations_iam.employee_account WHERE id = ?", winnerTarget))
+                            .as("winner disable commits with revision+1")
+                            .isEqualTo("DISABLED|ADMIN|2");
+                    assertThat(queryString(verify,
+                            "SELECT status || '|' || role || '|' || revision "
+                                    + "FROM operations_iam.employee_account WHERE id = ?", loserTarget))
+                            .as("loser observes the new count and fails closed")
+                            .isEqualTo("ACTIVE|ADMIN|1");
+                    assertThat(queryLong(verify,
+                            "SELECT count(*) FROM operations_iam.employee_account "
+                                    + "WHERE role = 'ADMIN' AND status = 'ACTIVE' AND id IN (?, ?)",
+                            winnerTarget, loserTarget))
+                            .as("final enabled-admin count stays at least one")
+                            .isEqualTo(1);
+                }
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedRaceRows(
+                    List.of(), List.of(), List.of(), List.of(), List.of(), employeeIds);
+        }
+    }
+
+    private static void assertNoLeftoverEnabledAdministrators() throws SQLException {
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account "
+                            + "WHERE role = 'ADMIN' AND status = 'ACTIVE'"))
+                    .as("last-enabled-admin scenarios require an empty enabled-admin set")
+                    .isZero();
+        }
+    }
+
+    private static void commitEmployees(List<UUID> employeeIds) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                for (UUID id : employeeIds) {
+                    assertThat(insertEmployee(connection, id, randomSha256(), "s3***adm",
+                            "onecall-ops", randomSha256(), "S3 Admin " + id, "ADMIN"))
+                            .isEqualTo(1);
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
+    private static void runLastEnabledAdminMutation(
+            Connection connection, UUID targetId, AdminMutationAction action, int expectedRevision)
+            throws SQLException {
+        execute(connection, ADMIN_MUTATION_ADVISORY_LOCK_SQL);
+        assertThat(queryString(connection,
+                "SELECT role || '|' || status || '|' || revision "
+                        + "FROM operations_iam.employee_account WHERE id = ? FOR UPDATE",
+                targetId))
+                .as("target employee FOR UPDATE under operations_iam_role")
+                .isEqualTo("ADMIN|ACTIVE|" + expectedRevision);
+        long enabledAdmins = queryLong(connection,
+                "SELECT count(*) FROM operations_iam.employee_account "
+                        + "WHERE role = 'ADMIN' AND status = 'ACTIVE'");
+        assertThat(enabledAdmins)
+                .as("locked target is an enabled administrator so the count is at least one")
+                .isGreaterThanOrEqualTo(1);
+        if (enabledAdmins == 1) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("DO $s3_last_admin$ "
+                        + "BEGIN RAISE EXCEPTION 'LAST_ENABLED_ADMIN' USING ERRCODE = 'P0001'; "
+                        + "END $s3_last_admin$");
+            }
+        }
+        int updated;
+        if (action == AdminMutationAction.DISABLE) {
+            updated = executeUpdate(connection,
+                    "UPDATE operations_iam.employee_account "
+                            + "SET status = 'DISABLED', revision = revision + 1 "
+                            + "WHERE id = ? AND role = 'ADMIN' AND status = 'ACTIVE' AND revision = ?",
+                    targetId, expectedRevision);
+        } else {
+            updated = executeUpdate(connection,
+                    "UPDATE operations_iam.employee_account "
+                            + "SET role = 'OPS', revision = revision + 1 "
+                            + "WHERE id = ? AND role = 'ADMIN' AND status = 'ACTIVE' AND revision = ?",
+                    targetId, expectedRevision);
+        }
+        assertThat(updated)
+                .as("conditional last-admin update must affect exactly one row")
+                .isEqualTo(1);
+    }
+
+    private static void expectLastEnabledAdminFailure(
+            Connection connection, UUID targetId, AdminMutationAction action, int expectedRevision)
+            throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            try {
+                runLastEnabledAdminMutation(connection, targetId, action, expectedRevision);
+                fail("expected LAST_ENABLED_ADMIN but the mutation succeeded");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState())
+                        .as("LAST_ENABLED_ADMIN SQLSTATE")
+                        .isEqualTo("P0001");
+                assertThat(exception.getMessage())
+                        .as("LAST_ENABLED_ADMIN stable error marker")
+                        .contains("LAST_ENABLED_ADMIN");
+            }
+        } finally {
+            connection.rollback(savepoint);
+        }
+    }
+
+    private static void expectSqlQueryFailure(
+            Connection connection, String expectedSqlState, String sql, Object... parameters)
+            throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            try (PreparedStatement prepared = connection.prepareStatement(sql)) {
+                bind(prepared, parameters);
+                try (ResultSet resultSet = prepared.executeQuery()) {
+                    while (resultSet.next()) {
+                        // drain any unexpectedly returned row
+                    }
+                }
+                fail("expected SQL failure " + expectedSqlState + " but the query succeeded");
+            }
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for expected query failure %s", expectedSqlState)
+                    .isEqualTo(expectedSqlState);
+        } finally {
+            connection.rollback(savepoint);
+        }
     }
 
     private static void assertOwnerAuditMutationIsRejected(UUID objectId, String operation) throws Exception {
