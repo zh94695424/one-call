@@ -257,7 +257,7 @@ distributionSha256Sum=4ec3f26fb1a692473aea0235c300bd20f0f9fe741947c82c1234cefd76
 
 - 新增一个最小 pin 文件 `backend/.java-version`，唯一内容一行：`21.0.13+9`。
 - 位置选择 `backend/` 而非仓库根：唯一 Java 构建在 `backend/`，根目录承载 Node contract harness（`api/openapi`）；root `.java-version` 会让 Node-only 工作误以为需要 JDK。`backend/.java-version` 是本地工具（jenv/asdf 等）可读的提示，不构成安装器。
-- CI 的权威 pin 仍由 `actions/setup-java@v4` 的 `distribution: temurin` + 精确 `java-version: '21.0.13+9'` 决定（**不使用 `check-latest`**），并用 `grep -Fx '21.0.13+9' .java-version` 与 `java -version` / `./mvnw -v` 断言交叉核对。
+- CI 的权威 pin 仍由 `actions/setup-java@v4` 的 `distribution: temurin` + provider 可解析的 `java-version: '21.0.13+9.0.LTS'` 决定（**不使用 `check-latest`**）；语义 JDK pin 仍是 `21.0.13+9`，并用 `.java-version`、`$JAVA_HOME/release` 的 `SEMANTIC_VERSION`/`IMPLEMENTOR`、`java -version` 与 `./mvnw -v` 断言交叉核对。
 - **不**新增 JDK installer script、不写全局安装 action；JDK 选择/供给属于执行环境（S1/controller/CI runner）职责。任何环境无法解析/安装 `jdk-21.0.13+9` 都是 fail-closed S1 blocker，不是可猜测或可延后的项。
 
 ## 5. Maven/Java 运行时设计
@@ -878,7 +878,8 @@ java-runtime:
     - uses: actions/setup-java@v4
       with:
         distribution: temurin
-        java-version: '21.0.13+9'
+        # setup-java's Temurin provider coordinate; semantic pin remains 21.0.13+9
+        java-version: '21.0.13+9.0.LTS'
         cache: maven
         cache-dependency-path: backend/pom.xml
     - name: assert toolchains and jdk pin
@@ -886,7 +887,9 @@ java-runtime:
         grep -Fx '21.0.13+9' .java-version
         ./mvnw -B -ntp -v | grep -F 'Apache Maven 3.9.9'
         ./mvnw -B -ntp -v | grep -F 'Java version: 21.0.13'
-        java -version 2>&1 | grep -F '21.0.13+9'
+        grep -Fx 'SEMANTIC_VERSION="21.0.13+9"' "${JAVA_HOME}/release"
+        grep -Fx 'IMPLEMENTOR="Eclipse Adoptium"' "${JAVA_HOME}/release"
+        java -version 2>&1 | grep -F '21.0.13'
     - name: require docker daemon
       run: docker info
     - name: build, module checks, container smoke
@@ -935,7 +938,7 @@ java-runtime:
         fi
 ```
 
-- `setup-java` 固定精确 `java-version: '21.0.13+9'`，不使用 `check-latest`；`assert toolchains and jdk pin` 同时核对 `backend/.java-version`、Maven 3.9.9、Java patch `21.0.13` 与 Temurin build `+9`。CI 运行不替代 controller pre-push container run。
+- `setup-java` 固定精确 provider coordinate `java-version: '21.0.13+9.0.LTS'`，不使用 `check-latest`；语义 pin 仍为 `21.0.13+9`，`assert toolchains and jdk pin` 同时核对 `backend/.java-version`、`$JAVA_HOME/release` 的 semantic version/implementor、Maven 3.9.9 和 Java patch `21.0.13`。CI 运行不替代 controller pre-push container run。
 - `docker info` 在任何 Maven/容器步骤之前；Docker 不可用时 job 立即失败，不会出现“测试被 skip 但 job 绿”。
 - `-Pcontainer-smoke verify` 同时运行 surefire（context/Modulith/firewall）和 failsafe（Postgres IT）。
 - Python 断言是“实际执行”的独立证明：report 存在、精确 1 个 test、0 skipped、0 failure/error、方法名匹配；surefire 也不允许 skip。
