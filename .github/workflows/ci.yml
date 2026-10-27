@@ -87,16 +87,20 @@ jobs:
               "functionsHaveFixedSearchPathAndNoTransactionControl",
               "ownerPublicAndRoleExecutionBoundariesAreExact",
               "hostileSearchPathCannotRedirectFunctionEffects",
+              "mutableHeadsEnforceLifecycleRevisionAndNamedChecks",
+              "localImmutabilityGuardsRejectRelationAndRotationChanges",
+              "identityCollisionAndMembershipRevokeRegrantSemantics",
+              "concurrentIdentityAndMembershipLiveCollisionsHaveOneWinner",
           }
           if int(suite.get("tests", "0")) != len(expected):
-              sys.exit("container IT did not report the S3 test count")
+              sys.exit("container IT did not report the S2 test count")
           if int(suite.get("skipped", "0")) != 0:
               sys.exit("container IT was skipped")
           if int(suite.get("failures", "0")) != 0 or int(suite.get("errors", "0")) != 0:
               sys.exit("container IT failed")
           cases = {case.get("name") for case in suite.findall("testcase")}
           if cases != expected:
-              sys.exit(f"container IT methods differ from S3: {sorted(cases)}")
+              sys.exit(f"container IT methods differ from S2: {sorted(cases)}")
           for surefire in suites("target/surefire-reports/TEST-*.xml"):
               if int(surefire.get("skipped", "0")) != 0:
                   sys.exit("a unit/module test was skipped")

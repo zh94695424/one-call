@@ -8,6 +8,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -1082,6 +1083,32 @@ class PostgresContainerIT {
         }
     }
 
+    @Test
+    void mutableHeadsEnforceLifecycleRevisionAndNamedChecks() throws Exception {
+        assertSixTableDefaultsAndConditionalRevisions();
+        assertEveryV002NamedCheckRejectsAViolation();
+        assertForeignKeyMissingParentAndParentDeleteRestrict();
+        assertNoIdDefaultsOrSequences();
+    }
+
+    @Test
+    void localImmutabilityGuardsRejectRelationAndRotationChanges() throws Exception {
+        assertLocalImmutabilityGuardsAndAuthRotation();
+    }
+
+    @Test
+    void identityCollisionAndMembershipRevokeRegrantSemantics() throws Exception {
+        assertIdentityCollisionAndMembershipReplacementSemantics();
+    }
+
+    @Test
+    void concurrentIdentityAndMembershipLiveCollisionsHaveOneWinner() throws Exception {
+        runConcurrentIdentityCollisionCommitRace();
+        runConcurrentIdentityCollisionRollbackRace();
+        runConcurrentMembershipCollisionCommitRace();
+        runConcurrentMembershipCollisionRollbackRace();
+    }
+
     private static void assertOwnerAuditMutationIsRejected(UUID objectId, String operation) throws Exception {
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
@@ -1264,7 +1291,7 @@ class PostgresContainerIT {
                 + BLOCK_DETECTION_TIMEOUT.toSeconds() + "s");
     }
 
-    private static BeginResult awaitFuture(Future<BeginResult> future, long timeoutSeconds) throws Exception {
+    private static <T> T awaitFuture(Future<T> future, long timeoutSeconds) throws Exception {
         try {
             return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (ExecutionException exception) {
@@ -1551,6 +1578,1424 @@ class PostgresContainerIT {
             }
         } finally {
             connection.rollback();
+        }
+    }
+
+    private static void expectSqlFailure(
+            Connection connection,
+            String expectedSqlState,
+            String messageFragment,
+            String sql,
+            Object... parameters) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            try (PreparedStatement prepared = connection.prepareStatement(sql)) {
+                bind(prepared, parameters);
+                prepared.executeUpdate();
+            }
+            fail("expected SQL failure " + expectedSqlState + " but the statement succeeded");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for expected failure %s", expectedSqlState)
+                    .isEqualTo(expectedSqlState);
+            if (messageFragment != null) {
+                assertThat(exception.getMessage())
+                        .as("exact error/constraint marker for %s", messageFragment)
+                        .contains(messageFragment);
+            }
+        } finally {
+            connection.rollback(savepoint);
+        }
+    }
+
+    private static void switchLocalRole(Connection connection, String role) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("RESET ROLE");
+        }
+        setLocalRole(connection, role);
+    }
+
+    private static String authIdentityInsertSql() {
+        return "INSERT INTO customer_iam.auth_identity (id, account_id, provider, provider_scope, "
+                + "provider_subject_ciphertext, provider_subject_hmac, verified_at, key_version) "
+                + "VALUES (?, ?, ?, ?, ?, ?, now(), 1)";
+    }
+
+    private static String employeeInsertSql() {
+        return "INSERT INTO operations_iam.employee_account "
+                + "(id, login_name_hmac, login_name_masked, auth_issuer, auth_subject_hmac, "
+                + "display_name, role) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static String membershipInsertSql() {
+        return "INSERT INTO organization_access.organization_membership "
+                + "(id, organization_id, account_id, role) VALUES (?, ?, ?, ?)";
+    }
+
+    private static int insertCustomerAccount(Connection connection, UUID id, String displayName)
+            throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO customer_iam.customer_account (id, display_name) VALUES (?, ?)",
+                id, displayName);
+    }
+
+    private static int insertAuthIdentity(
+            Connection connection,
+            UUID id,
+            UUID accountId,
+            String provider,
+            String providerScope,
+            String ciphertext,
+            String hmac) throws SQLException {
+        return executeUpdate(connection, authIdentityInsertSql(),
+                id, accountId, provider, providerScope, ciphertext, hmac);
+    }
+
+    private static int insertIdentityProfile(Connection connection, UUID id, UUID accountId)
+            throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO customer_iam.identity_profile (id, account_id) VALUES (?, ?)",
+                id, accountId);
+    }
+
+    private static int insertOrganization(Connection connection, UUID id, String displayName)
+            throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO organization_access.organization (id, display_name) VALUES (?, ?)",
+                id, displayName);
+    }
+
+    private static int insertMembership(
+            Connection connection, UUID id, UUID organizationId, UUID accountId, String role)
+            throws SQLException {
+        return executeUpdate(connection, membershipInsertSql(), id, organizationId, accountId, role);
+    }
+
+    private static int insertEmployee(
+            Connection connection,
+            UUID id,
+            String loginHmac,
+            String loginMasked,
+            String issuer,
+            String subjectHmac,
+            String displayName,
+            String role) throws SQLException {
+        return executeUpdate(connection, employeeInsertSql(),
+                id, loginHmac, loginMasked, issuer, subjectHmac, displayName, role);
+    }
+
+    private static UUID queryUuid(Connection connection, String sql, Object... parameters)
+            throws SQLException {
+        return UUID.fromString(queryString(connection, sql, parameters));
+    }
+
+    private static void assertSixTableDefaultsAndConditionalRevisions() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID identityId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID membershipId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "Defaults Customer")).isEqualTo(1);
+                assertThat(insertAuthIdentity(connection, identityId, accountId, "PHONE",
+                        "defaults-scope", "v1.defaults.ciphertext", randomSha256())).isEqualTo(1);
+                assertThat(insertIdentityProfile(connection, profileId, accountId)).isEqualTo(1);
+
+                assertThat(queryString(connection,
+                        "SELECT status FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo("ACTIVE");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT created_at::text FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isNotNull();
+                assertThat(queryString(connection,
+                        "SELECT updated_at::text FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isNotNull();
+                assertThat(queryString(connection,
+                        "SELECT status FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                        .isEqualTo("ACTIVE");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                        .isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT key_version FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT real_name_status FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                        .isEqualTo("UNVERIFIED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                        .isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.identity_profile WHERE id = ? "
+                                + "AND legal_name_ciphertext IS NULL AND id_number_ciphertext IS NULL "
+                                + "AND id_number_hmac IS NULL AND verification_ref_ciphertext IS NULL "
+                                + "AND verified_at IS NULL", profileId)).isEqualTo(1);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE customer_iam.customer_account SET display_name = ?, status = 'DISABLED', "
+                                + "revision = revision + 1, updated_at = now() WHERE id = ? AND revision = 1",
+                        "Updated Customer", accountId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE customer_iam.auth_identity SET status = 'DISABLED', verified_at = now(), "
+                                + "key_version = key_version + 1, revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1", identityId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE customer_iam.identity_profile SET real_name_status = 'VERIFIED', "
+                                + "legal_name_ciphertext = ?, id_number_ciphertext = ?, id_number_hmac = ?, "
+                                + "verification_ref_ciphertext = ?, verified_at = now(), "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1",
+                        "v1.profile.legal", "v1.profile.id", randomSha256(), "v1.profile.ref", profileId))
+                        .isEqualTo(1);
+
+                assertThat(queryString(connection,
+                        "SELECT display_name FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo("Updated Customer");
+                assertThat(queryString(connection,
+                        "SELECT status FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo("DISABLED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo(2);
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                        .isEqualTo(2);
+                assertThat(queryLong(connection,
+                        "SELECT key_version FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                        .isEqualTo(2);
+                assertThat(queryString(connection,
+                        "SELECT real_name_status FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                        .isEqualTo("VERIFIED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                        .isEqualTo(2);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE customer_iam.customer_account SET display_name = 'Stale', status = 'ACTIVE', "
+                                + "revision = revision + 1, updated_at = now() WHERE id = ? AND revision = 1",
+                        accountId)).isZero();
+                assertThat(executeUpdate(connection,
+                        "UPDATE customer_iam.auth_identity SET status = 'ACTIVE', verified_at = now(), "
+                                + "key_version = key_version + 1, revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1", identityId)).isZero();
+                assertThat(executeUpdate(connection,
+                        "UPDATE customer_iam.identity_profile SET real_name_status = 'UNVERIFIED', "
+                                + "legal_name_ciphertext = NULL, id_number_ciphertext = NULL, "
+                                + "id_number_hmac = NULL, verification_ref_ciphertext = NULL, "
+                                + "verified_at = NULL, revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1", profileId)).isZero();
+
+                assertThat(queryString(connection,
+                        "SELECT display_name FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo("Updated Customer");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isEqualTo(2);
+                assertThat(queryLong(connection,
+                        "SELECT key_version FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                        .isEqualTo(2);
+                assertThat(queryString(connection,
+                        "SELECT real_name_status FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                        .isEqualTo("VERIFIED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM customer_iam.identity_profile WHERE id = ?", profileId))
+                        .isEqualTo(2);
+
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "Defaults Organization"))
+                        .isEqualTo(1);
+                assertThat(insertMembership(connection, membershipId, organizationId, accountId, "MEMBER"))
+                        .isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM organization_access.organization WHERE id = ?", organizationId))
+                        .isEqualTo("ACTIVE");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM organization_access.organization WHERE id = ?",
+                        organizationId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT created_at::text FROM organization_access.organization WHERE id = ?",
+                        organizationId)).isNotNull();
+                assertThat(queryString(connection,
+                        "SELECT updated_at::text FROM organization_access.organization WHERE id = ?",
+                        organizationId)).isNotNull();
+                assertThat(queryString(connection,
+                        "SELECT status FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isEqualTo("ACTIVE");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isEqualTo(1);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE organization_access.organization SET display_name = ?, status = 'SUSPENDED', "
+                                + "revision = revision + 1, updated_at = now() "
+                                + "WHERE id = ? AND revision = 1", "Updated Organization", organizationId))
+                        .isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE organization_access.organization_membership SET role = 'ADMINISTRATOR', "
+                                + "department_label = 'Operations', revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1", membershipId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM organization_access.organization WHERE id = ?", organizationId))
+                        .isEqualTo("SUSPENDED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM organization_access.organization WHERE id = ?",
+                        organizationId)).isEqualTo(2);
+                assertThat(queryString(connection,
+                        "SELECT role FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isEqualTo("ADMINISTRATOR");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isEqualTo(2);
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE organization_access.organization SET display_name = 'Stale', "
+                                + "status = 'ACTIVE', revision = revision + 1, updated_at = now() "
+                                + "WHERE id = ? AND revision = 1", organizationId)).isZero();
+                assertThat(executeUpdate(connection,
+                        "UPDATE organization_access.organization_membership SET role = 'AUDITOR', "
+                                + "department_label = 'Stale', revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1", membershipId)).isZero();
+                assertThat(queryString(connection,
+                        "SELECT status FROM organization_access.organization WHERE id = ?", organizationId))
+                        .isEqualTo("SUSPENDED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM organization_access.organization WHERE id = ?",
+                        organizationId)).isEqualTo(2);
+                assertThat(queryString(connection,
+                        "SELECT role FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isEqualTo("ADMINISTRATOR");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isEqualTo(2);
+
+                switchLocalRole(connection, "operations_iam_role");
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "op***1",
+                        "defaults-issuer", randomSha256(), "Defaults Employee", "OPS")).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .isEqualTo("ACTIVE");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE operations_iam.employee_account SET display_name = ?, role = 'ADMIN', "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1",
+                        "Updated Employee", employeeId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT display_name FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .isEqualTo("Updated Employee");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .isEqualTo(2);
+                assertThat(executeUpdate(connection,
+                        "UPDATE operations_iam.employee_account SET display_name = 'Stale', role = 'OPS', "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1", employeeId))
+                        .isZero();
+                assertThat(queryString(connection,
+                        "SELECT display_name FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .isEqualTo("Updated Employee");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .isEqualTo(2);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", identityId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.identity_profile WHERE id = ?", profileId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?", organizationId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?",
+                    membershipId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", employeeId)).isZero();
+        }
+    }
+
+    private record CheckProbe(String constraint, String sql, Object[] parameters) {
+    }
+
+    private static CheckProbe checkProbe(String constraint, String sql, Object... parameters) {
+        return new CheckProbe(constraint, sql, parameters);
+    }
+
+    private static void assertEveryV002NamedCheckRejectsAViolation() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        OffsetDateTime verifiedAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        String authProbeSql = "INSERT INTO customer_iam.auth_identity (id, account_id, provider, "
+                + "provider_scope, provider_subject_ciphertext, provider_subject_hmac, status, "
+                + "verified_at, key_version, revision) VALUES (?, ?, ?, ?, ?, ?, ?, now(), ?, ?)";
+        String profileProbeSql = "INSERT INTO customer_iam.identity_profile (id, account_id, "
+                + "real_name_status, legal_name_ciphertext, id_number_ciphertext, id_number_hmac, "
+                + "verification_ref_ciphertext, verified_at, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String membershipProbeSql = "INSERT INTO organization_access.organization_membership "
+                + "(id, organization_id, account_id, role, department_label, status, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String employeeProbeSql = "INSERT INTO operations_iam.employee_account (id, login_name_hmac, "
+                + "login_name_masked, auth_issuer, auth_subject_hmac, display_name, role, status, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+        List<CheckProbe> customerProbes = List.of(
+                checkProbe("ck_customer_account_display_name",
+                        "INSERT INTO customer_iam.customer_account (id, display_name) VALUES (?, '')",
+                        UUID.randomUUID()),
+                checkProbe("ck_customer_account_status",
+                        "INSERT INTO customer_iam.customer_account (id, display_name, status) "
+                                + "VALUES (?, 'Probe', 'BAD')",
+                        UUID.randomUUID()),
+                checkProbe("ck_customer_account_revision",
+                        "INSERT INTO customer_iam.customer_account (id, display_name, revision) "
+                                + "VALUES (?, 'Probe', 0)",
+                        UUID.randomUUID()),
+                checkProbe("ck_customer_account_time_order",
+                        "INSERT INTO customer_iam.customer_account "
+                                + "(id, display_name, created_at, updated_at) "
+                                + "VALUES (?, 'Probe', now(), now() - interval '1 second')",
+                        UUID.randomUUID()),
+                checkProbe("ck_auth_identity_provider", authProbeSql,
+                        UUID.randomUUID(), accountId, "EMAIL", "probe-" + UUID.randomUUID(),
+                        "v1.probe.ciphertext", randomSha256(), "ACTIVE", 1, 1),
+                checkProbe("ck_auth_identity_scope", authProbeSql,
+                        UUID.randomUUID(), accountId, "PHONE", "",
+                        "v1.probe.ciphertext", randomSha256(), "ACTIVE", 1, 1),
+                checkProbe("ck_auth_identity_ciphertext", authProbeSql,
+                        UUID.randomUUID(), accountId, "PHONE", "probe-" + UUID.randomUUID(),
+                        "plain", randomSha256(), "ACTIVE", 1, 1),
+                checkProbe("ck_auth_identity_hmac", authProbeSql,
+                        UUID.randomUUID(), accountId, "PHONE", "probe-" + UUID.randomUUID(),
+                        "v1.probe.ciphertext", "A".repeat(64), "ACTIVE", 1, 1),
+                checkProbe("ck_auth_identity_status", authProbeSql,
+                        UUID.randomUUID(), accountId, "PHONE", "probe-" + UUID.randomUUID(),
+                        "v1.probe.ciphertext", randomSha256(), "BAD", 1, 1),
+                checkProbe("ck_auth_identity_key_version", authProbeSql,
+                        UUID.randomUUID(), accountId, "PHONE", "probe-" + UUID.randomUUID(),
+                        "v1.probe.ciphertext", randomSha256(), "ACTIVE", 0, 1),
+                checkProbe("ck_auth_identity_revision", authProbeSql,
+                        UUID.randomUUID(), accountId, "PHONE", "probe-" + UUID.randomUUID(),
+                        "v1.probe.ciphertext", randomSha256(), "ACTIVE", 1, 0),
+                checkProbe("ck_identity_profile_status", profileProbeSql,
+                        UUID.randomUUID(), accountId, "BAD", null, null, null, null, null, 1),
+                checkProbe("ck_identity_profile_legal_ciphertext", profileProbeSql,
+                        UUID.randomUUID(), accountId, "VERIFIED", "plain", "v1.probe.id",
+                        randomSha256(), "v1.probe.ref", verifiedAt, 1),
+                checkProbe("ck_identity_profile_id_ciphertext", profileProbeSql,
+                        UUID.randomUUID(), accountId, "VERIFIED", "v1.probe.legal", "plain",
+                        randomSha256(), "v1.probe.ref", verifiedAt, 1),
+                checkProbe("ck_identity_profile_id_hmac", profileProbeSql,
+                        UUID.randomUUID(), accountId, "VERIFIED", "v1.probe.legal", "v1.probe.id",
+                        "A".repeat(64), "v1.probe.ref", verifiedAt, 1),
+                checkProbe("ck_identity_profile_verification_ref", profileProbeSql,
+                        UUID.randomUUID(), accountId, "VERIFIED", "v1.probe.legal", "v1.probe.id",
+                        randomSha256(), "plain", verifiedAt, 1),
+                checkProbe("ck_identity_profile_state_shape", profileProbeSql,
+                        UUID.randomUUID(), accountId, "UNVERIFIED", "v1.probe.legal",
+                        null, null, null, null, 1),
+                checkProbe("ck_identity_profile_revision", profileProbeSql,
+                        UUID.randomUUID(), accountId, "VERIFIED", "v1.probe.legal", "v1.probe.id",
+                        randomSha256(), "v1.probe.ref", verifiedAt, 0));
+
+        List<CheckProbe> organizationProbes = List.of(
+                checkProbe("ck_organization_display_name",
+                        "INSERT INTO organization_access.organization (id, display_name) VALUES (?, '')",
+                        UUID.randomUUID()),
+                checkProbe("ck_organization_status",
+                        "INSERT INTO organization_access.organization (id, display_name, status) "
+                                + "VALUES (?, 'Probe', 'BAD')",
+                        UUID.randomUUID()),
+                checkProbe("ck_organization_revision",
+                        "INSERT INTO organization_access.organization (id, display_name, revision) "
+                                + "VALUES (?, 'Probe', 0)",
+                        UUID.randomUUID()),
+                checkProbe("ck_organization_time_order",
+                        "INSERT INTO organization_access.organization "
+                                + "(id, display_name, created_at, updated_at) "
+                                + "VALUES (?, 'Probe', now(), now() - interval '1 second')",
+                        UUID.randomUUID()),
+                checkProbe("ck_membership_role", membershipProbeSql,
+                        UUID.randomUUID(), organizationId, accountId, "BAD", null, "ACTIVE", 1),
+                checkProbe("ck_membership_department", membershipProbeSql,
+                        UUID.randomUUID(), organizationId, accountId, "MEMBER", "", "ACTIVE", 1),
+                checkProbe("ck_membership_status", membershipProbeSql,
+                        UUID.randomUUID(), organizationId, accountId, "MEMBER", null, "BAD", 1),
+                checkProbe("ck_membership_revision", membershipProbeSql,
+                        UUID.randomUUID(), organizationId, accountId, "MEMBER", null, "ACTIVE", 0));
+
+        List<CheckProbe> employeeProbes = List.of(
+                checkProbe("ck_employee_login_hmac", employeeProbeSql,
+                        UUID.randomUUID(), "A".repeat(64), "op***probe", "probe-issuer-" + UUID.randomUUID(),
+                        randomSha256(), "Probe", "OPS", "ACTIVE", 1),
+                checkProbe("ck_employee_login_masked", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "", "probe-issuer-" + UUID.randomUUID(),
+                        randomSha256(), "Probe", "OPS", "ACTIVE", 1),
+                checkProbe("ck_employee_issuer", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "op***probe", "", randomSha256(),
+                        "Probe", "OPS", "ACTIVE", 1),
+                checkProbe("ck_employee_subject_hmac", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "op***probe",
+                        "probe-issuer-" + UUID.randomUUID(), "A".repeat(64), "Probe", "OPS", "ACTIVE", 1),
+                checkProbe("ck_employee_display_name", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "op***probe",
+                        "probe-issuer-" + UUID.randomUUID(), randomSha256(), "", "OPS", "ACTIVE", 1),
+                checkProbe("ck_employee_role", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "op***probe",
+                        "probe-issuer-" + UUID.randomUUID(), randomSha256(), "Probe", "BAD", "ACTIVE", 1),
+                checkProbe("ck_employee_status", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "op***probe",
+                        "probe-issuer-" + UUID.randomUUID(), randomSha256(), "Probe", "OPS", "BAD", 1),
+                checkProbe("ck_employee_revision", employeeProbeSql,
+                        UUID.randomUUID(), randomSha256(), "op***probe",
+                        "probe-issuer-" + UUID.randomUUID(), randomSha256(), "Probe", "OPS", "ACTIVE", 0));
+
+        List<String> probedConstraints = new ArrayList<>();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "Check Probe Account")).isEqualTo(1);
+                for (CheckProbe probe : customerProbes) {
+                    if ("ck_identity_profile_status".equals(probe.constraint())) {
+                        expectProfileStatusViolationWithIsolatedConstraint(connection, probe);
+                    } else {
+                        expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                                probe.parameters());
+                    }
+                    probedConstraints.add(probe.constraint());
+                }
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "Check Probe Organization"))
+                        .isEqualTo(1);
+                for (CheckProbe probe : organizationProbes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(), probe.parameters());
+                    probedConstraints.add(probe.constraint());
+                }
+                switchLocalRole(connection, "operations_iam_role");
+                for (CheckProbe probe : employeeProbes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(), probe.parameters());
+                    probedConstraints.add(probe.constraint());
+                }
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        List<String> expectedConstraints = new ArrayList<>();
+        V002_CHECK_DEF_MAP.values().forEach(definitions -> expectedConstraints.addAll(definitions.keySet()));
+        assertThat(probedConstraints)
+                .as("every frozen V002 named check has exactly one violating probe")
+                .hasSize(34)
+                .containsExactlyInAnyOrderElementsOf(expectedConstraints);
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?", organizationId))
+                    .isZero();
+        }
+    }
+
+    /**
+     * {@code ck_identity_profile_status} is logically subsumed by
+     * {@code ck_identity_profile_state_shape}, so PostgreSQL reports only the latter for any invalid
+     * status value. This bounded helper isolates the frozen status check by dropping the
+     * state-shape constraint inside a savepoint, inserting the violating row (exact 23514 and exact
+     * constraint name), then rolling back to the savepoint so the catalog is restored exactly.
+     */
+    private static void expectProfileStatusViolationWithIsolatedConstraint(
+            Connection connection, CheckProbe probe) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "customer_iam_owner");
+            execute(connection,
+                    "ALTER TABLE customer_iam.identity_profile DROP CONSTRAINT ck_identity_profile_state_shape");
+            try (PreparedStatement prepared = connection.prepareStatement(probe.sql())) {
+                bind(prepared, probe.parameters());
+                prepared.executeUpdate();
+            }
+            fail("expected SQL failure 23514 for ck_identity_profile_status but the statement succeeded");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for ck_identity_profile_status").isEqualTo("23514");
+            assertThat(exception.getMessage())
+                    .as("exact constraint marker for ck_identity_profile_status")
+                    .contains("ck_identity_profile_status");
+        } finally {
+            connection.rollback(savepoint);
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'customer_iam' AND r.relname = 'identity_profile' "
+                        + "AND c.conname IN ('ck_identity_profile_status','ck_identity_profile_state_shape')"))
+                .as("the transaction-local state-shape isolation is fully rolled back")
+                .isEqualTo(2);
+        switchLocalRole(connection, "customer_iam_role");
+    }
+
+    private static void assertForeignKeyMissingParentAndParentDeleteRestrict() throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                UUID validAccount = UUID.randomUUID();
+                assertThat(insertCustomerAccount(connection, validAccount, "FK Probe Account")).isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_auth_identity_account", authIdentityInsertSql(),
+                        UUID.randomUUID(), UUID.randomUUID(), "PHONE", "fk-scope",
+                        "v1.fk.ciphertext", randomSha256());
+                expectSqlFailure(connection, "23503", "fk_identity_profile_account",
+                        "INSERT INTO customer_iam.identity_profile (id, account_id) VALUES (?, ?)",
+                        UUID.randomUUID(), UUID.randomUUID());
+
+                switchLocalRole(connection, "organization_access_role");
+                UUID validOrganization = UUID.randomUUID();
+                assertThat(insertOrganization(connection, validOrganization, "FK Probe Organization"))
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_membership_organization", membershipInsertSql(),
+                        UUID.randomUUID(), UUID.randomUUID(), validAccount, "MEMBER");
+                expectSqlFailure(connection, "23503", "fk_membership_account", membershipInsertSql(),
+                        UUID.randomUUID(), validOrganization, UUID.randomUUID(), "MEMBER");
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        UUID identityParent = UUID.randomUUID();
+        UUID identityChild = UUID.randomUUID();
+        UUID membershipParent = UUID.randomUUID();
+        UUID membershipChild = UUID.randomUUID();
+        UUID organizationParent = UUID.randomUUID();
+        UUID organizationChild = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, identityParent, "Delete Restrict Identity Parent"))
+                        .isEqualTo(1);
+                assertThat(insertAuthIdentity(connection, identityChild, identityParent, "PHONE",
+                        "delete-restrict-scope", "v1.delete.ciphertext", randomSha256())).isEqualTo(1);
+                assertThat(insertCustomerAccount(connection, membershipParent,
+                        "Delete Restrict Membership Parent")).isEqualTo(1);
+
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationParent, "Delete Restrict Organization"))
+                        .isEqualTo(1);
+                assertThat(insertMembership(connection, organizationChild, organizationParent,
+                        membershipParent, "MEMBER")).isEqualTo(1);
+
+                switchLocalRole(connection, "customer_iam_role");
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("RESET ROLE");
+                }
+                assertThat(queryString(connection, "SELECT current_user")).isEqualTo(DB_USER);
+                expectSqlFailure(connection, "23503", "fk_auth_identity_account",
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", identityParent);
+                expectSqlFailure(connection, "23503", "fk_membership_account",
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", membershipParent);
+                expectSqlFailure(connection, "23503", "fk_membership_organization",
+                        "DELETE FROM organization_access.organization WHERE id = ?", organizationParent);
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static void assertNoIdDefaultsOrSequences() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM pg_attrdef d "
+                            + "JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
+                            + "JOIN pg_class c ON c.oid = a.attrelid "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname IN ('customer_iam','organization_access','operations_iam') "
+                            + "AND c.relname IN ('customer_account','auth_identity','identity_profile',"
+                            + "'organization','organization_membership','employee_account') "
+                            + "AND a.attname = 'id'"))
+                    .as("no V002 id column has a default").isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname IN ('customer_iam','organization_access','operations_iam') "
+                            + "AND c.relkind = 'S'"))
+                    .as("no V002 sequence exists").isZero();
+        }
+    }
+
+    private static void assertLocalImmutabilityGuardsAndAuthRotation() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID identityId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID membershipId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "Guard Customer")).isEqualTo(1);
+                assertThat(insertAuthIdentity(connection, identityId, accountId, "PHONE", "guard-scope",
+                        "v1.guard.ciphertext", randomSha256())).isEqualTo(1);
+                assertThat(insertIdentityProfile(connection, profileId, accountId)).isEqualTo(1);
+
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "Guard Organization")).isEqualTo(1);
+                assertThat(insertMembership(connection, membershipId, organizationId, accountId, "MEMBER"))
+                        .isEqualTo(1);
+
+                switchLocalRole(connection, "operations_iam_role");
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "op***guard",
+                        "guard-issuer", randomSha256(), "Guard Employee", "OPS")).isEqualTo(1);
+
+                assertRuntimeImmutableColumnDenied(connection, accountId, identityId, profileId,
+                        organizationId, membershipId, employeeId);
+                assertAllowedMutableUpdatesSucceed(connection, accountId, identityId, profileId,
+                        organizationId, membershipId, employeeId);
+                assertOwnerImmutableColumnGuards(connection, accountId, identityId, profileId,
+                        organizationId, membershipId, employeeId);
+                assertOwnerAuthRotationGuards(connection, identityId);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", identityId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.identity_profile WHERE id = ?", profileId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?", organizationId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?",
+                    membershipId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", employeeId)).isZero();
+        }
+    }
+
+    private static void assertRuntimeImmutableColumnDenied(
+            Connection connection,
+            UUID accountId,
+            UUID identityId,
+            UUID profileId,
+            UUID organizationId,
+            UUID membershipId,
+            UUID employeeId) throws SQLException {
+        switchLocalRole(connection, "customer_iam_role");
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.customer_account SET id = ? WHERE id = ?",
+                UUID.randomUUID(), accountId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.customer_account SET created_at = now() + interval '1 day' "
+                        + "WHERE id = ?", accountId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET id = ? WHERE id = ?",
+                UUID.randomUUID(), identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET account_id = ? WHERE id = ?",
+                accountId, identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET provider = 'WECHAT' WHERE id = ?", identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET provider_scope = 'other-scope' WHERE id = ?",
+                identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET provider_subject_ciphertext = 'v1.other.value' "
+                        + "WHERE id = ?", identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.auth_identity SET provider_subject_hmac = ? WHERE id = ?",
+                randomSha256(), identityId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.identity_profile SET id = ? WHERE id = ?",
+                UUID.randomUUID(), profileId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE customer_iam.identity_profile SET account_id = ? WHERE id = ?",
+                UUID.randomUUID(), profileId);
+
+        switchLocalRole(connection, "organization_access_role");
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization SET id = ? WHERE id = ?",
+                UUID.randomUUID(), organizationId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization SET created_at = now() + interval '1 day' "
+                        + "WHERE id = ?", organizationId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization_membership SET id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization_membership SET organization_id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE organization_access.organization_membership SET account_id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+
+        switchLocalRole(connection, "operations_iam_role");
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE operations_iam.employee_account SET id = ? WHERE id = ?",
+                UUID.randomUUID(), employeeId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE operations_iam.employee_account SET login_name_hmac = ? WHERE id = ?",
+                randomSha256(), employeeId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE operations_iam.employee_account SET auth_issuer = 'other-issuer' WHERE id = ?",
+                employeeId);
+        expectSqlFailure(connection, "42501", null,
+                "UPDATE operations_iam.employee_account SET auth_subject_hmac = ? WHERE id = ?",
+                randomSha256(), employeeId);
+    }
+
+    private static void assertAllowedMutableUpdatesSucceed(
+            Connection connection,
+            UUID accountId,
+            UUID identityId,
+            UUID profileId,
+            UUID organizationId,
+            UUID membershipId,
+            UUID employeeId) throws SQLException {
+        switchLocalRole(connection, "customer_iam_role");
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.customer_account SET display_name = ?, status = 'DISABLED', "
+                        + "revision = revision + 1, updated_at = now() WHERE id = ?",
+                "Guarded Customer", accountId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.auth_identity SET status = 'DISABLED', verified_at = now(), "
+                        + "key_version = key_version + 1, revision = revision + 1 WHERE id = ?",
+                identityId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.identity_profile SET real_name_status = 'VERIFIED', "
+                        + "legal_name_ciphertext = ?, id_number_ciphertext = ?, id_number_hmac = ?, "
+                        + "verification_ref_ciphertext = ?, verified_at = now(), revision = revision + 1 "
+                        + "WHERE id = ?",
+                "v1.guard.legal", "v1.guard.id", randomSha256(), "v1.guard.ref", profileId))
+                .isEqualTo(1);
+
+        switchLocalRole(connection, "organization_access_role");
+        assertThat(executeUpdate(connection,
+                "UPDATE organization_access.organization SET display_name = ?, status = 'SUSPENDED', "
+                        + "revision = revision + 1, updated_at = now() WHERE id = ?",
+                "Guarded Organization", organizationId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "UPDATE organization_access.organization_membership SET role = 'AUDITOR', "
+                        + "department_label = 'Guarded', status = 'SUSPENDED', revision = revision + 1 "
+                        + "WHERE id = ?", membershipId)).isEqualTo(1);
+
+        switchLocalRole(connection, "operations_iam_role");
+        assertThat(executeUpdate(connection,
+                "UPDATE operations_iam.employee_account SET display_name = ?, role = 'ADMIN', "
+                        + "status = 'DISABLED', revision = revision + 1 WHERE id = ?",
+                "Guarded Employee", employeeId)).isEqualTo(1);
+    }
+
+    private static void assertOwnerImmutableColumnGuards(
+            Connection connection,
+            UUID accountId,
+            UUID identityId,
+            UUID profileId,
+            UUID organizationId,
+            UUID membershipId,
+            UUID employeeId) throws SQLException {
+        switchLocalRole(connection, "customer_iam_owner");
+        expectSqlFailure(connection, "P0001", "CUSTOMER_ACCOUNT_IMMUTABLE",
+                "UPDATE customer_iam.customer_account SET id = ? WHERE id = ?",
+                UUID.randomUUID(), accountId);
+        expectSqlFailure(connection, "P0001", "CUSTOMER_ACCOUNT_IMMUTABLE",
+                "UPDATE customer_iam.customer_account SET created_at = created_at + interval '1 day' "
+                        + "WHERE id = ?", accountId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET id = ? WHERE id = ?",
+                UUID.randomUUID(), identityId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET account_id = ? WHERE id = ?",
+                UUID.randomUUID(), identityId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET provider = 'WECHAT' WHERE id = ?", identityId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET provider_scope = 'other-scope' WHERE id = ?",
+                identityId);
+        expectSqlFailure(connection, "P0001", "IDENTITY_PROFILE_IMMUTABLE",
+                "UPDATE customer_iam.identity_profile SET id = ? WHERE id = ?",
+                UUID.randomUUID(), profileId);
+        expectSqlFailure(connection, "P0001", "IDENTITY_PROFILE_IMMUTABLE",
+                "UPDATE customer_iam.identity_profile SET account_id = ? WHERE id = ?",
+                UUID.randomUUID(), profileId);
+
+        switchLocalRole(connection, "organization_access_owner");
+        expectSqlFailure(connection, "P0001", "ORGANIZATION_IMMUTABLE",
+                "UPDATE organization_access.organization SET id = ? WHERE id = ?",
+                UUID.randomUUID(), organizationId);
+        expectSqlFailure(connection, "P0001", "ORGANIZATION_IMMUTABLE",
+                "UPDATE organization_access.organization SET created_at = created_at + interval '1 day' "
+                        + "WHERE id = ?", organizationId);
+        expectSqlFailure(connection, "P0001", "MEMBERSHIP_IMMUTABLE",
+                "UPDATE organization_access.organization_membership SET id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+        expectSqlFailure(connection, "P0001", "MEMBERSHIP_IMMUTABLE",
+                "UPDATE organization_access.organization_membership SET organization_id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+        expectSqlFailure(connection, "P0001", "MEMBERSHIP_IMMUTABLE",
+                "UPDATE organization_access.organization_membership SET account_id = ? WHERE id = ?",
+                UUID.randomUUID(), membershipId);
+
+        switchLocalRole(connection, "operations_iam_owner");
+        expectSqlFailure(connection, "P0001", "EMPLOYEE_ACCOUNT_IMMUTABLE",
+                "UPDATE operations_iam.employee_account SET id = ? WHERE id = ?",
+                UUID.randomUUID(), employeeId);
+        expectSqlFailure(connection, "P0001", "EMPLOYEE_ACCOUNT_IMMUTABLE",
+                "UPDATE operations_iam.employee_account SET login_name_hmac = ? WHERE id = ?",
+                randomSha256(), employeeId);
+        expectSqlFailure(connection, "P0001", "EMPLOYEE_ACCOUNT_IMMUTABLE",
+                "UPDATE operations_iam.employee_account SET auth_issuer = 'other-issuer' WHERE id = ?",
+                employeeId);
+        expectSqlFailure(connection, "P0001", "EMPLOYEE_ACCOUNT_IMMUTABLE",
+                "UPDATE operations_iam.employee_account SET auth_subject_hmac = ? WHERE id = ?",
+                randomSha256(), employeeId);
+    }
+
+    private static void assertOwnerAuthRotationGuards(Connection connection, UUID identityId)
+            throws SQLException {
+        switchLocalRole(connection, "customer_iam_owner");
+        String newCiphertext = "v1.rotated.ciphertext." + UUID.randomUUID();
+        String newHmac = randomSha256();
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET provider_subject_ciphertext = ? WHERE id = ?",
+                newCiphertext, identityId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET provider_subject_hmac = ? WHERE id = ?",
+                newHmac, identityId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET provider_subject_ciphertext = ?, "
+                        + "provider_subject_hmac = ? WHERE id = ?",
+                newCiphertext, newHmac, identityId);
+        expectSqlFailure(connection, "P0001", "AUTH_IDENTITY_IMMUTABLE",
+                "UPDATE customer_iam.auth_identity SET provider_subject_ciphertext = ?, "
+                        + "provider_subject_hmac = ?, key_version = key_version + 2 WHERE id = ?",
+                newCiphertext, newHmac, identityId);
+        assertThat(executeUpdate(connection,
+                "UPDATE customer_iam.auth_identity SET provider_subject_ciphertext = ?, "
+                        + "provider_subject_hmac = ?, key_version = key_version + 1 WHERE id = ?",
+                newCiphertext, newHmac, identityId))
+                .as("both change plus exactly one key-version increment is atomic and accepted")
+                .isEqualTo(1);
+        assertThat(queryString(connection,
+                "SELECT provider_subject_ciphertext FROM customer_iam.auth_identity WHERE id = ?",
+                identityId)).isEqualTo(newCiphertext);
+        assertThat(queryString(connection,
+                "SELECT provider_subject_hmac FROM customer_iam.auth_identity WHERE id = ?", identityId))
+                .isEqualTo(newHmac);
+    }
+
+    private static void assertIdentityCollisionAndMembershipReplacementSemantics() throws Exception {
+        UUID accountA = UUID.randomUUID();
+        UUID accountB = UUID.randomUUID();
+        UUID identityId = UUID.randomUUID();
+        UUID profileId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID membershipOne = UUID.randomUUID();
+        UUID membershipTwo = UUID.randomUUID();
+        UUID membershipThree = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        String provider = "PHONE";
+        String scope = "lifecycle-" + UUID.randomUUID();
+        String ciphertext = "v1.lifecycle.ciphertext";
+        String hmac = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountA, "Lifecycle Account A")).isEqualTo(1);
+                assertThat(insertCustomerAccount(connection, accountB, "Lifecycle Account B")).isEqualTo(1);
+                assertThat(insertAuthIdentity(connection, identityId, accountA, provider, scope,
+                        ciphertext, hmac)).isEqualTo(1);
+                assertThat(classifyIdentityInsert(connection, UUID.randomUUID(), accountA, provider,
+                        scope, ciphertext, hmac))
+                        .as("the same account on the winning identity tuple is an idempotent success")
+                        .isEqualTo("IDEMPOTENT");
+                assertThat(classifyIdentityInsert(connection, UUID.randomUUID(), accountB, provider,
+                        scope, ciphertext, hmac))
+                        .as("a different account on the winning identity tuple is IDENTITY_CONFLICT")
+                        .isEqualTo("IDENTITY_CONFLICT");
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.auth_identity WHERE provider = ? "
+                                + "AND provider_scope = ? AND provider_subject_hmac = ?",
+                        provider, scope, hmac)).isEqualTo(1);
+
+                assertThat(insertIdentityProfile(connection, profileId, accountA)).isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_identity_profile_account",
+                        "INSERT INTO customer_iam.identity_profile (id, account_id) VALUES (?, ?)",
+                        UUID.randomUUID(), accountA);
+
+                switchLocalRole(connection, "operations_iam_role");
+                String loginOne = randomSha256();
+                String issuer = "lifecycle-issuer";
+                String subjectOne = randomSha256();
+                assertThat(insertEmployee(connection, employeeId, loginOne, "op***life", issuer,
+                        subjectOne, "Lifecycle Employee", "OPS")).isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_employee_login_hmac", employeeInsertSql(),
+                        UUID.randomUUID(), loginOne, "op***dup", "other-issuer", randomSha256(),
+                        "Duplicate Login", "OPS");
+                expectSqlFailure(connection, "23505", "uq_employee_issuer_subject", employeeInsertSql(),
+                        UUID.randomUUID(), randomSha256(), "op***dup2", issuer, subjectOne,
+                        "Duplicate Subject", "OPS");
+
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "Lifecycle Organization"))
+                        .isEqualTo(1);
+                assertThat(insertMembership(connection, membershipOne, organizationId, accountA, "MEMBER"))
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_membership_live", membershipInsertSql(),
+                        UUID.randomUUID(), organizationId, accountA, "MEMBER");
+
+                assertThat(executeUpdate(connection,
+                        "UPDATE organization_access.organization_membership SET status = 'REVOKED', "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1", membershipOne))
+                        .isEqualTo(1);
+                assertThat(insertMembership(connection, membershipTwo, organizationId, accountA, "AUDITOR"))
+                        .as("a new row re-grants membership after the prior row is revoked")
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_membership_live",
+                        "UPDATE organization_access.organization_membership SET status = 'ACTIVE', "
+                                + "revision = revision + 1 WHERE id = ?", membershipOne);
+                assertThat(executeUpdate(connection,
+                        "UPDATE organization_access.organization_membership SET status = 'REVOKED', "
+                                + "revision = revision + 1 WHERE id = ? AND revision = 1", membershipTwo))
+                        .isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status = 'REVOKED'",
+                        organizationId, accountA))
+                        .as("multiple revoked rows for the same pair are allowed")
+                        .isEqualTo(2);
+                assertThat(insertMembership(connection, membershipThree, organizationId, accountA,
+                        "ADMINISTRATOR")).isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_membership_live",
+                        "UPDATE organization_access.organization_membership SET status = 'ACTIVE', "
+                                + "revision = revision + 1 WHERE id = ?", membershipOne);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status <> 'REVOKED'",
+                        organizationId, accountA)).isEqualTo(1);
+
+                switchLocalRole(connection, "organization_access_owner");
+                expectSqlFailure(connection, "P0001", "MEMBERSHIP_IMMUTABLE",
+                        "UPDATE organization_access.organization_membership SET organization_id = ? "
+                                + "WHERE id = ?", UUID.randomUUID(), membershipThree);
+                expectSqlFailure(connection, "P0001", "MEMBERSHIP_IMMUTABLE",
+                        "UPDATE organization_access.organization_membership SET account_id = ? "
+                                + "WHERE id = ?", UUID.randomUUID(), membershipThree);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            for (UUID accountId : List.of(accountA, accountB)) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .isZero();
+            }
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", identityId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.identity_profile WHERE id = ?", profileId)).isZero();
+            for (UUID membershipId : List.of(membershipOne, membershipTwo, membershipThree)) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?",
+                        membershipId)).isZero();
+            }
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?", organizationId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", employeeId)).isZero();
+        }
+    }
+
+    private static String classifyIdentityInsert(
+            Connection connection,
+            UUID id,
+            UUID accountId,
+            String provider,
+            String scope,
+            String ciphertext,
+            String hmac) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            insertAuthIdentity(connection, id, accountId, provider, scope, ciphertext, hmac);
+            return "NEW";
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("identity tuple collision SQLSTATE").isEqualTo("23505");
+            assertThat(exception.getMessage())
+                    .as("identity tuple collision constraint").contains("uq_auth_identity_subject");
+            connection.rollback(savepoint);
+            UUID existingAccount = queryUuid(connection,
+                    "SELECT account_id::text FROM customer_iam.auth_identity "
+                            + "WHERE provider = ? AND provider_scope = ? AND provider_subject_hmac = ?",
+                    provider, scope, hmac);
+            return existingAccount.equals(accountId) ? "IDEMPOTENT" : "IDENTITY_CONFLICT";
+        }
+    }
+
+    private static void configureBlockedWriter(Connection connection, String role, String applicationName)
+            throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET LOCAL statement_timeout = 20000");
+            statement.execute("SET LOCAL application_name = '" + applicationName + "'");
+        }
+        setLocalRole(connection, role);
+        assertThat(queryString(connection, "SELECT current_setting('application_name')"))
+                .isEqualTo(applicationName);
+    }
+
+    private static void commitCustomerAccounts(UUID... accountIds) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                for (UUID accountId : accountIds) {
+                    assertThat(insertCustomerAccount(connection, accountId, "Race Account")).isEqualTo(1);
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
+    private static void commitOrganization(UUID organizationId) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "Race Organization")).isEqualTo(1);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
+    private static void cleanupCommittedRaceRows(
+            List<UUID> membershipIds,
+            List<UUID> identityIds,
+            List<UUID> profileIds,
+            List<UUID> organizationIds,
+            List<UUID> accountIds,
+            List<UUID> employeeIds) throws SQLException {
+        try (Connection connection = openConnection();
+                Statement timeout = connection.createStatement()) {
+            timeout.execute("SET statement_timeout = 20000");
+            for (UUID id : membershipIds) {
+                executeUpdate(connection,
+                        "DELETE FROM organization_access.organization_membership WHERE id = ?", id);
+            }
+            for (UUID id : identityIds) {
+                executeUpdate(connection, "DELETE FROM customer_iam.auth_identity WHERE id = ?", id);
+            }
+            for (UUID id : profileIds) {
+                executeUpdate(connection, "DELETE FROM customer_iam.identity_profile WHERE id = ?", id);
+            }
+            for (UUID id : employeeIds) {
+                executeUpdate(connection, "DELETE FROM operations_iam.employee_account WHERE id = ?", id);
+            }
+            for (UUID id : organizationIds) {
+                executeUpdate(connection, "DELETE FROM organization_access.organization WHERE id = ?", id);
+            }
+            for (UUID id : accountIds) {
+                executeUpdate(connection, "DELETE FROM customer_iam.customer_account WHERE id = ?", id);
+            }
+            for (UUID id : membershipIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : identityIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : profileIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.identity_profile WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : employeeIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : organizationIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM organization_access.organization WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : accountIds) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", id)).isZero();
+            }
+        }
+    }
+
+    private static void runConcurrentIdentityCollisionCommitRace() throws Exception {
+        UUID winnerAccount = UUID.randomUUID();
+        UUID loserAccount = UUID.randomUUID();
+        UUID winnerIdentity = UUID.randomUUID();
+        UUID loserIdentity = UUID.randomUUID();
+        String provider = "PHONE";
+        String scope = "race-identity-commit-" + UUID.randomUUID();
+        String ciphertext = "v1.race.identity.commit";
+        String hmac = randomSha256();
+        String winnerApplication = "pa2-s2-identity-commit-winner";
+        String loserApplication = "pa2-s2-identity-commit-loser";
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            commitCustomerAccounts(winnerAccount, loserAccount);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "customer_iam_role");
+                assertThat(insertAuthIdentity(winner, winnerIdentity, winnerAccount, provider, scope,
+                        ciphertext, hmac)).isEqualTo(1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "customer_iam_role", loserApplication);
+                Future<Integer> loserFuture = executor.submit(() -> insertAuthIdentity(
+                        loser, loserIdentity, loserAccount, provider, scope, ciphertext, hmac));
+                awaitBlockedBackend(loserApplication);
+
+                winner.commit();
+                try {
+                    awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                    fail("the identity unique loser must not commit a second row");
+                } catch (SQLException exception) {
+                    assertThat(exception.getSQLState()).isEqualTo("23505");
+                    assertThat(exception.getMessage()).contains("uq_auth_identity_subject");
+                }
+                loser.rollback();
+                setLocalRole(loser, "customer_iam_role");
+                UUID existingAccount = queryUuid(loser,
+                        "SELECT account_id::text FROM customer_iam.auth_identity "
+                                + "WHERE provider = ? AND provider_scope = ? AND provider_subject_hmac = ?",
+                        provider, scope, hmac);
+                assertThat(existingAccount).isEqualTo(winnerAccount);
+                String classification = existingAccount.equals(loserAccount)
+                        ? "IDEMPOTENT" : "IDENTITY_CONFLICT";
+                assertThat(classification)
+                        .as("the loser reads the committed winner and maps a different account")
+                        .isEqualTo("IDENTITY_CONFLICT");
+                loser.rollback();
+            }
+
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM customer_iam.auth_identity WHERE provider = ? "
+                                + "AND provider_scope = ? AND provider_subject_hmac = ?",
+                        provider, scope, hmac)).isEqualTo(1);
+                assertThat(queryString(verify,
+                        "SELECT id::text FROM customer_iam.auth_identity WHERE provider = ? "
+                                + "AND provider_scope = ? AND provider_subject_hmac = ?",
+                        provider, scope, hmac)).isEqualTo(winnerIdentity.toString());
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", loserIdentity))
+                        .isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedRaceRows(List.of(), List.of(winnerIdentity, loserIdentity), List.of(),
+                    List.of(), List.of(winnerAccount, loserAccount), List.of());
+        }
+    }
+
+    private static void runConcurrentIdentityCollisionRollbackRace() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID winnerIdentity = UUID.randomUUID();
+        UUID loserIdentity = UUID.randomUUID();
+        String provider = "PHONE";
+        String scope = "race-identity-rollback-" + UUID.randomUUID();
+        String ciphertext = "v1.race.identity.rollback";
+        String hmac = randomSha256();
+        String winnerApplication = "pa2-s2-identity-rollback-winner";
+        String loserApplication = "pa2-s2-identity-rollback-loser";
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            commitCustomerAccounts(accountId);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "customer_iam_role");
+                assertThat(insertAuthIdentity(winner, winnerIdentity, accountId, provider, scope,
+                        ciphertext, hmac)).isEqualTo(1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "customer_iam_role", loserApplication);
+                Future<Integer> loserFuture = executor.submit(() -> insertAuthIdentity(
+                        loser, loserIdentity, accountId, provider, scope, ciphertext, hmac));
+                awaitBlockedBackend(loserApplication);
+
+                winner.rollback();
+                assertThat(awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS))
+                        .as("the loser inserts after the winner rolls back").isEqualTo(1);
+                loser.commit();
+            }
+
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM customer_iam.auth_identity WHERE provider = ? "
+                                + "AND provider_scope = ? AND provider_subject_hmac = ?",
+                        provider, scope, hmac)).isEqualTo(1);
+                assertThat(queryString(verify,
+                        "SELECT id::text FROM customer_iam.auth_identity WHERE provider = ? "
+                                + "AND provider_scope = ? AND provider_subject_hmac = ?",
+                        provider, scope, hmac)).isEqualTo(loserIdentity.toString());
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM customer_iam.auth_identity WHERE id = ?", winnerIdentity))
+                        .isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedRaceRows(List.of(), List.of(winnerIdentity, loserIdentity), List.of(),
+                    List.of(), List.of(accountId), List.of());
+        }
+    }
+
+    private static void runConcurrentMembershipCollisionCommitRace() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID winnerMembership = UUID.randomUUID();
+        UUID loserMembership = UUID.randomUUID();
+        String winnerApplication = "pa2-s2-membership-commit-winner";
+        String loserApplication = "pa2-s2-membership-commit-loser";
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            commitCustomerAccounts(accountId);
+            commitOrganization(organizationId);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "organization_access_role");
+                assertThat(insertMembership(winner, winnerMembership, organizationId, accountId, "MEMBER"))
+                        .isEqualTo(1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "organization_access_role", loserApplication);
+                Future<Integer> loserFuture = executor.submit(() -> insertMembership(
+                        loser, loserMembership, organizationId, accountId, "MEMBER"));
+                awaitBlockedBackend(loserApplication);
+
+                winner.commit();
+                try {
+                    awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                    fail("the live-membership unique loser must not commit a second live row");
+                } catch (SQLException exception) {
+                    assertThat(exception.getSQLState()).isEqualTo("23505");
+                    assertThat(exception.getMessage()).contains("uq_membership_live");
+                }
+                loser.rollback();
+                setLocalRole(loser, "organization_access_role");
+                assertThat(queryUuid(loser,
+                        "SELECT id::text FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status <> 'REVOKED'",
+                        organizationId, accountId)).isEqualTo(winnerMembership);
+                loser.rollback();
+            }
+
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status <> 'REVOKED'",
+                        organizationId, accountId)).isEqualTo(1);
+                assertThat(queryString(verify,
+                        "SELECT id::text FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status <> 'REVOKED'",
+                        organizationId, accountId)).isEqualTo(winnerMembership.toString());
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?",
+                        loserMembership)).isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedRaceRows(List.of(winnerMembership, loserMembership), List.of(), List.of(),
+                    List.of(organizationId), List.of(accountId), List.of());
+        }
+    }
+
+    private static void runConcurrentMembershipCollisionRollbackRace() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID winnerMembership = UUID.randomUUID();
+        UUID loserMembership = UUID.randomUUID();
+        String winnerApplication = "pa2-s2-membership-rollback-winner";
+        String loserApplication = "pa2-s2-membership-rollback-loser";
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            commitCustomerAccounts(accountId);
+            commitOrganization(organizationId);
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+                }
+                setLocalRole(winner, "organization_access_role");
+                assertThat(insertMembership(winner, winnerMembership, organizationId, accountId, "MEMBER"))
+                        .isEqualTo(1);
+
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "organization_access_role", loserApplication);
+                Future<Integer> loserFuture = executor.submit(() -> insertMembership(
+                        loser, loserMembership, organizationId, accountId, "MEMBER"));
+                awaitBlockedBackend(loserApplication);
+
+                winner.rollback();
+                assertThat(awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS))
+                        .as("the live-membership loser inserts after the winner rolls back").isEqualTo(1);
+                loser.commit();
+            }
+
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status <> 'REVOKED'",
+                        organizationId, accountId)).isEqualTo(1);
+                assertThat(queryString(verify,
+                        "SELECT id::text FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? AND account_id = ? AND status <> 'REVOKED'",
+                        organizationId, accountId)).isEqualTo(loserMembership.toString());
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM organization_access.organization_membership WHERE id = ?",
+                        winnerMembership)).isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupCommittedRaceRows(List.of(winnerMembership, loserMembership), List.of(), List.of(),
+                    List.of(organizationId), List.of(accountId), List.of());
         }
     }
 
