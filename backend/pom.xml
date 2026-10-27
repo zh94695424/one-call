@@ -64,6 +64,16 @@
       <artifactId>postgresql</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -71,6 +81,16 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <classpathDependencyExcludes>
+            <classpathDependencyExclude>org.flywaydb:flyway-core</classpathDependencyExclude>
+            <classpathDependencyExclude>org.flywaydb:flyway-database-postgresql</classpathDependencyExclude>
+          </classpathDependencyExcludes>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -99,7 +119,8 @@
                     <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
                     <exclude>org.springframework.boot:spring-boot-starter-jdbc</exclude>
                     <exclude>org.springframework.security:*</exclude>
-                    <exclude>org.flywaydb:*</exclude>
+                    <exclude>org.flywaydb:*:*:*:compile</exclude>
+                    <exclude>org.flywaydb:*:*:*:runtime</exclude>
                     <exclude>org.jooq:*</exclude>
                     <exclude>com.zaxxer:HikariCP</exclude>
                   </excludes>
