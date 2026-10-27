@@ -33,15 +33,17 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * PA1/PA2 PostgreSQL 16 proof for the frozen V001 and V002 contracts: V001-then-V002 migration,
- * exact V001+V002 inventory (including the F-PA2-PR-01 34-check normalized pg_get_constraintdef
- * map) and failure-visibility; idempotency/Outbox first-result and transaction atomicity; and
- * audit append-only, reason/denylist, fixed-search-path (V001 functions plus the six V002 guards)
- * and privilege boundaries, plus the PA2 S3 runtime/cross-module privilege matrix and the
- * last-enabled-admin serialization protocol (transient SQL, no database function). There is no
- * skip path: an unavailable Docker daemon, failed image pull, failed container start, JDBC
- * failure, Flyway failure or assertion failure fails the Maven build. The password is generated
- * per JVM run and never persisted.
+ * PA1/PA2/PA3 S1 PostgreSQL 16 proof for the frozen V001, V002 and V003 contracts: V001-then-
+ * V002-then-V003 migration, exact V001+V002+V003 inventory (including the F-PA2-PR-01 34-check
+ * and F-PA3-PR-01 25-check normalized pg_get_constraintdef maps) and failure-visibility;
+ * idempotency/Outbox first-result and transaction atomicity; audit append-only, reason/denylist,
+ * fixed-search-path (V001 functions, the six V002 guards and the four subject_number functions)
+ * and privilege boundaries; the PA2 S3 runtime/cross-module privilege matrix and last-enabled-admin
+ * serialization protocol (transient SQL, no database function); plus the PA3 S1 exact V003
+ * catalog/guard inventory and owner/PUBLIC/runtime ACL matrix. There is no skip path: an
+ * unavailable Docker daemon, failed image pull, failed container start, JDBC failure, Flyway
+ * failure or assertion failure fails the Maven build. The password is generated per JVM run and
+ * never persisted.
  */
 class PostgresContainerIT {
 
@@ -115,7 +117,13 @@ class PostgresContainerIT {
             "organization_access.organization_membership",
             "operations_iam.employee_account");
 
-    private static final List<String> ALL_V001_V002_TABLES = List.of(
+    private static final List<String> V003_TABLES = List.of(
+            "subject_number.business_subject",
+            "subject_number.caller_number_binding",
+            "subject_number.subject_claim",
+            "subject_number.subject_risk_state");
+
+    private static final List<String> ALL_V001_V003_TABLES = List.of(
             "audit.audit_fact",
             "customer_iam.auth_identity",
             "customer_iam.customer_account",
@@ -124,7 +132,11 @@ class PostgresContainerIT {
             "organization_access.organization",
             "organization_access.organization_membership",
             "platform.idempotency_record",
-            "platform.outbox_event");
+            "platform.outbox_event",
+            "subject_number.business_subject",
+            "subject_number.caller_number_binding",
+            "subject_number.subject_claim",
+            "subject_number.subject_risk_state");
 
     /**
      * F-PA2-PR-01: explicit frozen mapping of schema.table -> (check name -> expected PostgreSQL 16
@@ -218,6 +230,76 @@ class PostgresContainerIT {
         V002_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
     }
 
+    /**
+     * F-PA3-PR-01: explicit frozen mapping of table -> (check name -> expected PostgreSQL 16
+     * canonical {@code pg_get_constraintdef} output) for all 25 V003 named checks (6/7/6/6).
+     * Predicates derive from docs/14 4.12-4.15; each literal was captured from the real
+     * {@code postgres:16} container after V001/V002/V003 applied and is compared by
+     * whole-definition equality after ASCII-whitespace-only normalization.
+     * Substring/contains/prefix/regex/semantic equivalence is forbidden; S2 behavior probes do
+     * not replace this inventory.
+     */
+    private static final Map<String, Map<String, String>> V003_CHECK_DEF_MAP;
+
+    static {
+        Map<String, Map<String, String>> map = new java.util.LinkedHashMap<>();
+        map.put("business_subject", new java.util.LinkedHashMap<>(Map.ofEntries(
+                Map.entry("ck_subject_single_owner",
+                        "CHECK ((num_nonnulls(owner_account_id, owner_organization_id) <= 1))"),
+                Map.entry("ck_subject_source",
+                        "CHECK ((source = ANY (ARRAY['IVR'::text, 'MINIAPP'::text, 'WEB'::text, 'OPERATIONS'::text])))"),
+                Map.entry("ck_subject_real_name_status",
+                        "CHECK ((real_name_status = ANY (ARRAY['UNVERIFIED'::text, 'VERIFIED'::text])))"),
+                Map.entry("ck_subject_real_name_shape",
+                        "CHECK (((real_name_status = 'VERIFIED'::text) = (real_name_verified_at IS NOT NULL)))"),
+                Map.entry("ck_subject_revision",
+                        "CHECK ((revision >= 1))"),
+                Map.entry("ck_subject_time_order",
+                        "CHECK ((updated_at >= created_at))"))));
+        map.put("caller_number_binding", new java.util.LinkedHashMap<>(Map.ofEntries(
+                Map.entry("ck_binding_number_type",
+                        "CHECK ((number_type = ANY (ARRAY['MOBILE'::text, 'LANDLINE'::text])))"),
+                Map.entry("ck_binding_number_ciphertext",
+                        "CHECK ((number_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                Map.entry("ck_binding_number_hmac",
+                        "CHECK ((number_hmac ~ '^[0-9a-f]{64}$'::text))"),
+                Map.entry("ck_binding_number_masked",
+                        "CHECK ((((length(number_masked) >= 1) AND (length(number_masked) <= 64)) AND (btrim(number_masked) <> ''::text)))"),
+                Map.entry("ck_binding_status",
+                        "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'DISABLED'::text, 'RETIRED'::text])))"),
+                Map.entry("ck_binding_verified_shape",
+                        "CHECK (((status <> 'ACTIVE'::text) OR (verified_at IS NOT NULL)))"),
+                Map.entry("ck_binding_revision",
+                        "CHECK ((revision >= 1))"))));
+        map.put("subject_claim", new java.util.LinkedHashMap<>(Map.ofEntries(
+                Map.entry("ck_claim_verification_method",
+                        "CHECK ((verification_method = ANY (ARRAY['SMS'::text, 'WECHAT_PHONE'::text, 'CALLER_CHALLENGE'::text, 'MANUAL_REVIEW'::text])))"),
+                Map.entry("ck_claim_verification_ref",
+                        "CHECK ((verification_ref_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                Map.entry("ck_claim_request_id",
+                        "CHECK ((((length(request_id) >= 1) AND (length(request_id) <= 128)) AND (btrim(request_id) <> ''::text)))"),
+                Map.entry("ck_claim_status",
+                        "CHECK ((status = ANY (ARRAY['ACCEPTED'::text, 'REJECTED'::text, 'CONFLICT'::text])))"),
+                Map.entry("ck_claim_verified_shape",
+                        "CHECK (((status = 'ACCEPTED'::text) = (verified_at IS NOT NULL)))"),
+                Map.entry("ck_claim_verified_after_risk",
+                        "CHECK (((verified_at IS NULL) OR (verified_at >= risk_checked_at)))"))));
+        map.put("subject_risk_state", new java.util.LinkedHashMap<>(Map.ofEntries(
+                Map.entry("ck_risk_type",
+                        "CHECK ((risk_type = ANY (ARRAY['RECYCLED'::text, 'CONFLICT'::text, 'MANUAL_REVIEW'::text])))"),
+                Map.entry("ck_risk_state",
+                        "CHECK ((state = ANY (ARRAY['OPEN'::text, 'CLEARED'::text])))"),
+                Map.entry("ck_risk_source",
+                        "CHECK ((source = ANY (ARRAY['CLAIM_CHECK'::text, 'OPERATIONS'::text, 'IMPORT'::text])))"),
+                Map.entry("ck_risk_cleared_shape",
+                        "CHECK (((state = 'CLEARED'::text) = (cleared_at IS NOT NULL)))"),
+                Map.entry("ck_risk_cleared_after_observed",
+                        "CHECK (((cleared_at IS NULL) OR (cleared_at >= observed_at)))"),
+                Map.entry("ck_risk_revision",
+                        "CHECK ((revision >= 1))"))));
+        V003_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
+    }
+
     private static final List<String> DISPATCHER_UPDATE_COLUMNS = List.of(
             "status", "attempt_count", "available_at", "published_at", "revision");
 
@@ -278,8 +360,8 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThenV002MigrateCleanPostgres16WithoutSkipping() throws Exception {
-        assertThat(initialMigration.migrationsExecuted).isEqualTo(2);
+    void v001ThenV002ThenV003MigrateCleanPostgres16WithoutSkipping() throws Exception {
+        assertThat(initialMigration.migrationsExecuted).isEqualTo(3);
 
         try (Connection connection = openConnection();
                 Statement statement = connection.createStatement();
@@ -303,6 +385,15 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V002__identity_organization_and_employee.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("003");
+            assertThat(resultSet.getString("description"))
+                    .isEqualTo("subject number and claim");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script"))
+                    .isEqualTo("V003__subject_number_and_claim.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
 
@@ -314,10 +405,11 @@ class PostgresContainerIT {
 
         exerciseV001FunctionsAsGrantedRole();
         exerciseV002InsertsAsOwningRuntimeRolesAndRollBack();
+        exerciseV003InsertsAsRuntimeRoleAndRollBack();
     }
 
     @Test
-    void v001AndV002InventoryMatchesTheFrozenContract() throws Exception {
+    void v001ThroughV003InventoryMatchesTheFrozenContract() throws Exception {
         try (Connection connection = openConnection()) {
             assertInventory(connection);
         }
@@ -785,6 +877,23 @@ class PostgresContainerIT {
                             "organization_access.guard_organization|false|organization_access_owner"
                                     + "|search_path=organization_access, pg_temp");
 
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
+                            + "|| pg_get_userbyid(p.proowner) || '|' "
+                            + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                            + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'subject_number' ORDER BY 1"))
+                    .containsExactly(
+                            "subject_number.guard_caller_number_binding|false|subject_number_owner"
+                                    + "|search_path=subject_number, pg_temp",
+                            "subject_number.guard_subject_owner|false|subject_number_owner"
+                                    + "|search_path=subject_number, pg_temp",
+                            "subject_number.guard_subject_risk_state|false|subject_number_owner"
+                                    + "|search_path=subject_number, pg_temp",
+                            "subject_number.reject_row_mutation|false|subject_number_owner"
+                                    + "|search_path=subject_number, pg_temp");
+
             // A PL/pgSQL body uses ordinary BEGIN/END block delimiters, so this assertion
             // matches only transaction-control statements, never BEGIN/END themselves.
             assertThat(queryLong(
@@ -794,7 +903,10 @@ class PostgresContainerIT {
                             + "('idempotency_begin','idempotency_complete','outbox_append')) "
                             + "OR (n.nspname = 'audit' AND p.proname = 'append_fact') "
                             + "OR (n.nspname IN ('customer_iam','organization_access','operations_iam') "
-                            + "AND p.proname LIKE 'guard_%')) "
+                            + "AND p.proname LIKE 'guard_%') "
+                            + "OR (n.nspname = 'subject_number' AND p.proname IN "
+                            + "('guard_subject_owner','guard_caller_number_binding',"
+                            + "'guard_subject_risk_state','reject_row_mutation'))) "
                             + "AND p.prosrc ~* "
                             + "'\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
                     .as("declared functions contain no transaction-control statement")
@@ -823,8 +935,16 @@ class PostgresContainerIT {
                     .isZero();
 
             assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'subject_number' "
+                            + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                    .as("V003 trigger functions never generate IDs")
+                    .isZero();
+
+            assertThat(queryLong(
                     connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
-                    .as("issue_first_trial is a V006 function absent from V001/V002")
+                    .as("issue_first_trial is a V006 function absent from V001/V002/V003")
                     .isZero();
         }
     }
@@ -1121,6 +1241,27 @@ class PostgresContainerIT {
         assertOperationsIamRoleCanForUpdateWithColumnUpdate();
         assertLastEnabledAdminSequentialFailClosedAndRevisionIncrements();
         runConcurrentLastEnabledAdminMutationRace();
+    }
+
+    @Test
+    void v003SubjectNumberCatalogAndGuardsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV003TablesColumnsChecksIndexesFks(connection);
+            assertV003CheckPredicateInventory(connection);
+            assertV003FunctionsAndTriggersExact(connection);
+            assertV003NoIdDefaultsOrSequences(connection);
+            assertNoV004PlusObjects(connection);
+        }
+    }
+
+    @Test
+    void v003OwnerPublicAndRuntimeAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV003SchemaUsageExactAndNoCreate(connection);
+            assertV003OwnedAndCrossModuleGrants(connection);
+            assertV003PublicAclIsZero(connection);
+            assertV003GuardFunctionExecuteBoundaries(connection);
+        }
     }
 
     /**
@@ -3983,6 +4124,8 @@ class PostgresContainerIT {
         assertSchemasAndRoles(connection);
         assertTablesColumnsChecksAndIndexes(connection);
         assertV002CheckPredicateInventory(connection);
+        assertV003TablesColumnsChecksIndexesFks(connection);
+        assertV003CheckPredicateInventory(connection);
         assertFunctionsAndTrigger(connection);
         assertGrants(connection);
     }
@@ -4047,7 +4190,7 @@ class PostgresContainerIT {
                 "SELECT table_schema || '.' || table_name FROM information_schema.tables "
                         + "WHERE table_schema NOT IN ('pg_catalog','information_schema') "
                         + "AND NOT (table_schema = 'public' AND table_name = 'flyway_schema_history') ORDER BY 1"))
-                .containsExactlyElementsOf(ALL_V001_V002_TABLES);
+                .containsExactlyElementsOf(ALL_V001_V003_TABLES);
 
         assertThat(queryStrings(
                 connection,
@@ -4761,13 +4904,18 @@ class PostgresContainerIT {
                         "organization_access.guard_organization",
                         "platform.idempotency_begin",
                         "platform.idempotency_complete",
-                        "platform.outbox_append");
+                        "platform.outbox_append",
+                        "subject_number.guard_caller_number_binding",
+                        "subject_number.guard_subject_owner",
+                        "subject_number.guard_subject_risk_state",
+                        "subject_number.reject_row_mutation");
 
         assertThat(queryStrings(
                 connection,
                 "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
                         + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access',"
+                        + "'operations_iam','subject_number') "
                         + "ORDER BY 1"))
                 .containsExactly(
                         "audit.append_fact(p_occurred_at timestamp with time zone, p_actor_type text, "
@@ -4788,14 +4936,19 @@ class PostgresContainerIT {
                         "platform.outbox_append(p_event_domain text, p_dedupe_key text, "
                                 + "p_aggregate_type text, p_aggregate_id uuid, p_event_type text, "
                                 + "p_payload_redacted jsonb, p_payload_ciphertext text, "
-                                + "p_payload_sha256 text)");
+                                + "p_payload_sha256 text)",
+                        "subject_number.guard_caller_number_binding()",
+                        "subject_number.guard_subject_owner()",
+                        "subject_number.guard_subject_risk_state()",
+                        "subject_number.reject_row_mutation()");
 
         assertThat(queryStrings(
                 connection,
                 "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
                         + "|| pg_get_userbyid(p.proowner) || '|' || coalesce(array_to_string(p.proconfig, ','), '') "
                         + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access',"
+                        + "'operations_iam','subject_number') "
                         + "ORDER BY 1"))
                 .containsExactly(
                         "audit.append_fact|true|audit_owner|search_path=audit, pg_temp",
@@ -4808,12 +4961,17 @@ class PostgresContainerIT {
                         "organization_access.guard_organization|false|organization_access_owner|search_path=organization_access, pg_temp",
                         "platform.idempotency_begin|true|platform_reliability_owner|search_path=platform, pg_temp",
                         "platform.idempotency_complete|true|platform_reliability_owner|search_path=platform, pg_temp",
-                        "platform.outbox_append|true|platform_reliability_owner|search_path=platform, pg_temp");
+                        "platform.outbox_append|true|platform_reliability_owner|search_path=platform, pg_temp",
+                        "subject_number.guard_caller_number_binding|false|subject_number_owner|search_path=subject_number, pg_temp",
+                        "subject_number.guard_subject_owner|false|subject_number_owner|search_path=subject_number, pg_temp",
+                        "subject_number.guard_subject_risk_state|false|subject_number_owner|search_path=subject_number, pg_temp",
+                        "subject_number.reject_row_mutation|false|subject_number_owner|search_path=subject_number, pg_temp");
 
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access',"
+                        + "'operations_iam','subject_number') "
                         + "AND EXISTS (SELECT 1 FROM unnest(p.proargnames) AS a WHERE a = 'p_id')")).isZero();
 
         assertThat(queryLong(
@@ -4825,13 +4983,15 @@ class PostgresContainerIT {
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access',"
+                        + "'operations_iam','subject_number') "
                         + "AND p.prosrc LIKE '%gen_random_uuid%'")).isEqualTo(3);
 
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access',"
+                        + "'operations_iam','subject_number') "
                         + "AND p.prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
                 .isZero();
 
@@ -4852,7 +5012,11 @@ class PostgresContainerIT {
                         "customer_iam.identity_profile.trg_identity_profile_guard",
                         "operations_iam.employee_account.trg_employee_account_guard",
                         "organization_access.organization.trg_organization_guard",
-                        "organization_access.organization_membership.trg_membership_guard");
+                        "organization_access.organization_membership.trg_membership_guard",
+                        "subject_number.business_subject.trg_business_subject_guard",
+                        "subject_number.caller_number_binding.trg_caller_number_binding_guard",
+                        "subject_number.subject_claim.trg_subject_claim_immutable",
+                        "subject_number.subject_risk_state.trg_subject_risk_state_guard");
 
         Map<String, String> v002TriggerFunctionByTrigger = Map.of(
                 "trg_customer_account_guard", "customer_iam.guard_customer_account()",
@@ -4860,7 +5024,10 @@ class PostgresContainerIT {
                 "trg_identity_profile_guard", "customer_iam.guard_identity_profile()",
                 "trg_organization_guard", "organization_access.guard_organization()",
                 "trg_membership_guard", "organization_access.guard_membership()",
-                "trg_employee_account_guard", "operations_iam.guard_employee_account()");
+                "trg_employee_account_guard", "operations_iam.guard_employee_account()",
+                "trg_business_subject_guard", "subject_number.guard_subject_owner()",
+                "trg_caller_number_binding_guard", "subject_number.guard_caller_number_binding()",
+                "trg_subject_risk_state_guard", "subject_number.guard_subject_risk_state()");
         for (Map.Entry<String, String> entry : v002TriggerFunctionByTrigger.entrySet()) {
             try (PreparedStatement prepared = connection.prepareStatement(
                     "SELECT (t.tgtype & 2) <> 0 AS is_before, "
@@ -4920,6 +5087,1026 @@ class PostgresContainerIT {
                 assertThat(resultSet.next()).isFalse();
             }
         }
+
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT t.tgrelid = 'subject_number.subject_claim'::regclass AS on_subject_claim, "
+                        + "t.tgfoid = 'subject_number.reject_row_mutation()'::regprocedure "
+                        + "AS calls_reject_row_mutation, "
+                        + "(t.tgtype & 2) <> 0 AS is_before, "
+                        + "(t.tgtype & 1) <> 0 AS is_row, "
+                        + "(t.tgtype & 16) <> 0 AS has_update, "
+                        + "(t.tgtype & 8) <> 0 AS has_delete, "
+                        + "(t.tgtype & 4) <> 0 AS has_insert, "
+                        + "(t.tgtype & 32) <> 0 AS has_truncate "
+                        + "FROM pg_trigger t "
+                        + "WHERE t.tgname = 'trg_subject_claim_immutable' AND NOT t.tgisinternal")) {
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).as("exactly one append-only claim trigger").isTrue();
+                assertThat(resultSet.getBoolean("on_subject_claim"))
+                        .as("trigger must be on subject_number.subject_claim").isTrue();
+                assertThat(resultSet.getBoolean("calls_reject_row_mutation"))
+                        .as("trigger must call subject_number.reject_row_mutation()").isTrue();
+                assertThat(resultSet.getBoolean("is_before"))
+                        .as("trigger must be BEFORE").isTrue();
+                assertThat(resultSet.getBoolean("is_row"))
+                        .as("trigger must be FOR EACH ROW").isTrue();
+                assertThat(resultSet.getBoolean("has_update"))
+                        .as("trigger must fire on UPDATE").isTrue();
+                assertThat(resultSet.getBoolean("has_delete"))
+                        .as("trigger must fire on DELETE").isTrue();
+                assertThat(resultSet.getBoolean("has_insert"))
+                        .as("trigger must not fire on INSERT").isFalse();
+                assertThat(resultSet.getBoolean("has_truncate"))
+                        .as("trigger must not fire on TRUNCATE").isFalse();
+                assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * F-PA3-PR-01 fail-closed inventory: exact 25-name set per V003 table (6/7/6/6), zero extra
+     * checks, and whole-definition equality of normalized {@code pg_get_constraintdef} output
+     * against {@link #V003_CHECK_DEF_MAP}. Name-only, missing/extra or substring matches fail.
+     */
+    private static void assertV003CheckPredicateInventory(Connection connection) throws SQLException {
+        int expectedCount = V003_CHECK_DEF_MAP.values().stream()
+                .mapToInt(Map::size)
+                .sum();
+        assertThat(expectedCount).as("expected V003 map size").isEqualTo(25);
+
+        long actualCount = queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c "
+                        + "JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.contype = 'c'");
+        assertThat(actualCount).as("total V003 contype='c' rows").isEqualTo(25);
+
+        for (Map.Entry<String, Map<String, String>> tableEntry : V003_CHECK_DEF_MAP.entrySet()) {
+            String table = tableEntry.getKey();
+            List<String> actualNames = queryStrings(
+                    connection,
+                    "SELECT c.conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'subject_number' AND r.relname = ? AND c.contype = 'c' "
+                            + "ORDER BY c.conname",
+                    table);
+            List<String> expectedNames = new ArrayList<>(tableEntry.getValue().keySet());
+            expectedNames.sort(String::compareTo);
+            assertThat(actualNames)
+                    .as("exact check-name set for subject_number.%s", table)
+                    .containsExactlyElementsOf(expectedNames);
+
+            for (Map.Entry<String, String> checkEntry : tableEntry.getValue().entrySet()) {
+                String checkName = checkEntry.getKey();
+                List<String> actualDefs = queryStrings(
+                        connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'subject_number' AND r.relname = ? "
+                                + "AND c.contype = 'c' AND c.conname = ?",
+                        table, checkName);
+                assertThat(actualDefs)
+                        .as("exactly one row for subject_number.%s.%s", table, checkName)
+                        .hasSize(1);
+                assertThat(normalizeCheckDef(actualDefs.get(0)))
+                        .as("whole pg_get_constraintdef equality for subject_number.%s.%s",
+                                table, checkName)
+                        .isEqualTo(normalizeCheckDef(checkEntry.getValue()));
+            }
+        }
+    }
+
+    private static void assertV003TablesColumnsChecksIndexesFks(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT table_schema || '.' || table_name FROM information_schema.tables "
+                        + "WHERE table_schema = 'subject_number' ORDER BY 1"))
+                .containsExactlyElementsOf(V003_TABLES);
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'subject_number'"))
+                .as("total V003 columns").isEqualTo(36);
+
+        Map<String, String> v003ColumnOrder = new java.util.LinkedHashMap<>();
+        v003ColumnOrder.put("business_subject",
+                "id,owner_account_id,owner_organization_id,source,real_name_status,"
+                        + "real_name_verified_at,revision,created_at,updated_at");
+        v003ColumnOrder.put("caller_number_binding",
+                "id,subject_id,number_type,number_ciphertext,number_hmac,number_masked,"
+                        + "status,verified_at,revision");
+        v003ColumnOrder.put("subject_claim",
+                "id,subject_id,account_id,organization_id,verification_method,"
+                        + "verification_ref_ciphertext,request_id,status,risk_checked_at,verified_at");
+        v003ColumnOrder.put("subject_risk_state",
+                "id,caller_number_binding_id,risk_type,state,source,observed_at,cleared_at,revision");
+        Map<String, List<String>> v003ColumnDetails = new java.util.LinkedHashMap<>();
+        v003ColumnDetails.put("business_subject", List.of(
+                "id|uuid|NO|<none>",
+                "owner_account_id|uuid|YES|<none>",
+                "owner_organization_id|uuid|YES|<none>",
+                "source|text|NO|<none>",
+                "real_name_status|text|NO|'UNVERIFIED'::text",
+                "real_name_verified_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1",
+                "created_at|timestamp with time zone|NO|now()",
+                "updated_at|timestamp with time zone|NO|now()"));
+        v003ColumnDetails.put("caller_number_binding", List.of(
+                "id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "number_type|text|NO|<none>",
+                "number_ciphertext|text|NO|<none>",
+                "number_hmac|text|NO|<none>",
+                "number_masked|text|NO|<none>",
+                "status|text|NO|'ACTIVE'::text",
+                "verified_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1"));
+        v003ColumnDetails.put("subject_claim", List.of(
+                "id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "account_id|uuid|NO|<none>",
+                "organization_id|uuid|YES|<none>",
+                "verification_method|text|NO|<none>",
+                "verification_ref_ciphertext|text|NO|<none>",
+                "request_id|text|NO|<none>",
+                "status|text|NO|<none>",
+                "risk_checked_at|timestamp with time zone|NO|<none>",
+                "verified_at|timestamp with time zone|YES|<none>"));
+        v003ColumnDetails.put("subject_risk_state", List.of(
+                "id|uuid|NO|<none>",
+                "caller_number_binding_id|uuid|NO|<none>",
+                "risk_type|text|NO|<none>",
+                "state|text|NO|'OPEN'::text",
+                "source|text|NO|<none>",
+                "observed_at|timestamp with time zone|NO|now()",
+                "cleared_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1"));
+        for (Map.Entry<String, String> entry : v003ColumnOrder.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns "
+                            + "WHERE table_schema = 'subject_number' AND table_name = ?",
+                    entry.getKey()))
+                    .as("columns of subject_number.%s", entry.getKey())
+                    .containsExactly(entry.getValue());
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM information_schema.columns "
+                            + "WHERE table_schema = 'subject_number' AND table_name = ?",
+                    entry.getKey()))
+                    .as("column count of subject_number.%s", entry.getKey())
+                    .isEqualTo(entry.getValue().split(",").length);
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name || '|' || data_type || '|' || is_nullable || '|' "
+                            + "|| coalesce(column_default, '<none>') FROM information_schema.columns "
+                            + "WHERE table_schema = 'subject_number' AND table_name = ? ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("exact column rows of subject_number.%s", entry.getKey())
+                    .containsExactlyElementsOf(v003ColumnDetails.get(entry.getKey()));
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attrdef d "
+                        + "JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
+                        + "JOIN pg_class r ON r.oid = d.adrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number'"))
+                .as("total V003 defaulted columns")
+                .isEqualTo(9);
+
+        Map<String, List<String>> v003CheckNames = new java.util.LinkedHashMap<>();
+        v003CheckNames.put("business_subject", List.of(
+                "ck_subject_real_name_shape",
+                "ck_subject_real_name_status",
+                "ck_subject_revision",
+                "ck_subject_single_owner",
+                "ck_subject_source",
+                "ck_subject_time_order"));
+        v003CheckNames.put("caller_number_binding", List.of(
+                "ck_binding_number_ciphertext",
+                "ck_binding_number_hmac",
+                "ck_binding_number_masked",
+                "ck_binding_number_type",
+                "ck_binding_revision",
+                "ck_binding_status",
+                "ck_binding_verified_shape"));
+        v003CheckNames.put("subject_claim", List.of(
+                "ck_claim_request_id",
+                "ck_claim_status",
+                "ck_claim_verification_method",
+                "ck_claim_verification_ref",
+                "ck_claim_verified_after_risk",
+                "ck_claim_verified_shape"));
+        v003CheckNames.put("subject_risk_state", List.of(
+                "ck_risk_cleared_after_observed",
+                "ck_risk_cleared_shape",
+                "ck_risk_revision",
+                "ck_risk_source",
+                "ck_risk_state",
+                "ck_risk_type"));
+        for (Map.Entry<String, List<String>> entry : v003CheckNames.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'subject_number' AND r.relname = ? AND c.contype = 'c' "
+                            + "ORDER BY conname",
+                    entry.getKey()))
+                    .as("check names of subject_number.%s", entry.getKey())
+                    .containsExactlyElementsOf(entry.getValue());
+        }
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.contype = 'p' ORDER BY 1"))
+                .containsExactly(
+                        "pk_business_subject",
+                        "pk_caller_number_binding",
+                        "pk_subject_claim",
+                        "pk_subject_risk_state");
+        assertThat(queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.contype = 'u' ORDER BY 1"))
+                .containsExactly(
+                        "uq_binding_subject_number",
+                        "uq_claim_request",
+                        "uq_risk_binding_type");
+
+        Map<String, String[]> v003PkUniqueDefs = new java.util.LinkedHashMap<>();
+        v003PkUniqueDefs.put("business_subject.pk_business_subject", new String[] {
+                "business_subject", "pk_business_subject", "p", "PRIMARY KEY (id)", "id"});
+        v003PkUniqueDefs.put("caller_number_binding.pk_caller_number_binding", new String[] {
+                "caller_number_binding", "pk_caller_number_binding", "p", "PRIMARY KEY (id)", "id"});
+        v003PkUniqueDefs.put("caller_number_binding.uq_binding_subject_number", new String[] {
+                "caller_number_binding", "uq_binding_subject_number", "u",
+                "UNIQUE (subject_id, number_hmac)", "subject_id,number_hmac"});
+        v003PkUniqueDefs.put("subject_claim.pk_subject_claim", new String[] {
+                "subject_claim", "pk_subject_claim", "p", "PRIMARY KEY (id)", "id"});
+        v003PkUniqueDefs.put("subject_claim.uq_claim_request", new String[] {
+                "subject_claim", "uq_claim_request", "u", "UNIQUE (request_id)", "request_id"});
+        v003PkUniqueDefs.put("subject_risk_state.pk_subject_risk_state", new String[] {
+                "subject_risk_state", "pk_subject_risk_state", "p", "PRIMARY KEY (id)", "id"});
+        v003PkUniqueDefs.put("subject_risk_state.uq_risk_binding_type", new String[] {
+                "subject_risk_state", "uq_risk_binding_type", "u",
+                "UNIQUE (caller_number_binding_id, risk_type)",
+                "caller_number_binding_id,risk_type"});
+        assertThat(v003PkUniqueDefs).as("expected V003 PK/unique map size").hasSize(7);
+        for (Map.Entry<String, String[]> entry : v003PkUniqueDefs.entrySet()) {
+            String[] expected = entry.getValue();
+            List<String> actualDefs = queryStrings(
+                    connection,
+                    "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'subject_number' AND r.relname = ? AND c.conname = ? "
+                            + "AND c.contype::text = ?",
+                    expected[0], expected[1], expected[2]);
+            assertThat(actualDefs)
+                    .as("exactly one %s row for subject_number.%s", expected[2], entry.getKey())
+                    .hasSize(1);
+            assertThat(actualDefs.get(0))
+                    .as("whole pg_get_constraintdef equality for subject_number.%s", entry.getKey())
+                    .isEqualTo(expected[3]);
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true "
+                            + "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum "
+                            + "WHERE n.nspname = 'subject_number' AND r.relname = ? AND c.conname = ? "
+                            + "AND c.contype::text = ? ORDER BY k.ord",
+                    expected[0], expected[1], expected[2]))
+                    .as("ordered key columns of subject_number.%s", entry.getKey())
+                    .containsExactlyElementsOf(List.of(expected[4].split(",")));
+        }
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.contype = 'f' ORDER BY conname"))
+                .containsExactly(
+                        "fk_binding_subject",
+                        "fk_claim_account",
+                        "fk_claim_organization",
+                        "fk_claim_subject",
+                        "fk_risk_binding",
+                        "fk_subject_owner_account",
+                        "fk_subject_owner_organization");
+
+        Map<String, String> v003FkDefs = new java.util.LinkedHashMap<>();
+        v003FkDefs.put("fk_subject_owner_account",
+                "FOREIGN KEY (owner_account_id) REFERENCES customer_iam.customer_account(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        v003FkDefs.put("fk_subject_owner_organization",
+                "FOREIGN KEY (owner_organization_id) REFERENCES organization_access.organization(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        v003FkDefs.put("fk_binding_subject",
+                "FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        v003FkDefs.put("fk_claim_subject",
+                "FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        v003FkDefs.put("fk_claim_account",
+                "FOREIGN KEY (account_id) REFERENCES customer_iam.customer_account(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        v003FkDefs.put("fk_claim_organization",
+                "FOREIGN KEY (organization_id) REFERENCES organization_access.organization(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        v003FkDefs.put("fk_risk_binding",
+                "FOREIGN KEY (caller_number_binding_id) "
+                        + "REFERENCES subject_number.caller_number_binding(id) "
+                        + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+        for (Map.Entry<String, String> entry : v003FkDefs.entrySet()) {
+            assertThat(queryString(
+                    connection,
+                    "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'subject_number' AND c.conname = ?",
+                    entry.getKey()))
+                    .as("FK def %s", entry.getKey())
+                    .isEqualTo(entry.getValue());
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT c.confupdtype::text || c.confdeltype::text || c.confmatchtype::text || '|' "
+                            + "|| c.condeferrable::text || '|' || c.condeferred::text || '|' || c.convalidated::text "
+                            + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'subject_number' AND c.conname = ?",
+                    entry.getKey()))
+                    .as("FK properties %s", entry.getKey())
+                    .containsExactly("rrs|false|false|true");
+        }
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT schemaname || '.' || tablename || '.' || indexname FROM pg_indexes "
+                        + "WHERE schemaname = 'subject_number' ORDER BY 1"))
+                .containsExactly(
+                        "subject_number.business_subject.ix_subject_owner_account",
+                        "subject_number.business_subject.ix_subject_owner_organization",
+                        "subject_number.business_subject.ix_subject_source_status",
+                        "subject_number.business_subject.pk_business_subject",
+                        "subject_number.caller_number_binding.ix_binding_hmac_status",
+                        "subject_number.caller_number_binding.ix_binding_subject_status",
+                        "subject_number.caller_number_binding.pk_caller_number_binding",
+                        "subject_number.caller_number_binding.uq_binding_active_number",
+                        "subject_number.caller_number_binding.uq_binding_subject_number",
+                        "subject_number.subject_claim.ix_claim_account_status",
+                        "subject_number.subject_claim.ix_claim_subject_status_time",
+                        "subject_number.subject_claim.pk_subject_claim",
+                        "subject_number.subject_claim.uq_claim_accepted_subject_account",
+                        "subject_number.subject_claim.uq_claim_request",
+                        "subject_number.subject_risk_state.ix_risk_binding_state",
+                        "subject_number.subject_risk_state.ix_risk_open",
+                        "subject_number.subject_risk_state.pk_subject_risk_state",
+                        "subject_number.subject_risk_state.uq_risk_binding_type");
+
+        Map<String, String> v003IndexDefs = new java.util.LinkedHashMap<>();
+        v003IndexDefs.put("business_subject.pk_business_subject",
+                "CREATE UNIQUE INDEX pk_business_subject ON subject_number.business_subject "
+                        + "USING btree (id)");
+        v003IndexDefs.put("business_subject.ix_subject_owner_account",
+                "CREATE INDEX ix_subject_owner_account ON subject_number.business_subject "
+                        + "USING btree (owner_account_id)");
+        v003IndexDefs.put("business_subject.ix_subject_owner_organization",
+                "CREATE INDEX ix_subject_owner_organization ON subject_number.business_subject "
+                        + "USING btree (owner_organization_id)");
+        v003IndexDefs.put("business_subject.ix_subject_source_status",
+                "CREATE INDEX ix_subject_source_status ON subject_number.business_subject "
+                        + "USING btree (source, real_name_status)");
+        v003IndexDefs.put("caller_number_binding.pk_caller_number_binding",
+                "CREATE UNIQUE INDEX pk_caller_number_binding ON subject_number.caller_number_binding "
+                        + "USING btree (id)");
+        v003IndexDefs.put("caller_number_binding.uq_binding_subject_number",
+                "CREATE UNIQUE INDEX uq_binding_subject_number ON subject_number.caller_number_binding "
+                        + "USING btree (subject_id, number_hmac)");
+        v003IndexDefs.put("caller_number_binding.uq_binding_active_number",
+                "CREATE UNIQUE INDEX uq_binding_active_number ON subject_number.caller_number_binding "
+                        + "USING btree (number_hmac) WHERE (status = 'ACTIVE'::text)");
+        v003IndexDefs.put("caller_number_binding.ix_binding_subject_status",
+                "CREATE INDEX ix_binding_subject_status ON subject_number.caller_number_binding "
+                        + "USING btree (subject_id, status)");
+        v003IndexDefs.put("caller_number_binding.ix_binding_hmac_status",
+                "CREATE INDEX ix_binding_hmac_status ON subject_number.caller_number_binding "
+                        + "USING btree (number_hmac, status)");
+        v003IndexDefs.put("subject_claim.pk_subject_claim",
+                "CREATE UNIQUE INDEX pk_subject_claim ON subject_number.subject_claim "
+                        + "USING btree (id)");
+        v003IndexDefs.put("subject_claim.uq_claim_request",
+                "CREATE UNIQUE INDEX uq_claim_request ON subject_number.subject_claim "
+                        + "USING btree (request_id)");
+        v003IndexDefs.put("subject_claim.uq_claim_accepted_subject_account",
+                "CREATE UNIQUE INDEX uq_claim_accepted_subject_account "
+                        + "ON subject_number.subject_claim "
+                        + "USING btree (subject_id, account_id) WHERE (status = 'ACCEPTED'::text)");
+        v003IndexDefs.put("subject_claim.ix_claim_subject_status_time",
+                "CREATE INDEX ix_claim_subject_status_time ON subject_number.subject_claim "
+                        + "USING btree (subject_id, status, risk_checked_at DESC)");
+        v003IndexDefs.put("subject_claim.ix_claim_account_status",
+                "CREATE INDEX ix_claim_account_status ON subject_number.subject_claim "
+                        + "USING btree (account_id, status)");
+        v003IndexDefs.put("subject_risk_state.pk_subject_risk_state",
+                "CREATE UNIQUE INDEX pk_subject_risk_state ON subject_number.subject_risk_state "
+                        + "USING btree (id)");
+        v003IndexDefs.put("subject_risk_state.uq_risk_binding_type",
+                "CREATE UNIQUE INDEX uq_risk_binding_type ON subject_number.subject_risk_state "
+                        + "USING btree (caller_number_binding_id, risk_type)");
+        v003IndexDefs.put("subject_risk_state.ix_risk_open",
+                "CREATE INDEX ix_risk_open ON subject_number.subject_risk_state "
+                        + "USING btree (caller_number_binding_id, observed_at) "
+                        + "WHERE (state = 'OPEN'::text)");
+        v003IndexDefs.put("subject_risk_state.ix_risk_binding_state",
+                "CREATE INDEX ix_risk_binding_state ON subject_number.subject_risk_state "
+                        + "USING btree (caller_number_binding_id, state)");
+        assertThat(v003IndexDefs).as("expected V003 index map size").hasSize(18);
+        for (Map.Entry<String, String> entry : v003IndexDefs.entrySet()) {
+            String[] parts = entry.getKey().split("\\.", 2);
+            List<String> actualDefs = queryStrings(
+                    connection,
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'subject_number' "
+                            + "AND tablename = ? AND indexname = ?",
+                    parts[0], parts[1]);
+            assertThat(actualDefs)
+                    .as("exactly one indexdef row for subject_number.%s", entry.getKey())
+                    .hasSize(1);
+            assertThat(actualDefs.get(0))
+                    .as("whole indexdef equality for subject_number.%s", entry.getKey())
+                    .isEqualTo(entry.getValue());
+        }
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.relkind = 'S'"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.relkind = 'r'"))
+                .isEqualTo(4);
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || r.relname || '=' || pg_get_userbyid(r.relowner) "
+                        + "FROM pg_class r JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND r.relkind = 'r' ORDER BY 1"))
+                .containsExactly(
+                        "subject_number.business_subject=subject_number_owner",
+                        "subject_number.caller_number_binding=subject_number_owner",
+                        "subject_number.subject_claim=subject_number_owner",
+                        "subject_number.subject_risk_state=subject_number_owner");
+    }
+
+    private static void assertV003FunctionsAndTriggersExact(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'subject_number'"))
+                .as("exactly four subject_number functions").isEqualTo(4);
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
+                        + "|| '|' || p.prosecdef || '|' || pg_get_userbyid(p.proowner) || '|' "
+                        + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'subject_number' ORDER BY 1"))
+                .containsExactly(
+                        "subject_number.guard_caller_number_binding()|false|subject_number_owner"
+                                + "|search_path=subject_number, pg_temp",
+                        "subject_number.guard_subject_owner()|false|subject_number_owner"
+                                + "|search_path=subject_number, pg_temp",
+                        "subject_number.guard_subject_risk_state()|false|subject_number_owner"
+                                + "|search_path=subject_number, pg_temp",
+                        "subject_number.reject_row_mutation()|false|subject_number_owner"
+                                + "|search_path=subject_number, pg_temp");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'subject_number' "
+                        + "AND EXISTS (SELECT 1 FROM unnest(p.proargnames) AS a WHERE a = 'p_id')"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'subject_number' "
+                        + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'subject_number' "
+                        + "AND p.prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
+                .isZero();
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE NOT t.tgisinternal AND n.nspname = 'subject_number'"))
+                .as("exactly four subject_number triggers").isEqualTo(4);
+
+        Map<String, String[]> v003Triggers = new java.util.LinkedHashMap<>();
+        // expected: [0]=table, [1]=function, [2]=before, [3]=row, [4]=update, [5]=delete
+        v003Triggers.put("trg_business_subject_guard", new String[] {
+                "subject_number.business_subject", "subject_number.guard_subject_owner()",
+                "1", "1", "1", "0"});
+        v003Triggers.put("trg_caller_number_binding_guard", new String[] {
+                "subject_number.caller_number_binding", "subject_number.guard_caller_number_binding()",
+                "1", "1", "1", "0"});
+        v003Triggers.put("trg_subject_risk_state_guard", new String[] {
+                "subject_number.subject_risk_state", "subject_number.guard_subject_risk_state()",
+                "1", "1", "1", "0"});
+        v003Triggers.put("trg_subject_claim_immutable", new String[] {
+                "subject_number.subject_claim", "subject_number.reject_row_mutation()",
+                "1", "1", "1", "1"});
+        for (Map.Entry<String, String[]> entry : v003Triggers.entrySet()) {
+            String[] expected = entry.getValue();
+            try (PreparedStatement prepared = connection.prepareStatement(
+                    "SELECT t.tgrelid = ?::regclass AS on_table, "
+                            + "t.tgfoid = ?::regprocedure AS calls_function, "
+                            + "(t.tgtype & 2) <> 0 AS is_before, "
+                            + "(t.tgtype & 1) <> 0 AS is_row, "
+                            + "(t.tgtype & 16) <> 0 AS has_update, "
+                            + "(t.tgtype & 8) <> 0 AS has_delete, "
+                            + "(t.tgtype & 4) <> 0 AS has_insert, "
+                            + "(t.tgtype & 32) <> 0 AS has_truncate "
+                            + "FROM pg_trigger t WHERE t.tgname = ? AND NOT t.tgisinternal")) {
+                prepared.setString(1, expected[0]);
+                prepared.setString(2, expected[1]);
+                prepared.setString(3, entry.getKey());
+                try (ResultSet resultSet = prepared.executeQuery()) {
+                    assertThat(resultSet.next()).as("trigger %s exists", entry.getKey()).isTrue();
+                    assertThat(resultSet.getBoolean("on_table"))
+                            .as("%s on %s", entry.getKey(), expected[0]).isTrue();
+                    assertThat(resultSet.getBoolean("calls_function"))
+                            .as("%s calls %s", entry.getKey(), expected[1]).isTrue();
+                    assertThat(resultSet.getBoolean("is_before"))
+                            .as("%s BEFORE", entry.getKey())
+                            .isEqualTo("1".equals(expected[2]));
+                    assertThat(resultSet.getBoolean("is_row"))
+                            .as("%s FOR EACH ROW", entry.getKey())
+                            .isEqualTo("1".equals(expected[3]));
+                    assertThat(resultSet.getBoolean("has_update"))
+                            .as("%s fires on UPDATE", entry.getKey())
+                            .isEqualTo("1".equals(expected[4]));
+                    assertThat(resultSet.getBoolean("has_delete"))
+                            .as("%s fires on DELETE", entry.getKey())
+                            .isEqualTo("1".equals(expected[5]));
+                    assertThat(resultSet.getBoolean("has_insert"))
+                            .as("%s no INSERT", entry.getKey()).isFalse();
+                    assertThat(resultSet.getBoolean("has_truncate"))
+                            .as("%s no TRUNCATE", entry.getKey()).isFalse();
+                    assertThat(resultSet.next()).isFalse();
+                }
+            }
+        }
+    }
+
+    private static void assertV003NoIdDefaultsOrSequences(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attrdef d "
+                        + "JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
+                        + "JOIN pg_class r ON r.oid = d.adrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND a.attname = 'id'"))
+                .as("no V003 id column has a default").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'subject_number' AND c.relkind = 'S'"))
+                .as("no V003 sequence exists").isZero();
+    }
+
+    private static void assertNoV004PlusObjects(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace WHERE nspname IN "
+                        + "('catalog_order','ivr','entitlement_metering','activation_consent',"
+                        + "'evidence','sharing')"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN "
+                        + "('catalog_order_owner','catalog_order_role','ivr_owner','ivr_role',"
+                        + "'entitlement_metering_owner','entitlement_metering_role',"
+                        + "'activation_consent_owner','activation_consent_role','evidence_owner',"
+                        + "'evidence_role','sharing_owner','sharing_role')"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'subject_number' AND p.proname = 'issue_first_trial'"))
+                .isZero();
+    }
+
+    private static void assertV003SchemaUsageExactAndNoCreate(Connection connection) throws SQLException {
+        assertThat(hasSchema(connection, "subject_number_owner", "subject_number", "USAGE")).isTrue();
+        assertThat(hasSchema(connection, "subject_number_owner", "subject_number", "CREATE")).isTrue();
+        assertThat(hasSchema(connection, "subject_number_role", "subject_number", "USAGE")).isTrue();
+        assertThat(hasSchema(connection, "subject_number_role", "subject_number", "CREATE")).isFalse();
+        assertThat(hasSchema(connection, "subject_identity_verification_role", "subject_number", "USAGE"))
+                .isTrue();
+        assertThat(hasSchema(connection, "subject_identity_verification_role", "subject_number", "CREATE"))
+                .isFalse();
+        for (String role : List.of(
+                "platform_reliability_owner", "platform_reliability_role", "platform_dispatcher_role",
+                "audit_owner", "audit_reader_role", "customer_iam_owner", "customer_iam_role",
+                "organization_access_owner", "organization_access_role", "operations_iam_owner",
+                "operations_iam_role", "operations_service_role")) {
+            assertThat(hasSchema(connection, role, "subject_number", "USAGE"))
+                    .as("%s must not have subject_number USAGE", role).isFalse();
+            assertThat(hasSchema(connection, role, "subject_number", "CREATE"))
+                    .as("%s must not have subject_number CREATE", role).isFalse();
+        }
+        assertThat(hasSchema(connection, "public", "subject_number", "USAGE")).isFalse();
+        assertThat(hasSchema(connection, "public", "subject_number", "CREATE")).isFalse();
+    }
+
+    private static void assertV003OwnedAndCrossModuleGrants(Connection connection) throws SQLException {
+        assertTablePrivileges(connection, "subject_number_role",
+                "subject_number.business_subject", true, false, false, false, false);
+        assertTablePrivileges(connection, "subject_number_role",
+                "subject_number.caller_number_binding", true, true, false, false, false);
+        assertTablePrivileges(connection, "subject_number_role",
+                "subject_number.subject_claim", true, true, false, false, false);
+        assertTablePrivileges(connection, "subject_number_role",
+                "subject_number.subject_risk_state", true, true, false, false, false);
+        assertTablePrivileges(connection, "subject_identity_verification_role",
+                "subject_number.business_subject", false, false, false, false, false);
+        assertTablePrivileges(connection, "subject_identity_verification_role",
+                "subject_number.caller_number_binding", false, false, false, false, false);
+        assertTablePrivileges(connection, "subject_identity_verification_role",
+                "subject_number.subject_claim", false, false, false, false, false);
+        assertTablePrivileges(connection, "subject_identity_verification_role",
+                "subject_number.subject_risk_state", false, false, false, false, false);
+
+        Map<String, List<String>> allColumnsByTable = new java.util.LinkedHashMap<>();
+        allColumnsByTable.put("subject_number.business_subject", List.of(
+                "id", "owner_account_id", "owner_organization_id", "source", "real_name_status",
+                "real_name_verified_at", "revision", "created_at", "updated_at"));
+        allColumnsByTable.put("subject_number.caller_number_binding", List.of(
+                "id", "subject_id", "number_type", "number_ciphertext", "number_hmac",
+                "number_masked", "status", "verified_at", "revision"));
+        allColumnsByTable.put("subject_number.subject_claim", List.of(
+                "id", "subject_id", "account_id", "organization_id", "verification_method",
+                "verification_ref_ciphertext", "request_id", "status", "risk_checked_at", "verified_at"));
+        allColumnsByTable.put("subject_number.subject_risk_state", List.of(
+                "id", "caller_number_binding_id", "risk_type", "state", "source", "observed_at",
+                "cleared_at", "revision"));
+
+        Map<String, List<String>> runtimeInsertColumns = new java.util.LinkedHashMap<>();
+        runtimeInsertColumns.put("subject_number.business_subject",
+                List.of("id", "source", "revision", "created_at", "updated_at"));
+        runtimeInsertColumns.put("subject_number.caller_number_binding",
+                allColumnsByTable.get("subject_number.caller_number_binding"));
+        runtimeInsertColumns.put("subject_number.subject_claim",
+                allColumnsByTable.get("subject_number.subject_claim"));
+        runtimeInsertColumns.put("subject_number.subject_risk_state",
+                allColumnsByTable.get("subject_number.subject_risk_state"));
+
+        Map<String, List<String>> runtimeUpdateColumns = new java.util.LinkedHashMap<>();
+        runtimeUpdateColumns.put("subject_number.business_subject",
+                List.of("owner_account_id", "revision", "updated_at"));
+        runtimeUpdateColumns.put("subject_number.caller_number_binding",
+                List.of("status", "verified_at", "revision"));
+        runtimeUpdateColumns.put("subject_number.subject_claim", List.of());
+        runtimeUpdateColumns.put("subject_number.subject_risk_state",
+                List.of("state", "source", "observed_at", "cleared_at", "revision"));
+
+        Map<String, List<String>> verificationSelectColumns = List.of(
+                "id", "real_name_status", "real_name_verified_at", "revision", "updated_at")
+                .stream().collect(java.util.stream.Collectors.toMap(
+                        column -> "subject_number.business_subject|" + column,
+                        column -> List.of(column)));
+        // rebuild as map of table -> columns
+        Map<String, List<String>> verificationSelectByTable = Map.of(
+                "subject_number.business_subject",
+                List.of("id", "real_name_status", "real_name_verified_at", "revision", "updated_at"));
+        Map<String, List<String>> verificationUpdateByTable = Map.of(
+                "subject_number.business_subject",
+                List.of("real_name_status", "real_name_verified_at", "revision", "updated_at"));
+        assertThat(verificationSelectColumns).isNotNull();
+
+        for (Map.Entry<String, List<String>> entry : allColumnsByTable.entrySet()) {
+            String table = entry.getKey();
+            List<String> allColumns = entry.getValue();
+            for (String column : runtimeInsertColumns.get(table)) {
+                assertThat(hasColumn(connection, "subject_number_role", table, column, "INSERT"))
+                        .as("%s INSERT %s", "subject_number_role", table + "." + column).isTrue();
+            }
+            for (String column : allColumns) {
+                if (!runtimeInsertColumns.get(table).contains(column)) {
+                    assertThat(hasColumn(connection, "subject_number_role", table, column, "INSERT"))
+                            .as("subject_number_role must not INSERT %s.%s", table, column).isFalse();
+                }
+                if (runtimeUpdateColumns.get(table).contains(column)) {
+                    assertThat(hasColumn(connection, "subject_number_role", table, column, "UPDATE"))
+                            .as("subject_number_role UPDATE %s.%s", table, column).isTrue();
+                } else {
+                    assertThat(hasColumn(connection, "subject_number_role", table, column, "UPDATE"))
+                            .as("subject_number_role must not UPDATE %s.%s", table, column).isFalse();
+                }
+                assertThat(hasColumn(connection, "subject_number_role", table, column, "SELECT"))
+                        .as("subject_number_role SELECT %s.%s", table, column).isTrue();
+
+                boolean verificationSelect = verificationSelectByTable
+                        .getOrDefault(table, List.of()).contains(column);
+                boolean verificationUpdate = verificationUpdateByTable
+                        .getOrDefault(table, List.of()).contains(column);
+                assertThat(hasColumn(connection, "subject_identity_verification_role",
+                        table, column, "SELECT"))
+                        .as("verification SELECT %s.%s", table, column)
+                        .isEqualTo(verificationSelect);
+                assertThat(hasColumn(connection, "subject_identity_verification_role",
+                        table, column, "UPDATE"))
+                        .as("verification UPDATE %s.%s", table, column)
+                        .isEqualTo(verificationUpdate);
+                assertThat(hasColumn(connection, "subject_identity_verification_role",
+                        table, column, "INSERT"))
+                        .as("verification must not INSERT %s.%s", table, column).isFalse();
+            }
+        }
+
+        // Complete expected effective-privilege matrix for all 15 roles x 4 V003 tables.
+        Map<String, String> owningOwnerByTable = Map.of(
+                "subject_number.business_subject", "subject_number_owner",
+                "subject_number.caller_number_binding", "subject_number_owner",
+                "subject_number.subject_claim", "subject_number_owner",
+                "subject_number.subject_risk_state", "subject_number_owner");
+        for (String table : V003_TABLES) {
+            String owner = owningOwnerByTable.get(table);
+            boolean businessSubject = table.equals("subject_number.business_subject");
+            for (String role : S1_ROLES) {
+                boolean ownerRow = role.equals(owner);
+                boolean runtimeRow = role.equals("subject_number_role");
+                boolean verificationRow = role.equals("subject_identity_verification_role");
+                boolean expectTableSelect = ownerRow || runtimeRow;
+                boolean expectTableInsert = ownerRow || (runtimeRow && !businessSubject);
+                boolean expectTableUpdate = ownerRow;
+                assertThat(hasTable(connection, role, table, "SELECT"))
+                        .as("matrix %s table SELECT %s", role, table)
+                        .isEqualTo(expectTableSelect);
+                assertThat(hasTable(connection, role, table, "INSERT"))
+                        .as("matrix %s table INSERT %s", role, table)
+                        .isEqualTo(expectTableInsert);
+                assertThat(hasTable(connection, role, table, "UPDATE"))
+                        .as("matrix %s table UPDATE %s", role, table)
+                        .isEqualTo(expectTableUpdate);
+                assertThat(hasTable(connection, role, table, "DELETE"))
+                        .as("matrix %s table DELETE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "TRUNCATE"))
+                        .as("matrix %s table TRUNCATE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "REFERENCES"))
+                        .as("matrix %s table REFERENCES %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "TRIGGER"))
+                        .as("matrix %s table TRIGGER %s", role, table)
+                        .isEqualTo(ownerRow);
+                for (String column : allColumnsByTable.get(table)) {
+                    boolean expectColumnSelect = expectTableSelect
+                            || (verificationRow && verificationSelectByTable
+                                    .getOrDefault(table, List.of()).contains(column));
+                    boolean expectColumnInsert = ownerRow
+                            || (runtimeRow && runtimeInsertColumns.get(table).contains(column));
+                    boolean expectColumnUpdate = ownerRow
+                            || (runtimeRow && runtimeUpdateColumns.get(table).contains(column))
+                            || (verificationRow && verificationUpdateByTable
+                                    .getOrDefault(table, List.of()).contains(column));
+                    assertThat(hasColumn(connection, role, table, column, "SELECT"))
+                            .as("matrix %s column SELECT %s.%s", role, table, column)
+                            .isEqualTo(expectColumnSelect);
+                    assertThat(hasColumn(connection, role, table, column, "INSERT"))
+                            .as("matrix %s column INSERT %s.%s", role, table, column)
+                            .isEqualTo(expectColumnInsert);
+                    assertThat(hasColumn(connection, role, table, column, "UPDATE"))
+                            .as("matrix %s column UPDATE %s.%s", role, table, column)
+                            .isEqualTo(expectColumnUpdate);
+                }
+            }
+        }
+
+        // Verification role has no table-level SELECT/UPDATE/INSERT.
+        assertThat(hasTable(connection, "subject_identity_verification_role",
+                "subject_number.business_subject", "SELECT")).isFalse();
+        assertThat(hasTable(connection, "subject_identity_verification_role",
+                "subject_number.business_subject", "UPDATE")).isFalse();
+        assertThat(hasTable(connection, "subject_identity_verification_role",
+                "subject_number.business_subject", "INSERT")).isFalse();
+    }
+
+    private static void assertV003PublicAclIsZero(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace n, "
+                        + "aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a "
+                        + "WHERE n.nspname = 'subject_number' AND a.grantee = 0"))
+                .as("PUBLIC has no subject_number schema privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a "
+                        + "WHERE n.nspname = 'subject_number' AND c.relkind IN ('r','p') "
+                        + "AND a.grantee = 0"))
+                .as("PUBLIC has no subject_number table privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+                        + "WHERE n.nspname = 'subject_number' AND a.grantee = 0"))
+                .as("PUBLIC has no subject_number function EXECUTE").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE n.nspname = 'subject_number' "
+                        + "AND c.relkind IN ('r','p') "
+                        + "AND c.relname IN ('business_subject','caller_number_binding',"
+                        + "'subject_claim','subject_risk_state') "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped "
+                        + "AND x.grantee = 0"))
+                .as("PUBLIC has no subject_number column privilege").isZero();
+    }
+
+    private static void assertV003GuardFunctionExecuteBoundaries(Connection connection)
+            throws SQLException {
+        Map<String, List<String>> guardFunctionGrantRoles = Map.of(
+                "subject_number.guard_subject_owner()",
+                List.of("subject_number_role", "subject_identity_verification_role"),
+                "subject_number.guard_caller_number_binding()",
+                List.of("subject_number_role"),
+                "subject_number.guard_subject_risk_state()",
+                List.of("subject_number_role"));
+        for (Map.Entry<String, List<String>> entry : guardFunctionGrantRoles.entrySet()) {
+            String function = entry.getKey();
+            for (String grantedRole : entry.getValue()) {
+                assertThat(hasFunction(connection, grantedRole, function, "EXECUTE"))
+                        .as("%s EXECUTE %s", grantedRole, function).isTrue();
+            }
+            assertThat(hasFunction(connection, "public", function, "EXECUTE"))
+                    .as("PUBLIC must not EXECUTE %s", function).isFalse();
+            for (String role : S1_ROLES) {
+                if (entry.getValue().contains(role) || role.equals("subject_number_owner")) {
+                    continue;
+                }
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s must not EXECUTE %s", role, function).isFalse();
+            }
+            // verification role only on guard_subject_owner
+            if (!function.equals("subject_number.guard_subject_owner()")) {
+                assertThat(hasFunction(connection, "subject_identity_verification_role", function, "EXECUTE"))
+                        .as("verification must not EXECUTE %s", function).isFalse();
+            }
+        }
+
+        assertThat(hasFunction(connection, "subject_number_role",
+                "subject_number.reject_row_mutation()", "EXECUTE"))
+                .as("runtime must not EXECUTE reject_row_mutation").isFalse();
+        assertThat(hasFunction(connection, "subject_identity_verification_role",
+                "subject_number.reject_row_mutation()", "EXECUTE"))
+                .as("verification must not EXECUTE reject_row_mutation").isFalse();
+        assertThat(hasFunction(connection, "public",
+                "subject_number.reject_row_mutation()", "EXECUTE"))
+                .as("PUBLIC must not EXECUTE reject_row_mutation").isFalse();
+        for (String role : S1_ROLES) {
+            if (role.equals("subject_number_owner")) {
+                continue;
+            }
+            assertThat(hasFunction(connection, role,
+                    "subject_number.reject_row_mutation()", "EXECUTE"))
+                    .as("%s must not EXECUTE reject_row_mutation", role).isFalse();
+        }
+
+        assertThat(hasFunction(connection, "subject_identity_verification_role",
+                "subject_number.guard_caller_number_binding()", "EXECUTE")).isFalse();
+        assertThat(hasFunction(connection, "subject_identity_verification_role",
+                "subject_number.guard_subject_risk_state()", "EXECUTE")).isFalse();
+    }
+
+    private static void exerciseV003InsertsAsRuntimeRoleAndRollBack() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        UUID riskId = UUID.randomUUID();
+        String hmac = "9".repeat(64);
+        String ciphertext = "v1.v003-smoke.ciphertext-payload";
+        String masked = "138****0000";
+        String verificationRef = "v1.v003-smoke.ref-payload";
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("SET LOCAL ROLE customer_iam_role");
+                }
+                assertThat(insertCustomerAccount(connection, accountId, "V003 Smoke Customer"))
+                        .isEqualTo(1);
+
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("RESET ROLE");
+                    statement.execute("SET LOCAL ROLE organization_access_role");
+                }
+                assertThat(insertOrganization(connection, organizationId, "V003 Smoke Org"))
+                        .isEqualTo(1);
+
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("RESET ROLE");
+                    statement.execute("SET LOCAL ROLE subject_number_role");
+                }
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "INSERT INTO subject_number.business_subject "
+                                + "(id, source, revision, created_at, updated_at) "
+                                + "VALUES (?, 'IVR', 1, now(), now())")) {
+                    prepared.setObject(1, subjectId);
+                    assertThat(prepared.executeUpdate()).isEqualTo(1);
+                }
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "INSERT INTO subject_number.caller_number_binding "
+                                + "(id, subject_id, number_type, number_ciphertext, number_hmac, "
+                                + "number_masked, status, verified_at, revision) "
+                                + "VALUES (?, ?, 'MOBILE', ?, ?, ?, 'ACTIVE', now(), 1)")) {
+                    prepared.setObject(1, bindingId);
+                    prepared.setObject(2, subjectId);
+                    prepared.setString(3, ciphertext);
+                    prepared.setString(4, hmac);
+                    prepared.setString(5, masked);
+                    assertThat(prepared.executeUpdate()).isEqualTo(1);
+                }
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "INSERT INTO subject_number.subject_claim "
+                                + "(id, subject_id, account_id, verification_method, "
+                                + "verification_ref_ciphertext, request_id, status, risk_checked_at, "
+                                + "verified_at) "
+                                + "VALUES (?, ?, ?, 'SMS', ?, ?, 'ACCEPTED', now(), now())")) {
+                    prepared.setObject(1, claimId);
+                    prepared.setObject(2, subjectId);
+                    prepared.setObject(3, accountId);
+                    prepared.setString(4, verificationRef);
+                    prepared.setString(5, "v003-smoke-" + UUID.randomUUID());
+                    assertThat(prepared.executeUpdate()).isEqualTo(1);
+                }
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "INSERT INTO subject_number.subject_risk_state "
+                                + "(id, caller_number_binding_id, risk_type, state, source, "
+                                + "observed_at, revision) "
+                                + "VALUES (?, ?, 'CONFLICT', 'OPEN', 'CLAIM_CHECK', now(), 1)")) {
+                    prepared.setObject(1, riskId);
+                    prepared.setObject(2, bindingId);
+                    assertThat(prepared.executeUpdate()).isEqualTo(1);
+                }
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
+                        subjectId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                        bindingId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.subject_claim WHERE id = ?",
+                        claimId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.subject_risk_state WHERE id = ?",
+                        riskId)).isEqualTo(1);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                    bindingId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.subject_claim WHERE id = ?", claimId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.subject_risk_state WHERE id = ?", riskId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+        }
     }
 
     private static void assertGrants(Connection connection) throws SQLException {
@@ -4956,7 +6143,8 @@ class PostgresContainerIT {
                 "organization_access", List.of("customer_iam_role", "organization_access_owner",
                         "organization_access_role", "subject_number_role"),
                 "operations_iam", List.of("operations_iam_owner", "operations_iam_role"),
-                "subject_number", List.of("subject_number_owner"));
+                "subject_number", List.of("subject_number_owner", "subject_number_role",
+                        "subject_identity_verification_role"));
         for (Map.Entry<String, String> entry : domainSchemaOwners.entrySet()) {
             String schema = entry.getKey();
             List<String> usageGrantees = domainSchemaUsageGrantees.get(schema);
@@ -5070,9 +6258,12 @@ class PostgresContainerIT {
                 connection,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
                         + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access',"
+                        + "'operations_iam','subject_number') "
                         + "AND a.grantee = 0"))
                 .isZero();
+
+        assertV003OwnedAndCrossModuleGrants(connection);
     }
 
     private static void assertV002OwnedAndCrossModuleGrants(Connection connection) throws SQLException {
