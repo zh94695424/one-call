@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: onecall-runtime
+  main:
+    web-application-type: none
+  autoconfigure:
+    exclude:
+      # PA0 has no domain events; Modulith moments schedules non-daemon threads that
+      # would keep this batchless bootstrap JVM alive after startup.
+      - org.springframework.modulith.moments.autoconfigure.MomentsAutoConfiguration

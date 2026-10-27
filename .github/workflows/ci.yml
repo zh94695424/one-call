@@ -1,0 +1,172 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+      - 'api/openapi/**'
+      - 'protocol/**'
+      - 'security/**'
+      - 'deployment/capacity/**'
+      - 'acceptance/**'
+      - 'docs/*.md'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+      - 'api/openapi/**'
+      - 'protocol/**'
+      - 'security/**'
+      - 'deployment/capacity/**'
+      - 'acceptance/**'
+      - 'docs/*.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  java-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21.0.13+9.0.LTS'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: assert toolchains and jdk pin
+        run: |
+          grep -Fx '21.0.13+9' .java-version
+          grep -Fx 'SEMANTIC_VERSION="21.0.13+9"' "${JAVA_HOME}/release"
+          grep -Fx 'IMPLEMENTOR="Eclipse Adoptium"' "${JAVA_HOME}/release"
+          ./mvnw -B -ntp -v | grep -F 'Apache Maven 3.9.9'
+          ./mvnw -B -ntp -v | grep -F 'Java version: 21.0.13'
+          java -version 2>&1 | grep -F '21.0.13'
+      - name: require docker daemon
+        run: docker info
+      - name: build, module checks, container smoke
+        run: ./mvnw -B -ntp -Pcontainer-smoke verify
+      - name: assert container smoke actually ran
+        run: |
+          python3 - <<'PY'
+          import glob
+          import sys
+          import xml.etree.ElementTree as ET
+
+          def suites(pattern):
+              files = glob.glob(pattern)
+              if not files:
+                  sys.exit(f"missing report: {pattern}")
+              return [ET.parse(f).getroot() for f in files]
+
+          failsafe = suites("target/failsafe-reports/TEST-*PostgresContainerIT.xml")
+          if len(failsafe) != 1:
+              sys.exit(f"expected one container IT report, got {len(failsafe)}")
+          suite = failsafe[0]
+          if int(suite.get("tests", "0")) != 1:
+              sys.exit("container IT did not report exactly one test")
+          if int(suite.get("skipped", "0")) != 0:
+              sys.exit("container IT was skipped")
+          if int(suite.get("failures", "0")) != 0 or int(suite.get("errors", "0")) != 0:
+              sys.exit("container IT failed")
+          cases = [case.get("name") for case in suite.findall("testcase")]
+          if "connectsToPostgresAndFindsNoApplicationSchema" not in cases:
+              sys.exit("container IT method missing")
+          for surefire in suites("target/surefire-reports/TEST-*.xml"):
+              if int(surefire.get("skipped", "0")) != 0:
+                  sys.exit("a unit/module test was skipped")
+          print("container-smoke report assertions passed")
+          PY
+      - name: boot jar smoke
+        run: |
+          timeout 60s java -jar target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/boot.log 2>&1
+          grep -F 'Started OneCallApplication' target/boot.log
+      - name: production jar dependency firewall
+        run: |
+          jar tf target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/jar-index.txt
+          if grep -Eq 'BOOT-INF/lib/(spring-security|flyway|jooq|HikariCP|postgresql|testcontainers)' target/jar-index.txt; then
+            echo 'forbidden runtime dependency in fat jar'
+            exit 1
+          fi
+
+  contract-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+          cache: npm
+          cache-dependency-path: api/openapi/package-lock.json
+      - name: assert exact node version
+        run: node --version | grep -Fx v22.23.4
+      - name: install locked A1 toolchain
+        working-directory: api/openapi
+        run: npm ci
+      - name: A1 s3
+        working-directory: api/openapi
+        run: npm run check:s3
+      - name: A2 s3
+        run: |
+          node protocol/ivr/validate.mjs --stage s3 \
+            --model protocol/ivr/v1/ivr-protocol-v1.json \
+            --fixtures protocol/ivr/v1/fixtures \
+            --spec docs/16-production-ivr-protocol-spec.md \
+            --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+            --a0 docs/14-production-data-model-and-flyway-schema-spec.md
+      - name: A3 s3
+        run: |
+          node security/validate.mjs --stage s3 \
+            --model security/v1/security-design-v1.json \
+            --fixtures security/v1/fixtures \
+            --spec docs/17-production-security-design-spec.md \
+            --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+            --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
+            --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
+            --a2-fixtures protocol/ivr/v1/fixtures
+      - name: A4 s2
+        run: |
+          node deployment/capacity/validate.mjs --stage s2 \
+            --template deployment/capacity/inputs.template.json \
+            --fixtures deployment/capacity/fixtures
+      - name: A5 s1
+        run: |
+          node acceptance/validate.mjs --stage s1 \
+            --matrix acceptance/v1/acceptance-matrix-v1.json \
+            --doc docs/19-production-acceptance-matrix.md \
+            --fixtures acceptance/fixtures \
+            --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
+            --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+            --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
+            --a2-fixtures protocol/ivr/v1/fixtures \
+            --a3-model security/v1/security-design-v1.json \
+            --a3-fixtures security/v1/fixtures \
+            --a4-calc deployment/capacity/calc.mjs \
+            --a4-fixtures deployment/capacity/fixtures
+      - name: A5 s2
+        run: |
+          node acceptance/validate.mjs --stage s2 \
+            --matrix acceptance/v1/acceptance-matrix-v1.json \
+            --doc docs/19-production-acceptance-matrix.md \
+            --fixtures acceptance/fixtures \
+            --a0 docs/14-production-data-model-and-flyway-schema-spec.md \
+            --a1-bundle tmp/openapi-client/onecall-v1.bundle.json \
+            --a2-model protocol/ivr/v1/ivr-protocol-v1.json \
+            --a2-fixtures protocol/ivr/v1/fixtures \
+            --a3-model security/v1/security-design-v1.json \
+            --a3-fixtures security/v1/fixtures \
+            --a4-calc deployment/capacity/calc.mjs \
+            --a4-fixtures deployment/capacity/fixtures \
+            --check-doc-links
