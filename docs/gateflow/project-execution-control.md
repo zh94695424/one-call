@@ -31,7 +31,7 @@ Before production implementation, section 18 of the design source requires code-
 - Type: architecture-sensitive migration and persistence feature work unit.
 - Status: active.
 - Base: merged PR #12 / `main` commit `4006e8e09c39e4527cb543f03646a30073d1e1fa`; the merged tree contains the accepted V001-V004 persistence foundation and PA4 final closeout.
-- Current gate / next entry point: `accepted PR review checkpoint` (PR #13 review passed with no material finding). The exact PR head is externally green and the two independent review artifacts are ready for a protected checkpoint; this remains database-backstop work only, not production IVR readiness.
+- Current gate / next entry point: `push` (accepted PR review checkpoint `d6c383f`). The exact PR head was independently reviewed with no material finding; push this checkpoint and verify the PR head before entering `draft-PR-pass`. This remains database-backstop work only, not production IVR readiness.
 - Design source: `docs/12-technology-stack-and-system-architecture.md` sections 5, 6, 14 and 15 Phase B; `docs/14-production-data-model-and-flyway-schema-spec.md` sections 2.9, 4.23-4.28, 5.4, 9.0.1, 9.11-9.16, 9.21-9.24, 10.12-10.17 and 11.4 are binding. Accepted V001-V004 migrations and executable evidence are immutable prerequisites.
 
 ### PA5 accepted-plan checkpoint and S1 entry
