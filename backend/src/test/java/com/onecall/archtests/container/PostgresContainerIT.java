@@ -6898,11 +6898,13 @@ class PostgresContainerIT {
         // F-PA4-S1-01 fix 1: complete effective table/column matrix (accepted plan 6.6.2,
         // 6.6.3, 6.6.5 and 8.3) across all 15 S1 roles and all 8 V004 roles on the seven
         // V004 owned tables and the five V004-touched S1 cross-module tables, including
-        // REFERENCES/TRIGGER and column-level INSERT/UPDATE denials. Owner-inherent
-        // privileges are modeled explicitly; catalog_order_role holds table SELECT/INSERT
-        // and only the exact column UPDATE sets; entitlement_metering_role holds only the
-        // exact cross-module column SELECT sets; every other out-of-matrix table or
-        // column privilege is false, so a future out-of-matrix grant fails closed.
+        // REFERENCES/TRIGGER and column-level INSERT/UPDATE denials. F-PA4-AGG-01 adds
+        // one exact bounded loop over all 13 S1 universe tables x the eight S2 roles.
+        // Owner-inherent privileges are modeled explicitly; catalog_order_role holds
+        // table SELECT/INSERT and only the exact column UPDATE sets;
+        // entitlement_metering_role holds only the exact cross-module column SELECT sets;
+        // every other out-of-matrix table or column privilege is false, so a future
+        // out-of-matrix grant fails closed.
         Map<String, List<String>> allColumnsByTable = new java.util.LinkedHashMap<>();
         allColumnsByTable.put("catalog_order.catalog_product", List.of(
                 "id", "product_code", "product_family", "created_at"));
@@ -6965,22 +6967,6 @@ class PostgresContainerIT {
                 List.of("organization_id", "account_id", "role", "status"));
         catalogCrossSelect.put("subject_number.business_subject",
                 List.of("id", "owner_account_id", "owner_organization_id", "revision"));
-        Map<String, List<String>> s1AllColumns = new java.util.LinkedHashMap<>();
-        s1AllColumns.put("customer_iam.customer_account",
-                List.of("id", "display_name", "status", "revision", "created_at", "updated_at"));
-        s1AllColumns.put("customer_iam.identity_profile",
-                List.of("id", "account_id", "real_name_status", "legal_name_ciphertext",
-                        "id_number_ciphertext", "id_number_hmac", "verification_ref_ciphertext",
-                        "verified_at", "revision"));
-        s1AllColumns.put("organization_access.organization",
-                List.of("id", "display_name", "status", "revision", "created_at", "updated_at"));
-        s1AllColumns.put("organization_access.organization_membership",
-                List.of("id", "organization_id", "account_id", "role", "department_label",
-                        "status", "revision"));
-        s1AllColumns.put("subject_number.business_subject",
-                List.of("id", "owner_account_id", "owner_organization_id", "source",
-                        "real_name_status", "real_name_verified_at", "revision", "created_at",
-                        "updated_at"));
 
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_version")).hasSize(12);
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_offer")).hasSize(3);
@@ -7039,76 +7025,59 @@ class PostgresContainerIT {
             }
         }
 
-        // Cross-module reads for catalog_order_role on the five V004-touched S1 tables:
-        // exact column SELECT only; no table-level privilege of any kind (including
-        // REFERENCES/TRIGGER) and no column INSERT/UPDATE on any column.
-        for (Map.Entry<String, List<String>> entry : catalogCrossSelect.entrySet()) {
-            String table = entry.getKey();
-            List<String> grantedColumns = entry.getValue();
-            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
-                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
-                assertThat(hasTable(connection, "catalog_order_role", table, privilege))
-                        .as("catalog_order_role must not hold table %s on %s", privilege, table)
-                        .isFalse();
-            }
-            for (String column : s1AllColumns.get(table)) {
-                boolean expectSelect = grantedColumns.contains(column);
-                assertThat(hasColumn(connection, "catalog_order_role", table, column, "SELECT"))
-                        .as("catalog_order_role SELECT %s.%s", table, column)
-                        .isEqualTo(expectSelect);
-                assertThat(hasColumn(connection, "catalog_order_role", table, column, "INSERT"))
-                        .as("catalog_order_role must not INSERT %s.%s", table, column).isFalse();
-                assertThat(hasColumn(connection, "catalog_order_role", table, column, "UPDATE"))
-                        .as("catalog_order_role must not UPDATE %s.%s", table, column).isFalse();
-            }
-        }
-
-        // ivr_role, activation_consent_role and entitlement_metering_role hold no table or
-        // column privilege on any V004-touched S1 table at V004 (plan 6.6.5).
-        for (Map.Entry<String, List<String>> entry : s1AllColumns.entrySet()) {
-            String table = entry.getKey();
-            for (String role : List.of("ivr_role", "activation_consent_role",
-                    "entitlement_metering_role")) {
+        // F-PA4-AGG-01: one exact bounded loop over the full S1 universe
+        // (S1_TABLES + V002_TABLES + V003_TABLES, exactly equal to ALL_V001_V003_TABLES,
+        // 13 tables) crossed with the eight S2 roles (V004_ROLES). Every table privilege
+        // (SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER) is false for every
+        // pair; every column SELECT/INSERT/UPDATE is false except catalog_order_role's
+        // exact column SELECT reads on the five V004-touched S1 tables declared in
+        // catalogCrossSelect (accepted plan 6.6.3, 6.6.5 and 8.3; includes the prior
+        // RR-09 owner-role denials). Columns are enumerated from the live catalog and
+        // must be non-empty, so a missing table or column fails closed instead of being
+        // skipped; the expected table set is asserted exactly. No live over-grant exists
+        // in V004, so this is fail-closed evidence only.
+        List<String> s1UniverseTables = new ArrayList<>(S1_TABLES);
+        s1UniverseTables.addAll(V002_TABLES);
+        s1UniverseTables.addAll(V003_TABLES);
+        assertThat(s1UniverseTables)
+                .containsExactlyInAnyOrderElementsOf(ALL_V001_V003_TABLES);
+        assertThat(s1UniverseTables).hasSize(13);
+        for (String table : s1UniverseTables) {
+            List<String> actualColumns = queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_class c "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                            + "WHERE n.nspname || '.' || c.relname = ? "
+                            + "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+                    table);
+            assertThat(actualColumns)
+                    .as("S1 universe table %s must exist with enumerated columns", table)
+                    .isNotEmpty();
+            List<String> catalogGrantedColumns =
+                    catalogCrossSelect.getOrDefault(table, List.of());
+            for (String role : V004_ROLES) {
                 for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
                         "TRUNCATE", "REFERENCES", "TRIGGER")) {
                     assertThat(hasTable(connection, role, table, privilege))
-                            .as("%s must not hold table %s on %s", role, privilege, table)
+                            .as("%s must not hold table %s on S1 table %s",
+                                    role, privilege, table)
                             .isFalse();
                 }
-                for (String column : entry.getValue()) {
+                for (String column : actualColumns) {
                     for (String privilege : List.of("SELECT", "INSERT", "UPDATE")) {
+                        boolean expectGrant = role.equals("catalog_order_role")
+                                && privilege.equals("SELECT")
+                                && catalogGrantedColumns.contains(column);
                         assertThat(hasColumn(connection, role, table, column, privilege))
-                                .as("%s must not %s %s.%s", role, privilege, table, column)
-                                .isFalse();
+                                .as("%s %s %s.%s", role, privilege, table, column)
+                                .isEqualTo(expectGrant);
                     }
                 }
             }
         }
         // activation_consent/entitlement_metering tables do not exist at V004; the schema
         // USAGE matrix asserts the catalog_order_role wave boundary for those schemas.
-
-        // RR-09 (S2, test-only): the four S2 owner roles hold no table or column privilege
-        // on any of the five V004-touched S1 tables. Owner-inherent privileges apply only
-        // within their own schemas; no live grant exists.
-        for (Map.Entry<String, List<String>> entry : s1AllColumns.entrySet()) {
-            String table = entry.getKey();
-            for (String role : List.of("catalog_order_owner", "ivr_owner",
-                    "entitlement_metering_owner", "activation_consent_owner")) {
-                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
-                        "TRUNCATE", "REFERENCES", "TRIGGER")) {
-                    assertThat(hasTable(connection, role, table, privilege))
-                            .as("RR-09: %s must not hold table %s on %s", role, privilege, table)
-                            .isFalse();
-                }
-                for (String column : entry.getValue()) {
-                    for (String privilege : List.of("SELECT", "INSERT", "UPDATE")) {
-                        assertThat(hasColumn(connection, role, table, column, privilege))
-                                .as("RR-09: %s must not %s %s.%s", role, privilege, table, column)
-                                .isFalse();
-                    }
-                }
-            }
-        }
     }
 
     private static void assertV004PublicAclIsZero(Connection connection) throws SQLException {
@@ -7213,6 +7182,20 @@ class PostgresContainerIT {
             }
             assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
                     .as("%s EXECUTE audit.append_fact", role).isTrue();
+        }
+        // F-PA4-AGG-01: the four S2 owner roles hold EXECUTE=false on all four S1
+        // functions (accepted plan 6.6.4 "no owner receives a runtime EXECUTE grant",
+        // 6.6.5 and 8.3). Signatures reuse the existing PLATFORM_FUNCTIONS and
+        // AUDIT_FUNCTION constants whose positive runtime grants are asserted above;
+        // no live over-grant exists in V004, so this is fail-closed evidence only.
+        for (String role : List.of("catalog_order_owner", "ivr_owner",
+                "entitlement_metering_owner", "activation_consent_owner")) {
+            for (String function : PLATFORM_FUNCTIONS) {
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s must not EXECUTE %s", role, function).isFalse();
+            }
+            assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
+                    .as("%s must not EXECUTE audit.append_fact", role).isFalse();
         }
         // entitlement_metering_owner has no platform capability
         assertThat(hasSchema(connection, "entitlement_metering_owner", "platform", "USAGE")).isFalse();
