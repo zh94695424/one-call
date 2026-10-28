@@ -7,7 +7,7 @@
 - Base: `main` at `4006e8e09c39e4527cb543f03646a30073d1e1fa`
 - Draft PR: https://github.com/zh94695424/one-call/pull/13
 - Reviewed-content PR head: `88a619717134428152025c077e98d4f67477fb2a`
-- Final closeout delivery PR head: `7566776908ae37b778f1a20cee7e54a124d3c816`
+- Controller-only closeout delivery chain: `2766e58` -> `7566776` -> `c5e4f1b`
 - Status: `final closeout pass`
 
 ## Delivered
@@ -22,7 +22,7 @@ The cumulative PostgreSQL evidence now contains 38 executable methods. CI expect
 - Aggregate A/B review findings were fixed and independently re-reviewed; no material finding remains.
 - PR #13 A/B review artifacts are present and both report no material finding.
 - Local bounded evidence recorded in the aggregate/review artifacts: Maven validate; default 10/0/0/0; PostgreSQL 16 full 38/0/0/0; focused V005 4/0/0/0; three concurrency repetitions; source=CI=XML=38; boot smoke; fat-jar firewall; V001-V004 immutability; V005 SHA-256; docs/14 23/308/ALL_EXACT.
-- Exact-head GitHub Actions run `40768021130` passed `java-runtime` and `contract-regressions` for the reviewed-content head `88a6197`; the intermediate closeout delivery head `2766e58` was verified by run `40768609283`, and the final closeout delivery head `7566776` was verified by run `40768979827`, with both jobs passing.
+- Exact-head GitHub Actions runs `40768021130`, `40768609283`, `40768979827` and `40769310760` passed `java-runtime` and `contract-regressions` at the reviewed-content and successive controller-only documentation heads.
 - PR remains Draft/Open/CLEAN. No merge, approval, Ready-for-review transition, reviewer request, external comment or issue mutation was performed.
 
 ## Finding status
