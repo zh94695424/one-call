@@ -1976,6 +1976,35 @@ class PostgresContainerIT {
         assertV005RuntimeDenialsAndLegalUpdateControl();
     }
 
+    // PA5 V005 S2: executable lifecycle, guard, FK, append-only and bounded concurrency
+    // backstops. No application service exists; these methods prove database-visible
+    // behavior only. Claim/reservation/decision orchestration, expiry housekeeping and
+    // production Q-input decisions remain service-owned and are labeled as shapes only.
+    @Test
+    void v005TaskTtlLifecycleAndGuardBackstops() throws Exception {
+        assertV005TaskTtlLifecycleAndGuardBackstops();
+    }
+
+    @Test
+    void v005SessionCallCanonicalCallerAndReciprocalLinkBackstops() throws Exception {
+        assertV005SessionCallCanonicalCallerAndReciprocalLinkBackstops();
+    }
+
+    @Test
+    void v005LegEventDecisionFrozenIdentityAndAppendOnlyBackstops() throws Exception {
+        assertV005LegEventDecisionFrozenIdentityAndAppendOnlyBackstops();
+    }
+
+    @Test
+    void v005ForeignKeyAndDeferredReservationFkBackstops() throws Exception {
+        assertV005ForeignKeyAndDeferredReservationFkBackstops();
+    }
+
+    @Test
+    void concurrentV005TaskClaimAndActiveCallHasOneWinner() throws Exception {
+        runConcurrentV005TaskClaimAndActiveCall();
+    }
+
     /**
      * S3 T-S1-09 last-enabled-admin protocol as exact transient SQL (no database function):
      * advisory lock, target row FOR UPDATE, enabled-admin count, then either a conditional
@@ -3712,6 +3741,112 @@ class PostgresContainerIT {
                 .as("the transaction-local billing-matrix isolation is fully rolled back")
                 .isEqualTo(2);
         switchLocalRole(connection, "catalog_order_role");
+    }
+
+    /**
+     * {@code ck_call_leg_type} is logically subsumed by {@code ck_call_leg_direction}: any
+     * {@code leg_type} outside CALLER/CALLEE also fails the direction pairing predicate, so
+     * PostgreSQL reports only the latter for an illegal type value. This bounded helper isolates
+     * the frozen type check by dropping the direction constraint inside a savepoint as
+     * {@code ivr_owner}, inserting the violating row (exact 23514 and exact constraint name), then
+     * rolling back to the savepoint so the dropped constraint and the failed row are both fully
+     * restored.
+     */
+    private static void expectCallLegTypeViolationWithIsolatedConstraint(
+            Connection connection, CheckProbe probe) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "ivr_owner");
+            execute(connection,
+                    "ALTER TABLE ivr.call_leg DROP CONSTRAINT ck_call_leg_direction");
+            try (PreparedStatement prepared = connection.prepareStatement(probe.sql())) {
+                bind(prepared, probe.parameters());
+                prepared.executeUpdate();
+            }
+            fail("expected SQL failure 23514 for ck_call_leg_type but the statement succeeded");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for ck_call_leg_type").isEqualTo("23514");
+            assertThat(exception.getMessage())
+                    .as("exact constraint marker for ck_call_leg_type")
+                    .contains("ck_call_leg_type");
+        } finally {
+            connection.rollback(savepoint);
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND r.relname = 'call_leg' "
+                        + "AND c.conname IN ('ck_call_leg_type','ck_call_leg_direction')"))
+                .as("the transaction-local direction isolation is fully rolled back")
+                .isEqualTo(2);
+        switchLocalRole(connection, "ivr_role");
+    }
+
+    /**
+     * The partial unique {@code uq_ivr_decision_source} on {@code (call_id, source_event_domain,
+     * source_event_id) WHERE source_event_id IS NOT NULL} cannot fire while unisolated:
+     * {@code ck_ivr_decision_source} binds the source tuple to the purpose and
+     * {@code uq_ivr_decision_call_purpose} preempts same-purpose duplicates on the shared call.
+     * This bounded helper isolates it by dropping only those two preempting frozen objects
+     * inside a savepoint as {@code ivr_owner}, inserting two legal rows with distinct purposes
+     * but the same non-null source tuple (exact {@code 23505} + {@code uq_ivr_decision_source}),
+     * then rolling back to the savepoint so the dropped check and unique index are fully
+     * restored.
+     */
+    private static void expectDecisionSourceUniqueViolationWithIsolatedConstraint(
+            Connection connection, UUID sessionId, String callId, String fingerprint, String sha)
+            throws SQLException {
+        String sourceEventId = "evt-source-unique-" + UUID.randomUUID();
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "ivr_owner");
+            execute(connection,
+                    "ALTER TABLE ivr.ivr_decision DROP CONSTRAINT ck_ivr_decision_source");
+            execute(connection,
+                    "ALTER TABLE ivr.ivr_decision DROP CONSTRAINT uq_ivr_decision_call_purpose");
+            switchLocalRole(connection, "ivr_role");
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO ivr.ivr_decision "
+                            + "(id, session_id, call_id, purpose, source_event_domain, "
+                            + "source_event_id, request_fingerprint, action, reason_code, "
+                            + "response_snapshot, response_payload_ciphertext, "
+                            + "response_sha256, key_version) "
+                            + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', 'IVR_CONFIRM', ?, "
+                            + "?, 'GUIDE_ACTIVATION', 'ACTIVATION_REQUIRED', '{}'::jsonb, "
+                            + "?, ?, 1)",
+                    UUID.randomUUID(), sessionId, callId, sourceEventId, fingerprint,
+                    v005Ciphertext(), sha))
+                    .as("first legal distinct-purpose row with the shared source tuple")
+                    .isEqualTo(1);
+            expectSqlFailure(connection, "23505", "uq_ivr_decision_source",
+                    "INSERT INTO ivr.ivr_decision "
+                            + "(id, session_id, call_id, purpose, source_event_domain, "
+                            + "source_event_id, request_fingerprint, action, reason_code, "
+                            + "response_snapshot, response_payload_ciphertext, "
+                            + "response_sha256, key_version) "
+                            + "VALUES (?, ?, ?, 'ACTIVATION_NEXT_ACTION', 'IVR_CONFIRM', ?, "
+                            + "?, 'GUIDE_ACTIVATION', 'ACTIVATION_REQUIRED', '{}'::jsonb, "
+                            + "?, ?, 1)",
+                    UUID.randomUUID(), sessionId, callId, sourceEventId, fingerprint,
+                    v005Ciphertext(), sha);
+        } finally {
+            connection.rollback(savepoint);
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND r.relname = 'ivr_decision' "
+                        + "AND c.conname = 'ck_ivr_decision_source'"))
+                .as("the transaction-local ck_ivr_decision_source drop is fully rolled back")
+                .isEqualTo(1);
+        assertThat(toRegclass(connection, "ivr.uq_ivr_decision_call_purpose"))
+                .as("the transaction-local uq_ivr_decision_call_purpose drop is fully rolled back")
+                .isNotNull();
+        assertThat(toRegclass(connection, "ivr.uq_ivr_decision_source"))
+                .as("uq_ivr_decision_source remains in place after rollback")
+                .isNotNull();
+        switchLocalRole(connection, "ivr_role");
     }
 
     private static void assertForeignKeyMissingParentAndParentDeleteRestrict() throws Exception {
@@ -12366,6 +12501,2705 @@ class PostgresContainerIT {
             assertThat(queryLong(connection,
                     "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?",
                     employeeId)).isZero();
+        }
+    }
+    // ------------------------------------------------------------------
+    // PA5 V005 S2: lifecycle, guard, FK, named-check and concurrency helpers
+    // ------------------------------------------------------------------
+
+    private static List<String> v005ExpectedCheckNames(String... tables) {
+        int total = 0;
+        for (Map.Entry<String, Map<String, String>> entry : V005_CHECK_DEF_MAP.entrySet()) {
+            total += entry.getValue().size();
+        }
+        assertThat(total).as("V005_CHECK_DEF_MAP has exactly 73 named checks").isEqualTo(73);
+        List<String> subset = new ArrayList<>();
+        for (String table : tables) {
+            assertThat(V005_CHECK_DEF_MAP).as("check map for %s", table).containsKey(table);
+            subset.addAll(V005_CHECK_DEF_MAP.get(table).keySet());
+        }
+        return subset;
+    }
+
+    private static String v005Ciphertext() {
+        return "v1.s2.ivr.ciphertext";
+    }
+
+    private static String v005Masked() {
+        return "137****0009";
+    }
+
+    private static String v005TaskIdText() {
+        return "pa5-s2-task-" + UUID.randomUUID();
+    }
+
+    private static String v005CallId() {
+        return "pa5-s2-call-" + UUID.randomUUID();
+    }
+
+    private static String v005IdempotencyKey() {
+        return "pa5-s2-idem-" + UUID.randomUUID();
+    }
+
+    private static String v005EventId() {
+        return "evt-s2-" + UUID.randomUUID();
+    }
+
+    private static String v005EventRedactedJson(String payloadSha256, String eventFingerprint) {
+        return "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                + "\"sequenceNo\":1,\"payload\":{}},\"receipt\":{\"payloadSha256\":\""
+                + payloadSha256 + "\",\"eventFingerprint\":\"" + eventFingerprint + "\"}}";
+    }
+
+    private static void v005InsertAccount(Connection connection, UUID accountId)
+            throws SQLException {
+        setLocalRole(connection, "customer_iam_role");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO customer_iam.customer_account "
+                        + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                accountId, "pa5-s2-acct-" + UUID.randomUUID())).isEqualTo(1);
+    }
+
+    private static void v005InsertOrganization(Connection connection, UUID organizationId)
+            throws SQLException {
+        setLocalRole(connection, "organization_access_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO organization_access.organization "
+                        + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                organizationId, "pa5-s2-org-" + UUID.randomUUID())).isEqualTo(1);
+    }
+
+    private static void v005InsertSubject(Connection connection, UUID subjectId, UUID accountId)
+            throws SQLException {
+        setLocalRole(connection, "subject_number_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO subject_number.business_subject "
+                        + "(id, source, owner_account_id) VALUES (?, 'IVR', ?)",
+                subjectId, accountId)).isEqualTo(1);
+    }
+
+    private static void v005InsertBinding(
+            Connection connection, UUID bindingId, UUID subjectId, String hmac)
+            throws SQLException {
+        setLocalRole(connection, "subject_number_role");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO subject_number.caller_number_binding "
+                        + "(id, subject_id, number_hmac, number_ciphertext, number_masked, "
+                        + "number_type, status, verified_at) "
+                        + "VALUES (?, ?, ?, ?, ?, 'MOBILE', 'ACTIVE', now())",
+                bindingId, subjectId, hmac, v005Ciphertext(), v005Masked())).isEqualTo(1);
+    }
+
+    /**
+     * Inserts the shared V002/V003 parents for a method-local IVR fixture. Callers must
+     * already run in a non-autocommit connection; role ends as migration identity.
+     */
+    private static void v005InsertParents(
+            Connection connection,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID bindingId,
+            String hmac) throws SQLException {
+        v005InsertAccount(connection, accountId);
+        v005InsertOrganization(connection, organizationId);
+        v005InsertSubject(connection, subjectId, accountId);
+        v005InsertBinding(connection, bindingId, subjectId, hmac);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static int v005InsertTask(
+            Connection connection,
+            UUID taskId,
+            String taskIdText,
+            UUID bindingId,
+            UUID subjectId,
+            UUID accountId,
+            String hmac,
+            String idempotencyKey,
+            String fingerprint) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO ivr.outbound_call_task "
+                        + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                        + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                        + "callee_masked, business_type, expires_at, idempotency_key, "
+                        + "request_fingerprint) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                        + "now() + interval '30 seconds', ?, ?)",
+                taskId, taskIdText, bindingId, subjectId, accountId, accountId, hmac,
+                v005Ciphertext(), v005Masked(), idempotencyKey, fingerprint);
+    }
+
+    private static int v005InsertSession(
+            Connection connection,
+            UUID sessionId,
+            String callId,
+            UUID subjectId,
+            String hmac) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO ivr.inbound_session "
+                        + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                        + "caller_number_hmac, caller_masked, access_number_masked, "
+                        + "node_id, protocol_version, prompt_version) "
+                        + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                sessionId, callId, subjectId, v005Ciphertext(), hmac, v005Masked(), v005Masked());
+    }
+
+    private static int v005InsertCall(
+            Connection connection,
+            UUID callRecordId,
+            String callId,
+            UUID sessionId,
+            UUID subjectId,
+            String hmac) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO ivr.call_record "
+                        + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                        + "caller_number_hmac, caller_masked, access_number_masked, "
+                        + "node_id, protocol_version, started_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                callRecordId, callId, sessionId, subjectId, v005Ciphertext(), hmac,
+                v005Masked(), v005Masked());
+    }
+
+    private static String v005TaskProbeSql() {
+        return "INSERT INTO ivr.outbound_call_task "
+                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                + "created_by_account_id, caller_number_hmac, callee_ciphertext, callee_masked, "
+                + "business_type, status, reason_code, ttl_seconds, expires_at, "
+                + "idempotency_key, request_fingerprint, claimed_call_id, claimed_at, "
+                + "terminal_at, created_at, updated_at, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static void assertV005TaskTtlLifecycleAndGuardBackstops() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID secondTaskId = UUID.randomUUID();
+        UUID replaceTaskId = UUID.randomUUID();
+        String hmac = randomSha256();
+        String fingerprint = randomSha256();
+        String taskIdText = v005TaskIdText();
+        String idempotencyKey = v005IdempotencyKey();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v005InsertParents(connection, accountId, organizationId, subjectId, bindingId, hmac);
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertTask(connection, taskId, taskIdText, bindingId, subjectId,
+                        accountId, hmac, idempotencyKey, fingerprint)).isEqualTo(1);
+
+                // Frozen defaults: PENDING / ttl 30 / revision 1 / expires_at > created_at.
+                assertThat(queryString(connection,
+                        "SELECT status || '|' || ttl_seconds::text || '|' || revision::text "
+                                + "|| '|' || (expires_at > created_at)::text "
+                                + "|| '|' || (claimed_call_id IS NULL)::text "
+                                + "|| '|' || (terminal_at IS NULL)::text "
+                                + "FROM ivr.outbound_call_task WHERE id = ?",
+                        taskId)).isEqualTo("PENDING|30|1|true|true|true");
+
+                // Duplicate idempotency tuple fails 23505 and leaves the original TTL/expiry.
+                String originalTtlExpiry = queryString(connection,
+                        "SELECT ttl_seconds::text || '|' || expires_at::text "
+                                + "FROM ivr.outbound_call_task WHERE id = ?",
+                        taskId);
+                expectSqlFailure(connection, "23505", "uq_outbound_task_idempotency",
+                        v005TaskProbeSql(),
+                        taskProbeParams(UUID.randomUUID(), v005TaskIdText(), bindingId,
+                                subjectId, accountId, hmac, idempotencyKey, fingerprint));
+                assertThat(queryString(connection,
+                        "SELECT ttl_seconds::text || '|' || expires_at::text "
+                                + "FROM ivr.outbound_call_task WHERE id = ?",
+                        taskId)).as("duplicate idempotency leaves original TTL/expiry")
+                        .isEqualTo(originalTtlExpiry);
+
+                // Owner replay that tries to refresh ttl/expires_at fails the frozen guard.
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_IMMUTABLE",
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET ttl_seconds = 5, expires_at = now() + interval '5 seconds' "
+                                + "WHERE id = ?",
+                        taskId);
+                expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_CLAIM_INVALID",
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now() "
+                                + "WHERE id = ?",
+                        "no-such-call-" + UUID.randomUUID(), taskId);
+                switchLocalRole(connection, "ivr_role");
+
+                // Second live PENDING task for the same canonical caller is rejected.
+                expectSqlFailure(connection, "23505", "uq_outbound_task_live_caller",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        secondTaskId, v005TaskIdText(), bindingId, subjectId, accountId, accountId,
+                        hmac, v005Ciphertext(), v005Masked(), v005IdempotencyKey(), fingerprint);
+
+                // Conditional PENDING -> terminal succeeds once; stale revision is zero rows.
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET status = 'COMPLETED', terminal_at = now(), "
+                                + "reason_code = 'DIRECT_AUTHORIZED', updated_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND revision = 1",
+                        taskId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET status = 'COMPLETED', terminal_at = now(), "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND revision = 1",
+                        taskId)).as("stale conditional terminal update affects zero rows").isZero();
+                assertThat(queryString(connection,
+                        "SELECT status || '|' || (terminal_at IS NOT NULL)::text || '|' "
+                                + "|| revision::text FROM ivr.outbound_call_task WHERE id = ?",
+                        taskId)).isEqualTo("COMPLETED|true|2");
+
+                // Terminal -> PENDING is rejected by the frozen guard.
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_TERMINAL",
+                        "UPDATE ivr.outbound_call_task SET status = 'PENDING' WHERE id = ?",
+                        taskId);
+                switchLocalRole(connection, "ivr_role");
+
+                // After the first task is terminal, a new PENDING task for the same caller
+                // succeeds (live-caller occupancy released). Synthetic DB backstop only;
+                // expiry housekeeping and replace/cancel policy remain service-owned.
+                assertThat(v005InsertTask(connection, replaceTaskId, v005TaskIdText(), bindingId,
+                        subjectId, accountId, hmac, v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+
+                // Runtime immutable-column UPDATE is 42501.
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.outbound_call_task SET caller_number_hmac = ? WHERE id = ?",
+                        randomSha256(), taskId);
+
+                // One isolated 23514 + exact-name probe for each of the 16 outbound checks.
+                List<String> probed = new ArrayList<>();
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_outbound_task_task_id",
+                                v005TaskProbeSql(),
+                                taskProbeParams(UUID.randomUUID(), "  ", bindingId, subjectId,
+                                        accountId, hmac, v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_single_owner",
+                                v005TaskProbeSql(),
+                                v005TaskProbeParamsNullOwner(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_caller_hmac",
+                                v005TaskProbeSql(),
+                                taskProbeParams(UUID.randomUUID(), v005TaskIdText(), bindingId,
+                                        subjectId, accountId, "not-an-hmac", v005IdempotencyKey(),
+                                        fingerprint)),
+                        checkProbe("ck_outbound_task_callee_ciphertext",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadCiphertext(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_callee_masked",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadMasked(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_business_type",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadBusinessType(UUID.randomUUID(),
+                                        v005TaskIdText(), bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_status",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadStatus(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_reason",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadReason(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_ttl",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadTtl(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_expiry",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadExpiry(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_idempotency_key",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadIdempotency(UUID.randomUUID(),
+                                        v005TaskIdText(), bindingId, subjectId, accountId, hmac,
+                                        fingerprint)),
+                        checkProbe("ck_outbound_task_fingerprint",
+                                v005TaskProbeSql(),
+                                taskProbeParams(UUID.randomUUID(), v005TaskIdText(), bindingId,
+                                        subjectId, accountId, hmac, v005IdempotencyKey(),
+                                        "not-a-fingerprint")),
+                        checkProbe("ck_outbound_task_claimed_shape",
+                                v005TaskProbeSql(),
+                                taskProbeParamsClaimedShape(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_terminal_shape",
+                                v005TaskProbeSql(),
+                                taskProbeParamsTerminalShape(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_time_order",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadTimeOrder(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)),
+                        checkProbe("ck_outbound_task_revision",
+                                v005TaskProbeSql(),
+                                taskProbeParamsBadRevision(UUID.randomUUID(), v005TaskIdText(),
+                                        bindingId, subjectId, accountId, hmac,
+                                        v005IdempotencyKey(), fingerprint)));
+                for (CheckProbe probe : probes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all 16 outbound named checks have an isolated 23514 probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                v005ExpectedCheckNames("outbound_call_task"));
+                assertThat(probed).hasSize(16);
+
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.outbound_call_task WHERE id IN (?, ?, ?)",
+                    taskId, secondTaskId, replaceTaskId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                    bindingId)).isZero();
+        }
+    }
+
+    /** Builds full 22-parameter task probe params with one intentional defect hook. */
+    private static Object[] taskProbeParams(
+            UUID taskId,
+            String taskIdText,
+            UUID bindingId,
+            UUID subjectId,
+            UUID accountId,
+            String hmac,
+            String idempotencyKey,
+            String fingerprint) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return new Object[] {
+                taskId, taskIdText, bindingId, subjectId, accountId, accountId, hmac,
+                v005Ciphertext(), v005Masked(), "EVIDENCE_CALL", "PENDING", null, 30,
+                now.plusSeconds(30), idempotencyKey, fingerprint, null, null, null, now, now, 1
+        };
+    }
+
+    /**
+     * Owner-null probe for ck_outbound_task_single_owner. created_by_account_id stays
+     * NOT NULL; only owner_account_id is cleared (owner_organization_id is absent from
+     * the probe INSERT and defaults to NULL) so num_nonnulls is 0 and only the named
+     * CHECK can fire.
+     */
+    private static Object[] v005TaskProbeParamsNullOwner(
+            UUID taskId,
+            String taskIdText,
+            UUID bindingId,
+            UUID subjectId,
+            UUID accountId,
+            String hmac,
+            String idempotencyKey,
+            String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[4] = null;
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadCiphertext(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[7] = "plaintext-callee";
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadMasked(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[8] = "   ";
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadBusinessType(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[9] = " ";
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadStatus(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[10] = "NOT_A_STATUS";
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadReason(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[11] = " ";
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadTtl(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[12] = 0;
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadExpiry(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[13] = params[19];
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadIdempotency(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, " ", fingerprint);
+        return params;
+    }
+
+    private static Object[] taskProbeParamsClaimedShape(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[16] = "no-parent-call";
+        params[17] = null;
+        return params;
+    }
+
+    private static Object[] taskProbeParamsTerminalShape(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[10] = "CANCELLED";
+        params[18] = null;
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadTimeOrder(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        OffsetDateTime created = OffsetDateTime.now(ZoneOffset.UTC);
+        params[19] = created;
+        params[20] = created.minusSeconds(5);
+        return params;
+    }
+
+    private static Object[] taskProbeParamsBadRevision(
+            UUID taskId, String taskIdText, UUID bindingId, UUID subjectId, UUID accountId,
+            String hmac, String idempotencyKey, String fingerprint) {
+        Object[] params = taskProbeParams(taskId, taskIdText, bindingId, subjectId, accountId,
+                hmac, idempotencyKey, fingerprint);
+        params[21] = 0;
+        return params;
+    }
+
+
+    private static String v005SessionProbeSql() {
+        return "INSERT INTO ivr.inbound_session "
+                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                + "caller_number_hmac, caller_masked, access_number_masked, node_id, "
+                + "protocol_version, prompt_version, status, confirmed_subject_id, "
+                + "guidance_status, created_at, confirmed_at, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static Object[] v005ValidSessionParams(
+            UUID sessionId, String callId, UUID subjectId, String hmac) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return new Object[] {
+                sessionId, callId, subjectId, true, v005Ciphertext(), hmac, v005Masked(),
+                v005Masked(), "node-1", "1.0", "p1", "RECEIVED", null, null, now, null, 1
+        };
+    }
+
+    private static String v005CallProbeSql() {
+        return "INSERT INTO ivr.call_record "
+                + "(id, call_id, session_id, task_id, subject_id, caller_ciphertext, "
+                + "caller_number_hmac, caller_masked, callee_ciphertext, callee_masked, "
+                + "access_number_masked, status, node_id, protocol_version, started_at, "
+                + "bridged_at, recording_started_at, recording_ended_at, ended_at, "
+                + "authoritative_seconds, end_reason, created_at, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static Object[] v005ValidCallParams(
+            UUID callRecordId, String callId, UUID sessionId, UUID subjectId, String hmac) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return new Object[] {
+                callRecordId, callId, sessionId, null, subjectId, v005Ciphertext(), hmac,
+                v005Masked(), null, null, v005Masked(), "ACTIVE", "node-1", "1.0", now,
+                null, null, null, null, null, null, now, 1
+        };
+    }
+
+    private static Object[] mutate(Object[] params, int index, Object value) {
+        Object[] copy = params.clone();
+        copy[index] = value;
+        return copy;
+    }
+
+    private static void assertV005SessionCallCanonicalCallerAndReciprocalLinkBackstops()
+            throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID rootSessionId = UUID.randomUUID();
+        UUID rootCallId = UUID.randomUUID();
+        UUID terminalSessionId = UUID.randomUUID();
+        UUID terminalCallId = UUID.randomUUID();
+        UUID occupancySessionId = UUID.randomUUID();
+        UUID occupancyUnknownCallId = UUID.randomUUID();
+        UUID occupancyActiveCallId = UUID.randomUUID();
+        UUID secondTaskId = UUID.randomUUID();
+        String hmac = randomSha256();
+        String callId = v005CallId();
+        String rootCallIdText = "pa5-s2-root-" + UUID.randomUUID();
+        String occupancyCallId = v005CallId();
+        String unknownCallId = v005CallId();
+        String fingerprint = randomSha256();
+        // Distinct caller HMACs: uq_call_record_active_caller allows only one ACTIVE/UNKNOWN
+        // call per hmac, so secondary live calls must not share the primary call's hmac.
+        String rootCallHmac = randomSha256();
+        String occupancyHmac = randomSha256();
+        String terminalHmac = randomSha256();
+        String reverseCallHmac = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v005InsertParents(connection, accountId, organizationId, subjectId, bindingId, hmac);
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId,
+                        hmac)).isEqualTo(1);
+                assertThat(v005InsertTask(connection, taskId, v005TaskIdText(), bindingId,
+                        subjectId, accountId, hmac, v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+
+                // Defaults: RECEIVED/revision 1; ACTIVE/revision 1; task_id NULL.
+                assertThat(queryString(connection,
+                        "SELECT status || '|' || revision::text FROM ivr.inbound_session "
+                                + "WHERE id = ?",
+                        sessionId)).isEqualTo("RECEIVED|1");
+                assertThat(queryString(connection,
+                        "SELECT status || '|' || revision::text "
+                                + "|| '|' || (task_id IS NULL)::text "
+                                + "|| '|' || (ended_at IS NULL)::text "
+                                + "FROM ivr.call_record WHERE id = ?",
+                        callRecordId)).isEqualTo("ACTIVE|1|true|true");
+
+                // Unique session call_id.
+                expectSqlFailure(connection, "23505", "uq_inbound_session_call",
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                        UUID.randomUUID(), callId, subjectId, v005Ciphertext(), hmac,
+                        v005Masked(), v005Masked());
+
+                // Root NO_FK identities insert without any parent identity.
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, trusted_caller, access_number_masked, node_id, "
+                                + "protocol_version, prompt_version) "
+                                + "VALUES (?, ?, FALSE, ?, 'node-1', '1.0', 'p1')",
+                        rootSessionId, rootCallIdText, v005Masked())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        rootCallId, "pa5-s2-rootcall-" + UUID.randomUUID(), rootSessionId,
+                        v005Ciphertext(), rootCallHmac, v005Masked(), v005Masked())).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND r.relname = 'inbound_session' "
+                                + "AND c.contype = 'f' "
+                                + "AND pg_get_constraintdef(c.oid) LIKE '%call_id%'"))
+                        .as("inbound_session.call_id is an intentional NO_FK root").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND r.relname = 'call_record' "
+                                + "AND c.contype = 'f' "
+                                + "AND pg_get_constraintdef(c.oid) LIKE '%call_id%'"))
+                        .as("call_record.call_id is an intentional NO_FK root").isZero();
+
+                // Active/UNKNOWN occupancy per canonical caller.
+                assertThat(v005InsertSession(connection, occupancySessionId, occupancyCallId,
+                        subjectId, hmac)).isEqualTo(1);
+                assertThat(v005InsertCall(connection, occupancyUnknownCallId, occupancyCallId,
+                        occupancySessionId, subjectId, occupancyHmac)).isEqualTo(1);
+                switchLocalRole(connection, "ivr_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record SET status = 'UNKNOWN', revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'ACTIVE' AND revision = 1",
+                        occupancyUnknownCallId)).isEqualTo(1);
+                // Probe uses a fresh session: uq_call_record_session is one call per session
+                // and would otherwise fire before the caller occupancy unique.
+                UUID occupancyProbeSession = UUID.randomUUID();
+                assertThat(v005InsertSession(connection, occupancyProbeSession, v005CallId(),
+                        subjectId, hmac)).isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_call_record_active_caller",
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        occupancyActiveCallId, v005CallId(), occupancyProbeSession, subjectId,
+                        v005Ciphertext(), occupancyHmac, v005Masked(), v005Masked());
+                // Second session for the occupancy call is blocked by unique session call_id;
+                // use a fresh session id with the same caller hmac for the second ACTIVE probe
+                // after releasing occupancy via terminal transition.
+                assertThat(v005InsertSession(connection, terminalSessionId, v005CallId(),
+                        subjectId, hmac)).isEqualTo(1);
+                assertThat(v005InsertCall(connection, terminalCallId, v005CallId(),
+                        terminalSessionId, subjectId, terminalHmac)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record "
+                                + "SET status = 'ENDED', ended_at = now(), end_reason = 'COMPLETE', "
+                                + "authoritative_seconds = 1, revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'ACTIVE' AND revision = 1",
+                        terminalCallId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record "
+                                + "SET status = 'ENDED', ended_at = now(), end_reason = 'COMPLETE', "
+                                + "authoritative_seconds = 1, revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'UNKNOWN' AND revision = 2",
+                        occupancyUnknownCallId)).isEqualTo(1);
+                // Post-terminal ACTIVE occupancy is proven by a fresh session+call pair.
+                UUID postTerminalSession = UUID.randomUUID();
+                String postTerminalCallId = v005CallId();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                        postTerminalSession, postTerminalCallId, subjectId, v005Ciphertext(),
+                        hmac, v005Masked(), v005Masked())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        UUID.randomUUID(), postTerminalCallId, postTerminalSession, subjectId,
+                        v005Ciphertext(), terminalHmac, v005Masked(), v005Masked())).isEqualTo(1);
+
+                // Immutable origin: owner P0001 and runtime 42501; started_at is granted
+                // but guard-rejected with P0001 (frozen grant/guard inconsistency F-PA5-PLAN-04).
+                // Use clock_timestamp() so the value is distinct from the row's now()
+                // transaction timestamp (same now() would be a no-op for the guard).
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "P0001", "INBOUND_SESSION_IMMUTABLE",
+                        "UPDATE ivr.inbound_session SET call_id = ? WHERE id = ?",
+                        "tampered-" + UUID.randomUUID(), sessionId);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_PARTIES_IMMUTABLE",
+                        "UPDATE ivr.call_record SET started_at = clock_timestamp() WHERE id = ?",
+                        callRecordId);
+                switchLocalRole(connection, "ivr_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.inbound_session SET caller_number_hmac = ? WHERE id = ?",
+                        randomSha256(), sessionId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.call_record SET caller_number_hmac = ? WHERE id = ?",
+                        randomSha256(), callRecordId);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_PARTIES_IMMUTABLE",
+                        "UPDATE ivr.call_record SET started_at = clock_timestamp() WHERE id = ?",
+                        callRecordId);
+
+                // Reciprocal link order: claimed_call_id+claimed_at first, then call.task_id.
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL "
+                                + "AND revision = 1",
+                        callId, taskId)).isEqualTo(1);
+                // Reverse order is guarded: task_id before claimed_call_id.
+                UUID reverseTaskId = UUID.randomUUID();
+                assertThat(v005InsertTask(connection, reverseTaskId, v005TaskIdText(), bindingId,
+                        subjectId, accountId, randomSha256(), v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+                UUID reverseSessionId = UUID.randomUUID();
+                String reverseCallId = v005CallId();
+                assertThat(v005InsertSession(connection, reverseSessionId, reverseCallId,
+                        subjectId, hmac)).isEqualTo(1);
+                UUID reverseCallRecordId = UUID.randomUUID();
+                assertThat(v005InsertCall(connection, reverseCallRecordId, reverseCallId,
+                        reverseSessionId, subjectId, reverseCallHmac)).isEqualTo(1);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_PARTIES_IMMUTABLE",
+                        "UPDATE ivr.call_record SET task_id = ? WHERE id = ?",
+                        reverseTaskId, reverseCallRecordId);
+                // Legal forward order for the reverse fixture, then link the primary pair.
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record SET task_id = ?, revision = revision + 1 "
+                                + "WHERE id = ? AND task_id IS NULL AND revision = 1",
+                        taskId, callRecordId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT t.claimed_call_id || '|' || c.task_id::text "
+                                + "FROM ivr.outbound_call_task t "
+                                + "JOIN ivr.call_record c ON c.call_id = t.claimed_call_id "
+                                + "WHERE t.id = ?",
+                        taskId)).as("both link directions are equal").isEqualTo(callId + "|" + taskId);
+
+                // Relink/clear/second-task rejections.
+                expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_CLAIM_IMMUTABLE",
+                        "UPDATE ivr.outbound_call_task SET claimed_call_id = ? WHERE id = ?",
+                        reverseCallId, taskId);
+                expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_CLAIM_IMMUTABLE",
+                        "UPDATE ivr.outbound_call_task SET claimed_call_id = NULL WHERE id = ?",
+                        taskId);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_PARTIES_IMMUTABLE",
+                        "UPDATE ivr.call_record SET task_id = NULL WHERE id = ?", callRecordId);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_PARTIES_IMMUTABLE",
+                        "UPDATE ivr.call_record SET task_id = ? WHERE id = ?",
+                        reverseTaskId, callRecordId);
+                // Second task claiming the same call hits the partial unique index.
+                expectSqlFailure(connection, "23505", "uq_outbound_task_claimed_call",
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL "
+                                + "AND revision = 1",
+                        callId, reverseTaskId);
+
+                // Session + call_record check probes (14 + 15).
+                List<String> probed = new ArrayList<>();
+                List<CheckProbe> sessionProbes = List.of(
+                        checkProbe("ck_inbound_session_call_id",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(), "  ", subjectId,
+                                        hmac), 1, "  ")),
+                        checkProbe("ck_inbound_session_caller_shape",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 5, null)),
+                        checkProbe("ck_inbound_session_caller_ciphertext",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 4, "plain")),
+                        checkProbe("ck_inbound_session_caller_hmac",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 5, "nothex")),
+                        checkProbe("ck_inbound_session_caller_masked",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 6, " ")),
+                        checkProbe("ck_inbound_session_access_masked",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 7, " ")),
+                        checkProbe("ck_inbound_session_node",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 8, " ")),
+                        checkProbe("ck_inbound_session_protocol",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 9, " ")),
+                        checkProbe("ck_inbound_session_prompt",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 10, " ")),
+                        checkProbe("ck_inbound_session_status",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 11, "BOGUS")),
+                        checkProbe("ck_inbound_session_guidance",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 13, "BOGUS")),
+                        checkProbe("ck_inbound_session_confirmed_shape",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 11, "CONFIRMED")),
+                        checkProbe("ck_inbound_session_time_order", v005SessionProbeSql(),
+                                sessionProbeBadTimeOrder(subjectId, hmac)),
+                        checkProbe("ck_inbound_session_revision",
+                                v005SessionProbeSql(),
+                                mutate(v005ValidSessionParams(UUID.randomUUID(),
+                                        v005CallId(), subjectId, hmac), 16, 0)));
+                for (CheckProbe probe : sessionProbes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all 14 inbound_session named checks have an isolated probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                v005ExpectedCheckNames("inbound_session"));
+                assertThat(probed).hasSize(14);
+
+                List<String> callProbed = new ArrayList<>();
+                Object[] badCalleeCipher = callProbeBase(UUID.randomUUID(), v005CallId(),
+                        sessionId, subjectId, hmac);
+                badCalleeCipher[8] = "plain-callee";
+                Object[] badCalleeMasked = callProbeBase(UUID.randomUUID(), v005CallId(),
+                        sessionId, subjectId, hmac);
+                badCalleeMasked[9] = " ";
+                Object[] badAccess = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badAccess[10] = " ";
+                Object[] badStatus = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badStatus[11] = "BOGUS";
+                Object[] badNode = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badNode[12] = " ";
+                Object[] badProtocol = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badProtocol[13] = " ";
+                Object[] badTerminal = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badTerminal[11] = "ENDED";
+                badTerminal[18] = null;
+                Object[] badTime = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                OffsetDateTime started = OffsetDateTime.now(ZoneOffset.UTC);
+                badTime[14] = started;
+                badTime[15] = started.minusSeconds(10);
+                Object[] badSeconds = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badSeconds[11] = "ACTIVE";
+                badSeconds[19] = 10;
+                Object[] badEndReason = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badEndReason[11] = "ENDED";
+                badEndReason[18] = OffsetDateTime.now(ZoneOffset.UTC);
+                badEndReason[20] = " ";
+                Object[] badRevision = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badRevision[22] = 0;
+                Object[] badCipher = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badCipher[5] = "plain";
+                Object[] badHmac = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badHmac[6] = "nothex";
+                Object[] badMasked = callProbeBase(UUID.randomUUID(), v005CallId(), sessionId,
+                        subjectId, hmac);
+                badMasked[7] = " ";
+                Object[] badCallId = callProbeBase(UUID.randomUUID(), "  ", sessionId, subjectId,
+                        hmac);
+                List<Object[]> defective = List.of(
+                        badCallId, badCipher, badHmac, badMasked, badCalleeCipher, badCalleeMasked,
+                        badAccess, badStatus, badNode, badProtocol, badTerminal, badTime,
+                        badSeconds, badEndReason, badRevision);
+                List<String> callCheckOrder = List.of(
+                        "ck_call_record_call_id", "ck_call_record_caller_ciphertext",
+                        "ck_call_record_caller_hmac", "ck_call_record_caller_masked",
+                        "ck_call_record_callee_ciphertext", "ck_call_record_callee_masked",
+                        "ck_call_record_access_masked", "ck_call_record_status",
+                        "ck_call_record_node", "ck_call_record_protocol",
+                        "ck_call_record_terminal_shape", "ck_call_record_time_order",
+                        "ck_call_record_authoritative_seconds", "ck_call_record_end_reason",
+                        "ck_call_record_revision");
+                for (int index = 0; index < callCheckOrder.size(); index++) {
+                    String name = callCheckOrder.get(index);
+                    expectSqlFailure(connection, "23514", name, v005CallProbeSql(),
+                            defective.get(index));
+                    callProbed.add(name);
+                }
+                assertThat(callProbed)
+                        .as("all 15 call_record named checks have an isolated probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                v005ExpectedCheckNames("call_record"));
+                assertThat(callProbed).hasSize(15);
+
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.inbound_session WHERE id IN (?, ?, ?)",
+                    sessionId, rootSessionId, terminalSessionId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.call_record WHERE id IN (?, ?, ?)",
+                    callRecordId, rootCallId, terminalCallId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.outbound_call_task WHERE id IN (?, ?)",
+                    taskId, secondTaskId)).isZero();
+        }
+    }
+
+    /**
+     * Builds a defective call_record probe base by mutating one column of the valid shape.
+     * Index map matches {@link #v005CallProbeSql()} column order.
+     */
+    private static Object[] callProbeBase(
+            UUID callRecordId, String callId, UUID sessionId, UUID subjectId, String hmac) {
+        return v005ValidCallParams(callRecordId, callId, sessionId, subjectId, hmac);
+    }
+
+
+    private static String v005LegProbeSql() {
+        return "INSERT INTO ivr.call_leg "
+                + "(id, call_id, leg_id, leg_type, direction, state, started_at, "
+                + "answered_at, ended_at, end_reason, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static Object[] v005ValidLegParams(UUID legId, String callId, String legIdText) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return new Object[] {
+                legId, callId, legIdText, "CALLER", "INBOUND", "RINGING", now, null, null, null, 1
+        };
+    }
+
+    private static String v005EventProbeSql() {
+        return "INSERT INTO ivr.call_event "
+                + "(id, call_id, event_domain, event_id, sequence_no, event_type, occurred_at, "
+                + "received_at, payload_ciphertext, payload_redacted, payload_sha256, "
+                + "processing_status, reason_code, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, now(), ?, ?::jsonb, ?, ?, ?, ?)";
+    }
+
+    private static Object[] v005ValidEventParams(
+            UUID eventId, String callId, String eventIdText, String sequenceNo, String sha) {
+        return new Object[] {
+                eventId, callId, "IVR_EVENT", eventIdText, Integer.valueOf(sequenceNo),
+                "SESSION_START", OffsetDateTime.now(ZoneOffset.UTC), v005Ciphertext(),
+                v005EventRedactedJson(sha, randomSha256()), sha, "RECEIVED", null, 1
+        };
+    }
+
+    private static String v005DecisionProbeSql() {
+        return "INSERT INTO ivr.ivr_decision "
+                + "(id, session_id, call_id, purpose, source_event_domain, source_event_id, "
+                + "request_fingerprint, action, reason_code, response_snapshot, "
+                + "response_payload_ciphertext, response_sha256, key_version, reservation_id, "
+                + "decided_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)";
+    }
+
+    private static Object[] v005ValidDecisionParams(
+            UUID decisionId, UUID sessionId, String callId, String fingerprint, String sha) {
+        return new Object[] {
+                decisionId, sessionId, callId, "INBOUND_RESOLVE", null, null, fingerprint,
+                "GUIDE_ACTIVATION", "ACTIVATION_REQUIRED", "{}", v005Ciphertext(), sha, 1, null,
+                OffsetDateTime.now(ZoneOffset.UTC)
+        };
+    }
+
+    private static void assertV005LegEventDecisionFrozenIdentityAndAppendOnlyBackstops()
+            throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID callerLegId = UUID.randomUUID();
+        UUID calleeLegId = UUID.randomUUID();
+        UUID duplicateLegId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        UUID duplicateDomainEventId = UUID.randomUUID();
+        UUID duplicateSequenceEventId = UUID.randomUUID();
+        UUID otherCallEventId = UUID.randomUUID();
+        UUID inboundDecisionId = UUID.randomUUID();
+        UUID activationDecisionId = UUID.randomUUID();
+        UUID enterCalleeDecisionId = UUID.randomUUID();
+        UUID dialDecisionId = UUID.randomUUID();
+        UUID directSuccessDecisionId = UUID.randomUUID();
+        UUID directRefusalDecisionId = UUID.randomUUID();
+        UUID duplicatePurposeDecisionId = UUID.randomUUID();
+        UUID secondSessionId = UUID.randomUUID();
+        UUID secondCallRecordId = UUID.randomUUID();
+        String hmac = randomSha256();
+        // Second live call needs its own hmac: uq_call_record_active_caller blocks a second
+        // ACTIVE/UNKNOWN row for the same canonical caller.
+        String secondCallHmac = randomSha256();
+        String fingerprint = randomSha256();
+        String callId = v005CallId();
+        String otherCallId = v005CallId();
+        String eventIdText = v005EventId();
+        String callerLegIdText = "leg-caller-" + UUID.randomUUID();
+        String calleeLegIdText = "leg-callee-" + UUID.randomUUID();
+        String sha = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v005InsertParents(connection, accountId, organizationId, subjectId, bindingId, hmac);
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId,
+                        hmac)).isEqualTo(1);
+                assertThat(v005InsertSession(connection, secondSessionId, otherCallId, subjectId,
+                        hmac)).isEqualTo(1);
+                assertThat(v005InsertCall(connection, secondCallRecordId, otherCallId,
+                        secondSessionId, subjectId, secondCallHmac)).isEqualTo(1);
+
+                // Legal CALLER/INBOUND and CALLEE/OUTBOUND legs.
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, ?, 'CALLER', 'INBOUND', 'RINGING', now())",
+                        callerLegId, callId, callerLegIdText)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, ?, 'CALLEE', 'OUTBOUND', 'RINGING', now())",
+                        calleeLegId, callId, calleeLegIdText)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT leg_type || '|' || direction FROM ivr.call_leg WHERE id = ?",
+                        callerLegId)).isEqualTo("CALLER|INBOUND");
+
+                // Duplicate (call_id, leg_id) is exact 23505.
+                expectSqlFailure(connection, "23505", "uq_call_leg_id",
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, ?, 'CALLER', 'INBOUND', 'RINGING', now())",
+                        duplicateLegId, callId, callerLegIdText);
+
+                // Allowed processing/state updates, then owner identity guard P0001.
+                switchLocalRole(connection, "ivr_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_leg SET state = 'ANSWERED', answered_at = now(), "
+                                + "revision = revision + 1 WHERE id = ? AND state = 'RINGING'",
+                        callerLegId)).isEqualTo(1);
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "P0001", "CALL_LEG_IDENTITY_IMMUTABLE",
+                        "UPDATE ivr.call_leg SET leg_id = ? WHERE id = ?",
+                        "tampered-leg-" + UUID.randomUUID(), callerLegId);
+                expectSqlFailure(connection, "P0001", "CALL_LEG_IDENTITY_IMMUTABLE",
+                        "UPDATE ivr.call_leg SET direction = 'OUTBOUND' WHERE id = ?", callerLegId);
+                switchLocalRole(connection, "ivr_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.call_leg SET leg_type = 'CALLEE' WHERE id = ?", callerLegId);
+
+                // Legal event with exact redacted shape and IVR_EVENT default.
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.call_event "
+                                + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                                + "payload_ciphertext, payload_redacted, payload_sha256) "
+                                + "VALUES (?, ?, ?, 1, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                        eventId, callId, eventIdText, v005Ciphertext(),
+                        v005EventRedactedJson(sha, randomSha256()), sha)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT event_domain || '|' || processing_status || '|' || revision::text "
+                                + "FROM ivr.call_event WHERE id = ?",
+                        eventId)).isEqualTo("IVR_EVENT|RECEIVED|1");
+
+                // Duplicate (event_domain, event_id) across calls is exact 23505.
+                expectSqlFailure(connection, "23505", "uq_call_event_domain_id",
+                        v005EventProbeSql(),
+                        v005ValidEventParams(UUID.randomUUID(), otherCallId, eventIdText, "9",
+                                randomSha256()));
+                // Duplicate (call_id, sequence_no) is exact 23505.
+                expectSqlFailure(connection, "23505", "uq_call_event_sequence",
+                        v005EventProbeSql(),
+                        v005ValidEventParams(duplicateSequenceEventId, callId,
+                                v005EventId(), "1", randomSha256()));
+
+                // Allowed processing transitions; forbidden runtime identity/payload 42501.
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_event SET processing_status = 'APPLIED', "
+                                + "revision = revision + 1 WHERE id = ? AND processing_status = 'RECEIVED'",
+                        eventId)).isEqualTo(1);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.call_event SET payload_sha256 = ? WHERE id = ?",
+                        randomSha256(), eventId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.call_event SET event_id = ? WHERE id = ?",
+                        "tampered-evt-" + UUID.randomUUID(), eventId);
+
+                // Legal decision shapes: inbound resolve, activation, ENTER_CALLEE,
+                // DIAL_TASK_CALLEE + random reservationUUID (no FK), direct success and
+                // refusal. DTMF/ENTER_CALLEE remain shapes only (service-owned input).
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, request_fingerprint, "
+                                + "action, reason_code, response_snapshot, "
+                                + "response_payload_ciphertext, response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                                + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        inboundDecisionId, sessionId, callId, fingerprint, v005Ciphertext(),
+                        sha)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'ACTIVATION_NEXT_ACTION', 'IVR_CONFIRM', ?, "
+                                + "?, 'GUIDE_ACTIVATION', 'ACTIVATION_REQUIRED', '{}'::jsonb, "
+                                + "?, ?, 1)",
+                        activationDecisionId, sessionId, callId, eventIdText, fingerprint,
+                        v005Ciphertext(), sha)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', NULL, NULL, ?, "
+                                + "'ENTER_CALLEE', 'CALL_STATE_UNRESOLVED', '{}'::jsonb, "
+                                + "?, ?, 1)",
+                        enterCalleeDecisionId, secondSessionId, otherCallId, fingerprint,
+                        v005Ciphertext(), sha)).isEqualTo(1);
+                UUID randomReservationId = UUID.randomUUID();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version, reservation_id) "
+                                + "VALUES (?, ?, ?, 'ACTIVATION_NEXT_ACTION', 'IVR_CONFIRM', ?, "
+                                + "?, 'DIAL_TASK_CALLEE', 'TASK_CLAIMED', '{}'::jsonb, "
+                                + "?, ?, 1, ?)",
+                        dialDecisionId, secondSessionId, otherCallId, "evt-dial-"
+                                + UUID.randomUUID(), fingerprint, v005Ciphertext(), sha,
+                        randomReservationId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM ivr.ivr_decision WHERE id = ? AND reservation_id = ?",
+                        dialDecisionId, randomReservationId))
+                        .as("DIAL_TASK_CALLEE reservation UUID has no FK parent").isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND r.relname = 'ivr_decision' "
+                                + "AND c.contype = 'f' "
+                                + "AND pg_get_constraintdef(c.oid) LIKE '%reservation%'"))
+                        .as("reservation_id is intentional noFK").isZero();
+                UUID directReservationId = UUID.randomUUID();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version, reservation_id) "
+                                + "VALUES (?, ?, ?, 'DIRECT_AUTHORIZATION', 'IVR_DIRECT_AUTH', ?, "
+                                + "?, NULL, 'DIRECT_AUTHORIZED', '{}'::jsonb, ?, ?, 1, ?)",
+                        directSuccessDecisionId, sessionId, callId,
+                        "evt-direct-" + UUID.randomUUID(), fingerprint, v005Ciphertext(), sha,
+                        directReservationId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'DIRECT_AUTHORIZATION', 'IVR_DIRECT_AUTH', ?, "
+                                + "?, 'REJECT', 'CALL_IN_PROGRESS', '{}'::jsonb, ?, ?, 1)",
+                        directRefusalDecisionId, secondSessionId, otherCallId,
+                        "evt-direct-refuse-" + UUID.randomUUID(), fingerprint, v005Ciphertext(),
+                        sha)).isEqualTo(1);
+
+                // Event-based source domain/id are explicitly nonNULL for activation.
+                assertThat(queryString(connection,
+                        "SELECT source_event_domain || '|' || (source_event_id IS NOT NULL)::text "
+                                + "FROM ivr.ivr_decision WHERE id = ?",
+                        activationDecisionId)).isEqualTo("IVR_CONFIRM|true");
+
+                // Duplicate (call_id, purpose) + same source: PostgreSQL reports
+                // uq_ivr_decision_call_purpose first (created with the table, lower OID).
+                // While unisolated a solo uq_ivr_decision_source violation is unreachable:
+                // ck_ivr_decision_source binds domain to purpose and the call_purpose unique
+                // preempts. The bounded isolation helper below proves the exact 23505 + name.
+                expectSqlFailure(connection, "23505", "uq_ivr_decision_call_purpose",
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'ACTIVATION_NEXT_ACTION', 'IVR_CONFIRM', ?, "
+                                + "?, 'GUIDE_ACTIVATION', 'ACTIVATION_REQUIRED', '{}'::jsonb, "
+                                + "?, ?, 1)",
+                        duplicatePurposeDecisionId, sessionId, callId, eventIdText, fingerprint,
+                        v005Ciphertext(), sha);
+                // Wrong domain for DIRECT_AUTHORIZATION with legal shape/action: only
+                // ck_ivr_decision_source can fire (shape and direct_reason stay legal).
+                expectSqlFailure(connection, "23514", "ck_ivr_decision_source",
+                        v005DecisionProbeSql(),
+                        decisionProbeWrongDirectDomain(sessionId, callId, fingerprint, sha));
+                // Plan 6.3 item 3: exact 23505 + uq_ivr_decision_source, isolated because
+                // frozen ck_ivr_decision_source and uq_ivr_decision_call_purpose otherwise
+                // preempt the partial source unique.
+                expectDecisionSourceUniqueViolationWithIsolatedConstraint(
+                        connection, sessionId, callId, fingerprint, sha);
+
+                // Owner append-only P0001 for UPDATE and DELETE; runtime has no UPDATE grant.
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "P0001", "IVR_DECISION_APPEND_ONLY",
+                        "UPDATE ivr.ivr_decision SET action = 'REJECT' WHERE id = ?",
+                        inboundDecisionId);
+                expectSqlFailure(connection, "P0001", "IVR_DECISION_APPEND_ONLY",
+                        "DELETE FROM ivr.ivr_decision WHERE id = ?", inboundDecisionId);
+                switchLocalRole(connection, "ivr_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.ivr_decision SET action = 'REJECT' WHERE id = ?",
+                        inboundDecisionId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM ivr.ivr_decision WHERE id = ?", inboundDecisionId);
+
+                // One isolated 23514 + exact-name probe per named check (7 + 10 + 11).
+                List<String> legProbed = new ArrayList<>();
+                List<CheckProbe> legProbes = List.of(
+                        checkProbe("ck_call_leg_leg_id", v005LegProbeSql(),
+                                mutate(v005ValidLegParams(UUID.randomUUID(), callId, "  "), 2, "  ")),
+                        // ck_call_leg_type is subsumed by ck_call_leg_direction under PG16;
+                        // the loop below isolates it via expectCallLegTypeViolationWithIsolatedConstraint.
+                        checkProbe("ck_call_leg_type", v005LegProbeSql(),
+                                mutate(v005ValidLegParams(UUID.randomUUID(), callId,
+                                        "leg-x-" + UUID.randomUUID()), 3, "BOGUS")),
+                        checkProbe("ck_call_leg_direction", v005LegProbeSql(),
+                                mutate(v005ValidLegParams(UUID.randomUUID(), callId,
+                                        "leg-x-" + UUID.randomUUID()), 4, "OUTBOUND")),
+                        checkProbe("ck_call_leg_state", v005LegProbeSql(),
+                                mutate(v005ValidLegParams(UUID.randomUUID(), callId,
+                                        "leg-x-" + UUID.randomUUID()), 5, "BOGUS")),
+                        checkProbe("ck_call_leg_time_order", v005LegProbeSql(),
+                                legProbeBadTimeOrder(callId)),
+                        checkProbe("ck_call_leg_end_reason", v005LegProbeSql(),
+                                legProbeBadEndReason(callId)),
+                        checkProbe("ck_call_leg_revision", v005LegProbeSql(),
+                                mutate(v005ValidLegParams(UUID.randomUUID(), callId,
+                                        "leg-x-" + UUID.randomUUID()), 10, 0)));
+                for (CheckProbe probe : legProbes) {
+                    if ("ck_call_leg_type".equals(probe.constraint())) {
+                        expectCallLegTypeViolationWithIsolatedConstraint(connection, probe);
+                    } else {
+                        expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                                probe.parameters());
+                    }
+                    legProbed.add(probe.constraint());
+                }
+                assertThat(legProbed)
+                        .as("all 7 call_leg named checks have an isolated probe")
+                        .containsExactlyInAnyOrderElementsOf(v005ExpectedCheckNames("call_leg"));
+                assertThat(legProbed).hasSize(7);
+
+                List<String> eventProbed = new ArrayList<>();
+                List<CheckProbe> eventProbes = List.of(
+                        checkProbe("ck_call_event_domain", v005EventProbeSql(),
+                                eventProbeBadDomain(callId)),
+                        checkProbe("ck_call_event_event_id", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId, "  ", "88",
+                                        randomSha256()), 3, "  ")),
+                        checkProbe("ck_call_event_sequence", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId,
+                                        v005EventId(), "0", randomSha256()), 4, 0)),
+                        checkProbe("ck_call_event_type", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId,
+                                        v005EventId(), "89", randomSha256()), 5, "  ")),
+                        checkProbe("ck_call_event_payload_ciphertext", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId,
+                                        v005EventId(), "90", randomSha256()), 7, "plain")),
+                        checkProbe("ck_call_event_payload_redacted", v005EventProbeSql(),
+                                eventProbeRedactedMismatch(callId)),
+                        checkProbe("ck_call_event_payload_sha", v005EventProbeSql(),
+                                eventProbeBadSha(callId)),
+                        checkProbe("ck_call_event_processing_status", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId,
+                                        v005EventId(), "91", randomSha256()), 10, "BOGUS")),
+                        checkProbe("ck_call_event_reason", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId,
+                                        v005EventId(), "92", randomSha256()), 11, "  ")),
+                        checkProbe("ck_call_event_revision", v005EventProbeSql(),
+                                mutate(v005ValidEventParams(UUID.randomUUID(), callId,
+                                        v005EventId(), "93", randomSha256()), 12, 0)));
+                for (CheckProbe probe : eventProbes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    eventProbed.add(probe.constraint());
+                }
+                assertThat(eventProbed)
+                        .as("all 10 call_event named checks have an isolated probe")
+                        .containsExactlyInAnyOrderElementsOf(v005ExpectedCheckNames("call_event"));
+                assertThat(eventProbed).hasSize(10);
+
+                List<String> decisionProbed = new ArrayList<>();
+                List<CheckProbe> decisionProbes = List.of(
+                        checkProbe("ck_ivr_decision_purpose", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, sha), 3, "BOGUS")),
+                        checkProbe("ck_ivr_decision_source", v005DecisionProbeSql(),
+                                decisionProbeSourceNullDomain(sessionId, callId, fingerprint, sha)),
+                        checkProbe("ck_ivr_decision_fingerprint", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, "not-a-fingerprint", sha), 6, "not-a-fingerprint")),
+                        checkProbe("ck_ivr_decision_action", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, sha), 7, "BOGUS_ACTION")),
+                        checkProbe("ck_ivr_decision_reason", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, sha), 8, "BOGUS_REASON")),
+                        checkProbe("ck_ivr_decision_direct_reason", v005DecisionProbeSql(),
+                                decisionProbeDirectReason(sessionId, callId, fingerprint, sha)),
+                        checkProbe("ck_ivr_decision_shape", v005DecisionProbeSql(),
+                                decisionProbeShape(sessionId, callId, fingerprint, sha)),
+                        checkProbe("ck_ivr_decision_snapshot", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, sha), 9, "[]")),
+                        checkProbe("ck_ivr_decision_payload", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, sha), 10, "plain")),
+                        checkProbe("ck_ivr_decision_sha", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, "not-a-sha"), 11, "not-a-sha")),
+                        checkProbe("ck_ivr_decision_key_version", v005DecisionProbeSql(),
+                                mutate(v005ValidDecisionParams(UUID.randomUUID(), sessionId,
+                                        callId, fingerprint, sha), 12, 0)));
+                for (CheckProbe probe : decisionProbes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    decisionProbed.add(probe.constraint());
+                }
+                assertThat(decisionProbed)
+                        .as("all 11 ivr_decision named checks have an isolated probe")
+                        .containsExactlyInAnyOrderElementsOf(
+                                v005ExpectedCheckNames("ivr_decision"));
+                assertThat(decisionProbed).hasSize(11);
+
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.call_leg WHERE id IN (?, ?, ?)",
+                    callerLegId, calleeLegId, duplicateLegId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.call_event WHERE id IN (?, ?, ?, ?)",
+                    eventId, duplicateDomainEventId, duplicateSequenceEventId, otherCallEventId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.ivr_decision WHERE id IN (?, ?, ?, ?, ?, ?, ?)",
+                    inboundDecisionId, activationDecisionId, enterCalleeDecisionId,
+                    dialDecisionId, directSuccessDecisionId, directRefusalDecisionId,
+                    duplicatePurposeDecisionId)).isZero();
+        }
+    }
+
+    private static Object[] sessionProbeBadTimeOrder(UUID subjectId, String hmac) {
+        // Legal CONFIRMED shape (trusted_caller + confirmed_subject_id) so only
+        // ck_inbound_session_time_order fires: confirmed_at before created_at.
+        Object[] params = v005ValidSessionParams(UUID.randomUUID(), v005CallId(), subjectId, hmac);
+        OffsetDateTime created = OffsetDateTime.now(ZoneOffset.UTC);
+        params[11] = "CONFIRMED";
+        params[12] = subjectId;
+        params[14] = created;
+        params[15] = created.minusSeconds(60);
+        return params;
+    }
+
+    private static Object[] legProbeBadTimeOrder(String callId) {
+        Object[] params = v005ValidLegParams(UUID.randomUUID(), callId,
+                "leg-x-" + UUID.randomUUID());
+        OffsetDateTime started = OffsetDateTime.now(ZoneOffset.UTC);
+        params[6] = started;
+        params[7] = started.minusSeconds(5);
+        return params;
+    }
+
+    private static Object[] legProbeBadEndReason(String callId) {
+        Object[] params = v005ValidLegParams(UUID.randomUUID(), callId,
+                "leg-x-" + UUID.randomUUID());
+        params[5] = "ENDED";
+        params[6] = OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(10);
+        params[8] = OffsetDateTime.now(ZoneOffset.UTC);
+        params[9] = "  ";
+        return params;
+    }
+
+    private static Object[] eventProbeBadDomain(String callId) {
+        Object[] params = v005ValidEventParams(UUID.randomUUID(), callId, v005EventId(), "80",
+                randomSha256());
+        params[2] = "OTHER_DOMAIN";
+        return params;
+    }
+
+    private static Object[] eventProbeRedactedMismatch(String callId) {
+        // receipt.payloadSha256 deliberately != payload_sha256 column: only the redacted
+        // shape CHECK fails (payload_sha regex still holds on the column value).
+        Object[] params = v005ValidEventParams(UUID.randomUUID(), callId, v005EventId(), "81",
+                randomSha256());
+        params[8] = v005EventRedactedJson(randomSha256(), randomSha256());
+        return params;
+    }
+
+    private static Object[] eventProbeBadSha(String callId) {
+        // payload_sha256 is not hex while receipt.payloadSha256 mirrors it so only
+        // ck_call_event_payload_sha fails.
+        String badSha = "not-a-sha";
+        Object[] params = v005ValidEventParams(UUID.randomUUID(), callId, v005EventId(), "82",
+                badSha);
+        params[8] = v005EventRedactedJson(badSha, randomSha256());
+        params[9] = badSha;
+        return params;
+    }
+
+    private static Object[] decisionProbeSourceNullDomain(
+            UUID sessionId, String callId, String fingerprint, String sha) {
+        // ACTIVATION_NEXT_ACTION requires nonNULL IVR_CONFIRM domain; shape/action stay legal.
+        Object[] params = v005ValidDecisionParams(UUID.randomUUID(), sessionId, callId,
+                fingerprint, sha);
+        params[3] = "ACTIVATION_NEXT_ACTION";
+        params[4] = null;
+        params[5] = "evt-activation-" + UUID.randomUUID();
+        return params;
+    }
+
+    private static Object[] decisionProbeWrongDirectDomain(
+            UUID sessionId, String callId, String fingerprint, String sha) {
+        // DIRECT_AUTHORIZATION with wrong domain and legal REJECT action: only
+        // ck_ivr_decision_source can fail (shape allows REJECT without reservation).
+        Object[] params = v005ValidDecisionParams(UUID.randomUUID(), sessionId, callId,
+                fingerprint, sha);
+        params[3] = "DIRECT_AUTHORIZATION";
+        params[4] = "IVR_CONFIRM";
+        params[5] = "evt-direct-wrong-domain-" + UUID.randomUUID();
+        params[7] = "REJECT";
+        params[8] = "CALL_IN_PROGRESS";
+        return params;
+    }
+
+    private static Object[] decisionProbeDirectReason(
+            UUID sessionId, String callId, String fingerprint, String sha) {
+        // DIRECT_AUTHORIZATION action NULL + non-DIRECT reason violates only direct_reason
+        // (reservation nonNULL keeps shape legal).
+        Object[] params = v005ValidDecisionParams(UUID.randomUUID(), sessionId, callId,
+                fingerprint, sha);
+        params[3] = "DIRECT_AUTHORIZATION";
+        params[4] = "IVR_DIRECT_AUTH";
+        params[5] = "evt-direct-" + UUID.randomUUID();
+        params[7] = null;
+        params[8] = "CALL_IN_PROGRESS";
+        params[13] = UUID.randomUUID();
+        return params;
+    }
+
+    private static Object[] decisionProbeShape(
+            UUID sessionId, String callId, String fingerprint, String sha) {
+        // INBOUND_RESOLVE + action NULL violates shape only (direct_reason stays legal
+        // because reason is DIRECT_AUTHORIZED, matching action IS NULL).
+        Object[] params = v005ValidDecisionParams(UUID.randomUUID(), sessionId, callId,
+                fingerprint, sha);
+        params[7] = null;
+        params[8] = "DIRECT_AUTHORIZED";
+        return params;
+    }
+
+    private static void assertV005ForeignKeyAndDeferredReservationFkBackstops() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        String hmac = randomSha256();
+        String fingerprint = randomSha256();
+        String callId = v005CallId();
+
+        // Delete-fixture ids kept method-scoped for post-rollback zero checks.
+        UUID delBindingId = UUID.randomUUID();
+        UUID delBindingSubjectId = UUID.randomUUID();
+        UUID delBindingAccountId = UUID.randomUUID();
+        UUID delBindingTaskId = UUID.randomUUID();
+        UUID delAccountChild = UUID.randomUUID();
+        UUID otherAccount = UUID.randomUUID();
+        UUID sharedSubject = UUID.randomUUID();
+        UUID sharedBinding = UUID.randomUUID();
+        UUID delTask = UUID.randomUUID();
+        UUID delOrg = UUID.randomUUID();
+        UUID orgTask = UUID.randomUUID();
+        UUID delSubjectAccount = UUID.randomUUID();
+        UUID delSubjectOnly = UUID.randomUUID();
+        UUID delSubjectSession = UUID.randomUUID();
+        UUID delSessionOnly = UUID.randomUUID();
+        UUID delSessionCall = UUID.randomUUID();
+        UUID delTaskOnly = UUID.randomUUID();
+        UUID delTaskSession = UUID.randomUUID();
+        UUID delTaskCall = UUID.randomUUID();
+        UUID delLegSession = UUID.randomUUID();
+        UUID delLegCall = UUID.randomUUID();
+        UUID delLeg = UUID.randomUUID();
+        UUID claimedTask = UUID.randomUUID();
+        UUID claimedSession = UUID.randomUUID();
+        UUID claimedCall = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v005InsertParents(connection, accountId, organizationId, subjectId, bindingId, hmac);
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId,
+                        hmac)).isEqualTo(1);
+                assertThat(v005InsertTask(connection, taskId, v005TaskIdText(), bindingId,
+                        subjectId, accountId, hmac, v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+
+                // 15 missing-parent 23503 probes with exact constraint names. Every probe
+                // passes all named CHECKs so only the FK can fire.
+                List<String> fkProbed = new ArrayList<>();
+
+                expectSqlFailure(connection, "23503", "fk_outbound_task_binding",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        UUID.randomUUID(), v005TaskIdText(), UUID.randomUUID(), subjectId,
+                        accountId, accountId, randomSha256(), v005Ciphertext(), v005Masked(),
+                        v005IdempotencyKey(), fingerprint);
+                fkProbed.add("fk_outbound_task_binding");
+
+                expectSqlFailure(connection, "23503", "fk_outbound_task_subject",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        UUID.randomUUID(), v005TaskIdText(), bindingId, UUID.randomUUID(),
+                        accountId, accountId, randomSha256(), v005Ciphertext(), v005Masked(),
+                        v005IdempotencyKey(), fingerprint);
+                fkProbed.add("fk_outbound_task_subject");
+
+                expectSqlFailure(connection, "23503", "fk_outbound_task_owner_account",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        UUID.randomUUID(), v005TaskIdText(), bindingId, subjectId,
+                        UUID.randomUUID(), accountId, randomSha256(), v005Ciphertext(), v005Masked(),
+                        v005IdempotencyKey(), fingerprint);
+                fkProbed.add("fk_outbound_task_owner_account");
+
+                expectSqlFailure(connection, "23503", "fk_outbound_task_owner_org",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, "
+                                + "owner_organization_id, created_by_account_id, "
+                                + "caller_number_hmac, callee_ciphertext, callee_masked, "
+                                + "business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        UUID.randomUUID(), v005TaskIdText(), bindingId, subjectId,
+                        UUID.randomUUID(), accountId, randomSha256(), v005Ciphertext(), v005Masked(),
+                        v005IdempotencyKey(), fingerprint);
+                fkProbed.add("fk_outbound_task_owner_org");
+
+                expectSqlFailure(connection, "23503", "fk_outbound_task_creator",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        UUID.randomUUID(), v005TaskIdText(), bindingId, subjectId, accountId,
+                        UUID.randomUUID(), randomSha256(), v005Ciphertext(), v005Masked(),
+                        v005IdempotencyKey(), fingerprint);
+                fkProbed.add("fk_outbound_task_creator");
+
+                expectSqlFailure(connection, "23503", "fk_outbound_task_claimed_call",
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, status, ttl_seconds, expires_at, "
+                                + "idempotency_key, request_fingerprint, claimed_call_id, "
+                                + "claimed_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', 'CLAIMED', "
+                                + "30, now() + interval '30 seconds', ?, ?, ?, now())",
+                        UUID.randomUUID(), v005TaskIdText(), bindingId, subjectId, accountId,
+                        accountId, randomSha256(), v005Ciphertext(), v005Masked(), v005IdempotencyKey(),
+                        fingerprint, "missing-call-" + UUID.randomUUID());
+                fkProbed.add("fk_outbound_task_claimed_call");
+
+                expectSqlFailure(connection, "23503", "fk_inbound_session_subject",
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                        UUID.randomUUID(), v005CallId(), UUID.randomUUID(), v005Ciphertext(),
+                        randomSha256(), v005Masked(), v005Masked());
+                fkProbed.add("fk_inbound_session_subject");
+
+                expectSqlFailure(connection, "23503", "fk_inbound_session_confirmed_subject",
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version, status, "
+                                + "confirmed_subject_id, confirmed_at) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1', "
+                                + "'CONFIRMED', ?, now())",
+                        UUID.randomUUID(), v005CallId(), subjectId, v005Ciphertext(), randomSha256(),
+                        v005Masked(), v005Masked(), UUID.randomUUID());
+                fkProbed.add("fk_inbound_session_confirmed_subject");
+
+                expectSqlFailure(connection, "23503", "fk_call_record_session",
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        UUID.randomUUID(), v005CallId(), UUID.randomUUID(), subjectId,
+                        v005Ciphertext(), randomSha256(), v005Masked(), v005Masked());
+                fkProbed.add("fk_call_record_session");
+
+                // Dedicated empty session: the fixture session already owns callRecordId and
+                // uq_call_record_session would fire before fk_call_record_task.
+                UUID fkTaskProbeSession = UUID.randomUUID();
+                assertThat(v005InsertSession(connection, fkTaskProbeSession, v005CallId(),
+                        subjectId, randomSha256())).isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_call_record_task",
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, task_id, subject_id, "
+                                + "caller_ciphertext, caller_number_hmac, caller_masked, "
+                                + "access_number_masked, node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        UUID.randomUUID(), v005CallId(), fkTaskProbeSession, UUID.randomUUID(),
+                        subjectId, v005Ciphertext(), randomSha256(), v005Masked(), v005Masked());
+                fkProbed.add("fk_call_record_task");
+
+                // Dedicated empty session: uq_call_record_session would otherwise fire first.
+                UUID fkSubjectProbeSession = UUID.randomUUID();
+                assertThat(v005InsertSession(connection, fkSubjectProbeSession, v005CallId(),
+                        subjectId, randomSha256())).isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_call_record_subject",
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        UUID.randomUUID(), v005CallId(), fkSubjectProbeSession, UUID.randomUUID(),
+                        v005Ciphertext(), randomSha256(), v005Masked(), v005Masked());
+                fkProbed.add("fk_call_record_subject");
+
+                expectSqlFailure(connection, "23503", "fk_call_leg_call",
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, 'leg-1', 'CALLER', 'INBOUND', 'RINGING', now())",
+                        UUID.randomUUID(), "missing-call-" + UUID.randomUUID());
+                fkProbed.add("fk_call_leg_call");
+
+                // Matching sha keeps the payload_redacted CHECK legal so only the FK fires.
+                String fkEventSha = randomSha256();
+                expectSqlFailure(connection, "23503", "fk_call_event_call",
+                        "INSERT INTO ivr.call_event "
+                                + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                                + "payload_ciphertext, payload_redacted, payload_sha256) "
+                                + "VALUES (?, ?, ?, 1, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                        UUID.randomUUID(), "missing-call-" + UUID.randomUUID(),
+                        v005EventId(), v005Ciphertext(),
+                        v005EventRedactedJson(fkEventSha, randomSha256()), fkEventSha);
+                fkProbed.add("fk_call_event_call");
+
+                // Existing call_id, only session_id missing: exactly fk_ivr_decision_session
+                // can fire. The separate probe below keeps the existing session and a
+                // nonexistent call for fk_ivr_decision_call.
+                expectSqlFailure(connection, "23503", "fk_ivr_decision_session",
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, request_fingerprint, "
+                                + "action, reason_code, response_snapshot, "
+                                + "response_payload_ciphertext, response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                                + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), UUID.randomUUID(), callId, fingerprint,
+                        v005Ciphertext(), randomSha256());
+                fkProbed.add("fk_ivr_decision_session");
+
+                expectSqlFailure(connection, "23503", "fk_ivr_decision_call",
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, request_fingerprint, "
+                                + "action, reason_code, response_snapshot, "
+                                + "response_payload_ciphertext, response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                                + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), sessionId, "missing-call-" + UUID.randomUUID(),
+                        fingerprint, v005Ciphertext(), randomSha256());
+                fkProbed.add("fk_ivr_decision_call");
+
+                assertThat(fkProbed)
+                        .as("all 15 V005 foreign keys have an isolated missing-parent probe")
+                        .containsExactlyInAnyOrderElementsOf(v005ExpectedFkNames());
+                assertThat(fkProbed).hasSize(15);
+
+                // Whole FK map recheck against the frozen V005_FK_DEFS inventory.
+                List<String> fkRows = new ArrayList<>();
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                                + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE "
+                                + "c.confdeltype::text END "
+                                + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' "
+                                + "|| c.convalidated "
+                                + "FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND c.contype = 'f' "
+                                + "ORDER BY c.conname")) {
+                    try (ResultSet resultSet = prepared.executeQuery()) {
+                        while (resultSet.next()) {
+                            fkRows.add(resultSet.getString(1));
+                        }
+                    }
+                }
+                assertThat(fkRows).containsExactlyInAnyOrderElementsOf(V005_FK_DEFS);
+                assertThat(V005_FK_DEFS).hasSize(15);
+
+                // Reservation noFK and no entitlement/activation tables.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND c.contype = 'f' "
+                                + "AND pg_get_constraintdef(c.oid) LIKE '%reservation%'"))
+                        .as("no reservation FK exists in V005").isZero();
+                // Schema-level zero-table assertion (pg_class/pg_namespace), consistent with
+                // assertNoV006PlusObjects: the entitlement_metering/activation_consent tables
+                // would live in their own schemas, never inside 'ivr', so a table_schema='ivr'
+                // filter would prove nothing.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_class c "
+                                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
+                                + "AND c.relkind = 'r'"))
+                        .as("no entitlement/activation tables in V005 (schema-level)")
+                        .isZero();
+
+                // Representative unambiguous parent-delete RESTRICT probes. Each fixture
+                // attaches exactly one child FK so the reported constraint is exact.
+                switchLocalRole(connection, "customer_iam_owner");
+                v005InsertAccountAsOwner(connection, delBindingAccountId);
+                switchLocalRole(connection, "subject_number_owner");
+                v005InsertSubjectAsOwner(connection, delBindingSubjectId, delBindingAccountId);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO subject_number.caller_number_binding "
+                                + "(id, subject_id, number_hmac, number_ciphertext, number_masked, "
+                                + "number_type, status, verified_at) "
+                                + "VALUES (?, ?, ?, ?, ?, 'MOBILE', 'ACTIVE', now())",
+                        delBindingId, delBindingSubjectId, randomSha256(), v005Ciphertext(),
+                        v005Masked())).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                assertThat(v005InsertTask(connection, delBindingTaskId, v005TaskIdText(),
+                        delBindingId, delBindingSubjectId, delBindingAccountId, randomSha256(),
+                        v005IdempotencyKey(), fingerprint)).isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_outbound_task_binding",
+                        "DELETE FROM subject_number.caller_number_binding WHERE id = ?",
+                        delBindingId);
+
+                // owner_account RESTRICT: only task.owner_account references delAccountChild.
+                switchLocalRole(connection, "customer_iam_owner");
+                v005InsertAccountAsOwner(connection, delAccountChild);
+                v005InsertAccountAsOwner(connection, otherAccount);
+                switchLocalRole(connection, "subject_number_owner");
+                v005InsertSubjectAsOwner(connection, sharedSubject, otherAccount);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO subject_number.caller_number_binding "
+                                + "(id, subject_id, number_hmac, number_ciphertext, number_masked, "
+                                + "number_type, status, verified_at) "
+                                + "VALUES (?, ?, ?, ?, ?, 'MOBILE', 'ACTIVE', now())",
+                        sharedBinding, sharedSubject, randomSha256(), v005Ciphertext(),
+                        v005Masked())).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                setLocalRole(connection, "ivr_role");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        delTask, v005TaskIdText(), sharedBinding, sharedSubject, delAccountChild,
+                        otherAccount, randomSha256(), v005Ciphertext(), v005Masked(), v005IdempotencyKey(),
+                        fingerprint)).isEqualTo(1);
+                switchLocalRole(connection, "customer_iam_owner");
+                expectSqlFailure(connection, "23503", "fk_outbound_task_owner_account",
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", delAccountChild);
+
+                // owner_org RESTRICT: task inserted directly with owner_organization_id (owner
+                // columns are guard-immutable, so UPDATE cannot be used to attach the org).
+                switchLocalRole(connection, "organization_access_owner");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO organization_access.organization "
+                                + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                        delOrg, "pa5-s2-delorg-" + UUID.randomUUID())).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                setLocalRole(connection, "ivr_role");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, "
+                                + "owner_organization_id, created_by_account_id, "
+                                + "caller_number_hmac, callee_ciphertext, callee_masked, "
+                                + "business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        orgTask, v005TaskIdText(), bindingId, subjectId, delOrg, accountId,
+                        randomSha256(), v005Ciphertext(), v005Masked(), v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "organization_access_owner");
+                expectSqlFailure(connection, "23503", "fk_outbound_task_owner_org",
+                        "DELETE FROM organization_access.organization WHERE id = ?", delOrg);
+
+                // subject RESTRICT: session is the only child of a dedicated subject.
+                switchLocalRole(connection, "customer_iam_owner");
+                v005InsertAccountAsOwner(connection, delSubjectAccount);
+                switchLocalRole(connection, "subject_number_owner");
+                v005InsertSubjectAsOwner(connection, delSubjectOnly, delSubjectAccount);
+                resetToMigrationIdentity(connection);
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, delSubjectSession, v005CallId(),
+                        delSubjectOnly, randomSha256())).isEqualTo(1);
+                switchLocalRole(connection, "subject_number_owner");
+                expectSqlFailure(connection, "23503", "fk_inbound_session_subject",
+                        "DELETE FROM subject_number.business_subject WHERE id = ?",
+                        delSubjectOnly);
+
+                // session RESTRICT: call is the only child of a dedicated session.
+                setLocalRole(connection, "ivr_role");
+                String delSessionCallId = v005CallId();
+                assertThat(v005InsertSession(connection, delSessionOnly, delSessionCallId,
+                        subjectId, randomSha256())).isEqualTo(1);
+                assertThat(v005InsertCall(connection, delSessionCall, delSessionCallId,
+                        delSessionOnly, subjectId, randomSha256())).isEqualTo(1);
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "23503", "fk_call_record_session",
+                        "DELETE FROM ivr.inbound_session WHERE id = ?", delSessionOnly);
+
+                // task RESTRICT via call.task_id. The call_record guard requires the task
+                // to already claim this call (matching claimed_call_id) before task_id
+                // can be set; use the legal two-step link, then delete the task.
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertTask(connection, delTaskOnly, v005TaskIdText(), bindingId,
+                        subjectId, accountId, randomSha256(), v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+                String delTaskCallId = v005CallId();
+                assertThat(v005InsertSession(connection, delTaskSession, delTaskCallId,
+                        subjectId, randomSha256())).isEqualTo(1);
+                assertThat(v005InsertCall(connection, delTaskCall, delTaskCallId, delTaskSession,
+                        subjectId, randomSha256())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL",
+                        delTaskCallId, delTaskOnly)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record SET task_id = ?, revision = revision + 1 "
+                                + "WHERE id = ? AND task_id IS NULL",
+                        delTaskOnly, delTaskCall)).isEqualTo(1);
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "23503", "fk_call_record_task",
+                        "DELETE FROM ivr.outbound_call_task WHERE id = ?", delTaskOnly);
+
+                // leg RESTRICT: delete the parent call that only a leg references.
+                setLocalRole(connection, "ivr_role");
+                String delLegCallId = v005CallId();
+                assertThat(v005InsertSession(connection, delLegSession, delLegCallId, subjectId,
+                        randomSha256())).isEqualTo(1);
+                assertThat(v005InsertCall(connection, delLegCall, delLegCallId, delLegSession,
+                        subjectId, randomSha256())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, 'leg-del', 'CALLER', 'INBOUND', 'RINGING', now())",
+                        delLeg, delLegCallId)).isEqualTo(1);
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "23503", "fk_call_leg_call",
+                        "DELETE FROM ivr.call_record WHERE id = ?", delLegCall);
+
+                // claimed_call RESTRICT: legal claim shape then delete the claimed call.
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertTask(connection, claimedTask, v005TaskIdText(), bindingId,
+                        subjectId, accountId, randomSha256(), v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+                String claimedCallText = v005CallId();
+                assertThat(v005InsertSession(connection, claimedSession, claimedCallText,
+                        subjectId, randomSha256())).isEqualTo(1);
+                assertThat(v005InsertCall(connection, claimedCall, claimedCallText,
+                        claimedSession, subjectId, randomSha256())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL",
+                        claimedCallText, claimedTask)).isEqualTo(1);
+                switchLocalRole(connection, "ivr_owner");
+                expectSqlFailure(connection, "23503", "fk_outbound_task_claimed_call",
+                        "DELETE FROM ivr.call_record WHERE id = ?", claimedCall);
+
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.outbound_call_task "
+                            + "WHERE id IN (?, ?, ?, ?, ?, ?)",
+                    taskId, delBindingTaskId, delTask, orgTask, delTaskOnly, claimedTask))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.inbound_session WHERE id IN (?, ?, ?, ?)",
+                    sessionId, delSubjectSession, delSessionOnly, delTaskSession)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM ivr.call_record WHERE id IN (?, ?, ?, ?, ?)",
+                    callRecordId, delSessionCall, delTaskCall, delLegCall, claimedCall))
+                    .isZero();
+        }
+    }
+
+    private static List<String> v005ExpectedFkNames() {
+        List<String> names = new ArrayList<>();
+        for (String row : V005_FK_DEFS) {
+            names.add(row.substring(0, row.indexOf('|')));
+        }
+        return names;
+    }
+
+    private static void v005InsertAccountAsOwner(Connection connection, UUID accountId)
+            throws SQLException {
+        assertThat(executeUpdate(connection,
+                "INSERT INTO customer_iam.customer_account "
+                        + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                accountId, "pa5-s2-acct-" + UUID.randomUUID())).isEqualTo(1);
+    }
+
+    private static void v005InsertSubjectAsOwner(
+            Connection connection, UUID subjectId, UUID accountId) throws SQLException {
+        assertThat(executeUpdate(connection,
+                "INSERT INTO subject_number.business_subject "
+                        + "(id, source, owner_account_id) VALUES (?, 'IVR', ?)",
+                subjectId, accountId)).isEqualTo(1);
+    }
+
+    private static void commitV005RaceParents(
+            UUID accountId, UUID organizationId, UUID subjectId, UUID bindingId, String hmac)
+            throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v005InsertParents(connection, accountId, organizationId, subjectId, bindingId, hmac);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
+    private static void runConcurrentV005TaskClaimAndActiveCall() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        String hmac = randomSha256();
+        String fingerprint = randomSha256();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            commitV005RaceParents(accountId, organizationId, subjectId, bindingId, hmac);
+
+            // Distinct canonical-caller HMACs per race: a live-caller winner from an
+            // earlier race would otherwise block the next task race on
+            // uq_outbound_task_live_caller, and an ACTIVE call winner would block the
+            // next call race on uq_call_record_active_caller.
+            String liveCallerHmac = randomSha256();
+            String activeCallHmac = randomSha256();
+            String claimHmac = randomSha256();
+            String rollbackHmac = randomSha256();
+
+            // Race 1: two live PENDING task inserts for the same canonical caller.
+            raceV005LiveCallerTaskInsert(executor, bindingId, subjectId, accountId, liveCallerHmac,
+                    fingerprint);
+            // Race 2: two ACTIVE/UNKNOWN call inserts for the same canonical caller.
+            raceV005ActiveCallerCallInsert(executor, subjectId, activeCallHmac);
+            // Race 3: two conditional claims of the same PENDING task (one winner, loser
+            // zero rows).
+            raceV005ConditionalClaim(executor, bindingId, subjectId, accountId, claimHmac,
+                    fingerprint);
+            // Race 4: two call_event rows with the same (event_domain, event_id).
+            // Each race uses a distinct caller HMAC so the committed ACTIVE call from a
+            // prior race does not trip uq_call_record_active_caller on setup inserts.
+            raceV005EventDomainIdUnique(executor, subjectId, randomSha256());
+            // Race 5: two call_event rows with the same (call_id, sequence_no).
+            raceV005EventSequenceUnique(executor, subjectId, randomSha256());
+            // Race 6: two ivr_decision rows with the same (call_id, purpose).
+            raceV005DecisionPurposeUnique(executor, subjectId, randomSha256());
+
+            // Category-2: savepoint rollback clears BOTH reciprocal link assignments while
+            // a pre-savepoint call row survives on the same connection.
+            assertV005CategoryTwoSavepointClearsBothLinks(bindingId, subjectId, accountId,
+                    rollbackHmac, fingerprint);
+            // Category-3: error after both links then whole-transaction rollback leaves no
+            // claim and no link.
+            assertV005CategoryThreeWholeRollbackLeavesNoLink(bindingId, subjectId, accountId,
+                    randomSha256(), fingerprint);
+        } finally {
+            executor.shutdownNow();
+            cleanupV005ConcurrentFixtures(accountId, organizationId, subjectId, bindingId);
+        }
+    }
+
+    private static void raceV005LiveCallerTaskInsert(
+            ExecutorService executor,
+            UUID bindingId,
+            UUID subjectId,
+            UUID accountId,
+            String hmac,
+            String fingerprint) throws Exception {
+        UUID winnerTaskId = UUID.randomUUID();
+        UUID loserTaskId = UUID.randomUUID();
+        String winnerApplication = "pa5-s2-livecaller-winner";
+        String loserApplication = "pa5-s2-livecaller-loser";
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "ivr_role");
+            assertThat(v005InsertTask(winner, winnerTaskId, v005TaskIdText(), bindingId, subjectId,
+                    accountId, hmac, v005IdempotencyKey(), fingerprint)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "ivr_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> v005InsertTask(loser, loserTaskId,
+                    v005TaskIdText(), bindingId, subjectId, accountId, hmac,
+                    v005IdempotencyKey(), fingerprint));
+            awaitBlockedBackend(loserApplication);
+
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the live-caller unique loser must not commit a second PENDING task");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_outbound_task_live_caller");
+            }
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.outbound_call_task WHERE caller_number_hmac = ? "
+                            + "AND status IN ('PENDING','CLAIMED')",
+                    hmac)).as("exactly one live task for the canonical caller").isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.outbound_call_task WHERE id = ?", loserTaskId))
+                    .isZero();
+        }
+    }
+
+    private static void raceV005ActiveCallerCallInsert(
+            ExecutorService executor, UUID subjectId, String hmac) throws Exception {
+        UUID winnerSession = UUID.randomUUID();
+        UUID loserSession = UUID.randomUUID();
+        UUID winnerCall = UUID.randomUUID();
+        UUID loserCall = UUID.randomUUID();
+        String callId = v005CallId();
+        String winnerApplication = "pa5-s2-activecall-winner";
+        String loserApplication = "pa5-s2-activecall-loser";
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "ivr_role");
+                assertThat(v005InsertSession(setup, winnerSession, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertSession(setup, loserSession, v005CallId(), subjectId, hmac))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "ivr_role");
+            assertThat(v005InsertCall(winner, winnerCall, callId, winnerSession, subjectId, hmac))
+                    .isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "ivr_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> v005InsertCall(loser, loserCall,
+                    v005CallId(), loserSession, subjectId, hmac));
+            awaitBlockedBackend(loserApplication);
+
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the active-caller unique loser must not commit a second ACTIVE call");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_call_record_active_caller");
+            }
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_record WHERE caller_number_hmac = ? "
+                            + "AND status IN ('ACTIVE','UNKNOWN')",
+                    hmac)).as("exactly one live call for the canonical caller").isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_record WHERE id = ?", loserCall)).isZero();
+        }
+    }
+
+    private static void raceV005ConditionalClaim(
+            ExecutorService executor,
+            UUID bindingId,
+            UUID subjectId,
+            UUID accountId,
+            String hmac,
+            String fingerprint) throws Exception {
+        UUID taskId = UUID.randomUUID();
+        UUID winnerCall = UUID.randomUUID();
+        UUID loserCallRecordId = UUID.randomUUID();
+        UUID winnerSession = UUID.randomUUID();
+        UUID loserSession = UUID.randomUUID();
+        String claimedCallId = v005CallId();
+        String loserCallId = v005CallId();
+        String winnerApplication = "pa5-s2-claim-winner";
+        String loserApplication = "pa5-s2-claim-loser";
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "ivr_role");
+                assertThat(v005InsertTask(setup, taskId, v005TaskIdText(), bindingId, subjectId,
+                        accountId, hmac, v005IdempotencyKey(), fingerprint)).isEqualTo(1);
+                assertThat(v005InsertSession(setup, winnerSession, claimedCallId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(setup, winnerCall, claimedCallId, winnerSession,
+                        subjectId, hmac)).isEqualTo(1);
+                // Loser call fixture uses a distinct HMAC: the winner call is ACTIVE with
+                // claimHmac, and uq_call_record_active_caller would block a second live row.
+                assertThat(v005InsertSession(setup, loserSession, loserCallId, subjectId,
+                        randomSha256())).isEqualTo(1);
+                assertThat(v005InsertCall(setup, loserCallRecordId, loserCallId, loserSession,
+                        subjectId, randomSha256())).isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "ivr_role");
+            assertThat(executeUpdate(winner,
+                    "UPDATE ivr.outbound_call_task "
+                            + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                            + "updated_at = now(), revision = revision + 1 "
+                            + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL "
+                            + "AND revision = 1",
+                    claimedCallId, taskId)).isEqualTo(1);
+            assertThat(executeUpdate(winner,
+                    "UPDATE ivr.call_record SET task_id = ?, revision = revision + 1 "
+                            + "WHERE id = ? AND task_id IS NULL AND revision = 1",
+                    taskId, winnerCall)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "ivr_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> executeUpdate(loser,
+                    "UPDATE ivr.outbound_call_task "
+                            + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                            + "updated_at = now(), revision = revision + 1 "
+                            + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL "
+                            + "AND revision = 1",
+                    loserCallId, taskId));
+            awaitBlockedBackend(loserApplication);
+
+            winner.commit();
+            assertThat(awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS))
+                    .as("conditional-claim loser affects zero rows after the winner commits")
+                    .isZero();
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryString(verify,
+                    "SELECT status || '|' || claimed_call_id || '|' || revision::text "
+                            + "FROM ivr.outbound_call_task WHERE id = ?",
+                    taskId)).as("one winner holds the claim").isEqualTo("CLAIMED|" + claimedCallId + "|2");
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_record WHERE task_id = ?", taskId))
+                    .isEqualTo(1);
+        }
+    }
+
+    private static void raceV005EventDomainIdUnique(
+            ExecutorService executor, UUID subjectId, String hmac) throws Exception {
+        UUID callRecordId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID winnerEvent = UUID.randomUUID();
+        UUID loserEvent = UUID.randomUUID();
+        String callId = v005CallId();
+        String eventIdText = v005EventId();
+        String sha = randomSha256();
+        String winnerApplication = "pa5-s2-event-domain-winner";
+        String loserApplication = "pa5-s2-event-domain-loser";
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "ivr_role");
+                assertThat(v005InsertSession(setup, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(setup, callRecordId, callId, sessionId, subjectId, hmac))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "ivr_role");
+            assertThat(executeUpdate(winner,
+                    "INSERT INTO ivr.call_event "
+                            + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                            + "payload_ciphertext, payload_redacted, payload_sha256) "
+                            + "VALUES (?, ?, ?, 1, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                    winnerEvent, callId, eventIdText, v005Ciphertext(),
+                    v005EventRedactedJson(sha, randomSha256()), sha)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "ivr_role", loserApplication);
+            // Same sha in redacted receipt and payload_sha256 column so only the domain/id
+            // unique can fire after the winner commits (mismatched sha is 23514 first).
+            String loserSha = randomSha256();
+            Future<Integer> loserFuture = executor.submit(() -> executeUpdate(loser,
+                    "INSERT INTO ivr.call_event "
+                            + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                            + "payload_ciphertext, payload_redacted, payload_sha256) "
+                            + "VALUES (?, ?, ?, 2, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                    loserEvent, callId, eventIdText, v005Ciphertext(),
+                    v005EventRedactedJson(loserSha, randomSha256()), loserSha));
+            awaitBlockedBackend(loserApplication);
+
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the event domain/id unique loser must not commit");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_call_event_domain_id");
+            }
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_event WHERE event_id = ?", eventIdText))
+                    .isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_event WHERE id = ?", loserEvent)).isZero();
+        }
+    }
+
+    private static void raceV005EventSequenceUnique(
+            ExecutorService executor, UUID subjectId, String hmac) throws Exception {
+        UUID callRecordId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID winnerEvent = UUID.randomUUID();
+        UUID loserEvent = UUID.randomUUID();
+        String callId = v005CallId();
+        String sha = randomSha256();
+        String winnerApplication = "pa5-s2-event-seq-winner";
+        String loserApplication = "pa5-s2-event-seq-loser";
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "ivr_role");
+                assertThat(v005InsertSession(setup, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(setup, callRecordId, callId, sessionId, subjectId, hmac))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "ivr_role");
+            assertThat(executeUpdate(winner,
+                    "INSERT INTO ivr.call_event "
+                            + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                            + "payload_ciphertext, payload_redacted, payload_sha256) "
+                            + "VALUES (?, ?, ?, 1, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                    winnerEvent, callId, v005EventId(), v005Ciphertext(),
+                    v005EventRedactedJson(sha, randomSha256()), sha)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "ivr_role", loserApplication);
+            // Matching sha keeps payload CHECKs legal so only the sequence unique can fire.
+            String loserSha = randomSha256();
+            Future<Integer> loserFuture = executor.submit(() -> executeUpdate(loser,
+                    "INSERT INTO ivr.call_event "
+                            + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                            + "payload_ciphertext, payload_redacted, payload_sha256) "
+                            + "VALUES (?, ?, ?, 1, 'DTMF', now(), ?, ?::jsonb, ?)",
+                    loserEvent, callId, v005EventId(), v005Ciphertext(),
+                    v005EventRedactedJson(loserSha, randomSha256()), loserSha));
+            awaitBlockedBackend(loserApplication);
+
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the event sequence unique loser must not commit");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_call_event_sequence");
+            }
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_event WHERE call_id = ? AND sequence_no = 1",
+                    callId)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_event WHERE id = ?", loserEvent)).isZero();
+        }
+    }
+
+    private static void raceV005DecisionPurposeUnique(
+            ExecutorService executor, UUID subjectId, String hmac) throws Exception {
+        UUID callRecordId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID winnerDecision = UUID.randomUUID();
+        UUID loserDecision = UUID.randomUUID();
+        String callId = v005CallId();
+        String fingerprint = randomSha256();
+        String sha = randomSha256();
+        String winnerApplication = "pa5-s2-decision-winner";
+        String loserApplication = "pa5-s2-decision-loser";
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "ivr_role");
+                assertThat(v005InsertSession(setup, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(setup, callRecordId, callId, sessionId, subjectId, hmac))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "ivr_role");
+            assertThat(executeUpdate(winner,
+                    "INSERT INTO ivr.ivr_decision "
+                            + "(id, session_id, call_id, purpose, request_fingerprint, action, "
+                            + "reason_code, response_snapshot, response_payload_ciphertext, "
+                            + "response_sha256, key_version) "
+                            + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                            + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                    winnerDecision, sessionId, callId, fingerprint, v005Ciphertext(), sha))
+                    .isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "ivr_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> executeUpdate(loser,
+                    "INSERT INTO ivr.ivr_decision "
+                            + "(id, session_id, call_id, purpose, request_fingerprint, action, "
+                            + "reason_code, response_snapshot, response_payload_ciphertext, "
+                            + "response_sha256, key_version) "
+                            + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                            + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                    loserDecision, sessionId, callId, fingerprint, v005Ciphertext(),
+                    randomSha256()));
+            awaitBlockedBackend(loserApplication);
+
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the decision purpose unique loser must not commit");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_ivr_decision_call_purpose");
+            }
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.ivr_decision WHERE call_id = ? "
+                            + "AND purpose = 'INBOUND_RESOLVE'",
+                    callId)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.ivr_decision WHERE id = ?", loserDecision))
+                    .isZero();
+        }
+    }
+
+    private static void assertV005CategoryTwoSavepointClearsBothLinks(
+            UUID bindingId, UUID subjectId, UUID accountId, String hmac, String fingerprint)
+            throws Exception {
+        UUID taskId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        String callId = v005CallId();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertTask(connection, taskId, v005TaskIdText(), bindingId,
+                        subjectId, accountId, hmac, v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+                assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId,
+                        hmac)).isEqualTo(1);
+                // Pre-savepoint committed-in-transaction call survives the savepoint rollback.
+                Savepoint preClaim = connection.setSavepoint();
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL",
+                        callId, taskId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record SET task_id = ?, revision = revision + 1 "
+                                + "WHERE id = ? AND task_id IS NULL",
+                        taskId, callRecordId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM ivr.outbound_call_task "
+                                + "WHERE id = ? AND claimed_call_id = ?",
+                        taskId, callId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM ivr.call_record WHERE id = ? AND task_id = ?",
+                        callRecordId, taskId)).isEqualTo(1);
+                connection.rollback(preClaim);
+                // Category-2: savepoint rollback clears BOTH link assignments.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM ivr.outbound_call_task "
+                                + "WHERE id = ? AND claimed_call_id IS NULL AND status = 'PENDING'",
+                        taskId)).as("claim cleared by savepoint rollback").isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM ivr.call_record "
+                                + "WHERE id = ? AND task_id IS NULL",
+                        callRecordId)).as("call.task_id cleared by savepoint rollback")
+                        .isEqualTo(1);
+                // Pre-savepoint call row still present on the same connection.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM ivr.call_record WHERE id = ?", callRecordId))
+                        .as("pre-savepoint call survives savepoint rollback").isEqualTo(1);
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static void assertV005CategoryThreeWholeRollbackLeavesNoLink(
+            UUID bindingId, UUID subjectId, UUID accountId, String hmac, String fingerprint)
+            throws Exception {
+        UUID taskId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        String callId = v005CallId();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertTask(connection, taskId, v005TaskIdText(), bindingId,
+                        subjectId, accountId, hmac, v005IdempotencyKey(), fingerprint))
+                        .isEqualTo(1);
+                assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId,
+                        hmac)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.outbound_call_task "
+                                + "SET claimed_call_id = ?, claimed_at = now(), status = 'CLAIMED', "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PENDING' AND claimed_call_id IS NULL",
+                        callId, taskId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE ivr.call_record SET task_id = ?, revision = revision + 1 "
+                                + "WHERE id = ? AND task_id IS NULL",
+                        taskId, callRecordId)).isEqualTo(1);
+                // Category-3: an error after both links are set, then whole rollback.
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_PARTIES_IMMUTABLE",
+                        "UPDATE ivr.call_record SET task_id = NULL WHERE id = ?", callRecordId);
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.outbound_call_task WHERE id = ?", taskId))
+                    .as("category-3 whole rollback leaves no task claim").isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM ivr.call_record WHERE id = ?", callRecordId))
+                    .as("category-3 whole rollback leaves no call link").isZero();
+        }
+    }
+
+    private static void cleanupV005ConcurrentFixtures(
+            UUID accountId, UUID organizationId, UUID subjectId, UUID bindingId)
+            throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                // One TRUNCATE covering all six ivr tables in a single statement: the only
+                // way to remove committed append-only fixtures; test-fixture hygiene only.
+                // Runtime TRUNCATE denial remains asserted by the S1 ACL matrix.
+                execute(connection,
+                        "TRUNCATE TABLE ivr.ivr_decision, ivr.call_event, ivr.call_leg, "
+                                + "ivr.call_record, ivr.inbound_session, ivr.outbound_call_task");
+                // FK-safe parent deletes (no CASCADE, no runtime grants).
+                executeUpdate(connection,
+                        "DELETE FROM subject_number.caller_number_binding WHERE id = ?", bindingId);
+                executeUpdate(connection,
+                        "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
+                executeUpdate(connection,
+                        "DELETE FROM organization_access.organization WHERE id = ?",
+                        organizationId);
+                executeUpdate(connection,
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.ivr_decision"))
+                    .as("ivr_decision empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_event"))
+                    .as("call_event empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_leg"))
+                    .as("call_leg empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_record"))
+                    .as("call_record empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.inbound_session"))
+                    .as("inbound_session empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.outbound_call_task"))
+                    .as("outbound_call_task empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                    bindingId)).isZero();
         }
     }
 }
