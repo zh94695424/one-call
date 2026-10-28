@@ -287,6 +287,8 @@ No `ivr.select_call_action`, `ivr.record_activation_next_action` or any other SQ
 - `UNKNOWN` call remains occupied; the DB does not finalize it. `ACTIVE`/`UNKNOWN` occupancy and terminal shape are check/index backstops; reconciliation and the `CALL_IN_PROGRESS` protocol are service-owned (§9.13/§9.24).
 - `call_event` first-payload/first-terminal-outcome absorption, replay/conflict classification and `CALL_UNKNOWN` parent validation are service-owned (§9.24); the DB provides identity uniqueness, sequence uniqueness, payload-shape checks and column-grant immutability.
 
+Aggregate deepreview fix-1 amendment (2026-10-29): the database backstops now make the lifecycle wording above executable without changing the V005 inventory. Terminal task rows reject changes to their status/reason, claim linkage, terminal timestamp, `updated_at` or `revision`. Terminal `call_record` rows in `ENDED`/`FAILED`/`REJECTED` reject status and terminal-fact rewrites; an `UNKNOWN` row rejects same-state fact rewrites and transitions other than authoritative `UNKNOWN` -> `ENDED`/`FAILED`. The database does not implement reconciliation or `CALL_IN_PROGRESS` orchestration. The inbound confirmation shape requires a trusted `confirmed_subject_id` equal to `subject_id` and requires that column to be NULL outside `CONFIRMED`. The event redacted payload shape requires `eventType` (nonblank string), `legId` (string or JSON null), `sequenceNo` (number or JSON null), object `payload`, and a lowercase 64-hex `receipt.eventFingerprint`; server fingerprint computation and event absorption remain service-owned.
+
 ### 5.2 Exact guard predicates and error identifiers
 
 All errors use `ERRCODE = 'P0001'`.
@@ -294,6 +296,7 @@ All errors use `ERRCODE = 'P0001'`.
 `ivr.guard_outbound_call_task`:
 - Reject changes to `id`, `task_id`, `caller_binding_id`, `subject_id`, `owner_account_id`, `owner_organization_id`, `created_by_account_id`, `caller_number_hmac`, `callee_ciphertext`, `callee_masked`, `business_type`, `ttl_seconds`, `expires_at`, `idempotency_key`, `request_fingerprint`, `created_at` → `OUTBOUND_CALL_TASK_IMMUTABLE`.
 - Reject `OLD.status NOT IN ('PENDING','CLAIMED') AND NEW.status IN ('PENDING','CLAIMED')` → `OUTBOUND_CALL_TASK_TERMINAL`.
+- If `OLD.status NOT IN ('PENDING','CLAIMED')` and `(NEW.status, NEW.reason_code, NEW.claimed_call_id, NEW.claimed_at, NEW.terminal_at, NEW.updated_at, NEW.revision) IS DISTINCT FROM (OLD.status, OLD.reason_code, OLD.claimed_call_id, OLD.claimed_at, OLD.terminal_at, OLD.updated_at, OLD.revision)`, reject with `OUTBOUND_CALL_TASK_TERMINAL`; terminal task facts are absorbing.
 - If `claimed_call_id` changes: require old NULL and new non-NULL, otherwise `OUTBOUND_CALL_TASK_CLAIM_IMMUTABLE`; require an existing `ivr.call_record` row with that `call_id`, otherwise `OUTBOUND_CALL_TASK_CLAIM_INVALID`.
 - `RETURN NEW`.
 
@@ -304,6 +307,8 @@ All errors use `ERRCODE = 'P0001'`.
 `ivr.guard_call_record_parties`:
 - Reject changes to `id`, `call_id`, `session_id`, `caller_ciphertext`, `caller_number_hmac`, `caller_masked`, `callee_ciphertext`, `callee_masked`, `access_number_masked`, `node_id`, `protocol_version`, `started_at` → `CALL_RECORD_PARTIES_IMMUTABLE`.
 - If `task_id` changes: require old NULL and new non-NULL, and require `EXISTS (SELECT 1 FROM ivr.outbound_call_task t WHERE t.id = NEW.task_id AND t.claimed_call_id = NEW.call_id)`, otherwise `CALL_RECORD_PARTIES_IMMUTABLE`.
+- If `OLD.status IN ('ENDED','FAILED','REJECTED')` and `(NEW.status, NEW.task_id, NEW.bridged_at, NEW.recording_started_at, NEW.recording_ended_at, NEW.ended_at, NEW.authoritative_seconds, NEW.end_reason, NEW.revision) IS DISTINCT FROM (OLD.status, OLD.task_id, OLD.bridged_at, OLD.recording_started_at, OLD.recording_ended_at, OLD.ended_at, OLD.authoritative_seconds, OLD.end_reason, OLD.revision)`, reject with `CALL_RECORD_TERMINAL`.
+- If `OLD.status = 'UNKNOWN' AND NEW.status = 'UNKNOWN'` and the same call-fact tuple is distinct, reject with `CALL_RECORD_TERMINAL`; if `OLD.status = 'UNKNOWN' AND NEW.status NOT IN ('UNKNOWN','ENDED','FAILED')`, reject with `CALL_RECORD_TERMINAL`. Only authoritative `UNKNOWN` -> `ENDED`/`FAILED` convergence remains legal.
 - `RETURN NEW`.
 - Consequence (validated): the claim transaction must set `task.claimed_call_id` before setting `call.task_id`; the reverse order is rejected. This is the database-observable reciprocal ordering, not proof of the full service orchestration.
 
@@ -369,7 +374,9 @@ Every slice leaves a runnable V001-V005 prefix and is fail-closed. No applicatio
 
 **Prerequisites.** Accepted S1 checkpoint; recorded V005 SHA-256; all 33 methods passing; V005 frozen.
 
-**Allowed files.** `PostgresContainerIT.java` (add exactly five methods and bounded helpers); `.github/workflows/ci.yml` (expected set 38); `backend/README.md` (final 38); the S2 implementation artifact (new).
+**Aggregate deepreview fix-1 amendment (2026-10-29).** After S2, the bounded fix is authorized to update the existing V005 migration predicates/guards and add probes/helpers in the existing test methods. It does not add a table, column, key, index, trigger, function, role, grant, migration version or test method. The five S2 methods remain the same and the final method count remains 38; the fix only makes the already documented confirmation, terminal and event-shape invariants fail closed.
+
+**Allowed files.** `backend/src/main/resources/db/migration/V005__ivr_task_session_call.sql` (bounded predicate/guard corrections only); `backend/src/test/java/com/onecall/archtests/container/PostgresContainerIT.java` (existing five S2 methods and bounded helpers only); `docs/14-production-data-model-and-flyway-schema-spec.md` (synchronized contract errata); `.github/workflows/ci.yml` (expected set 38); `backend/README.md` (final 38); `.pa5-contract-lf-validate.sh`, `.pa5-contract-validate.sh`, `.pa5-controller-validate.sh`, `.pa5-fixed-intake.sh`, `.pa5-intake.sh`, `.pa5-run-bounded.sh` (controller-owned runner behavior already present; no historical launch/prompt files); the S2 implementation artifact and this aggregate-fix artifact (new).
 
 **Exact test changes.** Add:
 

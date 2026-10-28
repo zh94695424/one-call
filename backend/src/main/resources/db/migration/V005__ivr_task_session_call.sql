@@ -132,7 +132,12 @@ CREATE TABLE ivr.inbound_session (
     CONSTRAINT ck_inbound_session_guidance
         CHECK (guidance_status IS NULL OR guidance_status IN ('ACTIVATION_REQUIRED','CONSENT_REQUIRED')),
     CONSTRAINT ck_inbound_session_confirmed_shape
-        CHECK (((status = 'CONFIRMED') = (confirmed_at IS NOT NULL)) AND (status <> 'CONFIRMED' OR (trusted_caller = TRUE AND confirmed_subject_id IS NOT NULL))),
+        CHECK (((status = 'CONFIRMED') = (confirmed_at IS NOT NULL))
+            AND (status <> 'CONFIRMED'
+                OR (trusted_caller = TRUE
+                    AND confirmed_subject_id IS NOT NULL
+                    AND confirmed_subject_id IS NOT DISTINCT FROM subject_id))
+            AND (status = 'CONFIRMED' OR confirmed_subject_id IS NULL)),
     CONSTRAINT ck_inbound_session_time_order
         CHECK (confirmed_at IS NULL OR confirmed_at >= created_at),
     CONSTRAINT ck_inbound_session_revision
@@ -292,11 +297,22 @@ CREATE TABLE ivr.call_event (
             AND ((payload_redacted - 'source') - 'receipt') = '{}'::jsonb
             AND ((((payload_redacted->'source') - 'eventType') - 'legId') - 'sequenceNo' - 'payload') = '{}'::jsonb
             AND (((payload_redacted->'receipt') - 'payloadSha256') - 'eventFingerprint') = '{}'::jsonb
+            AND (payload_redacted->'source') ? 'eventType'
+            AND jsonb_typeof((payload_redacted->'source')->'eventType') = 'string'
+            AND btrim((payload_redacted->'source')->>'eventType') <> ''
+            AND (payload_redacted->'source') ? 'legId'
+            AND (jsonb_typeof((payload_redacted->'source')->'legId') = 'string'
+                OR (payload_redacted->'source')->'legId' = 'null'::jsonb)
+            AND (payload_redacted->'source') ? 'sequenceNo'
+            AND (jsonb_typeof((payload_redacted->'source')->'sequenceNo') = 'number'
+                OR (payload_redacted->'source')->'sequenceNo' = 'null'::jsonb)
             AND (payload_redacted->'source') ? 'payload'
             AND jsonb_typeof((payload_redacted->'source')->'payload') = 'object'
             AND (payload_redacted->'receipt') ? 'payloadSha256'
             AND jsonb_typeof((payload_redacted->'receipt')->'payloadSha256') = 'string'
             AND (payload_redacted->'receipt') ? 'eventFingerprint'
+            AND jsonb_typeof((payload_redacted->'receipt')->'eventFingerprint') = 'string'
+            AND (payload_redacted->'receipt')->>'eventFingerprint' ~ '^[0-9a-f]{64}$'
             AND ((payload_redacted->'receipt')->>'payloadSha256') = payload_sha256),
     CONSTRAINT ck_call_event_payload_sha
         CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
@@ -407,6 +423,14 @@ BEGIN
     IF OLD.status NOT IN ('PENDING','CLAIMED') AND NEW.status IN ('PENDING','CLAIMED') THEN
         RAISE EXCEPTION 'OUTBOUND_CALL_TASK_TERMINAL' USING ERRCODE = 'P0001';
     END IF;
+    IF OLD.status NOT IN ('PENDING','CLAIMED')
+        AND (NEW.status, NEW.reason_code, NEW.claimed_call_id, NEW.claimed_at,
+             NEW.terminal_at, NEW.updated_at, NEW.revision)
+            IS DISTINCT FROM
+            (OLD.status, OLD.reason_code, OLD.claimed_call_id, OLD.claimed_at,
+             OLD.terminal_at, OLD.updated_at, OLD.revision) THEN
+        RAISE EXCEPTION 'OUTBOUND_CALL_TASK_TERMINAL' USING ERRCODE = 'P0001';
+    END IF;
     IF NEW.claimed_call_id IS DISTINCT FROM OLD.claimed_call_id THEN
         IF OLD.claimed_call_id IS NOT NULL OR NEW.claimed_call_id IS NULL THEN
             RAISE EXCEPTION 'OUTBOUND_CALL_TASK_CLAIM_IMMUTABLE' USING ERRCODE = 'P0001';
@@ -462,6 +486,29 @@ BEGIN
         OR NEW.protocol_version IS DISTINCT FROM OLD.protocol_version
         OR NEW.started_at IS DISTINCT FROM OLD.started_at THEN
         RAISE EXCEPTION 'CALL_RECORD_PARTIES_IMMUTABLE' USING ERRCODE = 'P0001';
+    END IF;
+    IF OLD.status IN ('ENDED','FAILED','REJECTED')
+        AND (NEW.status, NEW.task_id, NEW.bridged_at, NEW.recording_started_at,
+             NEW.recording_ended_at, NEW.ended_at, NEW.authoritative_seconds,
+             NEW.end_reason, NEW.revision)
+            IS DISTINCT FROM
+            (OLD.status, OLD.task_id, OLD.bridged_at, OLD.recording_started_at,
+             OLD.recording_ended_at, OLD.ended_at, OLD.authoritative_seconds,
+             OLD.end_reason, OLD.revision) THEN
+        RAISE EXCEPTION 'CALL_RECORD_TERMINAL' USING ERRCODE = 'P0001';
+    END IF;
+    IF OLD.status = 'UNKNOWN' AND NEW.status = 'UNKNOWN'
+        AND (NEW.task_id, NEW.bridged_at, NEW.recording_started_at,
+             NEW.recording_ended_at, NEW.ended_at, NEW.authoritative_seconds,
+             NEW.end_reason, NEW.revision)
+            IS DISTINCT FROM
+            (OLD.task_id, OLD.bridged_at, OLD.recording_started_at,
+             OLD.recording_ended_at, OLD.ended_at, OLD.authoritative_seconds,
+             OLD.end_reason, OLD.revision) THEN
+        RAISE EXCEPTION 'CALL_RECORD_TERMINAL' USING ERRCODE = 'P0001';
+    END IF;
+    IF OLD.status = 'UNKNOWN' AND NEW.status NOT IN ('UNKNOWN','ENDED','FAILED') THEN
+        RAISE EXCEPTION 'CALL_RECORD_TERMINAL' USING ERRCODE = 'P0001';
     END IF;
     IF NEW.task_id IS DISTINCT FROM OLD.task_id THEN
         IF OLD.task_id IS NOT NULL OR NEW.task_id IS NULL

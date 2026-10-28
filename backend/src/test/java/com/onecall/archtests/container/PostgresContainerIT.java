@@ -425,7 +425,7 @@ class PostgresContainerIT {
                 java.util.Map.entry("ck_inbound_session_caller_shape",
                         "CHECK (((trusted_caller = false) OR ((caller_ciphertext IS NOT NULL) AND (caller_number_hmac IS NOT NULL) AND (caller_masked IS NOT NULL))))"),
                 java.util.Map.entry("ck_inbound_session_confirmed_shape",
-                        "CHECK ((((status = 'CONFIRMED'::text) = (confirmed_at IS NOT NULL)) AND ((status <> 'CONFIRMED'::text) OR ((trusted_caller = true) AND (confirmed_subject_id IS NOT NULL)))))"),
+                         "CHECK ((((status = 'CONFIRMED'::text) = (confirmed_at IS NOT NULL)) AND ((status <> 'CONFIRMED'::text) OR ((trusted_caller = true) AND (confirmed_subject_id IS NOT NULL) AND (NOT (confirmed_subject_id IS DISTINCT FROM subject_id)))) AND ((status = 'CONFIRMED'::text) OR (confirmed_subject_id IS NULL))))"),
                 java.util.Map.entry("ck_inbound_session_guidance",
                         "CHECK (((guidance_status IS NULL) OR (guidance_status = ANY (ARRAY['ACTIVATION_REQUIRED'::text, 'CONSENT_REQUIRED'::text]))))"),
                 java.util.Map.entry("ck_inbound_session_node",
@@ -497,7 +497,7 @@ class PostgresContainerIT {
                 java.util.Map.entry("ck_call_event_payload_ciphertext",
                         "CHECK ((payload_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
                 java.util.Map.entry("ck_call_event_payload_redacted",
-                        "CHECK (((jsonb_typeof(payload_redacted) = 'object'::text) AND (payload_redacted ? 'source'::text) AND (payload_redacted ? 'receipt'::text) AND (jsonb_typeof((payload_redacted -> 'source'::text)) = 'object'::text) AND (jsonb_typeof((payload_redacted -> 'receipt'::text)) = 'object'::text) AND (((payload_redacted - 'source'::text) - 'receipt'::text) = '{}'::jsonb) AND ((((((payload_redacted -> 'source'::text) - 'eventType'::text) - 'legId'::text) - 'sequenceNo'::text) - 'payload'::text) = '{}'::jsonb) AND ((((payload_redacted -> 'receipt'::text) - 'payloadSha256'::text) - 'eventFingerprint'::text) = '{}'::jsonb) AND ((payload_redacted -> 'source'::text) ? 'payload'::text) AND (jsonb_typeof(((payload_redacted -> 'source'::text) -> 'payload'::text)) = 'object'::text) AND ((payload_redacted -> 'receipt'::text) ? 'payloadSha256'::text) AND (jsonb_typeof(((payload_redacted -> 'receipt'::text) -> 'payloadSha256'::text)) = 'string'::text) AND ((payload_redacted -> 'receipt'::text) ? 'eventFingerprint'::text) AND (((payload_redacted -> 'receipt'::text) ->> 'payloadSha256'::text) = payload_sha256)))"),
+                         "CHECK (((jsonb_typeof(payload_redacted) = 'object'::text) AND (payload_redacted ? 'source'::text) AND (payload_redacted ? 'receipt'::text) AND (jsonb_typeof((payload_redacted -> 'source'::text)) = 'object'::text) AND (jsonb_typeof((payload_redacted -> 'receipt'::text)) = 'object'::text) AND (((payload_redacted - 'source'::text) - 'receipt'::text) = '{}'::jsonb) AND ((((((payload_redacted -> 'source'::text) - 'eventType'::text) - 'legId'::text) - 'sequenceNo'::text) - 'payload'::text) = '{}'::jsonb) AND ((((payload_redacted -> 'receipt'::text) - 'payloadSha256'::text) - 'eventFingerprint'::text) = '{}'::jsonb) AND ((payload_redacted -> 'source'::text) ? 'eventType'::text) AND (jsonb_typeof(((payload_redacted -> 'source'::text) -> 'eventType'::text)) = 'string'::text) AND (btrim(((payload_redacted -> 'source'::text) ->> 'eventType'::text)) <> ''::text) AND ((payload_redacted -> 'source'::text) ? 'legId'::text) AND ((jsonb_typeof(((payload_redacted -> 'source'::text) -> 'legId'::text)) = 'string'::text) OR (((payload_redacted -> 'source'::text) -> 'legId'::text) = 'null'::jsonb)) AND ((payload_redacted -> 'source'::text) ? 'sequenceNo'::text) AND ((jsonb_typeof(((payload_redacted -> 'source'::text) -> 'sequenceNo'::text)) = 'number'::text) OR (((payload_redacted -> 'source'::text) -> 'sequenceNo'::text) = 'null'::jsonb)) AND ((payload_redacted -> 'source'::text) ? 'payload'::text) AND (jsonb_typeof(((payload_redacted -> 'source'::text) -> 'payload'::text)) = 'object'::text) AND ((payload_redacted -> 'receipt'::text) ? 'payloadSha256'::text) AND (jsonb_typeof(((payload_redacted -> 'receipt'::text) -> 'payloadSha256'::text)) = 'string'::text) AND ((payload_redacted -> 'receipt'::text) ? 'eventFingerprint'::text) AND (jsonb_typeof(((payload_redacted -> 'receipt'::text) -> 'eventFingerprint'::text)) = 'string'::text) AND (((payload_redacted -> 'receipt'::text) ->> 'eventFingerprint'::text) ~ '^[0-9a-f]{64}$'::text) AND (((payload_redacted -> 'receipt'::text) ->> 'payloadSha256'::text) = payload_sha256)))"),
                 java.util.Map.entry("ck_call_event_payload_sha",
                         "CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))"),
                 java.util.Map.entry("ck_call_event_processing_status",
@@ -12767,6 +12767,10 @@ class PostgresContainerIT {
                 expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_TERMINAL",
                         "UPDATE ivr.outbound_call_task SET status = 'PENDING' WHERE id = ?",
                         taskId);
+                expectSqlFailure(connection, "P0001", "OUTBOUND_CALL_TASK_TERMINAL",
+                        "UPDATE ivr.outbound_call_task SET reason_code = 'LATE', "
+                                + "updated_at = now(), revision = revision + 1 WHERE id = ?",
+                        taskId);
                 switchLocalRole(connection, "ivr_role");
 
                 // After the first task is terminal, a new PENDING task for the same caller
@@ -13192,6 +13196,14 @@ class PostgresContainerIT {
                         "UPDATE ivr.call_record SET status = 'UNKNOWN', revision = revision + 1 "
                                 + "WHERE id = ? AND status = 'ACTIVE' AND revision = 1",
                         occupancyUnknownCallId)).isEqualTo(1);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_TERMINAL",
+                        "UPDATE ivr.call_record SET status = 'REJECTED', end_reason = 'CALL_IN_PROGRESS', "
+                                + "revision = revision + 1 WHERE id = ?",
+                        occupancyUnknownCallId);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_TERMINAL",
+                        "UPDATE ivr.call_record SET end_reason = 'LATE', revision = revision + 1 "
+                                + "WHERE id = ?",
+                        occupancyUnknownCallId);
                 // Probe uses a fresh session: uq_call_record_session is one call per session
                 // and would otherwise fire before the caller occupancy unique.
                 UUID occupancyProbeSession = UUID.randomUUID();
@@ -13218,6 +13230,10 @@ class PostgresContainerIT {
                                 + "authoritative_seconds = 1, revision = revision + 1 "
                                 + "WHERE id = ? AND status = 'ACTIVE' AND revision = 1",
                         terminalCallId)).isEqualTo(1);
+                expectSqlFailure(connection, "P0001", "CALL_RECORD_TERMINAL",
+                        "UPDATE ivr.call_record SET end_reason = 'LATE', revision = revision + 1 "
+                                + "WHERE id = ?",
+                        terminalCallId);
                 assertThat(executeUpdate(connection,
                         "UPDATE ivr.call_record "
                                 + "SET status = 'ENDED', ended_at = now(), end_reason = 'COMPLETE', "
@@ -13389,6 +13405,19 @@ class PostgresContainerIT {
                         .containsExactlyInAnyOrderElementsOf(
                                 v005ExpectedCheckNames("inbound_session"));
                 assertThat(probed).hasSize(14);
+
+                Object[] confirmedMismatch = v005ValidSessionParams(UUID.randomUUID(),
+                        v005CallId(), subjectId, hmac);
+                confirmedMismatch[11] = "CONFIRMED";
+                confirmedMismatch[12] = UUID.randomUUID();
+                confirmedMismatch[15] = OffsetDateTime.now(ZoneOffset.UTC);
+                expectSqlFailure(connection, "23514", "ck_inbound_session_confirmed_shape",
+                        v005SessionProbeSql(), confirmedMismatch);
+                Object[] unconfirmedSubject = v005ValidSessionParams(UUID.randomUUID(),
+                        v005CallId(), subjectId, hmac);
+                unconfirmedSubject[12] = subjectId;
+                expectSqlFailure(connection, "23514", "ck_inbound_session_confirmed_shape",
+                        v005SessionProbeSql(), unconfirmedSubject);
 
                 List<String> callProbed = new ArrayList<>();
                 Object[] badCalleeCipher = callProbeBase(UUID.randomUUID(), v005CallId(),
@@ -13873,6 +13902,16 @@ class PostgresContainerIT {
                         .as("all 10 call_event named checks have an isolated probe")
                         .containsExactlyInAnyOrderElementsOf(v005ExpectedCheckNames("call_event"));
                 assertThat(eventProbed).hasSize(10);
+                for (Object[] malformed : List.of(
+                        eventProbeMissingSourceMember(callId, "eventType"),
+                        eventProbeMissingSourceMember(callId, "legId"),
+                        eventProbeMissingSourceMember(callId, "sequenceNo"),
+                        eventProbeBadEventFingerprint(callId, "null"),
+                        eventProbeBadEventFingerprint(callId, "123"),
+                        eventProbeBadEventFingerprint(callId, "\"not-a-hash\""))) {
+                    expectSqlFailure(connection, "23514", "ck_call_event_payload_redacted",
+                            v005EventProbeSql(), malformed);
+                }
 
                 List<String> decisionProbed = new ArrayList<>();
                 List<CheckProbe> decisionProbes = List.of(
@@ -13995,6 +14034,67 @@ class PostgresContainerIT {
         params[8] = v005EventRedactedJson(badSha, randomSha256());
         params[9] = badSha;
         return params;
+    }
+
+    private static Object[] eventProbeMissingSourceMember(String callId, String missingMember) {
+        Object[] params = v005ValidEventParams(UUID.randomUUID(), callId, v005EventId(), "84",
+                randomSha256());
+        String eventFingerprint = randomSha256();
+        String source = "{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                + "\"sequenceNo\":1,\"payload\":{}}";
+        source = source.replace("\"" + missingMember + "\":\"SESSION_START\",", "")
+                .replace("\"" + missingMember + "\":\"leg-1\",", "")
+                .replace("\"" + missingMember + "\":1,", "");
+        params[8] = "{\"source\":" + source + ",\"receipt\":{\"payloadSha256\":\""
+                + params[9] + "\",\"eventFingerprint\":\"" + eventFingerprint + "\"}}";
+        return params;
+    }
+
+    private static Object[] eventProbeBadEventFingerprint(String callId, String fingerprintJson) {
+        Object[] params = v005ValidEventParams(UUID.randomUUID(), callId, v005EventId(), "85",
+                randomSha256());
+        params[8] = "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                + "\"sequenceNo\":1,\"payload\":{}},\"receipt\":{\"payloadSha256\":\""
+                + params[9] + "\",\"eventFingerprint\":" + fingerprintJson + "}}";
+        return params;
+    }
+
+    /**
+     * The confirmed-subject FK is logically preempted by the session-subject FK once the
+     * confirmed-shape check requires the two ids to match. Drop only that preempting FK inside
+     * a savepoint, use one missing id for both columns, and roll back so the catalog is restored.
+     */
+    private static void expectInboundConfirmedSubjectForeignKeyViolationWithIsolatedSubjectFk(
+            Connection connection, String callId, String hmac) throws SQLException {
+        UUID missingSubjectId = UUID.randomUUID();
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "ivr_owner");
+            execute(connection,
+                    "ALTER TABLE ivr.inbound_session DROP CONSTRAINT fk_inbound_session_subject");
+            switchLocalRole(connection, "ivr_role");
+            expectSqlFailure(connection, "23503", "fk_inbound_session_confirmed_subject",
+                    "INSERT INTO ivr.inbound_session "
+                            + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                            + "caller_number_hmac, caller_masked, access_number_masked, "
+                            + "node_id, protocol_version, prompt_version, status, "
+                            + "confirmed_subject_id, confirmed_at) "
+                            + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1', "
+                            + "'CONFIRMED', ?, now())",
+                    UUID.randomUUID(), callId, missingSubjectId, v005Ciphertext(), hmac,
+                    v005Masked(), v005Masked(), missingSubjectId);
+        } finally {
+            connection.rollback(savepoint);
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND r.relname = 'inbound_session' "
+                        + "AND c.conname IN ('fk_inbound_session_subject',"
+                        + "'fk_inbound_session_confirmed_subject')"))
+                .as("the transaction-local subject-FK isolation is fully rolled back")
+                .isEqualTo(2);
+        switchLocalRole(connection, "ivr_role");
     }
 
     private static Object[] decisionProbeSourceNullDomain(
@@ -14194,16 +14294,8 @@ class PostgresContainerIT {
                         randomSha256(), v005Masked(), v005Masked());
                 fkProbed.add("fk_inbound_session_subject");
 
-                expectSqlFailure(connection, "23503", "fk_inbound_session_confirmed_subject",
-                        "INSERT INTO ivr.inbound_session "
-                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
-                                + "caller_number_hmac, caller_masked, access_number_masked, "
-                                + "node_id, protocol_version, prompt_version, status, "
-                                + "confirmed_subject_id, confirmed_at) "
-                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1', "
-                                + "'CONFIRMED', ?, now())",
-                        UUID.randomUUID(), v005CallId(), subjectId, v005Ciphertext(), randomSha256(),
-                        v005Masked(), v005Masked(), UUID.randomUUID());
+                expectInboundConfirmedSubjectForeignKeyViolationWithIsolatedSubjectFk(connection,
+                        v005CallId(), hmac);
                 fkProbed.add("fk_inbound_session_confirmed_subject");
 
                 expectSqlFailure(connection, "23503", "fk_call_record_session",
