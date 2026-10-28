@@ -1523,11 +1523,13 @@ Named checks:
 - `ck_call_event_sequence`: `sequence_no IS NULL OR sequence_no >= 1`.
 - `ck_call_event_type`: `length(event_type) BETWEEN 1 AND 64 AND btrim(event_type) <> ''`.
 - `ck_call_event_payload_ciphertext`: `payload_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
-- `ck_call_event_payload_redacted`: `jsonb_typeof(payload_redacted) = 'object' AND payload_redacted ? 'source' AND payload_redacted ? 'receipt' AND jsonb_typeof(payload_redacted->'source') = 'object' AND jsonb_typeof(payload_redacted->'receipt') = 'object' AND (payload_redacted - 'source' - 'receipt') = '{}'::jsonb AND (payload_redacted->'source' - 'eventType' - 'legId' - 'sequenceNo' - 'payload') = '{}'::jsonb AND (payload_redacted->'receipt' - 'payloadSha256' - 'eventFingerprint') = '{}'::jsonb AND (payload_redacted->'source') ? 'payload' AND (payload_redacted->'receipt') ? 'payloadSha256' AND (payload_redacted->'receipt') ? 'eventFingerprint' AND payload_redacted->'receipt'->>'payloadSha256' = payload_sha256`.
+- `ck_call_event_payload_redacted`: `jsonb_typeof(payload_redacted) = 'object' AND payload_redacted ? 'source' AND payload_redacted ? 'receipt' AND jsonb_typeof(payload_redacted->'source') = 'object' AND jsonb_typeof(payload_redacted->'receipt') = 'object' AND (payload_redacted - 'source' - 'receipt') = '{}'::jsonb AND (payload_redacted->'source' - 'eventType' - 'legId' - 'sequenceNo' - 'payload') = '{}'::jsonb AND (payload_redacted->'receipt' - 'payloadSha256' - 'eventFingerprint') = '{}'::jsonb AND (payload_redacted->'source') ? 'payload' AND jsonb_typeof(payload_redacted->'source'->'payload') = 'object' AND (payload_redacted->'receipt') ? 'payloadSha256' AND jsonb_typeof(payload_redacted->'receipt'->'payloadSha256') = 'string' AND (payload_redacted->'receipt') ? 'eventFingerprint' AND payload_redacted->'receipt'->>'payloadSha256' = payload_sha256`.
 - `ck_call_event_payload_sha`: `payload_sha256 ~ '^[0-9a-f]{64}$'`.
 - `ck_call_event_processing_status`: `processing_status IN ('RECEIVED','APPLIED','IGNORED','QUARANTINED')`.
 - `ck_call_event_reason`: `reason_code IS NULL OR (length(reason_code) BETWEEN 1 AND 64 AND btrim(reason_code) <> '')`.
 - `ck_call_event_revision`: `revision >= 1`.
+
+Errata (PA5 S1 fix-1, user-authorized bounded frozen-contract errata, 2026-10-28): `ck_call_event_payload_redacted` additionally requires `jsonb_typeof(payload_redacted->'source'->'payload') = 'object'` and `jsonb_typeof(payload_redacted->'receipt'->'payloadSha256') = 'string'`, so a JSON-null or non-object `source.payload` and a JSON-null `receipt.payloadSha256` fail closed instead of passing under SQL NULL three-valued logic. This is the accepted F-PA5-S1-02 correction; the check name, the 73-check count, the key-existence/structure/hash-equality conjuncts and every other contract are unchanged, and no canonical-hashing or service semantics are added.
 
 Keys and indexes:
 
@@ -1567,16 +1569,18 @@ Purpose: frozen, purpose-discriminated IVR decision and typed response. Owner: `
 Named checks:
 
 - `ck_ivr_decision_purpose`: `purpose IN ('INBOUND_RESOLVE','ACTIVATION_NEXT_ACTION','DIRECT_AUTHORIZATION')`.
-- `ck_ivr_decision_source`: `(purpose = 'INBOUND_RESOLVE' AND source_event_domain IS NULL AND source_event_id IS NULL) OR (purpose = 'ACTIVATION_NEXT_ACTION' AND source_event_domain = 'IVR_CONFIRM' AND length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> '') OR (purpose = 'DIRECT_AUTHORIZATION' AND source_event_domain = 'IVR_DIRECT_AUTH' AND length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> '')`.
+- `ck_ivr_decision_source`: `(purpose = 'INBOUND_RESOLVE' AND source_event_domain IS NULL AND source_event_id IS NULL) OR (purpose = 'ACTIVATION_NEXT_ACTION' AND source_event_domain IS NOT NULL AND source_event_id IS NOT NULL AND source_event_domain = 'IVR_CONFIRM' AND length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> '') OR (purpose = 'DIRECT_AUTHORIZATION' AND source_event_domain IS NOT NULL AND source_event_id IS NOT NULL AND source_event_domain = 'IVR_DIRECT_AUTH' AND length(source_event_id) BETWEEN 1 AND 128 AND btrim(source_event_id) <> '')`.
 - `ck_ivr_decision_fingerprint`: `request_fingerprint ~ '^[0-9a-f]{64}$'`.
 - `ck_ivr_decision_action`: `action IS NULL OR action IN ('GUIDE_ACTIVATION','DIAL_TASK_CALLEE','ENTER_CALLEE','GUIDE_PURCHASE','REJECT','REJECT_SUSPENDED','REJECT_CALL_IN_PROGRESS')`.
 - `ck_ivr_decision_reason`: `reason_code IN ('ACTIVATION_REQUIRED','CONSENT_REQUIRED','CALLER_UNTRUSTED','SESSION_IDENTITY_MISMATCH','CALL_IN_PROGRESS','CONFIRMATION_NOT_ALLOWED','ACTIVATION_SUSPENDED','CALLER_BINDING_REVOKED','WORKSPACE_ACCESS_REVOKED','TASK_ACCESS_REVOKED','ORGANIZATION_INACTIVE','ACCOUNT_DISABLED','CALL_STATE_UNRESOLVED','TASK_CONFLICT','TASK_CLAIMED','NO_AVAILABLE_ENTITLEMENT','NO_VALID_TASK','TASK_EXPIRED','TASK_UNAVAILABLE','DIRECT_AUTHORIZED','DATA_INTEGRITY')`.
 - `ck_ivr_decision_direct_reason`: `(action IS NULL) = (reason_code = 'DIRECT_AUTHORIZED')`.
-- `ck_ivr_decision_shape`: `(purpose IN ('INBOUND_RESOLVE','ACTIVATION_NEXT_ACTION') AND action IS NOT NULL AND ((action = 'DIAL_TASK_CALLEE' AND reservation_id IS NOT NULL) OR (action <> 'DIAL_TASK_CALLEE' AND reservation_id IS NULL))) OR (purpose = 'DIRECT_AUTHORIZATION' AND ((action IS NULL AND reservation_id IS NOT NULL) OR (action IN ('GUIDE_PURCHASE','REJECT','REJECT_SUSPENDED','REJECT_CALL_IN_PROGRESS') AND reservation_id IS NULL)))`.
+- `ck_ivr_decision_shape`: `(purpose IN ('INBOUND_RESOLVE','ACTIVATION_NEXT_ACTION') AND action IS NOT NULL AND ((action = 'DIAL_TASK_CALLEE' AND reservation_id IS NOT NULL) OR (action <> 'DIAL_TASK_CALLEE' AND reservation_id IS NULL))) OR (purpose = 'DIRECT_AUTHORIZATION' AND ((action IS NULL AND reservation_id IS NOT NULL) OR (action IS NOT NULL AND action IN ('GUIDE_PURCHASE','REJECT','REJECT_SUSPENDED','REJECT_CALL_IN_PROGRESS') AND reservation_id IS NULL)))`.
 - `ck_ivr_decision_snapshot`: `jsonb_typeof(response_snapshot) = 'object'`.
 - `ck_ivr_decision_payload`: `response_payload_ciphertext ~ '^v1\.[A-Za-z0-9._:/-]+\..+$'`.
 - `ck_ivr_decision_sha`: `response_sha256 ~ '^[0-9a-f]{64}$'`.
 - `ck_ivr_decision_key_version`: `key_version >= 1`.
+
+Errata (PA5 S1 fix-1, user-authorized bounded frozen-contract errata, 2026-10-28): `ck_ivr_decision_source` now explicitly requires non-NULL `source_event_domain` and non-NULL `source_event_id` in the `ACTIVATION_NEXT_ACTION` and `DIRECT_AUTHORIZATION` branches in addition to the existing domain-equality and nonblank 1-128 checks (NULL source identity remains exclusive to `INBOUND_RESOLVE`), and `ck_ivr_decision_shape` now explicitly requires `action IS NOT NULL` in the `DIRECT_AUTHORIZATION` refusal branch in addition to the existing four-action membership and NULL-reservation checks (direct success remains `action` NULL with non-NULL `reservation_id`). This is the accepted F-PA5-S1-01 correction of the SQL NULL three-valued-logic gaps; check names, the 73-check count, all other action/reason combinations, keys, indexes and the section 10.14 reservation semantics are unchanged.
 
 Keys and indexes:
 

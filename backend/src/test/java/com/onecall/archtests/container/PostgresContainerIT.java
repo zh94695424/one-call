@@ -160,6 +160,14 @@ class PostgresContainerIT {
             "catalog_order.payment_event",
             "catalog_order.payment_order");
 
+    private static final List<String> V005_TABLES = List.of(
+            "ivr.call_event",
+            "ivr.call_leg",
+            "ivr.call_record",
+            "ivr.inbound_session",
+            "ivr.ivr_decision",
+            "ivr.outbound_call_task");
+
     /**
      * F-PA4-PR-01: frozen mapping of bare table name -&gt; (check name -&gt; expected PostgreSQL 16
      * canonical {@code pg_get_constraintdef} output) for all 51 V004 named checks. Each literal
@@ -357,6 +365,247 @@ class PostgresContainerIT {
             "CREATE UNIQUE INDEX uq_payment_order_merchant ON catalog_order.payment_order USING btree (merchant_order_no)",
             "CREATE UNIQUE INDEX uq_payment_order_order ON catalog_order.payment_order USING btree (order_id)",
             "CREATE UNIQUE INDEX uq_payment_order_transaction ON catalog_order.payment_order USING btree (provider_transaction_id) WHERE (provider_transaction_id IS NOT NULL)");
+
+    /**
+     * PA5 V005: frozen mapping of bare table name -&gt; (check name -&gt; expected PostgreSQL 16
+     * canonical {@code pg_get_constraintdef} output) for all 73 V005 named checks. Each literal
+     * derives from the accepted plan / docs/14 frozen dictionaries and is compared by
+     * whole-definition equality after ASCII-whitespace-only normalization. Substring/contains/
+     * prefix/regex/semantic equivalence is forbidden.
+     */
+    private static final Map<String, Map<String, String>> V005_CHECK_DEF_MAP;
+
+    static {
+        Map<String, Map<String, String>> map = new java.util.LinkedHashMap<>();
+        Map<String, String> outbound = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_outbound_task_business_type",
+                        "CHECK ((((length(business_type) >= 1) AND (length(business_type) <= 64)) AND (btrim(business_type) <> ''::text)))"),
+                java.util.Map.entry("ck_outbound_task_callee_ciphertext",
+                        "CHECK ((callee_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                java.util.Map.entry("ck_outbound_task_callee_masked",
+                        "CHECK ((((length(callee_masked) >= 1) AND (length(callee_masked) <= 64)) AND (btrim(callee_masked) <> ''::text)))"),
+                java.util.Map.entry("ck_outbound_task_caller_hmac",
+                        "CHECK ((caller_number_hmac ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_outbound_task_claimed_shape",
+                        "CHECK (((claimed_call_id IS NULL) = (claimed_at IS NULL)))"),
+                java.util.Map.entry("ck_outbound_task_expiry",
+                        "CHECK ((expires_at > created_at))"),
+                java.util.Map.entry("ck_outbound_task_fingerprint",
+                        "CHECK ((request_fingerprint ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_outbound_task_idempotency_key",
+                        "CHECK ((((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 512)) AND (btrim(idempotency_key) <> ''::text)))"),
+                java.util.Map.entry("ck_outbound_task_reason",
+                        "CHECK (((reason_code IS NULL) OR (((length(reason_code) >= 1) AND (length(reason_code) <= 64)) AND (btrim(reason_code) <> ''::text))))"),
+                java.util.Map.entry("ck_outbound_task_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_outbound_task_single_owner",
+                        "CHECK ((num_nonnulls(owner_account_id, owner_organization_id) = 1))"),
+                java.util.Map.entry("ck_outbound_task_status",
+                        "CHECK ((status = ANY (ARRAY['PENDING'::text, 'CLAIMED'::text, 'REPLACED'::text, 'CANCELLED'::text, 'EXPIRED'::text, 'REJECTED'::text, 'COMPLETED'::text, 'FAILED'::text])))"),
+                java.util.Map.entry("ck_outbound_task_task_id",
+                        "CHECK ((((length(task_id) >= 1) AND (length(task_id) <= 64)) AND (btrim(task_id) <> ''::text)))"),
+                java.util.Map.entry("ck_outbound_task_terminal_shape",
+                        "CHECK (((status = ANY (ARRAY['PENDING'::text, 'CLAIMED'::text])) = (terminal_at IS NULL)))"),
+                java.util.Map.entry("ck_outbound_task_time_order",
+                        "CHECK (((updated_at >= created_at) AND ((terminal_at IS NULL) OR (terminal_at >= created_at))))"),
+                java.util.Map.entry("ck_outbound_task_ttl",
+                        "CHECK ((ttl_seconds >= 1))")));
+        map.put("outbound_call_task", java.util.Collections.unmodifiableMap(outbound));
+        Map<String, String> inbound = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_inbound_session_access_masked",
+                        "CHECK ((((length(access_number_masked) >= 1) AND (length(access_number_masked) <= 64)) AND (btrim(access_number_masked) <> ''::text)))"),
+                java.util.Map.entry("ck_inbound_session_call_id",
+                        "CHECK ((((length(call_id) >= 1) AND (length(call_id) <= 128)) AND (btrim(call_id) <> ''::text)))"),
+                java.util.Map.entry("ck_inbound_session_caller_ciphertext",
+                        "CHECK (((caller_ciphertext IS NULL) OR (caller_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text)))"),
+                java.util.Map.entry("ck_inbound_session_caller_hmac",
+                        "CHECK (((caller_number_hmac IS NULL) OR (caller_number_hmac ~ '^[0-9a-f]{64}$'::text)))"),
+                java.util.Map.entry("ck_inbound_session_caller_masked",
+                        "CHECK (((caller_masked IS NULL) OR (((length(caller_masked) >= 1) AND (length(caller_masked) <= 64)) AND (btrim(caller_masked) <> ''::text))))"),
+                java.util.Map.entry("ck_inbound_session_caller_shape",
+                        "CHECK (((trusted_caller = false) OR ((caller_ciphertext IS NOT NULL) AND (caller_number_hmac IS NOT NULL) AND (caller_masked IS NOT NULL))))"),
+                java.util.Map.entry("ck_inbound_session_confirmed_shape",
+                        "CHECK ((((status = 'CONFIRMED'::text) = (confirmed_at IS NOT NULL)) AND ((status <> 'CONFIRMED'::text) OR ((trusted_caller = true) AND (confirmed_subject_id IS NOT NULL)))))"),
+                java.util.Map.entry("ck_inbound_session_guidance",
+                        "CHECK (((guidance_status IS NULL) OR (guidance_status = ANY (ARRAY['ACTIVATION_REQUIRED'::text, 'CONSENT_REQUIRED'::text]))))"),
+                java.util.Map.entry("ck_inbound_session_node",
+                        "CHECK ((((length(node_id) >= 1) AND (length(node_id) <= 64)) AND (btrim(node_id) <> ''::text)))"),
+                java.util.Map.entry("ck_inbound_session_prompt",
+                        "CHECK ((((length(prompt_version) >= 1) AND (length(prompt_version) <= 64)) AND (btrim(prompt_version) <> ''::text)))"),
+                java.util.Map.entry("ck_inbound_session_protocol",
+                        "CHECK ((((length(protocol_version) >= 1) AND (length(protocol_version) <= 32)) AND (btrim(protocol_version) <> ''::text)))"),
+                java.util.Map.entry("ck_inbound_session_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_inbound_session_status",
+                        "CHECK ((status = ANY (ARRAY['RECEIVED'::text, 'CONFIRMED'::text, 'ABANDONED'::text, 'REJECTED'::text])))"),
+                java.util.Map.entry("ck_inbound_session_time_order",
+                        "CHECK (((confirmed_at IS NULL) OR (confirmed_at >= created_at)))")));
+        map.put("inbound_session", java.util.Collections.unmodifiableMap(inbound));
+        Map<String, String> callRecord = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_call_record_access_masked",
+                        "CHECK ((((length(access_number_masked) >= 1) AND (length(access_number_masked) <= 64)) AND (btrim(access_number_masked) <> ''::text)))"),
+                java.util.Map.entry("ck_call_record_authoritative_seconds",
+                        "CHECK (((authoritative_seconds IS NULL) OR ((authoritative_seconds >= 0) AND (status = ANY (ARRAY['ENDED'::text, 'FAILED'::text])))))"),
+                java.util.Map.entry("ck_call_record_callee_ciphertext",
+                        "CHECK (((callee_ciphertext IS NULL) OR (callee_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text)))"),
+                java.util.Map.entry("ck_call_record_callee_masked",
+                        "CHECK (((callee_masked IS NULL) OR (((length(callee_masked) >= 1) AND (length(callee_masked) <= 64)) AND (btrim(callee_masked) <> ''::text))))"),
+                java.util.Map.entry("ck_call_record_call_id",
+                        "CHECK ((((length(call_id) >= 1) AND (length(call_id) <= 128)) AND (btrim(call_id) <> ''::text)))"),
+                java.util.Map.entry("ck_call_record_caller_ciphertext",
+                        "CHECK ((caller_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                java.util.Map.entry("ck_call_record_caller_hmac",
+                        "CHECK ((caller_number_hmac ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_call_record_caller_masked",
+                        "CHECK ((((length(caller_masked) >= 1) AND (length(caller_masked) <= 64)) AND (btrim(caller_masked) <> ''::text)))"),
+                java.util.Map.entry("ck_call_record_end_reason",
+                        "CHECK (((end_reason IS NULL) OR (((length(end_reason) >= 1) AND (length(end_reason) <= 64)) AND (btrim(end_reason) <> ''::text))))"),
+                java.util.Map.entry("ck_call_record_node",
+                        "CHECK ((((length(node_id) >= 1) AND (length(node_id) <= 64)) AND (btrim(node_id) <> ''::text)))"),
+                java.util.Map.entry("ck_call_record_protocol",
+                        "CHECK ((((length(protocol_version) >= 1) AND (length(protocol_version) <= 32)) AND (btrim(protocol_version) <> ''::text)))"),
+                java.util.Map.entry("ck_call_record_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_call_record_status",
+                        "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'ENDED'::text, 'FAILED'::text, 'UNKNOWN'::text, 'REJECTED'::text])))"),
+                java.util.Map.entry("ck_call_record_terminal_shape",
+                        "CHECK (((status = ANY (ARRAY['ACTIVE'::text, 'UNKNOWN'::text])) = (ended_at IS NULL)))"),
+                java.util.Map.entry("ck_call_record_time_order",
+                        "CHECK ((((started_at IS NULL) OR (ended_at IS NULL) OR (ended_at >= started_at)) AND ((started_at IS NULL) OR (bridged_at IS NULL) OR (bridged_at >= started_at)) AND ((started_at IS NULL) OR (recording_started_at IS NULL) OR (recording_started_at >= started_at)) AND ((recording_started_at IS NULL) OR (recording_ended_at IS NULL) OR (recording_ended_at >= recording_started_at))))")));
+        map.put("call_record", java.util.Collections.unmodifiableMap(callRecord));
+        Map<String, String> callLeg = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_call_leg_direction",
+                        "CHECK ((((leg_type = 'CALLER'::text) AND (direction = 'INBOUND'::text)) OR ((leg_type = 'CALLEE'::text) AND (direction = 'OUTBOUND'::text))))"),
+                java.util.Map.entry("ck_call_leg_end_reason",
+                        "CHECK (((end_reason IS NULL) OR (((length(end_reason) >= 1) AND (length(end_reason) <= 64)) AND (btrim(end_reason) <> ''::text))))"),
+                java.util.Map.entry("ck_call_leg_leg_id",
+                        "CHECK ((((length(leg_id) >= 1) AND (length(leg_id) <= 64)) AND (btrim(leg_id) <> ''::text)))"),
+                java.util.Map.entry("ck_call_leg_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_call_leg_state",
+                        "CHECK ((state = ANY (ARRAY['RINGING'::text, 'ANSWERED'::text, 'ENDED'::text, 'FAILED'::text])))"),
+                java.util.Map.entry("ck_call_leg_time_order",
+                        "CHECK ((((answered_at IS NULL) OR (answered_at >= started_at)) AND ((ended_at IS NULL) OR (ended_at >= started_at)) AND ((answered_at IS NULL) OR (ended_at IS NULL) OR (ended_at >= answered_at))))"),
+                java.util.Map.entry("ck_call_leg_type",
+                        "CHECK ((leg_type = ANY (ARRAY['CALLER'::text, 'CALLEE'::text])))")));
+        map.put("call_leg", java.util.Collections.unmodifiableMap(callLeg));
+        Map<String, String> callEvent = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_call_event_domain",
+                        "CHECK ((event_domain = 'IVR_EVENT'::text))"),
+                java.util.Map.entry("ck_call_event_event_id",
+                        "CHECK ((((length(event_id) >= 1) AND (length(event_id) <= 128)) AND (btrim(event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_call_event_payload_ciphertext",
+                        "CHECK ((payload_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                java.util.Map.entry("ck_call_event_payload_redacted",
+                        "CHECK (((jsonb_typeof(payload_redacted) = 'object'::text) AND (payload_redacted ? 'source'::text) AND (payload_redacted ? 'receipt'::text) AND (jsonb_typeof((payload_redacted -> 'source'::text)) = 'object'::text) AND (jsonb_typeof((payload_redacted -> 'receipt'::text)) = 'object'::text) AND (((payload_redacted - 'source'::text) - 'receipt'::text) = '{}'::jsonb) AND ((((((payload_redacted -> 'source'::text) - 'eventType'::text) - 'legId'::text) - 'sequenceNo'::text) - 'payload'::text) = '{}'::jsonb) AND ((((payload_redacted -> 'receipt'::text) - 'payloadSha256'::text) - 'eventFingerprint'::text) = '{}'::jsonb) AND ((payload_redacted -> 'source'::text) ? 'payload'::text) AND (jsonb_typeof(((payload_redacted -> 'source'::text) -> 'payload'::text)) = 'object'::text) AND ((payload_redacted -> 'receipt'::text) ? 'payloadSha256'::text) AND (jsonb_typeof(((payload_redacted -> 'receipt'::text) -> 'payloadSha256'::text)) = 'string'::text) AND ((payload_redacted -> 'receipt'::text) ? 'eventFingerprint'::text) AND (((payload_redacted -> 'receipt'::text) ->> 'payloadSha256'::text) = payload_sha256)))"),
+                java.util.Map.entry("ck_call_event_payload_sha",
+                        "CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_call_event_processing_status",
+                        "CHECK ((processing_status = ANY (ARRAY['RECEIVED'::text, 'APPLIED'::text, 'IGNORED'::text, 'QUARANTINED'::text])))"),
+                java.util.Map.entry("ck_call_event_reason",
+                        "CHECK (((reason_code IS NULL) OR (((length(reason_code) >= 1) AND (length(reason_code) <= 64)) AND (btrim(reason_code) <> ''::text))))"),
+                java.util.Map.entry("ck_call_event_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_call_event_sequence",
+                        "CHECK (((sequence_no IS NULL) OR (sequence_no >= 1)))"),
+                java.util.Map.entry("ck_call_event_type",
+                        "CHECK ((((length(event_type) >= 1) AND (length(event_type) <= 64)) AND (btrim(event_type) <> ''::text)))")));
+        map.put("call_event", java.util.Collections.unmodifiableMap(callEvent));
+        Map<String, String> decision = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_ivr_decision_action",
+                        "CHECK (((action IS NULL) OR (action = ANY (ARRAY['GUIDE_ACTIVATION'::text, 'DIAL_TASK_CALLEE'::text, 'ENTER_CALLEE'::text, 'GUIDE_PURCHASE'::text, 'REJECT'::text, 'REJECT_SUSPENDED'::text, 'REJECT_CALL_IN_PROGRESS'::text]))))"),
+                java.util.Map.entry("ck_ivr_decision_direct_reason",
+                        "CHECK (((action IS NULL) = (reason_code = 'DIRECT_AUTHORIZED'::text)))"),
+                java.util.Map.entry("ck_ivr_decision_fingerprint",
+                        "CHECK ((request_fingerprint ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_ivr_decision_key_version",
+                        "CHECK ((key_version >= 1))"),
+                java.util.Map.entry("ck_ivr_decision_payload",
+                        "CHECK ((response_payload_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                java.util.Map.entry("ck_ivr_decision_purpose",
+                        "CHECK ((purpose = ANY (ARRAY['INBOUND_RESOLVE'::text, 'ACTIVATION_NEXT_ACTION'::text, 'DIRECT_AUTHORIZATION'::text])))"),
+                java.util.Map.entry("ck_ivr_decision_reason",
+                        "CHECK ((reason_code = ANY (ARRAY['ACTIVATION_REQUIRED'::text, 'CONSENT_REQUIRED'::text, 'CALLER_UNTRUSTED'::text, 'SESSION_IDENTITY_MISMATCH'::text, 'CALL_IN_PROGRESS'::text, 'CONFIRMATION_NOT_ALLOWED'::text, 'ACTIVATION_SUSPENDED'::text, 'CALLER_BINDING_REVOKED'::text, 'WORKSPACE_ACCESS_REVOKED'::text, 'TASK_ACCESS_REVOKED'::text, 'ORGANIZATION_INACTIVE'::text, 'ACCOUNT_DISABLED'::text, 'CALL_STATE_UNRESOLVED'::text, 'TASK_CONFLICT'::text, 'TASK_CLAIMED'::text, 'NO_AVAILABLE_ENTITLEMENT'::text, 'NO_VALID_TASK'::text, 'TASK_EXPIRED'::text, 'TASK_UNAVAILABLE'::text, 'DIRECT_AUTHORIZED'::text, 'DATA_INTEGRITY'::text])))"),
+                java.util.Map.entry("ck_ivr_decision_sha",
+                        "CHECK ((response_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_ivr_decision_shape",
+                        "CHECK ((((purpose = ANY (ARRAY['INBOUND_RESOLVE'::text, 'ACTIVATION_NEXT_ACTION'::text])) AND (action IS NOT NULL) AND (((action = 'DIAL_TASK_CALLEE'::text) AND (reservation_id IS NOT NULL)) OR ((action <> 'DIAL_TASK_CALLEE'::text) AND (reservation_id IS NULL)))) OR ((purpose = 'DIRECT_AUTHORIZATION'::text) AND (((action IS NULL) AND (reservation_id IS NOT NULL)) OR ((action IS NOT NULL) AND (action = ANY (ARRAY['GUIDE_PURCHASE'::text, 'REJECT'::text, 'REJECT_SUSPENDED'::text, 'REJECT_CALL_IN_PROGRESS'::text])) AND (reservation_id IS NULL))))))"),
+                java.util.Map.entry("ck_ivr_decision_snapshot",
+                        "CHECK ((jsonb_typeof(response_snapshot) = 'object'::text))"),
+                java.util.Map.entry("ck_ivr_decision_source",
+                        "CHECK ((((purpose = 'INBOUND_RESOLVE'::text) AND (source_event_domain IS NULL) AND (source_event_id IS NULL)) OR ((purpose = 'ACTIVATION_NEXT_ACTION'::text) AND (source_event_domain IS NOT NULL) AND (source_event_id IS NOT NULL) AND (source_event_domain = 'IVR_CONFIRM'::text) AND ((length(source_event_id) >= 1) AND (length(source_event_id) <= 128)) AND (btrim(source_event_id) <> ''::text)) OR ((purpose = 'DIRECT_AUTHORIZATION'::text) AND (source_event_domain IS NOT NULL) AND (source_event_id IS NOT NULL) AND (source_event_domain = 'IVR_DIRECT_AUTH'::text) AND ((length(source_event_id) >= 1) AND (length(source_event_id) <= 128)) AND (btrim(source_event_id) <> ''::text))))")));
+        map.put("ivr_decision", java.util.Collections.unmodifiableMap(decision));
+        V005_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
+    }
+
+    /** Frozen PK/unique constraint inventory for V005: table|name|contype|definition|columns. */
+    private static final List<String> V005_PK_UNIQUE_DEFS = List.of(
+            "call_event|pk_call_event|p|PRIMARY KEY (id)|id",
+            "call_event|uq_call_event_domain_id|u|UNIQUE (event_domain, event_id)|event_domain,event_id",
+            "call_leg|pk_call_leg|p|PRIMARY KEY (id)|id",
+            "call_leg|uq_call_leg_id|u|UNIQUE (call_id, leg_id)|call_id,leg_id",
+            "call_record|pk_call_record|p|PRIMARY KEY (id)|id",
+            "call_record|uq_call_record_call|u|UNIQUE (call_id)|call_id",
+            "call_record|uq_call_record_session|u|UNIQUE (session_id)|session_id",
+            "inbound_session|pk_inbound_session|p|PRIMARY KEY (id)|id",
+            "inbound_session|uq_inbound_session_call|u|UNIQUE (call_id)|call_id",
+            "ivr_decision|pk_ivr_decision|p|PRIMARY KEY (id)|id",
+            "ivr_decision|uq_ivr_decision_call_purpose|u|UNIQUE (call_id, purpose)|call_id,purpose",
+            "outbound_call_task|pk_outbound_call_task|p|PRIMARY KEY (id)|id",
+            "outbound_call_task|uq_outbound_call_task_task_id|u|UNIQUE (task_id)|task_id",
+            "outbound_call_task|uq_outbound_task_idempotency|u|UNIQUE (created_by_account_id, idempotency_key)|created_by_account_id,idempotency_key");
+
+    /** Frozen FK inventory for V005: name|definition|rrs|false|false|true. */
+    private static final List<String> V005_FK_DEFS = List.of(
+            "fk_call_event_call|FOREIGN KEY (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_call_leg_call|FOREIGN KEY (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_call_record_session|FOREIGN KEY (session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_call_record_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_call_record_task|FOREIGN KEY (task_id) REFERENCES ivr.outbound_call_task(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_inbound_session_confirmed_subject|FOREIGN KEY (confirmed_subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_inbound_session_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_ivr_decision_call|FOREIGN KEY (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_ivr_decision_session|FOREIGN KEY (session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_outbound_task_binding|FOREIGN KEY (caller_binding_id) REFERENCES subject_number.caller_number_binding(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_outbound_task_claimed_call|FOREIGN KEY (claimed_call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_outbound_task_creator|FOREIGN KEY (created_by_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_outbound_task_owner_account|FOREIGN KEY (owner_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_outbound_task_owner_org|FOREIGN KEY (owner_organization_id) REFERENCES organization_access.organization(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_outbound_task_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true");
+
+    /** Frozen pg_indexes.indexdef values for V005 (31). */
+    private static final List<String> V005_INDEX_DEFS = List.of(
+            "CREATE UNIQUE INDEX pk_call_event ON ivr.call_event USING btree (id)",
+            "CREATE INDEX ix_call_event_call_time ON ivr.call_event USING btree (call_id, occurred_at)",
+            "CREATE INDEX ix_call_event_processing ON ivr.call_event USING btree (processing_status, received_at)",
+            "CREATE UNIQUE INDEX uq_call_event_domain_id ON ivr.call_event USING btree (event_domain, event_id)",
+            "CREATE UNIQUE INDEX uq_call_event_sequence ON ivr.call_event USING btree (call_id, sequence_no) WHERE (sequence_no IS NOT NULL)",
+            "CREATE UNIQUE INDEX pk_call_leg ON ivr.call_leg USING btree (id)",
+            "CREATE INDEX ix_call_leg_call_type ON ivr.call_leg USING btree (call_id, leg_type)",
+            "CREATE UNIQUE INDEX uq_call_leg_id ON ivr.call_leg USING btree (call_id, leg_id)",
+            "CREATE UNIQUE INDEX pk_call_record ON ivr.call_record USING btree (id)",
+            "CREATE UNIQUE INDEX uq_call_record_active_caller ON ivr.call_record USING btree (caller_number_hmac) WHERE (status = ANY (ARRAY['ACTIVE'::text, 'UNKNOWN'::text]))",
+            "CREATE UNIQUE INDEX uq_call_record_call ON ivr.call_record USING btree (call_id)",
+            "CREATE UNIQUE INDEX uq_call_record_session ON ivr.call_record USING btree (session_id)",
+            "CREATE UNIQUE INDEX uq_call_record_task ON ivr.call_record USING btree (task_id) WHERE (task_id IS NOT NULL)",
+            "CREATE INDEX ix_call_record_subject_time ON ivr.call_record USING btree (subject_id, ended_at, created_at)",
+            "CREATE INDEX ix_call_record_task ON ivr.call_record USING btree (task_id)",
+            "CREATE UNIQUE INDEX pk_inbound_session ON ivr.inbound_session USING btree (id)",
+            "CREATE UNIQUE INDEX uq_inbound_session_call ON ivr.inbound_session USING btree (call_id)",
+            "CREATE INDEX ix_inbound_session_hmac_status ON ivr.inbound_session USING btree (caller_number_hmac, status, created_at DESC)",
+            "CREATE INDEX ix_inbound_session_subject_time ON ivr.inbound_session USING btree (subject_id, created_at DESC)",
+            "CREATE UNIQUE INDEX pk_ivr_decision ON ivr.ivr_decision USING btree (id)",
+            "CREATE UNIQUE INDEX uq_ivr_decision_call_purpose ON ivr.ivr_decision USING btree (call_id, purpose)",
+            "CREATE UNIQUE INDEX uq_ivr_decision_source ON ivr.ivr_decision USING btree (call_id, source_event_domain, source_event_id) WHERE (source_event_id IS NOT NULL)",
+            "CREATE INDEX ix_ivr_decision_call_time ON ivr.ivr_decision USING btree (call_id, decided_at)",
+            "CREATE UNIQUE INDEX pk_outbound_call_task ON ivr.outbound_call_task USING btree (id)",
+            "CREATE UNIQUE INDEX uq_outbound_call_task_task_id ON ivr.outbound_call_task USING btree (task_id)",
+            "CREATE UNIQUE INDEX uq_outbound_task_idempotency ON ivr.outbound_call_task USING btree (created_by_account_id, idempotency_key)",
+            "CREATE UNIQUE INDEX uq_outbound_task_claimed_call ON ivr.outbound_call_task USING btree (claimed_call_id) WHERE (claimed_call_id IS NOT NULL)",
+            "CREATE UNIQUE INDEX uq_outbound_task_live_caller ON ivr.outbound_call_task USING btree (caller_number_hmac) WHERE (status = ANY (ARRAY['PENDING'::text, 'CLAIMED'::text]))",
+            "CREATE INDEX ix_outbound_task_creator_status ON ivr.outbound_call_task USING btree (created_by_account_id, status)",
+            "CREATE INDEX ix_outbound_task_org_status ON ivr.outbound_call_task USING btree (owner_organization_id, status, created_at DESC)",
+            "CREATE INDEX ix_outbound_task_subject_status ON ivr.outbound_call_task USING btree (subject_id, status, created_at DESC)");
 
     /**
      * PA4 V004 S2 coverage contract: every table|check_name pair that must receive a
@@ -638,8 +887,8 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThroughV004MigrateCleanPostgres16WithoutSkipping() throws Exception {
-        assertThat(initialMigration.migrationsExecuted).isEqualTo(4);
+    void v001ThroughV005MigrateCleanPostgres16WithoutSkipping() throws Exception {
+        assertThat(initialMigration.migrationsExecuted).isEqualTo(5);
 
         try (Connection connection = openConnection();
                 Statement statement = connection.createStatement();
@@ -681,6 +930,15 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V004__catalog_order_and_payment.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("005");
+            assertThat(resultSet.getString("description"))
+                    .isEqualTo("ivr task session call");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script"))
+                    .isEqualTo("V005__ivr_task_session_call.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
 
@@ -693,6 +951,7 @@ class PostgresContainerIT {
         exerciseV001FunctionsAsGrantedRole();
         exerciseV002InsertsAsOwningRuntimeRolesAndRollBack();
         exerciseV003InsertsAsRuntimeRoleAndRollBack();
+        exerciseV005IvrInsertsAsRuntimeRoleAndRollBack();
     }
 
     @Test
@@ -1200,6 +1459,20 @@ class PostgresContainerIT {
                             "catalog_order.reject_row_mutation|false|catalog_order_owner"
                                     + "|search_path=catalog_order, pg_temp");
 
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
+                            + "|| pg_get_userbyid(p.proowner) || '|' "
+                            + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                            + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'ivr' ORDER BY 1"))
+                    .containsExactly(
+                            "ivr.guard_call_leg|false|ivr_owner|search_path=ivr, pg_temp",
+                            "ivr.guard_call_record_parties|false|ivr_owner|search_path=ivr, pg_temp",
+                            "ivr.guard_inbound_session|false|ivr_owner|search_path=ivr, pg_temp",
+                            "ivr.guard_outbound_call_task|false|ivr_owner|search_path=ivr, pg_temp",
+                            "ivr.reject_row_mutation|false|ivr_owner|search_path=ivr, pg_temp");
+
             // A PL/pgSQL body uses ordinary BEGIN/END block delimiters, so this assertion
             // matches only transaction-control statements, never BEGIN/END themselves.
             assertThat(queryLong(
@@ -1216,7 +1489,10 @@ class PostgresContainerIT {
                             + "OR (n.nspname = 'catalog_order' AND p.proname IN "
                             + "('guard_catalog_version_published','guard_catalog_offer',"
                             + "'guard_customer_order_snapshot','guard_payment_order_identity',"
-                            + "'reject_row_mutation'))) "
+                            + "'reject_row_mutation')) "
+                            + "OR (n.nspname = 'ivr' AND p.proname IN "
+                            + "('guard_outbound_call_task','guard_inbound_session',"
+                            + "'guard_call_record_parties','guard_call_leg','reject_row_mutation'))) "
                             + "AND p.prosrc ~* "
                             + "'\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
                     .as("declared functions contain no transaction-control statement")
@@ -1261,9 +1537,25 @@ class PostgresContainerIT {
                     .isZero();
 
             assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'ivr' "
+                            + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                    .as("V005 trigger functions never generate IDs")
+                    .isZero();
+
+            assertThat(queryLong(
                     connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
                     .as("issue_first_trial is a V006 function absent from V001-V005")
                     .isZero();
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname FROM pg_proc p "
+                            + "JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE p.proname IN "
+                            + "('select_call_action','record_activation_next_action')"))
+                    .as("no IVR SQL service function exists at V005")
+                    .isEmpty();
         }
     }
 
@@ -1620,7 +1912,6 @@ class PostgresContainerIT {
             assertV004CheckPredicateInventory(connection);
             assertV004FunctionsAndTriggersExact(connection);
             assertV004NoIdDefaultsOrSequences(connection);
-            assertNoV005PlusObjects(connection);
         }
     }
 
@@ -1654,6 +1945,35 @@ class PostgresContainerIT {
     @Test
     void concurrentCatalogPublicationAndCommerceIdentityHasOneWinner() throws Exception {
         runConcurrentCatalogPublicationAndCommerceIdentity();
+    }
+
+    // PA5 V005 S1: exact IVR inventory/ACL and guard boundary. No lifecycle/concurrency
+    // behavior method belongs to S1; those arrive in S2.
+    @Test
+    void v005IvrTaskSessionCallInventoryAndGuardShapesAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV005TablesColumnsChecksIndexesFks(connection);
+            assertV005CheckPredicateInventory(connection);
+            assertV005FunctionsAndTriggersExact(connection);
+            assertV005NoIdDefaultsOrSequences(connection);
+            assertNoV006PlusObjects(connection);
+        }
+        // PA5 S1 fix-1 (F-PA5-S1-01/02): bounded regression probes for the user-authorized
+        // frozen CHECK errata, run inside the suite with a rolled-back fixture transaction.
+        assertV005ErrataCheckRegressionProbes();
+    }
+
+    @Test
+    void v005OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV005SchemaUsageMatrix(connection);
+            assertV005OwnedAndCrossModuleGrants(connection);
+            assertV005PublicAclIsZero(connection);
+            assertV005GuardFunctionExecuteBoundaries(connection);
+        }
+        // PA5 S1 fix-1 (F-PA5-S1-03): plan §6.2 item 9 executable runtime 42501 denial
+        // evidence inside this existing method; no new @Test and no catalog weakening.
+        assertV005RuntimeDenialsAndLegalUpdateControl();
     }
 
     /**
@@ -5347,6 +5667,11 @@ class PostgresContainerIT {
                         "customer_iam.guard_auth_identity",
                         "customer_iam.guard_customer_account",
                         "customer_iam.guard_identity_profile",
+                        "ivr.guard_call_leg",
+                        "ivr.guard_call_record_parties",
+                        "ivr.guard_inbound_session",
+                        "ivr.guard_outbound_call_task",
+                        "ivr.reject_row_mutation",
                         "operations_iam.guard_employee_account",
                         "organization_access.guard_membership",
                         "organization_access.guard_organization",
@@ -5465,6 +5790,11 @@ class PostgresContainerIT {
                         "customer_iam.auth_identity.trg_auth_identity_guard",
                         "customer_iam.customer_account.trg_customer_account_guard",
                         "customer_iam.identity_profile.trg_identity_profile_guard",
+                        "ivr.call_leg.trg_call_leg_guard",
+                        "ivr.call_record.trg_call_record_guard",
+                        "ivr.inbound_session.trg_inbound_session_guard",
+                        "ivr.ivr_decision.trg_ivr_decision_immutable",
+                        "ivr.outbound_call_task.trg_outbound_call_task_guard",
                         "operations_iam.employee_account.trg_employee_account_guard",
                         "organization_access.organization.trg_organization_guard",
                         "organization_access.organization_membership.trg_membership_guard",
@@ -6144,37 +6474,1214 @@ class PostgresContainerIT {
                 .as("no V003 sequence exists").isZero();
     }
 
-    private static void assertNoV005PlusObjects(Connection connection) throws SQLException {
+    private static void assertNoV006PlusObjects(Connection connection) throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.relkind = 'r' ORDER BY 1"))
+                .containsExactlyElementsOf(List.of(
+                        "call_event", "call_leg", "call_record", "inbound_session",
+                        "ivr_decision", "outbound_call_task"));
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
+                        + "AND c.relkind = 'r'"))
+                .isZero();
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
                 .isZero();
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                        + "WHERE n.nspname IN ('ivr','entitlement_metering','activation_consent') "
-                        + "AND c.relkind = 'r'"))
+                "SELECT count(*) FROM pg_roles WHERE rolname IN "
+                        + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
                 .isZero();
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
                 .isZero();
-        assertThat(queryLong(
+        assertThat(queryStrings(
                 connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN "
-                        + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
-                .isZero();
+                "SELECT proname FROM pg_proc WHERE proname IN "
+                        + "('select_call_action','record_activation_next_action')"))
+                .isEmpty();
         assertThat(toRegclass(connection, "ivr.call_task")).isNull();
         assertThat(toRegclass(connection, "ivr.call_session")).isNull();
-        assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNull();
-        assertThat(toRegclass(connection, "ivr.inbound_session")).isNull();
-        assertThat(toRegclass(connection, "ivr.call_record")).isNull();
-        assertThat(toRegclass(connection, "ivr.call_leg")).isNull();
-        assertThat(toRegclass(connection, "ivr.call_event")).isNull();
-        assertThat(toRegclass(connection, "ivr.ivr_decision")).isNull();
-        assertThat(toRegclass(connection, "activation_consent.consent_record")).isNull();
-        assertThat(toRegclass(connection, "activation_consent.service_activation")).isNull();
-        assertThat(toRegclass(connection, "activation_consent.service_activation_transition")).isNull();
+        for (String v006Name : List.of(
+                "trial_policy_version", "entitlement_grant", "trial_grant",
+                "entitlement_balance", "entitlement_issuance", "usage_reservation", "usage_fact",
+                "consent_record", "service_activation", "service_activation_transition",
+                "media_object", "recording", "evidence_record", "evidence_artifact",
+                "evidence_event", "evidence_share_grant", "share_admission", "share_access_event")) {
+            assertThat(toRegclass(connection, "activation_consent." + v006Name)).isNull();
+            assertThat(toRegclass(connection, "entitlement_metering." + v006Name)).isNull();
+            assertThat(toRegclass(connection, "evidence." + v006Name)).isNull();
+            assertThat(toRegclass(connection, "sharing." + v006Name)).isNull();
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c "
+                        + "JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'"))
+                .isZero();
+        assertThat(queryStrings(
+                connection,
+                "SELECT a.attname FROM pg_attribute a "
+                        + "JOIN pg_class c ON c.oid = a.attrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.relname = 'ivr_decision' "
+                        + "AND a.attname = 'reservation_id' AND a.attnotnull"))
+                .isEmpty();
+    }
+
+    private static void assertV005TablesColumnsChecksIndexesFks(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT table_schema || '.' || table_name FROM information_schema.tables "
+                        + "WHERE table_schema = 'ivr' ORDER BY 1"))
+                .containsExactlyElementsOf(V005_TABLES);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'ivr'"))
+                .as("total V005 columns").isEqualTo(103);
+
+        Map<String, String> v005ColumnOrder = new java.util.LinkedHashMap<>();
+        v005ColumnOrder.put("outbound_call_task",
+                "id,task_id,caller_binding_id,subject_id,owner_account_id,owner_organization_id,"
+                        + "created_by_account_id,caller_number_hmac,callee_ciphertext,callee_masked,"
+                        + "business_type,status,reason_code,ttl_seconds,expires_at,idempotency_key,"
+                        + "request_fingerprint,claimed_call_id,claimed_at,terminal_at,created_at,"
+                        + "updated_at,revision");
+        v005ColumnOrder.put("inbound_session",
+                "id,call_id,subject_id,trusted_caller,caller_ciphertext,caller_number_hmac,"
+                        + "caller_masked,access_number_masked,node_id,protocol_version,prompt_version,"
+                        + "status,confirmed_subject_id,guidance_status,created_at,confirmed_at,revision");
+        v005ColumnOrder.put("call_record",
+                "id,call_id,session_id,task_id,subject_id,caller_ciphertext,caller_number_hmac,"
+                        + "caller_masked,callee_ciphertext,callee_masked,access_number_masked,status,"
+                        + "node_id,protocol_version,started_at,bridged_at,recording_started_at,"
+                        + "recording_ended_at,ended_at,authoritative_seconds,end_reason,created_at,revision");
+        v005ColumnOrder.put("call_leg",
+                "id,call_id,leg_id,leg_type,direction,state,started_at,answered_at,ended_at,"
+                        + "end_reason,revision");
+        v005ColumnOrder.put("call_event",
+                "id,call_id,event_domain,event_id,sequence_no,event_type,occurred_at,received_at,"
+                        + "payload_ciphertext,payload_redacted,payload_sha256,processing_status,"
+                        + "reason_code,revision");
+        v005ColumnOrder.put("ivr_decision",
+                "id,session_id,call_id,purpose,source_event_domain,source_event_id,"
+                        + "request_fingerprint,action,reason_code,response_snapshot,"
+                        + "response_payload_ciphertext,response_sha256,key_version,reservation_id,decided_at");
+        for (Map.Entry<String, String> entry : v005ColumnOrder.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name FROM information_schema.columns "
+                            + "WHERE table_schema = 'ivr' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("ordered columns for ivr.%s", entry.getKey())
+                    .containsExactlyElementsOf(List.of(entry.getValue().split(",")));
+        }
+
+        Map<String, List<String>> v005ColumnDetails = new java.util.LinkedHashMap<>();
+        v005ColumnDetails.put("outbound_call_task", List.of(
+                "id|uuid|NO|<none>",
+                "task_id|text|NO|<none>",
+                "caller_binding_id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "owner_account_id|uuid|YES|<none>",
+                "owner_organization_id|uuid|YES|<none>",
+                "created_by_account_id|uuid|NO|<none>",
+                "caller_number_hmac|text|NO|<none>",
+                "callee_ciphertext|text|NO|<none>",
+                "callee_masked|text|NO|<none>",
+                "business_type|text|NO|<none>",
+                "status|text|NO|'PENDING'::text",
+                "reason_code|text|YES|<none>",
+                "ttl_seconds|integer|NO|30",
+                "expires_at|timestamp with time zone|NO|<none>",
+                "idempotency_key|text|NO|<none>",
+                "request_fingerprint|text|NO|<none>",
+                "claimed_call_id|text|YES|<none>",
+                "claimed_at|timestamp with time zone|YES|<none>",
+                "terminal_at|timestamp with time zone|YES|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "updated_at|timestamp with time zone|NO|now()",
+                "revision|integer|NO|1"));
+        v005ColumnDetails.put("inbound_session", List.of(
+                "id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "subject_id|uuid|YES|<none>",
+                "trusted_caller|boolean|NO|<none>",
+                "caller_ciphertext|text|YES|<none>",
+                "caller_number_hmac|text|YES|<none>",
+                "caller_masked|text|YES|<none>",
+                "access_number_masked|text|NO|<none>",
+                "node_id|text|NO|<none>",
+                "protocol_version|text|NO|<none>",
+                "prompt_version|text|NO|<none>",
+                "status|text|NO|'RECEIVED'::text",
+                "confirmed_subject_id|uuid|YES|<none>",
+                "guidance_status|text|YES|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "confirmed_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1"));
+        v005ColumnDetails.put("call_record", List.of(
+                "id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "session_id|uuid|NO|<none>",
+                "task_id|uuid|YES|<none>",
+                "subject_id|uuid|YES|<none>",
+                "caller_ciphertext|text|NO|<none>",
+                "caller_number_hmac|text|NO|<none>",
+                "caller_masked|text|NO|<none>",
+                "callee_ciphertext|text|YES|<none>",
+                "callee_masked|text|YES|<none>",
+                "access_number_masked|text|NO|<none>",
+                "status|text|NO|'ACTIVE'::text",
+                "node_id|text|NO|<none>",
+                "protocol_version|text|NO|<none>",
+                "started_at|timestamp with time zone|YES|<none>",
+                "bridged_at|timestamp with time zone|YES|<none>",
+                "recording_started_at|timestamp with time zone|YES|<none>",
+                "recording_ended_at|timestamp with time zone|YES|<none>",
+                "ended_at|timestamp with time zone|YES|<none>",
+                "authoritative_seconds|integer|YES|<none>",
+                "end_reason|text|YES|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "revision|integer|NO|1"));
+        v005ColumnDetails.put("call_leg", List.of(
+                "id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "leg_id|text|NO|<none>",
+                "leg_type|text|NO|<none>",
+                "direction|text|NO|<none>",
+                "state|text|NO|<none>",
+                "started_at|timestamp with time zone|NO|<none>",
+                "answered_at|timestamp with time zone|YES|<none>",
+                "ended_at|timestamp with time zone|YES|<none>",
+                "end_reason|text|YES|<none>",
+                "revision|integer|NO|1"));
+        v005ColumnDetails.put("call_event", List.of(
+                "id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "event_domain|text|NO|'IVR_EVENT'::text",
+                "event_id|text|NO|<none>",
+                "sequence_no|integer|YES|<none>",
+                "event_type|text|NO|<none>",
+                "occurred_at|timestamp with time zone|NO|<none>",
+                "received_at|timestamp with time zone|NO|now()",
+                "payload_ciphertext|text|NO|<none>",
+                "payload_redacted|jsonb|NO|<none>",
+                "payload_sha256|text|NO|<none>",
+                "processing_status|text|NO|'RECEIVED'::text",
+                "reason_code|text|YES|<none>",
+                "revision|integer|NO|1"));
+        v005ColumnDetails.put("ivr_decision", List.of(
+                "id|uuid|NO|<none>",
+                "session_id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "purpose|text|NO|<none>",
+                "source_event_domain|text|YES|<none>",
+                "source_event_id|text|YES|<none>",
+                "request_fingerprint|text|NO|<none>",
+                "action|text|YES|<none>",
+                "reason_code|text|NO|<none>",
+                "response_snapshot|jsonb|NO|<none>",
+                "response_payload_ciphertext|text|NO|<none>",
+                "response_sha256|text|NO|<none>",
+                "key_version|integer|NO|<none>",
+                "reservation_id|uuid|YES|<none>",
+                "decided_at|timestamp with time zone|NO|now()"));
+        for (Map.Entry<String, List<String>> entry : v005ColumnDetails.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name || '|' || data_type || '|' || is_nullable || '|' "
+                            + "|| coalesce(column_default, '<none>') "
+                            + "FROM information_schema.columns "
+                            + "WHERE table_schema = 'ivr' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("exact column details for ivr.%s", entry.getKey())
+                    .containsExactlyElementsOf(entry.getValue());
+        }
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns c "
+                        + "JOIN pg_attrdef d ON d.adrelid = (c.table_schema || '.' || c.table_name)::regclass "
+                        + "AND d.adnum = c.ordinal_position "
+                        + "WHERE c.table_schema = 'ivr'"))
+                .as("V005 defaulted columns").isEqualTo(17);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'ivr' AND column_default IS NOT NULL "
+                        + "AND column_name = 'id'"))
+                .as("zero id defaults").isZero();
+
+        List<String> checkNames = queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.contype = 'c' ORDER BY conname");
+        assertThat(checkNames).hasSize(73);
+
+        List<String> pkUniqueRows = queryStrings(
+                connection,
+                "SELECT r.relname || '|' || c.conname || '|' || c.contype::text || '|' "
+                        + "|| pg_get_constraintdef(c.oid) || '|' "
+                        + "|| (SELECT string_agg(a.attname, ',' ORDER BY x.ord) "
+                        + "FROM unnest(c.conkey) WITH ORDINALITY AS x(attnum, ord) "
+                        + "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = x.attnum) "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.contype IN ('p','u') "
+                        + "AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid = c.conindid AND i.indpred IS NOT NULL) "
+                        + "ORDER BY 1");
+        assertThat(pkUniqueRows).containsExactlyInAnyOrderElementsOf(V005_PK_UNIQUE_DEFS);
+        assertThat(V005_PK_UNIQUE_DEFS).hasSize(14);
+
+        List<String> fkRows = queryStrings(
+                connection,
+                "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                        + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE c.confdeltype::text END "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.contype = 'f' ORDER BY 1");
+        assertThat(fkRows).containsExactlyInAnyOrderElementsOf(V005_FK_DEFS);
+        assertThat(V005_FK_DEFS).hasSize(15);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'"))
+                .isZero();
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.contype = 'f' "
+                        + "AND ((r.relname = 'inbound_session' AND EXISTS ("
+                        + "SELECT 1 FROM pg_attribute a WHERE a.attrelid = r.oid AND a.attname = 'call_id' "
+                        + "AND a.attnum = ANY (c.conkey))) "
+                        + "OR (r.relname = 'call_record' AND EXISTS ("
+                        + "SELECT 1 FROM pg_attribute a WHERE a.attrelid = r.oid AND a.attname = 'call_id' "
+                        + "AND a.attnum = ANY (c.conkey))))"))
+                .as("no FK on either root call_id").isZero();
+
+        List<String> indexDefs = queryStrings(
+                connection,
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'ivr' ORDER BY 1");
+        assertThat(indexDefs).containsExactlyInAnyOrderElementsOf(V005_INDEX_DEFS);
+        assertThat(V005_INDEX_DEFS).hasSize(31);
+    }
+
+    private static void assertV005CheckPredicateInventory(Connection connection) throws SQLException {
+        assertThat(V005_CHECK_DEF_MAP).as("expected V005 check map tables").hasSize(6);
+        int totalChecks = 0;
+        for (Map.Entry<String, Map<String, String>> tableEntry : V005_CHECK_DEF_MAP.entrySet()) {
+            String table = tableEntry.getKey();
+            totalChecks += tableEntry.getValue().size();
+            List<String> actualNames = queryStrings(
+                    connection,
+                    "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'ivr' AND r.relname = ? AND c.contype = 'c' "
+                            + "ORDER BY conname",
+                    table);
+            List<String> expectedNames = new ArrayList<>(tableEntry.getValue().keySet());
+            expectedNames.sort(String::compareTo);
+            assertThat(actualNames)
+                    .as("exact check-name set for ivr.%s", table)
+                    .containsExactlyElementsOf(expectedNames);
+            for (Map.Entry<String, String> checkEntry : tableEntry.getValue().entrySet()) {
+                String checkName = checkEntry.getKey();
+                List<String> actualDefs = queryStrings(
+                        connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND r.relname = ? "
+                                + "AND c.contype = 'c' AND c.conname = ?",
+                        table, checkName);
+                assertThat(actualDefs)
+                        .as("exactly one row for ivr.%s.%s", table, checkName)
+                        .hasSize(1);
+                assertThat(normalizeCheckDef(actualDefs.get(0)))
+                        .as("whole pg_get_constraintdef equality for ivr.%s.%s", table, checkName)
+                        .isEqualTo(normalizeCheckDef(checkEntry.getValue()));
+            }
+        }
+        assertThat(totalChecks).as("total V005 checks").isEqualTo(73);
+    }
+
+    private static void assertV005FunctionsAndTriggersExact(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'ivr'"))
+                .as("exactly five ivr functions").isEqualTo(5);
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
+                        + "|| '|' || p.prosecdef || '|' || pg_get_userbyid(p.proowner) || '|' "
+                        + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'ivr' ORDER BY 1"))
+                .containsExactly(
+                        "ivr.guard_call_leg()|false|ivr_owner|search_path=ivr, pg_temp",
+                        "ivr.guard_call_record_parties()|false|ivr_owner|search_path=ivr, pg_temp",
+                        "ivr.guard_inbound_session()|false|ivr_owner|search_path=ivr, pg_temp",
+                        "ivr.guard_outbound_call_task()|false|ivr_owner|search_path=ivr, pg_temp",
+                        "ivr.reject_row_mutation()|false|ivr_owner|search_path=ivr, pg_temp");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'ivr' AND p.prosrc LIKE '%gen_random_uuid%'"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'ivr' "
+                        + "AND p.prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
+                .isZero();
+
+        List<String> triggerRows = queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || c.relname || '.' || t.tgname || '|' "
+                        + "|| CASE WHEN (t.tgtype & 2) <> 0 THEN 'BEFORE' ELSE 'AFTER' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 4) <> 0 THEN 'INSERT' ELSE '' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 16) <> 0 THEN 'UPDATE' ELSE '' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 8) <> 0 THEN 'DELETE' ELSE '' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 32) <> 0 THEN 'TRUNCATE' ELSE '' END || '|' "
+                        + "|| p.proname "
+                        + "FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_proc p ON p.oid = t.tgfoid "
+                        + "WHERE NOT t.tgisinternal AND n.nspname = 'ivr' ORDER BY 1");
+        assertThat(triggerRows).containsExactly(
+                "ivr.call_leg.trg_call_leg_guard|BEFORE|ROW||UPDATE|||guard_call_leg",
+                "ivr.call_record.trg_call_record_guard|BEFORE|ROW||UPDATE|||guard_call_record_parties",
+                "ivr.inbound_session.trg_inbound_session_guard|BEFORE|ROW||UPDATE|||guard_inbound_session",
+                "ivr.ivr_decision.trg_ivr_decision_immutable|BEFORE|ROW||UPDATE|DELETE||reject_row_mutation",
+                "ivr.outbound_call_task.trg_outbound_call_task_guard|BEFORE|ROW||UPDATE|||guard_outbound_call_task");
+    }
+
+    private static void assertV005NoIdDefaultsOrSequences(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'ivr' AND column_name = 'id' "
+                        + "AND column_default IS NOT NULL"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.relkind = 'S'"))
+                .isZero();
+    }
+
+    private static void assertV005SchemaUsageMatrix(Connection connection) throws SQLException {
+        Map<String, List<String>> usageRolesBySchema = new java.util.LinkedHashMap<>();
+        usageRolesBySchema.put("ivr", List.of("ivr_owner", "ivr_role"));
+        usageRolesBySchema.put("customer_iam", List.of(
+                "customer_iam_owner", "customer_iam_role", "subject_number_role",
+                "catalog_order_role", "ivr_role"));
+        usageRolesBySchema.put("organization_access", List.of(
+                "organization_access_owner", "organization_access_role", "customer_iam_role",
+                "subject_number_role", "catalog_order_role", "ivr_role"));
+        usageRolesBySchema.put("subject_number", List.of(
+                "subject_number_owner", "subject_number_role",
+                "subject_identity_verification_role", "catalog_order_role", "ivr_role"));
+        Map<String, String> ownerBySchema = new java.util.LinkedHashMap<>();
+        ownerBySchema.put("ivr", "ivr_owner");
+        ownerBySchema.put("customer_iam", "customer_iam_owner");
+        ownerBySchema.put("organization_access", "organization_access_owner");
+        ownerBySchema.put("subject_number", "subject_number_owner");
+        List<String> grantees = new ArrayList<>(S1_ROLES);
+        grantees.addAll(V004_ROLES);
+        grantees.add("public");
+        for (Map.Entry<String, String> schemaEntry : ownerBySchema.entrySet()) {
+            String schema = schemaEntry.getKey();
+            String owner = schemaEntry.getValue();
+            List<String> usageRoles = usageRolesBySchema.get(schema);
+            for (String grantee : grantees) {
+                assertThat(hasSchema(connection, grantee, schema, "USAGE"))
+                        .as("%s schema USAGE %s", grantee, schema)
+                        .isEqualTo(usageRoles.contains(grantee));
+                assertThat(hasSchema(connection, grantee, schema, "CREATE"))
+                        .as("%s schema CREATE %s", grantee, schema)
+                        .isEqualTo(grantee.equals(owner));
+            }
+        }
+        assertThat(hasSchema(connection, "ivr_role", "catalog_order", "USAGE"))
+                .as("ivr_role catalog_order USAGE is not granted in V005 (§10.12)").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
+                .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
+        assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
+                .as("entitlement_metering_role subject USAGE is deferred to V006").isFalse();
+    }
+
+    private static void assertV005OwnedAndCrossModuleGrants(Connection connection)
+            throws SQLException {
+        Map<String, List<String>> allColumnsByTable = new java.util.LinkedHashMap<>();
+        allColumnsByTable.put("ivr.outbound_call_task", List.of(
+                "id", "task_id", "caller_binding_id", "subject_id", "owner_account_id",
+                "owner_organization_id", "created_by_account_id", "caller_number_hmac",
+                "callee_ciphertext", "callee_masked", "business_type", "status", "reason_code",
+                "ttl_seconds", "expires_at", "idempotency_key", "request_fingerprint",
+                "claimed_call_id", "claimed_at", "terminal_at", "created_at", "updated_at",
+                "revision"));
+        allColumnsByTable.put("ivr.inbound_session", List.of(
+                "id", "call_id", "subject_id", "trusted_caller", "caller_ciphertext",
+                "caller_number_hmac", "caller_masked", "access_number_masked", "node_id",
+                "protocol_version", "prompt_version", "status", "confirmed_subject_id",
+                "guidance_status", "created_at", "confirmed_at", "revision"));
+        allColumnsByTable.put("ivr.call_record", List.of(
+                "id", "call_id", "session_id", "task_id", "subject_id", "caller_ciphertext",
+                "caller_number_hmac", "caller_masked", "callee_ciphertext", "callee_masked",
+                "access_number_masked", "status", "node_id", "protocol_version", "started_at",
+                "bridged_at", "recording_started_at", "recording_ended_at", "ended_at",
+                "authoritative_seconds", "end_reason", "created_at", "revision"));
+        allColumnsByTable.put("ivr.call_leg", List.of(
+                "id", "call_id", "leg_id", "leg_type", "direction", "state", "started_at",
+                "answered_at", "ended_at", "end_reason", "revision"));
+        allColumnsByTable.put("ivr.call_event", List.of(
+                "id", "call_id", "event_domain", "event_id", "sequence_no", "event_type",
+                "occurred_at", "received_at", "payload_ciphertext", "payload_redacted",
+                "payload_sha256", "processing_status", "reason_code", "revision"));
+        allColumnsByTable.put("ivr.ivr_decision", List.of(
+                "id", "session_id", "call_id", "purpose", "source_event_domain", "source_event_id",
+                "request_fingerprint", "action", "reason_code", "response_snapshot",
+                "response_payload_ciphertext", "response_sha256", "key_version", "reservation_id",
+                "decided_at"));
+
+        Map<String, List<String>> runtimeUpdateColumns = new java.util.LinkedHashMap<>();
+        runtimeUpdateColumns.put("ivr.outbound_call_task", List.of(
+                "status", "reason_code", "claimed_call_id", "claimed_at", "terminal_at",
+                "updated_at", "revision"));
+        runtimeUpdateColumns.put("ivr.inbound_session", List.of(
+                "status", "confirmed_subject_id", "guidance_status", "confirmed_at", "revision"));
+        runtimeUpdateColumns.put("ivr.call_record", List.of(
+                "task_id", "status", "started_at", "bridged_at", "recording_started_at",
+                "recording_ended_at", "ended_at", "authoritative_seconds", "end_reason",
+                "revision"));
+        runtimeUpdateColumns.put("ivr.call_leg", List.of(
+                "state", "answered_at", "ended_at", "end_reason", "revision"));
+        runtimeUpdateColumns.put("ivr.call_event", List.of(
+                "processing_status", "reason_code", "revision"));
+        runtimeUpdateColumns.put("ivr.ivr_decision", List.of());
+
+        List<String> matrixRoles = new ArrayList<>(S1_ROLES);
+        matrixRoles.addAll(V004_ROLES);
+        for (String table : V005_TABLES) {
+            for (String role : matrixRoles) {
+                boolean ownerRow = role.equals("ivr_owner");
+                boolean runtimeRow = role.equals("ivr_role");
+                assertThat(hasTable(connection, role, table, "SELECT"))
+                        .as("matrix %s table SELECT %s", role, table)
+                        .isEqualTo(ownerRow || runtimeRow);
+                assertThat(hasTable(connection, role, table, "INSERT"))
+                        .as("matrix %s table INSERT %s", role, table)
+                        .isEqualTo(ownerRow || runtimeRow);
+                assertThat(hasTable(connection, role, table, "UPDATE"))
+                        .as("matrix %s table UPDATE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "DELETE"))
+                        .as("matrix %s table DELETE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "TRUNCATE"))
+                        .as("matrix %s table TRUNCATE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "REFERENCES"))
+                        .as("matrix %s table REFERENCES %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "TRIGGER"))
+                        .as("matrix %s table TRIGGER %s", role, table)
+                        .isEqualTo(ownerRow);
+                for (String column : allColumnsByTable.get(table)) {
+                    boolean expectColumnSelect = ownerRow || runtimeRow;
+                    boolean expectColumnInsert = ownerRow || runtimeRow;
+                    boolean expectColumnUpdate = ownerRow
+                            || (runtimeRow && runtimeUpdateColumns.get(table).contains(column));
+                    assertThat(hasColumn(connection, role, table, column, "SELECT"))
+                            .as("matrix %s column SELECT %s.%s", role, table, column)
+                            .isEqualTo(expectColumnSelect);
+                    assertThat(hasColumn(connection, role, table, column, "INSERT"))
+                            .as("matrix %s column INSERT %s.%s", role, table, column)
+                            .isEqualTo(expectColumnInsert);
+                    assertThat(hasColumn(connection, role, table, column, "UPDATE"))
+                            .as("matrix %s column UPDATE %s.%s", role, table, column)
+                            .isEqualTo(expectColumnUpdate);
+                }
+            }
+        }
+
+        Map<String, List<String>> ivrCrossSelect = new java.util.LinkedHashMap<>();
+        ivrCrossSelect.put("customer_iam.customer_account", List.of("id", "status"));
+        ivrCrossSelect.put("organization_access.organization", List.of("id", "status"));
+        ivrCrossSelect.put("organization_access.organization_membership",
+                List.of("organization_id", "account_id", "role", "status"));
+        ivrCrossSelect.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "revision"));
+        ivrCrossSelect.put("subject_number.caller_number_binding",
+                List.of("id", "subject_id", "number_hmac", "status", "verified_at", "revision"));
+        ivrCrossSelect.put("subject_number.subject_risk_state",
+                List.of("caller_number_binding_id", "risk_type", "state", "revision"));
+        for (Map.Entry<String, List<String>> entry : ivrCrossSelect.entrySet()) {
+            String table = entry.getKey();
+            List<String> columns = queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_class c "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                            + "WHERE n.nspname || '.' || c.relname = ? "
+                            + "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+                    table);
+            assertThat(columns).isNotEmpty();
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "ivr_role", table, privilege))
+                        .as("ivr_role must not hold table %s on %s", privilege, table)
+                        .isFalse();
+            }
+            for (String column : columns) {
+                assertThat(hasColumn(connection, "ivr_role", table, column, "SELECT"))
+                        .as("ivr_role SELECT %s.%s", table, column)
+                        .isEqualTo(entry.getValue().contains(column));
+                assertThat(hasColumn(connection, "ivr_role", table, column, "INSERT"))
+                        .as("ivr_role must not INSERT %s.%s", table, column).isFalse();
+                assertThat(hasColumn(connection, "ivr_role", table, column, "UPDATE"))
+                        .as("ivr_role must not UPDATE %s.%s", table, column).isFalse();
+            }
+        }
+        assertThat(hasTable(connection, "ivr_role", "ivr.ivr_decision", "UPDATE"))
+                .as("ivr_decision is append-only for runtime").isFalse();
+        assertThat(hasColumn(connection, "ivr_role", "ivr.call_record", "created_at", "UPDATE"))
+                .as("created_at is insert-only for runtime (option B)").isFalse();
+        assertThat(hasColumn(connection, "ivr_role", "ivr.call_record", "subject_id", "UPDATE"))
+                .as("subject_id is not runtime-updatable").isFalse();
+    }
+
+    private static void assertV005PublicAclIsZero(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace n, "
+                        + "aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a "
+                        + "WHERE n.nspname = 'ivr' AND a.grantee = 0"))
+                .as("PUBLIC has no ivr schema privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a "
+                        + "WHERE n.nspname = 'ivr' AND c.relkind IN ('r','p') AND a.grantee = 0"))
+                .as("PUBLIC has no ivr table privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+                        + "WHERE n.nspname = 'ivr' AND a.grantee = 0"))
+                .as("PUBLIC has no ivr function privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE n.nspname = 'ivr' AND c.relkind IN ('r','p') "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND x.grantee = 0"))
+                .as("PUBLIC has no ivr column privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE ((n.nspname = 'customer_iam' AND c.relname = 'customer_account') "
+                        + "OR (n.nspname = 'organization_access' AND c.relname IN "
+                        + "('organization','organization_membership')) "
+                        + "OR (n.nspname = 'subject_number' AND c.relname IN "
+                        + "('business_subject','caller_number_binding','subject_risk_state'))) "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND x.grantee = 0"))
+                .as("PUBLIC has no column ACL on V005-touched S1 tables").isZero();
+    }
+
+    private static void assertV005GuardFunctionExecuteBoundaries(Connection connection)
+            throws SQLException {
+        List<String> guardFunctions = List.of(
+                "ivr.guard_outbound_call_task()",
+                "ivr.guard_inbound_session()",
+                "ivr.guard_call_record_parties()",
+                "ivr.guard_call_leg()");
+        List<String> functionMatrixRoles = new ArrayList<>(S1_ROLES);
+        functionMatrixRoles.addAll(V004_ROLES);
+        for (String function : guardFunctions) {
+            assertThat(hasFunction(connection, "ivr_owner", function, "EXECUTE"))
+                    .as("ivr_owner EXECUTE %s", function).isTrue();
+            assertThat(hasFunction(connection, "ivr_role", function, "EXECUTE"))
+                    .as("ivr_role EXECUTE %s", function).isTrue();
+            for (String role : functionMatrixRoles) {
+                if (role.equals("ivr_owner") || role.equals("ivr_role")) {
+                    continue;
+                }
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s must not EXECUTE %s", role, function).isFalse();
+            }
+            assertThat(hasFunction(connection, "public", function, "EXECUTE"))
+                    .as("PUBLIC must not EXECUTE %s", function).isFalse();
+        }
+        assertThat(hasFunction(connection, "ivr_owner", "ivr.reject_row_mutation()", "EXECUTE"))
+                .as("ivr_owner EXECUTE reject_row_mutation").isTrue();
+        assertThat(hasFunction(connection, "ivr_role", "ivr.reject_row_mutation()", "EXECUTE"))
+                .as("runtime must not EXECUTE reject_row_mutation").isFalse();
+        for (String role : functionMatrixRoles) {
+            if (role.equals("ivr_owner")) {
+                continue;
+            }
+            assertThat(hasFunction(connection, role, "ivr.reject_row_mutation()", "EXECUTE"))
+                    .as("%s must not EXECUTE reject_row_mutation", role).isFalse();
+        }
+        assertThat(hasFunction(connection, "public", "ivr.reject_row_mutation()", "EXECUTE"))
+                .as("PUBLIC must not EXECUTE reject_row_mutation").isFalse();
+    }
+
+    private static void exerciseV005IvrInsertsAsRuntimeRoleAndRollBack() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID legId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        UUID decisionId = UUID.randomUUID();
+        String callId = "pa5-s1-call-" + UUID.randomUUID();
+        String hmac = randomSha256();
+        String fingerprint = randomSha256();
+        String ciphertext = "v1.s1.ivr.smoke.ciphertext";
+        String masked = "137****0001";
+        String taskIdText = "pa5-task-" + UUID.randomUUID();
+        String idempotencyKey = "pa5-s1-" + UUID.randomUUID();
+        String eventFingerprint = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO customer_iam.customer_account "
+                                + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                        accountId, "pa5-s1-" + UUID.randomUUID())).isEqualTo(1);
+                setLocalRole(connection, "organization_access_owner");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO organization_access.organization "
+                                + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                        organizationId, "pa5-" + UUID.randomUUID())).isEqualTo(1);
+                setLocalRole(connection, "subject_number_owner");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO subject_number.business_subject "
+                                + "(id, source, owner_account_id) VALUES (?, 'IVR', ?)",
+                        subjectId, accountId)).isEqualTo(1);
+                setLocalRole(connection, "subject_number_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO subject_number.caller_number_binding "
+                                + "(id, subject_id, number_hmac, number_ciphertext, number_masked, "
+                                + "number_type, status, verified_at) VALUES (?, ?, ?, ?, ?, 'MOBILE', 'ACTIVE', now())",
+                        bindingId, subjectId, hmac, ciphertext, masked)).isEqualTo(1);
+                setLocalRole(connection, "ivr_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        taskId, taskIdText, bindingId, subjectId, accountId, accountId, hmac,
+                        ciphertext, masked, idempotencyKey, fingerprint)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                        sessionId, callId, subjectId, ciphertext, hmac, masked, masked)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        callRecordId, callId, sessionId, subjectId, ciphertext, hmac, masked,
+                        masked)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, 'leg-1', 'CALLER', 'INBOUND', 'RINGING', now())",
+                        legId, callId)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_event "
+                                + "(id, call_id, event_id, sequence_no, event_type, occurred_at, "
+                                + "payload_ciphertext, payload_redacted, payload_sha256) "
+                                + "VALUES (?, ?, ?, 1, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                        eventId, callId, "evt-" + UUID.randomUUID(), ciphertext,
+                        "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                                + "\"sequenceNo\":1,\"payload\":{}},\"receipt\":{\"payloadSha256\":\""
+                                + hmac + "\",\"eventFingerprint\":\"" + eventFingerprint + "\"}}",
+                        hmac)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, request_fingerprint, action, "
+                                + "reason_code, response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                                + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        decisionId, sessionId, callId, fingerprint, ciphertext, hmac)).isEqualTo(1);
+                assertThat(queryLong(
+                        connection,
+                        "SELECT count(*) FROM ivr.outbound_call_task WHERE id = ?", taskId))
+                        .isEqualTo(1);
+                assertThat(queryLong(
+                        connection,
+                        "SELECT count(*) FROM ivr.ivr_decision WHERE id = ?", decisionId))
+                        .isEqualTo(1);
+                connection.rollback();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM ivr.outbound_call_task WHERE id = ?", taskId))
+                    .isZero();
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM ivr.inbound_session WHERE id = ?", sessionId))
+                    .isZero();
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM ivr.call_record WHERE id = ?", callRecordId))
+                    .isZero();
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM ivr.call_leg WHERE id = ?", legId))
+                    .isZero();
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM ivr.call_event WHERE id = ?", eventId))
+                    .isZero();
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM ivr.ivr_decision WHERE id = ?", decisionId))
+                    .isZero();
+        }
+    }
+
+    /**
+     * PA5 S1 fix-1 (F-PA5-S1-03): plan §6.2 item 9 executable runtime evidence for
+     * {@code v005OwnerPublicRuntimeAndCrossModuleAclsAreExact}. Builds a method-local
+     * fixture, switches to {@code ivr_role}, proves one legal column UPDATE positive
+     * control, then asserts precise {@code 42501} for an undeclared-column UPDATE,
+     * DELETE, TRUNCATE, cross-module writes, cross-module {@code SELECT ... FOR UPDATE}
+     * and the owner-only {@code ivr.reject_row_mutation()} invocation. Every failure
+     * uses a bounded savepoint rollback and the whole fixture transaction is rolled
+     * back, so no committed residue remains. Exact catalog ACL assertions are unchanged.
+     */
+    private static void assertV005RuntimeDenialsAndLegalUpdateControl() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID legId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        UUID decisionId = UUID.randomUUID();
+        String callId = "pa5-s1fix1-acl-" + UUID.randomUUID();
+        String hmac = randomSha256();
+        String fingerprint = randomSha256();
+        String ciphertext = "v1.s1fix1.ivr.acl.ciphertext";
+        String masked = "137****0002";
+        String taskIdText = "pa5-s1fix1-task-" + UUID.randomUUID();
+        String idempotencyKey = "pa5-s1fix1-" + UUID.randomUUID();
+        String eventFingerprint = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO customer_iam.customer_account "
+                                + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                        accountId, "pa5-s1fix1-" + UUID.randomUUID())).isEqualTo(1);
+                setLocalRole(connection, "subject_number_owner");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO subject_number.business_subject "
+                                + "(id, source, owner_account_id) VALUES (?, 'IVR', ?)",
+                        subjectId, accountId)).isEqualTo(1);
+                setLocalRole(connection, "subject_number_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO subject_number.caller_number_binding "
+                                + "(id, subject_id, number_hmac, number_ciphertext, number_masked, "
+                                + "number_type, status, verified_at) VALUES (?, ?, ?, ?, ?, 'MOBILE', 'ACTIVE', now())",
+                        bindingId, subjectId, hmac, ciphertext, masked)).isEqualTo(1);
+                setLocalRole(connection, "ivr_owner");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.outbound_call_task "
+                                + "(id, task_id, caller_binding_id, subject_id, owner_account_id, "
+                                + "created_by_account_id, caller_number_hmac, callee_ciphertext, "
+                                + "callee_masked, business_type, expires_at, idempotency_key, "
+                                + "request_fingerprint) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'EVIDENCE_CALL', "
+                                + "now() + interval '30 seconds', ?, ?)",
+                        taskId, taskIdText, bindingId, subjectId, accountId, accountId, hmac,
+                        ciphertext, masked, idempotencyKey, fingerprint)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                        sessionId, callId, subjectId, ciphertext, hmac, masked, masked)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        callRecordId, callId, sessionId, subjectId, ciphertext, hmac, masked,
+                        masked)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_leg "
+                                + "(id, call_id, leg_id, leg_type, direction, state, started_at) "
+                                + "VALUES (?, ?, 'leg-1', 'CALLER', 'INBOUND', 'RINGING', now())",
+                        legId, callId)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_event "
+                                + "(id, call_id, event_id, event_type, occurred_at, "
+                                + "payload_ciphertext, payload_redacted, payload_sha256) "
+                                + "VALUES (?, ?, ?, 'SESSION_START', now(), ?, ?::jsonb, ?)",
+                        eventId, callId, "evt-" + UUID.randomUUID(), ciphertext,
+                        "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                                + "\"sequenceNo\":1,\"payload\":{}},\"receipt\":{\"payloadSha256\":\""
+                                + hmac + "\",\"eventFingerprint\":\"" + eventFingerprint + "\"}}",
+                        hmac)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, request_fingerprint, action, "
+                                + "reason_code, response_snapshot, response_payload_ciphertext, "
+                                + "response_sha256, key_version) "
+                                + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                                + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        decisionId, sessionId, callId, fingerprint, ciphertext, hmac)).isEqualTo(1);
+
+                setLocalRole(connection, "ivr_role");
+                // Legal column UPDATE positive control: state/revision are granted and
+                // pass guard_call_leg unchanged.
+                assertThat(executeUpdate(
+                        connection,
+                        "UPDATE ivr.call_leg SET state = 'ANSWERED', revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1",
+                        legId)).isEqualTo(1);
+                // Undeclared-column runtime UPDATE denials.
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.call_leg SET leg_type = 'CALLEE' WHERE id = ?", legId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.outbound_call_task SET caller_number_hmac = ? WHERE id = ?",
+                        randomSha256(), taskId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE ivr.ivr_decision SET reason_code = reason_code WHERE id = ?",
+                        decisionId);
+                // DELETE and TRUNCATE denials.
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM ivr.call_event WHERE id = ?", eventId);
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE ivr.call_leg");
+                // Cross-module write denials.
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE subject_number.business_subject SET revision = revision + 1 "
+                                + "WHERE id = ?",
+                        subjectId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                // Cross-module SELECT ... FOR UPDATE denials.
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM subject_number.business_subject WHERE id = ? FOR UPDATE",
+                        subjectId);
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM customer_iam.customer_account WHERE id = ? FOR UPDATE",
+                        accountId);
+                // Owner-only reject_row_mutation has no runtime EXECUTE grant.
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT ivr.reject_row_mutation()");
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    /**
+     * PA5 S1 fix-1 (F-PA5-S1-01/02): bounded in-suite regression probes for the
+     * user-authorized frozen CHECK errata. Malformed decision shapes and malformed
+     * {@code payload_redacted} shapes must fail with SQLSTATE 23514 and the exact
+     * constraint name; the legal direct-success (reservation present), direct-refusal
+     * (no reservation), resolve, activation and object-payload/matching-receipt shapes
+     * pass. Each probe is savepoint-isolated inside one rolled-back fixture transaction,
+     * so the {@code (call_id, purpose)} and event identities stay unique and no
+     * committed residue remains. The V006 reservation FK stays absent, so a random UUID
+     * reservation reference is legal.
+     */
+    private static void assertV005ErrataCheckRegressionProbes() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        String callId = "pa5-s1fix1-probe-" + UUID.randomUUID();
+        String hmac = randomSha256();
+        String fingerprint = randomSha256();
+        String ciphertext = "v1.s1fix1.ivr.probe.ciphertext";
+        String masked = "137****0003";
+        String eventFingerprint = randomSha256();
+        String payloadSha = randomSha256();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "customer_iam_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO customer_iam.customer_account "
+                                + "(id, display_name, status) VALUES (?, ?, 'ACTIVE')",
+                        accountId, "pa5-s1fix1-probe-" + UUID.randomUUID())).isEqualTo(1);
+                setLocalRole(connection, "subject_number_owner");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO subject_number.business_subject "
+                                + "(id, source, owner_account_id) VALUES (?, 'IVR', ?)",
+                        subjectId, accountId)).isEqualTo(1);
+                setLocalRole(connection, "subject_number_role");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO subject_number.caller_number_binding "
+                                + "(id, subject_id, number_hmac, number_ciphertext, number_masked, "
+                                + "number_type, status, verified_at) VALUES (?, ?, ?, ?, ?, 'MOBILE', 'ACTIVE', now())",
+                        bindingId, subjectId, hmac, ciphertext, masked)).isEqualTo(1);
+                setLocalRole(connection, "ivr_owner");
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.inbound_session "
+                                + "(id, call_id, subject_id, trusted_caller, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, prompt_version) "
+                                + "VALUES (?, ?, ?, TRUE, ?, ?, ?, ?, 'node-1', '1.0', 'p1')",
+                        sessionId, callId, subjectId, ciphertext, hmac, masked, masked)).isEqualTo(1);
+                assertThat(executeUpdate(
+                        connection,
+                        "INSERT INTO ivr.call_record "
+                                + "(id, call_id, session_id, subject_id, caller_ciphertext, "
+                                + "caller_number_hmac, caller_masked, access_number_masked, "
+                                + "node_id, protocol_version, started_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'node-1', '1.0', now())",
+                        callRecordId, callId, sessionId, subjectId, ciphertext, hmac, masked,
+                        masked)).isEqualTo(1);
+
+                String decisionInsertPrefix =
+                        "INSERT INTO ivr.ivr_decision "
+                                + "(id, session_id, call_id, purpose, source_event_domain, "
+                                + "source_event_id, request_fingerprint, action, reason_code, "
+                                + "response_snapshot, response_payload_ciphertext, response_sha256, "
+                                + "key_version) VALUES (?, ?, ?, ";
+
+                // F-PA5-S1-01 negative: a "successful" DIRECT_AUTHORIZATION without a
+                // reservation must be rejected by ck_ivr_decision_shape only.
+                expectSqlFailure(connection, "23514", "ck_ivr_decision_shape",
+                        decisionInsertPrefix
+                                + "'DIRECT_AUTHORIZATION', 'IVR_DIRECT_AUTH', ?, ?, NULL, "
+                                + "'DIRECT_AUTHORIZED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), sessionId, callId, "evt-direct-" + UUID.randomUUID(),
+                        fingerprint, ciphertext, hmac);
+                // F-PA5-S1-01 negative: ACTIVATION_NEXT_ACTION with NULL source_event_id.
+                expectSqlFailure(connection, "23514", "ck_ivr_decision_source",
+                        decisionInsertPrefix
+                                + "'ACTIVATION_NEXT_ACTION', 'IVR_CONFIRM', NULL, ?, "
+                                + "'GUIDE_PURCHASE', 'CONSENT_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), sessionId, callId, fingerprint, ciphertext, hmac);
+                // F-PA5-S1-01 negative: ACTIVATION_NEXT_ACTION with NULL domain and NULL id.
+                expectSqlFailure(connection, "23514", "ck_ivr_decision_source",
+                        decisionInsertPrefix
+                                + "'ACTIVATION_NEXT_ACTION', NULL, NULL, ?, 'GUIDE_PURCHASE', "
+                                + "'CONSENT_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), sessionId, callId, fingerprint, ciphertext, hmac);
+                // F-PA5-S1-01 negative: DIRECT_AUTHORIZATION refusal with NULL source_event_id.
+                expectSqlFailure(connection, "23514", "ck_ivr_decision_source",
+                        decisionInsertPrefix
+                                + "'DIRECT_AUTHORIZATION', 'IVR_DIRECT_AUTH', NULL, ?, 'REJECT', "
+                                + "'CALLER_UNTRUSTED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), sessionId, callId, fingerprint, ciphertext, hmac);
+                // F-PA5-S1-01 negative: DIRECT_AUTHORIZATION refusal with NULL source_event_domain.
+                expectSqlFailure(connection, "23514", "ck_ivr_decision_source",
+                        decisionInsertPrefix
+                                + "'DIRECT_AUTHORIZATION', NULL, ?, ?, 'REJECT', "
+                                + "'CALLER_UNTRUSTED', '{}'::jsonb, ?, ?, 1)",
+                        UUID.randomUUID(), sessionId, callId, "evt-direct-" + UUID.randomUUID(),
+                        fingerprint, ciphertext, hmac);
+
+                // Legal decision shapes (savepoint-isolated success probes).
+                Savepoint directSuccess = connection.setSavepoint("s1fix1-direct-success");
+                try {
+                    assertThat(executeUpdate(
+                            connection,
+                            "INSERT INTO ivr.ivr_decision "
+                                    + "(id, session_id, call_id, purpose, source_event_domain, "
+                                    + "source_event_id, request_fingerprint, action, reason_code, "
+                                    + "response_snapshot, response_payload_ciphertext, "
+                                    + "response_sha256, key_version, reservation_id) "
+                                    + "VALUES (?, ?, ?, 'DIRECT_AUTHORIZATION', 'IVR_DIRECT_AUTH', "
+                                    + "?, ?, NULL, 'DIRECT_AUTHORIZED', '{}'::jsonb, ?, ?, 1, ?)",
+                            UUID.randomUUID(), sessionId, callId,
+                            "evt-direct-" + UUID.randomUUID(), fingerprint, ciphertext, hmac,
+                            UUID.randomUUID())).isEqualTo(1);
+                } finally {
+                    connection.rollback(directSuccess);
+                }
+                Savepoint directRefusal = connection.setSavepoint("s1fix1-direct-refusal");
+                try {
+                    assertThat(executeUpdate(
+                            connection,
+                            "INSERT INTO ivr.ivr_decision "
+                                    + "(id, session_id, call_id, purpose, source_event_domain, "
+                                    + "source_event_id, request_fingerprint, action, reason_code, "
+                                    + "response_snapshot, response_payload_ciphertext, "
+                                    + "response_sha256, key_version) "
+                                    + "VALUES (?, ?, ?, 'DIRECT_AUTHORIZATION', 'IVR_DIRECT_AUTH', "
+                                    + "?, ?, 'REJECT', 'CALLER_UNTRUSTED', '{}'::jsonb, ?, ?, 1)",
+                            UUID.randomUUID(), sessionId, callId,
+                            "evt-direct-" + UUID.randomUUID(), fingerprint, ciphertext, hmac))
+                            .isEqualTo(1);
+                } finally {
+                    connection.rollback(directRefusal);
+                }
+                Savepoint inboundResolve = connection.setSavepoint("s1fix1-inbound-resolve");
+                try {
+                    assertThat(executeUpdate(
+                            connection,
+                            "INSERT INTO ivr.ivr_decision "
+                                    + "(id, session_id, call_id, purpose, request_fingerprint, "
+                                    + "action, reason_code, response_snapshot, "
+                                    + "response_payload_ciphertext, response_sha256, key_version) "
+                                    + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'GUIDE_ACTIVATION', "
+                                    + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1)",
+                            UUID.randomUUID(), sessionId, callId, fingerprint, ciphertext, hmac))
+                            .isEqualTo(1);
+                } finally {
+                    connection.rollback(inboundResolve);
+                }
+                Savepoint activationNext = connection.setSavepoint("s1fix1-activation-next");
+                try {
+                    assertThat(executeUpdate(
+                            connection,
+                            "INSERT INTO ivr.ivr_decision "
+                                    + "(id, session_id, call_id, purpose, source_event_domain, "
+                                    + "source_event_id, request_fingerprint, action, reason_code, "
+                                    + "response_snapshot, response_payload_ciphertext, "
+                                    + "response_sha256, key_version) "
+                                    + "VALUES (?, ?, ?, 'ACTIVATION_NEXT_ACTION', 'IVR_CONFIRM', "
+                                    + "?, ?, 'GUIDE_PURCHASE', 'CONSENT_REQUIRED', '{}'::jsonb, "
+                                    + "?, ?, 1)",
+                            UUID.randomUUID(), sessionId, callId, "evt-confirm-" + UUID.randomUUID(),
+                            fingerprint, ciphertext, hmac)).isEqualTo(1);
+                } finally {
+                    connection.rollback(activationNext);
+                }
+
+                String eventInsertPrefix =
+                        "INSERT INTO ivr.call_event "
+                                + "(id, call_id, event_id, event_type, occurred_at, "
+                                + "payload_ciphertext, payload_redacted, payload_sha256) "
+                                + "VALUES (?, ?, ?, 'SESSION_START', now(), ?, ?::jsonb, ?)";
+
+                // F-PA5-S1-02 negative: JSON-null source.payload with a matching receipt
+                // hash must be rejected by ck_call_event_payload_redacted only.
+                expectSqlFailure(connection, "23514", "ck_call_event_payload_redacted",
+                        eventInsertPrefix,
+                        UUID.randomUUID(), callId, "evt-null-payload-" + UUID.randomUUID(),
+                        ciphertext,
+                        "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                                + "\"sequenceNo\":1,\"payload\":null},\"receipt\":{"
+                                + "\"payloadSha256\":\"" + payloadSha + "\","
+                                + "\"eventFingerprint\":\"" + eventFingerprint + "\"}}",
+                        payloadSha);
+                // F-PA5-S1-02 negative: non-object (string) source.payload.
+                expectSqlFailure(connection, "23514", "ck_call_event_payload_redacted",
+                        eventInsertPrefix,
+                        UUID.randomUUID(), callId, "evt-string-payload-" + UUID.randomUUID(),
+                        ciphertext,
+                        "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                                + "\"sequenceNo\":1,\"payload\":\"not-an-object\"},\"receipt\":{"
+                                + "\"payloadSha256\":\"" + payloadSha + "\","
+                                + "\"eventFingerprint\":\"" + eventFingerprint + "\"}}",
+                        payloadSha);
+                // F-PA5-S1-02 negative: JSON-null receipt.payloadSha256 beside a valid
+                // 64-hex payload_sha256 column value.
+                expectSqlFailure(connection, "23514", "ck_call_event_payload_redacted",
+                        eventInsertPrefix,
+                        UUID.randomUUID(), callId, "evt-null-hash-" + UUID.randomUUID(),
+                        ciphertext,
+                        "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                                + "\"sequenceNo\":1,\"payload\":{}},\"receipt\":{"
+                                + "\"payloadSha256\":null,"
+                                + "\"eventFingerprint\":\"" + eventFingerprint + "\"}}",
+                        payloadSha);
+
+                // Legal event shape: object payload with non-NULL matching receipt hash.
+                Savepoint eventProbe = connection.setSavepoint("s1fix1-event-valid");
+                try {
+                    assertThat(executeUpdate(
+                            connection,
+                            eventInsertPrefix,
+                            UUID.randomUUID(), callId, "evt-valid-" + UUID.randomUUID(),
+                            ciphertext,
+                            "{\"source\":{\"eventType\":\"SESSION_START\",\"legId\":\"leg-1\","
+                                    + "\"sequenceNo\":1,\"payload\":{}},\"receipt\":{"
+                                    + "\"payloadSha256\":\"" + payloadSha + "\","
+                                    + "\"eventFingerprint\":\"" + eventFingerprint + "\"}}",
+                            payloadSha)).isEqualTo(1);
+                } finally {
+                    connection.rollback(eventProbe);
+                }
+            } finally {
+                connection.rollback();
+            }
+        }
     }
 
     private static void assertV004TablesColumnsChecksIndexesFks(Connection connection)
@@ -6834,7 +8341,7 @@ class PostgresContainerIT {
         Map<String, List<String>> usageRolesBySchema = new java.util.LinkedHashMap<>();
         usageRolesBySchema.put("catalog_order", List.of(
                 "catalog_order_owner", "catalog_order_role", "entitlement_metering_role"));
-        usageRolesBySchema.put("ivr", List.of("ivr_owner"));
+        usageRolesBySchema.put("ivr", List.of("ivr_owner", "ivr_role"));
         usageRolesBySchema.put("entitlement_metering", List.of(
                 "entitlement_metering_owner", "entitlement_metering_role",
                 "activation_consent_role", "ivr_role"));
@@ -6843,13 +8350,13 @@ class PostgresContainerIT {
                 "catalog_order_role"));
         usageRolesBySchema.put("customer_iam", List.of(
                 "customer_iam_owner", "customer_iam_role", "subject_number_role",
-                "catalog_order_role"));
+                "catalog_order_role", "ivr_role"));
         usageRolesBySchema.put("organization_access", List.of(
                 "organization_access_owner", "organization_access_role", "customer_iam_role",
-                "subject_number_role", "catalog_order_role"));
+                "subject_number_role", "catalog_order_role", "ivr_role"));
         usageRolesBySchema.put("subject_number", List.of(
                 "subject_number_owner", "subject_number_role",
-                "subject_identity_verification_role", "catalog_order_role"));
+                "subject_identity_verification_role", "catalog_order_role", "ivr_role"));
         usageRolesBySchema.put("platform", List.of(
                 "platform_reliability_owner", "platform_reliability_role",
                 "platform_dispatcher_role", "customer_iam_role", "organization_access_role",
@@ -6885,9 +8392,9 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "catalog_order_role", "ivr", "USAGE"))
                 .as("catalog_order_role ivr USAGE is not granted at V004").isFalse();
         assertThat(hasSchema(connection, "ivr_role", "ivr", "USAGE"))
-                .as("ivr_role ivr USAGE is deferred to V005").isFalse();
+                .as("ivr_role ivr USAGE is granted at V005").isTrue();
         assertThat(hasSchema(connection, "ivr_role", "catalog_order", "USAGE"))
-                .as("ivr_role catalog_order USAGE is deferred to V005").isFalse();
+                .as("ivr_role catalog_order USAGE is not granted in V005 (§10.12)").isFalse();
         assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
                 .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
         assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
@@ -6967,6 +8474,18 @@ class PostgresContainerIT {
                 List.of("organization_id", "account_id", "role", "status"));
         catalogCrossSelect.put("subject_number.business_subject",
                 List.of("id", "owner_account_id", "owner_organization_id", "revision"));
+
+        Map<String, List<String>> ivrCrossSelect = new java.util.LinkedHashMap<>();
+        ivrCrossSelect.put("customer_iam.customer_account", List.of("id", "status"));
+        ivrCrossSelect.put("organization_access.organization", List.of("id", "status"));
+        ivrCrossSelect.put("organization_access.organization_membership",
+                List.of("organization_id", "account_id", "role", "status"));
+        ivrCrossSelect.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "revision"));
+        ivrCrossSelect.put("subject_number.caller_number_binding",
+                List.of("id", "subject_id", "number_hmac", "status", "verified_at", "revision"));
+        ivrCrossSelect.put("subject_number.subject_risk_state",
+                List.of("caller_number_binding_id", "risk_type", "state", "revision"));
 
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_version")).hasSize(12);
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_offer")).hasSize(3);
@@ -7056,6 +8575,7 @@ class PostgresContainerIT {
                     .isNotEmpty();
             List<String> catalogGrantedColumns =
                     catalogCrossSelect.getOrDefault(table, List.of());
+            List<String> ivrGrantedColumns = ivrCrossSelect.getOrDefault(table, List.of());
             for (String role : V004_ROLES) {
                 for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
                         "TRUNCATE", "REFERENCES", "TRIGGER")) {
@@ -7066,9 +8586,12 @@ class PostgresContainerIT {
                 }
                 for (String column : actualColumns) {
                     for (String privilege : List.of("SELECT", "INSERT", "UPDATE")) {
-                        boolean expectGrant = role.equals("catalog_order_role")
+                        boolean expectGrant = (role.equals("catalog_order_role")
                                 && privilege.equals("SELECT")
-                                && catalogGrantedColumns.contains(column);
+                                && catalogGrantedColumns.contains(column))
+                                || (role.equals("ivr_role")
+                                        && privilege.equals("SELECT")
+                                        && ivrGrantedColumns.contains(column));
                         assertThat(hasColumn(connection, role, table, column, privilege))
                                 .as("%s %s %s.%s", role, privilege, table, column)
                                 .isEqualTo(expectGrant);
@@ -8250,22 +9773,27 @@ class PostgresContainerIT {
                         .containsExactly("activation_consent", "entitlement_metering", "ivr");
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                                + "WHERE n.nspname IN ('ivr','entitlement_metering','activation_consent') "
+                                + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
                                 + "AND c.relkind = 'r'"))
-                        .as("no IVR/entitlement/consent table")
+                        .as("V005 ivr tables exist; entitlement/consent tables absent")
                         .isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND c.relkind = 'r'"))
+                        .as("V005 ivr tables exist; entitlement/consent tables absent")
+                        .isEqualTo(6);
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
                         .as("no evidence/sharing schema")
                         .isZero();
                 assertThat(toRegclass(connection, "ivr.call_task")).isNull();
                 assertThat(toRegclass(connection, "ivr.call_session")).isNull();
-                assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNull();
-                assertThat(toRegclass(connection, "ivr.inbound_session")).isNull();
-                assertThat(toRegclass(connection, "ivr.call_record")).isNull();
-                assertThat(toRegclass(connection, "ivr.call_leg")).isNull();
-                assertThat(toRegclass(connection, "ivr.call_event")).isNull();
-                assertThat(toRegclass(connection, "ivr.ivr_decision")).isNull();
+                assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNotNull();
+                assertThat(toRegclass(connection, "ivr.inbound_session")).isNotNull();
+                assertThat(toRegclass(connection, "ivr.call_record")).isNotNull();
+                assertThat(toRegclass(connection, "ivr.call_leg")).isNotNull();
+                assertThat(toRegclass(connection, "ivr.call_event")).isNotNull();
+                assertThat(toRegclass(connection, "ivr.ivr_decision")).isNotNull();
             } finally {
                 connection.rollback();
             }
