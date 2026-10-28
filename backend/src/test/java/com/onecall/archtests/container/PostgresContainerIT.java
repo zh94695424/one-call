@@ -140,6 +140,223 @@ class PostgresContainerIT {
             "subject_number.subject_claim",
             "subject_number.subject_risk_state");
 
+    private static final List<String> V004_ROLES = List.of(
+            "catalog_order_owner",
+            "catalog_order_role",
+            "ivr_owner",
+            "ivr_role",
+            "entitlement_metering_owner",
+            "entitlement_metering_role",
+            "activation_consent_owner",
+            "activation_consent_role");
+
+    private static final List<String> V004_TABLES = List.of(
+            "catalog_order.catalog_benefit_line",
+            "catalog_order.catalog_offer",
+            "catalog_order.catalog_product",
+            "catalog_order.catalog_version",
+            "catalog_order.customer_order",
+            "catalog_order.payment_event",
+            "catalog_order.payment_order");
+
+    /**
+     * F-PA4-PR-01: frozen mapping of bare table name -&gt; (check name -&gt; expected PostgreSQL 16
+     * canonical {@code pg_get_constraintdef} output) for all 51 V004 named checks. Each literal
+     * derives from the accepted plan section 8.2 PG16.15 deparse and is compared by
+     * whole-definition equality after ASCII-whitespace-only normalization. Substring/contains/
+     * prefix/regex/semantic equivalence is forbidden.
+     */
+    private static final Map<String, Map<String, String>> V004_CHECK_DEF_MAP;
+
+    static {
+        Map<String, Map<String, String>> map = new java.util.LinkedHashMap<>();
+        Map<String, String> catalogProduct = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_catalog_product_code",
+                        "CHECK ((product_code ~ '^[A-Z][A-Z0-9_-]{1,63}$'::text))"),
+                java.util.Map.entry("ck_catalog_product_family",
+                        "CHECK ((product_family ~ '^[A-Z][A-Z0-9_]{0,63}$'::text))")));
+        map.put("catalog_product", java.util.Collections.unmodifiableMap(catalogProduct));
+        Map<String, String> catalogVersion = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_catalog_version_audience",
+                        "CHECK ((audience = ANY (ARRAY['PERSONAL'::text, 'ENTERPRISE'::text])))"),
+                java.util.Map.entry("ck_catalog_version_audience_shape",
+                        "CHECK (((audience = 'ENTERPRISE'::text) = (offer_type = 'QUOTE'::text)))"),
+                java.util.Map.entry("ck_catalog_version_billing_matrix",
+                        "CHECK ((((offer_type = 'SUBSCRIPTION'::text) AND (billing_cycle = ANY (ARRAY['MONTHLY'::text, 'QUARTERLY'::text, 'ANNUAL'::text])) AND (installments >= 1) AND (grant_interval_months >= 1)) OR ((offer_type = ANY (ARRAY['ONE_TIME'::text, 'ADD_ON'::text])) AND (billing_cycle = 'ONCE'::text) AND (installments = 1) AND (grant_interval_months = 0)) OR ((offer_type = 'QUOTE'::text) AND (billing_cycle = 'QUOTE'::text) AND (installments = 1) AND (grant_interval_months = 0) AND (price_cents IS NULL))))"),
+                java.util.Map.entry("ck_catalog_version_currency",
+                        "CHECK ((currency ~ '^[A-Z]{3}$'::text))"),
+                java.util.Map.entry("ck_catalog_version_no",
+                        "CHECK ((version_no >= 1))"),
+                java.util.Map.entry("ck_catalog_version_offer_type",
+                        "CHECK ((offer_type = ANY (ARRAY['SUBSCRIPTION'::text, 'ONE_TIME'::text, 'ADD_ON'::text, 'QUOTE'::text])))"),
+                java.util.Map.entry("ck_catalog_version_price",
+                        "CHECK ((((price_cents IS NULL) = (offer_type = 'QUOTE'::text)) AND ((price_cents IS NULL) OR (price_cents >= 0))))"),
+                java.util.Map.entry("ck_catalog_version_published_shape",
+                        "CHECK (((sale_status = 'DRAFT'::text) = (published_at IS NULL)))"),
+                java.util.Map.entry("ck_catalog_version_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_catalog_version_sale_status",
+                        "CHECK ((sale_status = ANY (ARRAY['DRAFT'::text, 'ACTIVE'::text, 'OFFSALE'::text])))"),
+                java.util.Map.entry("ck_catalog_version_snapshot_sha",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_catalog_version_snapshot_type",
+                        "CHECK ((jsonb_typeof(snapshot) = 'object'::text))")));
+        map.put("catalog_version", java.util.Collections.unmodifiableMap(catalogVersion));
+        Map<String, String> catalogOffer = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_catalog_offer_channel",
+                        "CHECK ((channel = ANY (ARRAY['MINIAPP'::text, 'WEB'::text])))"),
+                java.util.Map.entry("ck_catalog_offer_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_catalog_offer_status",
+                        "CHECK ((offer_status = ANY (ARRAY['ACTIVE'::text, 'WITHDRAWN'::text])))"),
+                java.util.Map.entry("ck_catalog_offer_token",
+                        "CHECK ((((length(version_token) >= 1) AND (length(version_token) <= 128)) AND (btrim(version_token) <> ''::text)))")));
+        map.put("catalog_offer", java.util.Collections.unmodifiableMap(catalogOffer));
+        Map<String, String> catalogBenefit = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_catalog_benefit_interval",
+                        "CHECK ((grant_interval_months >= 0))"),
+                java.util.Map.entry("ck_catalog_benefit_quantity",
+                        "CHECK ((quantity >= 1))"),
+                java.util.Map.entry("ck_catalog_benefit_type",
+                        "CHECK ((entitlement_type = ANY (ARRAY['RECORDING_SECONDS'::text, 'AI_SECONDS'::text, 'EVIDENCE_COUNT'::text, 'STORAGE_BYTES'::text])))"),
+                java.util.Map.entry("ck_catalog_benefit_validity",
+                        "CHECK ((validity_days >= 1))")));
+        map.put("catalog_benefit_line", java.util.Collections.unmodifiableMap(catalogBenefit));
+        Map<String, String> customerOrder = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_customer_order_amount",
+                        "CHECK ((amount_cents >= 0))"),
+                java.util.Map.entry("ck_customer_order_channel",
+                        "CHECK ((channel = ANY (ARRAY['MINIAPP'::text, 'WEB'::text])))"),
+                java.util.Map.entry("ck_customer_order_currency",
+                        "CHECK ((currency ~ '^[A-Z]{3}$'::text))"),
+                java.util.Map.entry("ck_customer_order_fingerprint",
+                        "CHECK ((request_fingerprint ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_customer_order_idempotency",
+                        "CHECK ((((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 475)) AND (btrim(idempotency_key) <> ''::text)))"),
+                java.util.Map.entry("ck_customer_order_no",
+                        "CHECK ((((length(order_no) >= 1) AND (length(order_no) <= 64)) AND (btrim(order_no) <> ''::text)))"),
+                java.util.Map.entry("ck_customer_order_payment_shape",
+                        "CHECK ((((payment_status = 'PAID'::text) = (paid_at IS NOT NULL)) AND ((payment_status = 'CLOSED'::text) = (closed_at IS NOT NULL))))"),
+                java.util.Map.entry("ck_customer_order_payment_status",
+                        "CHECK ((payment_status = ANY (ARRAY['UNPAID'::text, 'UNKNOWN'::text, 'PAID'::text, 'CLOSED'::text])))"),
+                java.util.Map.entry("ck_customer_order_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_customer_order_snapshot_sha",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_customer_order_snapshot_type",
+                        "CHECK ((jsonb_typeof(snapshot) = 'object'::text))"),
+                java.util.Map.entry("ck_customer_order_time_order",
+                        "CHECK ((((paid_at IS NULL) OR (paid_at >= created_at)) AND ((closed_at IS NULL) OR (closed_at >= created_at))))"),
+                java.util.Map.entry("ck_customer_order_version_token",
+                        "CHECK ((((length(version_token) >= 1) AND (length(version_token) <= 128)) AND (btrim(version_token) <> ''::text)))")));
+        map.put("customer_order", java.util.Collections.unmodifiableMap(customerOrder));
+        Map<String, String> paymentOrder = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_payment_order_amount",
+                        "CHECK ((amount_cents >= 0))"),
+                java.util.Map.entry("ck_payment_order_currency",
+                        "CHECK ((currency ~ '^[A-Z]{3}$'::text))"),
+                java.util.Map.entry("ck_payment_order_merchant_no",
+                        "CHECK ((((length(merchant_order_no) >= 1) AND (length(merchant_order_no) <= 64)) AND (btrim(merchant_order_no) <> ''::text)))"),
+                java.util.Map.entry("ck_payment_order_paid_shape",
+                        "CHECK (((status <> 'PAID'::text) OR (provider_transaction_id IS NOT NULL)))"),
+                java.util.Map.entry("ck_payment_order_provider",
+                        "CHECK ((provider = 'WECHAT'::text))"),
+                java.util.Map.entry("ck_payment_order_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_payment_order_status",
+                        "CHECK ((status = ANY (ARRAY['UNPAID'::text, 'UNKNOWN'::text, 'PAID'::text, 'CLOSED'::text])))"),
+                java.util.Map.entry("ck_payment_order_time_order",
+                        "CHECK ((updated_at >= created_at))"),
+                java.util.Map.entry("ck_payment_order_transaction",
+                        "CHECK (((provider_transaction_id IS NULL) OR (((length(provider_transaction_id) >= 1) AND (length(provider_transaction_id) <= 128)) AND (btrim(provider_transaction_id) <> ''::text))))")));
+        map.put("payment_order", java.util.Collections.unmodifiableMap(paymentOrder));
+        Map<String, String> paymentEvent = new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_payment_event_amount",
+                        "CHECK ((amount_cents >= 0))"),
+                java.util.Map.entry("ck_payment_event_event_id",
+                        "CHECK ((((length(provider_event_id) >= 1) AND (length(provider_event_id) <= 128)) AND (btrim(provider_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_payment_event_payload_ciphertext",
+                        "CHECK ((payload_ciphertext ~ '^v1\\.[A-Za-z0-9._:/-]+\\..+$'::text))"),
+                java.util.Map.entry("ck_payment_event_payload_sha",
+                        "CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_payment_event_provider",
+                        "CHECK ((provider = 'WECHAT'::text))"),
+                java.util.Map.entry("ck_payment_event_transaction",
+                        "CHECK (((transaction_id IS NULL) OR (((length(transaction_id) >= 1) AND (length(transaction_id) <= 128)) AND (btrim(transaction_id) <> ''::text))))"),
+                java.util.Map.entry("ck_payment_event_type",
+                        "CHECK ((((length(event_type) >= 1) AND (length(event_type) <= 64)) AND (btrim(event_type) <> ''::text)))")));
+        map.put("payment_event", java.util.Collections.unmodifiableMap(paymentEvent));
+        V004_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Frozen PK/unique constraint inventory: table|name|contype|definition|columns. The two
+     * partial uniques (uq_catalog_version_active, uq_payment_order_transaction) are indexes,
+     * not constraints, and appear only in V004_INDEX_DEFS.
+     */
+    private static final List<String> V004_PK_UNIQUE_DEFS = List.of(
+            "catalog_benefit_line|pk_catalog_benefit_line|p|PRIMARY KEY (id)|id",
+            "catalog_benefit_line|uq_catalog_benefit_version_type|u|UNIQUE (catalog_version_id, entitlement_type)|catalog_version_id,entitlement_type",
+            "catalog_offer|pk_catalog_offer|p|PRIMARY KEY (id)|id",
+            "catalog_offer|uq_catalog_offer_version_channel|u|UNIQUE (catalog_version_id, channel)|catalog_version_id,channel",
+            "catalog_product|pk_catalog_product|p|PRIMARY KEY (id)|id",
+            "catalog_product|uq_catalog_product_code|u|UNIQUE (product_code)|product_code",
+            "catalog_version|pk_catalog_version|p|PRIMARY KEY (id)|id",
+            "catalog_version|uq_catalog_version_no|u|UNIQUE (product_id, version_no)|product_id,version_no",
+            "customer_order|pk_customer_order|p|PRIMARY KEY (id)|id",
+            "customer_order|uq_customer_order_idempotency|u|UNIQUE (account_id, idempotency_key)|account_id,idempotency_key",
+            "customer_order|uq_customer_order_no|u|UNIQUE (order_no)|order_no",
+            "payment_event|pk_payment_event|p|PRIMARY KEY (id)|id",
+            "payment_event|uq_payment_event_provider_event|u|UNIQUE (provider, provider_event_id)|provider,provider_event_id",
+            "payment_order|pk_payment_order|p|PRIMARY KEY (id)|id",
+            "payment_order|uq_payment_order_merchant|u|UNIQUE (merchant_order_no)|merchant_order_no",
+            "payment_order|uq_payment_order_order|u|UNIQUE (order_id)|order_id");
+
+    /** Frozen FK inventory: name|definition|rrs|false|false|true. */
+    private static final List<String> V004_FK_DEFS = List.of(
+            "fk_catalog_benefit_version|FOREIGN KEY (catalog_version_id) REFERENCES catalog_order.catalog_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_catalog_offer_version|FOREIGN KEY (catalog_version_id) REFERENCES catalog_order.catalog_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_catalog_version_employee|FOREIGN KEY (created_by_employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_catalog_version_product|FOREIGN KEY (product_id) REFERENCES catalog_order.catalog_product(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_customer_order_account|FOREIGN KEY (account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_customer_order_offer|FOREIGN KEY (catalog_offer_id) REFERENCES catalog_order.catalog_offer(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_customer_order_organization|FOREIGN KEY (owner_organization_id) REFERENCES organization_access.organization(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_customer_order_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_customer_order_version|FOREIGN KEY (catalog_version_id) REFERENCES catalog_order.catalog_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_payment_event_order|FOREIGN KEY (payment_order_id) REFERENCES catalog_order.payment_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_payment_order_order|FOREIGN KEY (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true");
+
+    /** Frozen pg_indexes.indexdef values (28). */
+    private static final List<String> V004_INDEX_DEFS = List.of(
+            "CREATE INDEX ix_catalog_benefit_version ON catalog_order.catalog_benefit_line USING btree (catalog_version_id)",
+            "CREATE UNIQUE INDEX pk_catalog_benefit_line ON catalog_order.catalog_benefit_line USING btree (id)",
+            "CREATE UNIQUE INDEX uq_catalog_benefit_version_type ON catalog_order.catalog_benefit_line USING btree (catalog_version_id, entitlement_type)",
+            "CREATE INDEX ix_catalog_offer_channel_status ON catalog_order.catalog_offer USING btree (channel, offer_status)",
+            "CREATE UNIQUE INDEX pk_catalog_offer ON catalog_order.catalog_offer USING btree (id)",
+            "CREATE UNIQUE INDEX uq_catalog_offer_version_channel ON catalog_order.catalog_offer USING btree (catalog_version_id, channel)",
+            "CREATE INDEX ix_catalog_product_family ON catalog_order.catalog_product USING btree (product_family, created_at)",
+            "CREATE UNIQUE INDEX pk_catalog_product ON catalog_order.catalog_product USING btree (id)",
+            "CREATE UNIQUE INDEX uq_catalog_product_code ON catalog_order.catalog_product USING btree (product_code)",
+            "CREATE INDEX ix_catalog_version_product_status ON catalog_order.catalog_version USING btree (product_id, sale_status, version_no DESC)",
+            "CREATE UNIQUE INDEX pk_catalog_version ON catalog_order.catalog_version USING btree (id)",
+            "CREATE UNIQUE INDEX uq_catalog_version_active ON catalog_order.catalog_version USING btree (product_id) WHERE (sale_status = 'ACTIVE'::text)",
+            "CREATE UNIQUE INDEX uq_catalog_version_no ON catalog_order.catalog_version USING btree (product_id, version_no)",
+            "CREATE INDEX ix_customer_order_organization ON catalog_order.customer_order USING btree (owner_organization_id, created_at DESC)",
+            "CREATE INDEX ix_customer_order_subject_status ON catalog_order.customer_order USING btree (subject_id, payment_status, created_at DESC)",
+            "CREATE INDEX ix_customer_order_version ON catalog_order.customer_order USING btree (catalog_version_id)",
+            "CREATE UNIQUE INDEX pk_customer_order ON catalog_order.customer_order USING btree (id)",
+            "CREATE UNIQUE INDEX uq_customer_order_idempotency ON catalog_order.customer_order USING btree (account_id, idempotency_key)",
+            "CREATE UNIQUE INDEX uq_customer_order_no ON catalog_order.customer_order USING btree (order_no)",
+            "CREATE INDEX ix_payment_event_order_time ON catalog_order.payment_event USING btree (payment_order_id, received_at DESC)",
+            "CREATE INDEX ix_payment_event_verified ON catalog_order.payment_event USING btree (payment_order_id, received_at) WHERE signature_verified",
+            "CREATE UNIQUE INDEX pk_payment_event ON catalog_order.payment_event USING btree (id)",
+            "CREATE UNIQUE INDEX uq_payment_event_provider_event ON catalog_order.payment_event USING btree (provider, provider_event_id)",
+            "CREATE INDEX ix_payment_order_status_time ON catalog_order.payment_order USING btree (status, updated_at)",
+            "CREATE UNIQUE INDEX pk_payment_order ON catalog_order.payment_order USING btree (id)",
+            "CREATE UNIQUE INDEX uq_payment_order_merchant ON catalog_order.payment_order USING btree (merchant_order_no)",
+            "CREATE UNIQUE INDEX uq_payment_order_order ON catalog_order.payment_order USING btree (order_id)",
+            "CREATE UNIQUE INDEX uq_payment_order_transaction ON catalog_order.payment_order USING btree (provider_transaction_id) WHERE (provider_transaction_id IS NOT NULL)");
+
     /**
      * F-PA2-PR-01: explicit frozen mapping of schema.table -> (check name -> expected PostgreSQL 16
      * canonical {@code pg_get_constraintdef} output) for all 34 V002 named checks (4/7/7/4/4/8).
@@ -362,8 +579,8 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThenV002ThenV003MigrateCleanPostgres16WithoutSkipping() throws Exception {
-        assertThat(initialMigration.migrationsExecuted).isEqualTo(3);
+    void v001ThroughV004MigrateCleanPostgres16WithoutSkipping() throws Exception {
+        assertThat(initialMigration.migrationsExecuted).isEqualTo(4);
 
         try (Connection connection = openConnection();
                 Statement statement = connection.createStatement();
@@ -395,6 +612,15 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V003__subject_number_and_claim.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("004");
+            assertThat(resultSet.getString("description"))
+                    .isEqualTo("catalog order and payment");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script"))
+                    .isEqualTo("V004__catalog_order_and_payment.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -896,6 +1122,25 @@ class PostgresContainerIT {
                             "subject_number.reject_row_mutation|false|subject_number_owner"
                                     + "|search_path=subject_number, pg_temp");
 
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
+                            + "|| pg_get_userbyid(p.proowner) || '|' "
+                            + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                            + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'catalog_order' ORDER BY 1"))
+                    .containsExactly(
+                            "catalog_order.guard_catalog_offer|false|catalog_order_owner"
+                                    + "|search_path=catalog_order, pg_temp",
+                            "catalog_order.guard_catalog_version_published|false|catalog_order_owner"
+                                    + "|search_path=catalog_order, pg_temp",
+                            "catalog_order.guard_customer_order_snapshot|false|catalog_order_owner"
+                                    + "|search_path=catalog_order, pg_temp",
+                            "catalog_order.guard_payment_order_identity|false|catalog_order_owner"
+                                    + "|search_path=catalog_order, pg_temp",
+                            "catalog_order.reject_row_mutation|false|catalog_order_owner"
+                                    + "|search_path=catalog_order, pg_temp");
+
             // A PL/pgSQL body uses ordinary BEGIN/END block delimiters, so this assertion
             // matches only transaction-control statements, never BEGIN/END themselves.
             assertThat(queryLong(
@@ -908,7 +1153,11 @@ class PostgresContainerIT {
                             + "AND p.proname LIKE 'guard_%') "
                             + "OR (n.nspname = 'subject_number' AND p.proname IN "
                             + "('guard_subject_owner','guard_caller_number_binding',"
-                            + "'guard_subject_risk_state','reject_row_mutation'))) "
+                            + "'guard_subject_risk_state','reject_row_mutation')) "
+                            + "OR (n.nspname = 'catalog_order' AND p.proname IN "
+                            + "('guard_catalog_version_published','guard_catalog_offer',"
+                            + "'guard_customer_order_snapshot','guard_payment_order_identity',"
+                            + "'reject_row_mutation'))) "
                             + "AND p.prosrc ~* "
                             + "'\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
                     .as("declared functions contain no transaction-control statement")
@@ -945,8 +1194,16 @@ class PostgresContainerIT {
                     .isZero();
 
             assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'catalog_order' "
+                            + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                    .as("V004 trigger functions never generate IDs")
+                    .isZero();
+
+            assertThat(queryLong(
                     connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
-                    .as("issue_first_trial is a V006 function absent from V001/V002/V003")
+                    .as("issue_first_trial is a V006 function absent from V001-V005")
                     .isZero();
         }
     }
@@ -1252,7 +1509,6 @@ class PostgresContainerIT {
             assertV003CheckPredicateInventory(connection);
             assertV003FunctionsAndTriggersExact(connection);
             assertV003NoIdDefaultsOrSequences(connection);
-            assertNoV004PlusObjects(connection);
         }
     }
 
@@ -1294,6 +1550,29 @@ class PostgresContainerIT {
     void concurrentActiveBindingUniquenessHasOneWinner() throws Exception {
         runConcurrentActiveBindingCommitRace();
         runConcurrentActiveBindingRollbackRace();
+    }
+
+    // PA4 V004 S1: exact catalog/ACL inventory and guard boundary. No lifecycle/concurrency
+    // behavior method belongs to S1; those arrive in S2.
+    @Test
+    void v004CatalogOrderInventoryAndGuardsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV004TablesColumnsChecksIndexesFks(connection);
+            assertV004CheckPredicateInventory(connection);
+            assertV004FunctionsAndTriggersExact(connection);
+            assertV004NoIdDefaultsOrSequences(connection);
+            assertNoV005PlusObjects(connection);
+        }
+    }
+
+    @Test
+    void v004OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV004SchemaUsageMatrix(connection);
+            assertV004OwnedAndCrossModuleGrants(connection);
+            assertV004PublicAclIsZero(connection);
+            assertV004GuardFunctionExecuteBoundaries(connection);
+        }
     }
 
     /**
@@ -4166,11 +4445,16 @@ class PostgresContainerIT {
         assertThat(queryStrings(
                 connection,
                 "SELECT n.nspname || '=' || pg_get_userbyid(n.nspowner) FROM pg_namespace n "
-                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam','subject_number') "
+                        + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam','subject_number',"
+                        + "'catalog_order','ivr','entitlement_metering','activation_consent') "
                         + "ORDER BY n.nspname"))
                 .containsExactly(
+                        "activation_consent=activation_consent_owner",
                         "audit=audit_owner",
+                        "catalog_order=catalog_order_owner",
                         "customer_iam=customer_iam_owner",
+                        "entitlement_metering=entitlement_metering_owner",
+                        "ivr=ivr_owner",
                         "operations_iam=operations_iam_owner",
                         "organization_access=organization_access_owner",
                         "platform=platform_reliability_owner",
@@ -4178,8 +4462,7 @@ class PostgresContainerIT {
 
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname IN "
-                        + "('catalog_order','ivr','entitlement_metering','activation_consent','evidence','sharing')"))
+                "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
                 .isZero();
 
         assertThat(queryStrings(
@@ -4187,8 +4470,12 @@ class PostgresContainerIT {
                 "SELECT nspname FROM pg_namespace WHERE nspname <> 'public' "
                         + "AND nspname <> 'information_schema' AND nspname NOT LIKE 'pg%' ORDER BY nspname"))
                 .containsExactly(
+                        "activation_consent",
                         "audit",
+                        "catalog_order",
                         "customer_iam",
+                        "entitlement_metering",
+                        "ivr",
                         "operations_iam",
                         "organization_access",
                         "platform",
@@ -4196,6 +4483,9 @@ class PostgresContainerIT {
 
         List<String> expectedRoles = new ArrayList<>();
         for (String role : S1_ROLES) {
+            expectedRoles.add(role + ":false:false:false:false");
+        }
+        for (String role : V004_ROLES) {
             expectedRoles.add(role + ":false:false:false:false");
         }
         expectedRoles.sort(String::compareTo);
@@ -4209,10 +4499,7 @@ class PostgresContainerIT {
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_roles WHERE rolname IN "
-                        + "('catalog_order_owner','catalog_order_role','ivr_owner','ivr_role',"
-                        + "'entitlement_metering_owner','entitlement_metering_role',"
-                        + "'activation_consent_owner','activation_consent_role','evidence_owner',"
-                        + "'evidence_role','sharing_owner','sharing_role')"))
+                        + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
                 .isZero();
     }
 
@@ -4220,8 +4507,8 @@ class PostgresContainerIT {
         assertThat(queryStrings(
                 connection,
                 "SELECT table_schema || '.' || table_name FROM information_schema.tables "
-                        + "WHERE table_schema NOT IN ('pg_catalog','information_schema') "
-                        + "AND NOT (table_schema = 'public' AND table_name = 'flyway_schema_history') ORDER BY 1"))
+                        + "WHERE table_schema IN ('platform','audit','customer_iam','organization_access','operations_iam','subject_number') "
+                        + "ORDER BY 1"))
                 .containsExactlyElementsOf(ALL_V001_V003_TABLES);
 
         assertThat(queryStrings(
@@ -4928,6 +5215,11 @@ class PostgresContainerIT {
                 .containsExactly(
                         "audit.append_fact",
                         "audit.reject_row_mutation",
+                        "catalog_order.guard_catalog_offer",
+                        "catalog_order.guard_catalog_version_published",
+                        "catalog_order.guard_customer_order_snapshot",
+                        "catalog_order.guard_payment_order_identity",
+                        "catalog_order.reject_row_mutation",
                         "customer_iam.guard_auth_identity",
                         "customer_iam.guard_customer_account",
                         "customer_iam.guard_identity_profile",
@@ -5039,6 +5331,13 @@ class PostgresContainerIT {
                         + "AND n.nspname NOT LIKE 'pg%' ORDER BY 1"))
                 .containsExactly(
                         "audit.audit_fact.trg_audit_fact_immutable",
+                        "catalog_order.catalog_benefit_line.trg_catalog_benefit_line_immutable",
+                        "catalog_order.catalog_offer.trg_catalog_offer_guard",
+                        "catalog_order.catalog_product.trg_catalog_product_immutable",
+                        "catalog_order.catalog_version.trg_catalog_version_guard",
+                        "catalog_order.customer_order.trg_customer_order_guard",
+                        "catalog_order.payment_event.trg_payment_event_immutable",
+                        "catalog_order.payment_order.trg_payment_order_guard",
                         "customer_iam.auth_identity.trg_auth_identity_guard",
                         "customer_iam.customer_account.trg_customer_account_guard",
                         "customer_iam.identity_profile.trg_identity_profile_guard",
@@ -5721,26 +6020,1061 @@ class PostgresContainerIT {
                 .as("no V003 sequence exists").isZero();
     }
 
-    private static void assertNoV004PlusObjects(Connection connection) throws SQLException {
+    private static void assertNoV005PlusObjects(Connection connection) throws SQLException {
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname IN "
-                        + "('catalog_order','ivr','entitlement_metering','activation_consent',"
-                        + "'evidence','sharing')"))
+                "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname IN ('ivr','entitlement_metering','activation_consent') "
+                        + "AND c.relkind = 'r'"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
                 .isZero();
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_roles WHERE rolname IN "
+                        + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
+                .isZero();
+        assertThat(toRegclass(connection, "ivr.call_task")).isNull();
+        assertThat(toRegclass(connection, "ivr.call_session")).isNull();
+        assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNull();
+        assertThat(toRegclass(connection, "ivr.inbound_session")).isNull();
+        assertThat(toRegclass(connection, "ivr.call_record")).isNull();
+        assertThat(toRegclass(connection, "ivr.call_leg")).isNull();
+        assertThat(toRegclass(connection, "ivr.call_event")).isNull();
+        assertThat(toRegclass(connection, "ivr.ivr_decision")).isNull();
+        assertThat(toRegclass(connection, "activation_consent.consent_record")).isNull();
+        assertThat(toRegclass(connection, "activation_consent.service_activation")).isNull();
+        assertThat(toRegclass(connection, "activation_consent.service_activation_transition")).isNull();
+    }
+
+    private static void assertV004TablesColumnsChecksIndexesFks(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT table_schema || '.' || table_name FROM information_schema.tables "
+                        + "WHERE table_schema = 'catalog_order' ORDER BY 1"))
+                .containsExactlyElementsOf(V004_TABLES);
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'catalog_order'"))
+                .as("total V004 columns").isEqualTo(78);
+
+        Map<String, String> v004ColumnOrder = new java.util.LinkedHashMap<>();
+        v004ColumnOrder.put("catalog_product",
+                "id,product_code,product_family,created_at");
+        v004ColumnOrder.put("catalog_version",
+                "id,product_id,version_no,sale_status,offer_type,audience,price_cents,currency,"
+                        + "billing_cycle,installments,grant_interval_months,snapshot,snapshot_sha256,"
+                        + "created_by_employee_id,created_at,published_at,revision");
+        v004ColumnOrder.put("catalog_offer",
+                "id,catalog_version_id,channel,offer_status,version_token,created_at,revision");
+        v004ColumnOrder.put("catalog_benefit_line",
+                "id,catalog_version_id,entitlement_type,quantity,validity_days,grant_interval_months");
+        v004ColumnOrder.put("customer_order",
+                "id,order_no,account_id,owner_organization_id,subject_id,channel,catalog_version_id,"
+                        + "catalog_offer_id,purchase_consent_id,amount_cents,currency,payment_status,"
+                        + "snapshot,snapshot_sha256,version_token,idempotency_key,request_fingerprint,"
+                        + "revision,created_at,paid_at,closed_at");
+        v004ColumnOrder.put("payment_order",
+                "id,order_id,provider,merchant_order_no,provider_transaction_id,status,amount_cents,"
+                        + "currency,created_at,updated_at,revision");
+        v004ColumnOrder.put("payment_event",
+                "id,payment_order_id,provider,provider_event_id,event_type,signature_verified,"
+                        + "payload_ciphertext,payload_sha256,transaction_id,amount_cents,occurred_at,"
+                        + "received_at");
+        Map<String, List<String>> v004ColumnDetails = new java.util.LinkedHashMap<>();
+        v004ColumnDetails.put("catalog_product", List.of(
+                "id|uuid|NO|<none>",
+                "product_code|text|NO|<none>",
+                "product_family|text|NO|<none>",
+                "created_at|timestamp with time zone|NO|now()"));
+        v004ColumnDetails.put("catalog_version", List.of(
+                "id|uuid|NO|<none>",
+                "product_id|uuid|NO|<none>",
+                "version_no|integer|NO|<none>",
+                "sale_status|text|NO|'DRAFT'::text",
+                "offer_type|text|NO|<none>",
+                "audience|text|NO|<none>",
+                "price_cents|bigint|YES|<none>",
+                "currency|text|NO|<none>",
+                "billing_cycle|text|NO|<none>",
+                "installments|integer|NO|<none>",
+                "grant_interval_months|integer|NO|<none>",
+                "snapshot|jsonb|NO|<none>",
+                "snapshot_sha256|text|NO|<none>",
+                "created_by_employee_id|uuid|NO|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "published_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1"));
+        v004ColumnDetails.put("catalog_offer", List.of(
+                "id|uuid|NO|<none>",
+                "catalog_version_id|uuid|NO|<none>",
+                "channel|text|NO|<none>",
+                "offer_status|text|NO|'ACTIVE'::text",
+                "version_token|text|NO|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "revision|integer|NO|1"));
+        v004ColumnDetails.put("catalog_benefit_line", List.of(
+                "id|uuid|NO|<none>",
+                "catalog_version_id|uuid|NO|<none>",
+                "entitlement_type|text|NO|<none>",
+                "quantity|bigint|NO|<none>",
+                "validity_days|integer|NO|<none>",
+                "grant_interval_months|integer|NO|<none>"));
+        v004ColumnDetails.put("customer_order", List.of(
+                "id|uuid|NO|<none>",
+                "order_no|text|NO|<none>",
+                "account_id|uuid|NO|<none>",
+                "owner_organization_id|uuid|YES|<none>",
+                "subject_id|uuid|NO|<none>",
+                "channel|text|NO|<none>",
+                "catalog_version_id|uuid|NO|<none>",
+                "catalog_offer_id|uuid|NO|<none>",
+                "purchase_consent_id|uuid|NO|<none>",
+                "amount_cents|bigint|NO|<none>",
+                "currency|text|NO|<none>",
+                "payment_status|text|NO|'UNPAID'::text",
+                "snapshot|jsonb|NO|<none>",
+                "snapshot_sha256|text|NO|<none>",
+                "version_token|text|NO|<none>",
+                "idempotency_key|text|NO|<none>",
+                "request_fingerprint|text|NO|<none>",
+                "revision|integer|NO|1",
+                "created_at|timestamp with time zone|NO|now()",
+                "paid_at|timestamp with time zone|YES|<none>",
+                "closed_at|timestamp with time zone|YES|<none>"));
+        v004ColumnDetails.put("payment_order", List.of(
+                "id|uuid|NO|<none>",
+                "order_id|uuid|NO|<none>",
+                "provider|text|NO|<none>",
+                "merchant_order_no|text|NO|<none>",
+                "provider_transaction_id|text|YES|<none>",
+                "status|text|NO|'UNPAID'::text",
+                "amount_cents|bigint|NO|<none>",
+                "currency|text|NO|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "updated_at|timestamp with time zone|NO|now()",
+                "revision|integer|NO|1"));
+        v004ColumnDetails.put("payment_event", List.of(
+                "id|uuid|NO|<none>",
+                "payment_order_id|uuid|NO|<none>",
+                "provider|text|NO|<none>",
+                "provider_event_id|text|NO|<none>",
+                "event_type|text|NO|<none>",
+                "signature_verified|boolean|NO|false",
+                "payload_ciphertext|text|NO|<none>",
+                "payload_sha256|text|NO|<none>",
+                "transaction_id|text|YES|<none>",
+                "amount_cents|bigint|NO|<none>",
+                "occurred_at|timestamp with time zone|NO|<none>",
+                "received_at|timestamp with time zone|NO|now()"));
+        for (Map.Entry<String, String> entry : v004ColumnOrder.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns "
+                            + "WHERE table_schema = 'catalog_order' AND table_name = ?",
+                    entry.getKey()))
+                    .as("columns of catalog_order.%s", entry.getKey())
+                    .containsExactly(entry.getValue());
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM information_schema.columns "
+                            + "WHERE table_schema = 'catalog_order' AND table_name = ?",
+                    entry.getKey()))
+                    .as("column count of catalog_order.%s", entry.getKey())
+                    .isEqualTo(entry.getValue().split(",").length);
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name || '|' || data_type || '|' || is_nullable || '|' "
+                            + "|| coalesce(column_default, '<none>') FROM information_schema.columns "
+                            + "WHERE table_schema = 'catalog_order' AND table_name = ? ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("exact column rows of catalog_order.%s", entry.getKey())
+                    .containsExactlyElementsOf(v004ColumnDetails.get(entry.getKey()));
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attrdef d "
+                        + "JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
+                        + "JOIN pg_class r ON r.oid = d.adrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order'"))
+                .as("total V004 defaulted columns")
+                .isEqualTo(16);
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.contype = 'c'"))
+                .as("total V004 named checks").isEqualTo(51);
+
+        Map<String, List<String>> v004CheckNames = new java.util.LinkedHashMap<>();
+        v004CheckNames.put("catalog_product", List.of(
+                "ck_catalog_product_code",
+                "ck_catalog_product_family"));
+        v004CheckNames.put("catalog_version", List.of(
+                "ck_catalog_version_audience",
+                "ck_catalog_version_audience_shape",
+                "ck_catalog_version_billing_matrix",
+                "ck_catalog_version_currency",
+                "ck_catalog_version_no",
+                "ck_catalog_version_offer_type",
+                "ck_catalog_version_price",
+                "ck_catalog_version_published_shape",
+                "ck_catalog_version_revision",
+                "ck_catalog_version_sale_status",
+                "ck_catalog_version_snapshot_sha",
+                "ck_catalog_version_snapshot_type"));
+        v004CheckNames.put("catalog_offer", List.of(
+                "ck_catalog_offer_channel",
+                "ck_catalog_offer_revision",
+                "ck_catalog_offer_status",
+                "ck_catalog_offer_token"));
+        v004CheckNames.put("catalog_benefit_line", List.of(
+                "ck_catalog_benefit_interval",
+                "ck_catalog_benefit_quantity",
+                "ck_catalog_benefit_type",
+                "ck_catalog_benefit_validity"));
+        v004CheckNames.put("customer_order", List.of(
+                "ck_customer_order_amount",
+                "ck_customer_order_channel",
+                "ck_customer_order_currency",
+                "ck_customer_order_fingerprint",
+                "ck_customer_order_idempotency",
+                "ck_customer_order_no",
+                "ck_customer_order_payment_shape",
+                "ck_customer_order_payment_status",
+                "ck_customer_order_revision",
+                "ck_customer_order_snapshot_sha",
+                "ck_customer_order_snapshot_type",
+                "ck_customer_order_time_order",
+                "ck_customer_order_version_token"));
+        v004CheckNames.put("payment_order", List.of(
+                "ck_payment_order_amount",
+                "ck_payment_order_currency",
+                "ck_payment_order_merchant_no",
+                "ck_payment_order_paid_shape",
+                "ck_payment_order_provider",
+                "ck_payment_order_revision",
+                "ck_payment_order_status",
+                "ck_payment_order_time_order",
+                "ck_payment_order_transaction"));
+        v004CheckNames.put("payment_event", List.of(
+                "ck_payment_event_amount",
+                "ck_payment_event_event_id",
+                "ck_payment_event_payload_ciphertext",
+                "ck_payment_event_payload_sha",
+                "ck_payment_event_provider",
+                "ck_payment_event_transaction",
+                "ck_payment_event_type"));
+        for (Map.Entry<String, List<String>> entry : v004CheckNames.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'catalog_order' AND r.relname = ? AND c.contype = 'c' "
+                            + "ORDER BY conname",
+                    entry.getKey()))
+                    .as("check names of catalog_order.%s", entry.getKey())
+                    .containsExactlyElementsOf(entry.getValue());
+        }
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.contype = 'p' ORDER BY 1"))
+                .containsExactly(
+                        "pk_catalog_benefit_line",
+                        "pk_catalog_offer",
+                        "pk_catalog_product",
+                        "pk_catalog_version",
+                        "pk_customer_order",
+                        "pk_payment_event",
+                        "pk_payment_order");
+        assertThat(queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.contype = 'u' ORDER BY 1"))
+                .containsExactly(
+                        "uq_catalog_benefit_version_type",
+                        "uq_catalog_offer_version_channel",
+                        "uq_catalog_product_code",
+                        "uq_catalog_version_no",
+                        "uq_customer_order_idempotency",
+                        "uq_customer_order_no",
+                        "uq_payment_event_provider_event",
+                        "uq_payment_order_merchant",
+                        "uq_payment_order_order");
+
+        assertThat(V004_PK_UNIQUE_DEFS).as("expected V004 PK/unique map size").hasSize(16);
+        for (String row : V004_PK_UNIQUE_DEFS) {
+            String[] expected = row.split("\\|", -1);
+            List<String> actualDefs = queryStrings(
+                    connection,
+                    "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'catalog_order' AND r.relname = ? AND c.conname = ? "
+                            + "AND c.contype::text = ?",
+                    expected[0], expected[1], expected[2]);
+            assertThat(actualDefs)
+                    .as("exactly one %s row for catalog_order.%s", expected[2], row)
+                    .hasSize(1);
+            assertThat(actualDefs.get(0))
+                    .as("whole pg_get_constraintdef equality for catalog_order.%s", row)
+                    .isEqualTo(expected[3]);
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true "
+                            + "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum "
+                            + "WHERE n.nspname = 'catalog_order' AND r.relname = ? AND c.conname = ? "
+                            + "AND c.contype::text = ? ORDER BY k.ord",
+                    expected[0], expected[1], expected[2]))
+                    .as("ordered key columns of catalog_order.%s", row)
+                    .containsExactlyElementsOf(List.of(expected[4].split(",")));
+        }
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.contype = 'f' ORDER BY conname"))
+                .containsExactly(
+                        "fk_catalog_benefit_version",
+                        "fk_catalog_offer_version",
+                        "fk_catalog_version_employee",
+                        "fk_catalog_version_product",
+                        "fk_customer_order_account",
+                        "fk_customer_order_offer",
+                        "fk_customer_order_organization",
+                        "fk_customer_order_subject",
+                        "fk_customer_order_version",
+                        "fk_payment_event_order",
+                        "fk_payment_order_order");
+
+        assertThat(V004_FK_DEFS).as("expected V004 FK map size").hasSize(11);
+        for (String row : V004_FK_DEFS) {
+            String[] expected = row.split("\\|", -1);
+            assertThat(queryString(
+                    connection,
+                    "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'catalog_order' AND c.conname = ?",
+                    expected[0]))
+                    .as("FK def %s", expected[0])
+                    .isEqualTo(expected[1]);
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT c.confupdtype::text || c.confdeltype::text || c.confmatchtype::text || '|' "
+                            + "|| c.condeferrable::text || '|' || c.condeferred::text || '|' || c.convalidated::text "
+                            + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'catalog_order' AND c.conname = ?",
+                    expected[0]))
+                    .as("FK properties %s", expected[0])
+                    .containsExactly("rrs|false|false|true");
+        }
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
+                .as("fk_customer_order_consent is deferred to V007")
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'catalog_order' AND table_name = 'customer_order' "
+                        + "AND column_name = 'purchase_consent_id' AND is_nullable = 'NO' "
+                        + "AND column_default IS NULL"))
+                .as("purchase_consent_id is NOT NULL with no default")
+                .isEqualTo(1);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.key_column_usage k "
+                        + "JOIN information_schema.table_constraints t "
+                        + "ON t.constraint_name = k.constraint_name "
+                        + "AND t.table_schema = k.table_schema AND t.table_name = k.table_name "
+                        + "WHERE k.table_schema = 'catalog_order' AND k.table_name = 'customer_order' "
+                        + "AND k.column_name = 'purchase_consent_id' "
+                        + "AND t.constraint_type = 'FOREIGN KEY'"))
+                .as("purchase_consent_id has no FK at V004")
+                .isZero();
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT schemaname || '.' || tablename || '.' || indexname FROM pg_indexes "
+                        + "WHERE schemaname = 'catalog_order' ORDER BY 1"))
+                .containsExactly(
+                        "catalog_order.catalog_benefit_line.ix_catalog_benefit_version",
+                        "catalog_order.catalog_benefit_line.pk_catalog_benefit_line",
+                        "catalog_order.catalog_benefit_line.uq_catalog_benefit_version_type",
+                        "catalog_order.catalog_offer.ix_catalog_offer_channel_status",
+                        "catalog_order.catalog_offer.pk_catalog_offer",
+                        "catalog_order.catalog_offer.uq_catalog_offer_version_channel",
+                        "catalog_order.catalog_product.ix_catalog_product_family",
+                        "catalog_order.catalog_product.pk_catalog_product",
+                        "catalog_order.catalog_product.uq_catalog_product_code",
+                        "catalog_order.catalog_version.ix_catalog_version_product_status",
+                        "catalog_order.catalog_version.pk_catalog_version",
+                        "catalog_order.catalog_version.uq_catalog_version_active",
+                        "catalog_order.catalog_version.uq_catalog_version_no",
+                        "catalog_order.customer_order.ix_customer_order_organization",
+                        "catalog_order.customer_order.ix_customer_order_subject_status",
+                        "catalog_order.customer_order.ix_customer_order_version",
+                        "catalog_order.customer_order.pk_customer_order",
+                        "catalog_order.customer_order.uq_customer_order_idempotency",
+                        "catalog_order.customer_order.uq_customer_order_no",
+                        "catalog_order.payment_event.ix_payment_event_order_time",
+                        "catalog_order.payment_event.ix_payment_event_verified",
+                        "catalog_order.payment_event.pk_payment_event",
+                        "catalog_order.payment_event.uq_payment_event_provider_event",
+                        "catalog_order.payment_order.ix_payment_order_status_time",
+                        "catalog_order.payment_order.pk_payment_order",
+                        "catalog_order.payment_order.uq_payment_order_merchant",
+                        "catalog_order.payment_order.uq_payment_order_order",
+                        "catalog_order.payment_order.uq_payment_order_transaction");
+
+        assertThat(V004_INDEX_DEFS).as("expected V004 indexdef list size").hasSize(28);
+        List<String> actualIndexDefs = queryStrings(
+                connection,
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'catalog_order' ORDER BY indexdef");
+        assertThat(actualIndexDefs)
+                .as("exact V004 indexdef set")
+                .containsExactlyInAnyOrderElementsOf(V004_INDEX_DEFS);
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.relkind = 'S'"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.relkind = 'r'"))
+                .isEqualTo(7);
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || r.relname || '=' || pg_get_userbyid(r.relowner) "
+                        + "FROM pg_class r JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND r.relkind = 'r' ORDER BY 1"))
+                .containsExactly(
+                        "catalog_order.catalog_benefit_line=catalog_order_owner",
+                        "catalog_order.catalog_offer=catalog_order_owner",
+                        "catalog_order.catalog_product=catalog_order_owner",
+                        "catalog_order.catalog_version=catalog_order_owner",
+                        "catalog_order.customer_order=catalog_order_owner",
+                        "catalog_order.payment_event=catalog_order_owner",
+                        "catalog_order.payment_order=catalog_order_owner");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT rolname FROM pg_roles WHERE rolname IN "
                         + "('catalog_order_owner','catalog_order_role','ivr_owner','ivr_role',"
                         + "'entitlement_metering_owner','entitlement_metering_role',"
-                        + "'activation_consent_owner','activation_consent_role','evidence_owner',"
-                        + "'evidence_role','sharing_owner','sharing_role')"))
+                        + "'activation_consent_owner','activation_consent_role') "
+                        + "AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole)"))
+                .as("all eight V004 roles are NOLOGIN/NOSUPERUSER/NOCREATEDB/NOCREATEROLE")
+                .isEmpty();
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '=' || pg_get_userbyid(n.nspowner) FROM pg_namespace n "
+                        + "WHERE nspname IN ('catalog_order','ivr','entitlement_metering','activation_consent') "
+                        + "ORDER BY nspname"))
+                .containsExactly(
+                        "activation_consent=activation_consent_owner",
+                        "catalog_order=catalog_order_owner",
+                        "entitlement_metering=entitlement_metering_owner",
+                        "ivr=ivr_owner");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_auth_members m "
+                        + "JOIN pg_roles g ON g.oid = m.roleid "
+                        + "JOIN pg_roles r ON r.oid = m.member "
+                        + "WHERE g.rolname IN ('catalog_order_owner','catalog_order_role','ivr_owner','ivr_role',"
+                        + "'entitlement_metering_owner','entitlement_metering_role',"
+                        + "'activation_consent_owner','activation_consent_role') "
+                        + "OR r.rolname IN ('catalog_order_owner','catalog_order_role','ivr_owner','ivr_role',"
+                        + "'entitlement_metering_owner','entitlement_metering_role',"
+                        + "'activation_consent_owner','activation_consent_role')"))
+                .as("no role membership among the eight V004 roles")
+                .isZero();
+    }
+
+    private static void assertV004CheckPredicateInventory(Connection connection) throws SQLException {
+        assertThat(V004_CHECK_DEF_MAP).as("expected V004 check map tables").hasSize(7);
+        int totalChecks = 0;
+        for (Map.Entry<String, Map<String, String>> tableEntry : V004_CHECK_DEF_MAP.entrySet()) {
+            String table = tableEntry.getKey();
+            totalChecks += tableEntry.getValue().size();
+            List<String> actualNames = queryStrings(
+                    connection,
+                    "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'catalog_order' AND r.relname = ? AND c.contype = 'c' "
+                            + "ORDER BY conname",
+                    table);
+            List<String> expectedNames = new ArrayList<>(tableEntry.getValue().keySet());
+            expectedNames.sort(String::compareTo);
+            assertThat(actualNames)
+                    .as("exact check-name set for catalog_order.%s", table)
+                    .containsExactlyElementsOf(expectedNames);
+
+            for (Map.Entry<String, String> checkEntry : tableEntry.getValue().entrySet()) {
+                String checkName = checkEntry.getKey();
+                List<String> actualDefs = queryStrings(
+                        connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'catalog_order' AND r.relname = ? "
+                                + "AND c.contype = 'c' AND c.conname = ?",
+                        table, checkName);
+                assertThat(actualDefs)
+                        .as("exactly one row for catalog_order.%s.%s", table, checkName)
+                        .hasSize(1);
+                assertThat(normalizeCheckDef(actualDefs.get(0)))
+                        .as("whole pg_get_constraintdef equality for catalog_order.%s.%s",
+                                table, checkName)
+                        .isEqualTo(normalizeCheckDef(checkEntry.getValue()));
+            }
+        }
+        assertThat(totalChecks).as("total V004 checks").isEqualTo(51);
+    }
+
+    private static void assertV004FunctionsAndTriggersExact(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'catalog_order'"))
+                .as("exactly five catalog_order functions").isEqualTo(5);
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
+                        + "|| '|' || p.prosecdef || '|' || pg_get_userbyid(p.proowner) || '|' "
+                        + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'catalog_order' ORDER BY 1"))
+                .containsExactly(
+                        "catalog_order.guard_catalog_offer()|false|catalog_order_owner"
+                                + "|search_path=catalog_order, pg_temp",
+                        "catalog_order.guard_catalog_version_published()|false|catalog_order_owner"
+                                + "|search_path=catalog_order, pg_temp",
+                        "catalog_order.guard_customer_order_snapshot()|false|catalog_order_owner"
+                                + "|search_path=catalog_order, pg_temp",
+                        "catalog_order.guard_payment_order_identity()|false|catalog_order_owner"
+                                + "|search_path=catalog_order, pg_temp",
+                        "catalog_order.reject_row_mutation()|false|catalog_order_owner"
+                                + "|search_path=catalog_order, pg_temp");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'catalog_order' "
+                        + "AND EXISTS (SELECT 1 FROM unnest(p.proargnames) AS a WHERE a = 'p_id')"))
                 .isZero();
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname = 'subject_number' AND p.proname = 'issue_first_trial'"))
+                        + "WHERE n.nspname = 'catalog_order' "
+                        + "AND p.prosrc LIKE '%gen_random_uuid%'"))
                 .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'catalog_order' "
+                        + "AND p.prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
+                .isZero();
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE NOT t.tgisinternal AND n.nspname = 'catalog_order'"))
+                .as("exactly seven catalog_order triggers").isEqualTo(7);
+
+        Map<String, String[]> v004Triggers = new java.util.LinkedHashMap<>();
+        // expected: [0]=table, [1]=function, [2]=before, [3]=row, [4]=update, [5]=delete
+        v004Triggers.put("trg_catalog_product_immutable", new String[] {
+                "catalog_order.catalog_product", "catalog_order.reject_row_mutation()",
+                "1", "1", "1", "1"});
+        v004Triggers.put("trg_catalog_version_guard", new String[] {
+                "catalog_order.catalog_version", "catalog_order.guard_catalog_version_published()",
+                "1", "1", "1", "0"});
+        v004Triggers.put("trg_catalog_offer_guard", new String[] {
+                "catalog_order.catalog_offer", "catalog_order.guard_catalog_offer()",
+                "1", "1", "1", "0"});
+        v004Triggers.put("trg_catalog_benefit_line_immutable", new String[] {
+                "catalog_order.catalog_benefit_line", "catalog_order.reject_row_mutation()",
+                "1", "1", "1", "1"});
+        v004Triggers.put("trg_customer_order_guard", new String[] {
+                "catalog_order.customer_order", "catalog_order.guard_customer_order_snapshot()",
+                "1", "1", "1", "0"});
+        v004Triggers.put("trg_payment_order_guard", new String[] {
+                "catalog_order.payment_order", "catalog_order.guard_payment_order_identity()",
+                "1", "1", "1", "0"});
+        v004Triggers.put("trg_payment_event_immutable", new String[] {
+                "catalog_order.payment_event", "catalog_order.reject_row_mutation()",
+                "1", "1", "1", "1"});
+        for (Map.Entry<String, String[]> entry : v004Triggers.entrySet()) {
+            String[] expected = entry.getValue();
+            try (PreparedStatement prepared = connection.prepareStatement(
+                    "SELECT t.tgrelid = ?::regclass AS on_table, "
+                            + "t.tgfoid = ?::regprocedure AS calls_function, "
+                            + "(t.tgtype & 2) <> 0 AS is_before, "
+                            + "(t.tgtype & 1) <> 0 AS is_row, "
+                            + "(t.tgtype & 16) <> 0 AS has_update, "
+                            + "(t.tgtype & 8) <> 0 AS has_delete, "
+                            + "(t.tgtype & 4) <> 0 AS has_insert, "
+                            + "(t.tgtype & 32) <> 0 AS has_truncate "
+                            + "FROM pg_trigger t WHERE t.tgname = ? AND NOT t.tgisinternal")) {
+                prepared.setString(1, expected[0]);
+                prepared.setString(2, expected[1]);
+                prepared.setString(3, entry.getKey());
+                try (ResultSet resultSet = prepared.executeQuery()) {
+                    assertThat(resultSet.next()).as("trigger %s exists", entry.getKey()).isTrue();
+                    assertThat(resultSet.getBoolean("on_table"))
+                            .as("%s on %s", entry.getKey(), expected[0]).isTrue();
+                    assertThat(resultSet.getBoolean("calls_function"))
+                            .as("%s calls %s", entry.getKey(), expected[1]).isTrue();
+                    assertThat(resultSet.getBoolean("is_before"))
+                            .as("%s BEFORE", entry.getKey())
+                            .isEqualTo("1".equals(expected[2]));
+                    assertThat(resultSet.getBoolean("is_row"))
+                            .as("%s FOR EACH ROW", entry.getKey())
+                            .isEqualTo("1".equals(expected[3]));
+                    assertThat(resultSet.getBoolean("has_update"))
+                            .as("%s fires on UPDATE", entry.getKey())
+                            .isEqualTo("1".equals(expected[4]));
+                    assertThat(resultSet.getBoolean("has_delete"))
+                            .as("%s fires on DELETE", entry.getKey())
+                            .isEqualTo("1".equals(expected[5]));
+                    assertThat(resultSet.getBoolean("has_insert"))
+                            .as("%s no INSERT", entry.getKey()).isFalse();
+                    assertThat(resultSet.getBoolean("has_truncate"))
+                            .as("%s no TRUNCATE", entry.getKey()).isFalse();
+                    assertThat(resultSet.next()).isFalse();
+                }
+            }
+        }
+    }
+
+    private static void assertV004NoIdDefaultsOrSequences(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attrdef d "
+                        + "JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
+                        + "JOIN pg_class r ON r.oid = d.adrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND a.attname = 'id'"))
+                .as("no V004 id column has a default").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.relkind = 'S'"))
+                .as("no V004 sequence exists").isZero();
+    }
+
+    private static void assertV004SchemaUsageMatrix(Connection connection) throws SQLException {
+        // F-PA4-S1-01 fix 1: complete effective USAGE/CREATE matrix (accepted plan 6.6.1,
+        // 6.6.5 and 8.3). Every S1 role, every V004 role and PUBLIC is checked against the
+        // four S2 schemas and the five S1 schemas touched by the V004 wave. Owners hold
+        // USAGE and CREATE only on their own schema (inherent); no runtime or foreign
+        // owner role holds CREATE anywhere; every grantee not enumerated below has
+        // USAGE false, so an unlisted GRANT USAGE/CREATE fails the suite closed.
+        Map<String, String> ownerBySchema = new java.util.LinkedHashMap<>();
+        ownerBySchema.put("catalog_order", "catalog_order_owner");
+        ownerBySchema.put("ivr", "ivr_owner");
+        ownerBySchema.put("entitlement_metering", "entitlement_metering_owner");
+        ownerBySchema.put("activation_consent", "activation_consent_owner");
+        ownerBySchema.put("customer_iam", "customer_iam_owner");
+        ownerBySchema.put("organization_access", "organization_access_owner");
+        ownerBySchema.put("subject_number", "subject_number_owner");
+        ownerBySchema.put("platform", "platform_reliability_owner");
+        ownerBySchema.put("audit", "audit_owner");
+        Map<String, List<String>> usageRolesBySchema = new java.util.LinkedHashMap<>();
+        usageRolesBySchema.put("catalog_order", List.of(
+                "catalog_order_owner", "catalog_order_role", "entitlement_metering_role"));
+        usageRolesBySchema.put("ivr", List.of("ivr_owner"));
+        usageRolesBySchema.put("entitlement_metering", List.of(
+                "entitlement_metering_owner", "entitlement_metering_role",
+                "activation_consent_role", "ivr_role"));
+        usageRolesBySchema.put("activation_consent", List.of(
+                "activation_consent_owner", "activation_consent_role", "ivr_role",
+                "catalog_order_role"));
+        usageRolesBySchema.put("customer_iam", List.of(
+                "customer_iam_owner", "customer_iam_role", "subject_number_role",
+                "catalog_order_role"));
+        usageRolesBySchema.put("organization_access", List.of(
+                "organization_access_owner", "organization_access_role", "customer_iam_role",
+                "subject_number_role", "catalog_order_role"));
+        usageRolesBySchema.put("subject_number", List.of(
+                "subject_number_owner", "subject_number_role",
+                "subject_identity_verification_role", "catalog_order_role"));
+        usageRolesBySchema.put("platform", List.of(
+                "platform_reliability_owner", "platform_reliability_role",
+                "platform_dispatcher_role", "customer_iam_role", "organization_access_role",
+                "operations_iam_role", "subject_number_role", "catalog_order_role", "ivr_role",
+                "entitlement_metering_role", "activation_consent_role"));
+        usageRolesBySchema.put("audit", List.of(
+                "audit_owner", "customer_iam_role", "organization_access_role",
+                "operations_iam_role", "subject_number_role",
+                "subject_identity_verification_role", "operations_service_role",
+                "audit_reader_role", "catalog_order_role", "ivr_role",
+                "entitlement_metering_role", "activation_consent_role"));
+        List<String> schemaGrantees = new ArrayList<>(S1_ROLES);
+        schemaGrantees.addAll(V004_ROLES);
+        schemaGrantees.add("public");
+        for (Map.Entry<String, String> schemaEntry : ownerBySchema.entrySet()) {
+            String schema = schemaEntry.getKey();
+            String owner = schemaEntry.getValue();
+            List<String> usageRoles = usageRolesBySchema.get(schema);
+            for (String grantee : schemaGrantees) {
+                boolean expectUsage = usageRoles.contains(grantee);
+                boolean expectCreate = grantee.equals(owner);
+                assertThat(hasSchema(connection, grantee, schema, "USAGE"))
+                        .as("%s schema USAGE %s", grantee, schema).isEqualTo(expectUsage);
+                assertThat(hasSchema(connection, grantee, schema, "CREATE"))
+                        .as("%s schema CREATE %s", grantee, schema).isEqualTo(expectCreate);
+            }
+        }
+        // Accepted V004 wave rules kept explicit for auditability.
+        assertThat(hasSchema(connection, "catalog_order_role", "activation_consent", "USAGE"))
+                .as("catalog_order_role activation_consent USAGE is granted at V004").isTrue();
+        assertThat(hasSchema(connection, "catalog_order_role", "entitlement_metering", "USAGE"))
+                .as("catalog_order_role first entitlement_metering USAGE is V006").isFalse();
+        assertThat(hasSchema(connection, "catalog_order_role", "ivr", "USAGE"))
+                .as("catalog_order_role ivr USAGE is not granted at V004").isFalse();
+        assertThat(hasSchema(connection, "ivr_role", "ivr", "USAGE"))
+                .as("ivr_role ivr USAGE is deferred to V005").isFalse();
+        assertThat(hasSchema(connection, "ivr_role", "catalog_order", "USAGE"))
+                .as("ivr_role catalog_order USAGE is deferred to V005").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
+                .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
+        assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
+                .as("entitlement_metering_role subject USAGE is deferred to V006").isFalse();
+    }
+
+    private static void assertV004OwnedAndCrossModuleGrants(Connection connection) throws SQLException {
+        // F-PA4-S1-01 fix 1: complete effective table/column matrix (accepted plan 6.6.2,
+        // 6.6.3, 6.6.5 and 8.3) across all 15 S1 roles and all 8 V004 roles on the seven
+        // V004 owned tables and the five V004-touched S1 cross-module tables, including
+        // REFERENCES/TRIGGER and column-level INSERT/UPDATE denials. Owner-inherent
+        // privileges are modeled explicitly; catalog_order_role holds table SELECT/INSERT
+        // and only the exact column UPDATE sets; entitlement_metering_role holds only the
+        // exact cross-module column SELECT sets; every other out-of-matrix table or
+        // column privilege is false, so a future out-of-matrix grant fails closed.
+        Map<String, List<String>> allColumnsByTable = new java.util.LinkedHashMap<>();
+        allColumnsByTable.put("catalog_order.catalog_product", List.of(
+                "id", "product_code", "product_family", "created_at"));
+        allColumnsByTable.put("catalog_order.catalog_version", List.of(
+                "id", "product_id", "version_no", "sale_status", "offer_type", "audience",
+                "price_cents", "currency", "billing_cycle", "installments", "grant_interval_months",
+                "snapshot", "snapshot_sha256", "created_by_employee_id", "created_at",
+                "published_at", "revision"));
+        allColumnsByTable.put("catalog_order.catalog_offer", List.of(
+                "id", "catalog_version_id", "channel", "offer_status", "version_token",
+                "created_at", "revision"));
+        allColumnsByTable.put("catalog_order.catalog_benefit_line", List.of(
+                "id", "catalog_version_id", "entitlement_type", "quantity", "validity_days",
+                "grant_interval_months"));
+        allColumnsByTable.put("catalog_order.customer_order", List.of(
+                "id", "order_no", "account_id", "owner_organization_id", "subject_id", "channel",
+                "catalog_version_id", "catalog_offer_id", "purchase_consent_id", "amount_cents",
+                "currency", "payment_status", "snapshot", "snapshot_sha256", "version_token",
+                "idempotency_key", "request_fingerprint", "revision", "created_at", "paid_at",
+                "closed_at"));
+        allColumnsByTable.put("catalog_order.payment_order", List.of(
+                "id", "order_id", "provider", "merchant_order_no", "provider_transaction_id",
+                "status", "amount_cents", "currency", "created_at", "updated_at", "revision"));
+        allColumnsByTable.put("catalog_order.payment_event", List.of(
+                "id", "payment_order_id", "provider", "provider_event_id", "event_type",
+                "signature_verified", "payload_ciphertext", "payload_sha256", "transaction_id",
+                "amount_cents", "occurred_at", "received_at"));
+
+        Map<String, List<String>> runtimeUpdateColumns = new java.util.LinkedHashMap<>();
+        runtimeUpdateColumns.put("catalog_order.catalog_product", List.of());
+        runtimeUpdateColumns.put("catalog_order.catalog_version", List.of(
+                "sale_status", "offer_type", "audience", "price_cents", "currency",
+                "billing_cycle", "installments", "grant_interval_months", "snapshot",
+                "snapshot_sha256", "published_at", "revision"));
+        runtimeUpdateColumns.put("catalog_order.catalog_offer", List.of(
+                "offer_status", "version_token", "revision"));
+        runtimeUpdateColumns.put("catalog_order.catalog_benefit_line", List.of());
+        runtimeUpdateColumns.put("catalog_order.customer_order", List.of(
+                "payment_status", "paid_at", "closed_at", "revision"));
+        runtimeUpdateColumns.put("catalog_order.payment_order", List.of(
+                "status", "provider_transaction_id", "updated_at", "revision"));
+        runtimeUpdateColumns.put("catalog_order.payment_event", List.of());
+
+        Map<String, List<String>> meteringCrossSelect = new java.util.LinkedHashMap<>();
+        meteringCrossSelect.put("catalog_order.customer_order", List.of(
+                "id", "account_id", "owner_organization_id", "subject_id", "catalog_version_id",
+                "snapshot", "snapshot_sha256", "payment_status", "currency", "created_at"));
+        meteringCrossSelect.put("catalog_order.payment_order", List.of(
+                "id", "order_id", "status", "amount_cents", "currency", "updated_at"));
+        meteringCrossSelect.put("catalog_order.payment_event", List.of(
+                "id", "payment_order_id", "provider", "provider_event_id", "event_type",
+                "signature_verified", "amount_cents", "occurred_at"));
+
+        Map<String, List<String>> catalogCrossSelect = new java.util.LinkedHashMap<>();
+        catalogCrossSelect.put("customer_iam.customer_account", List.of("id", "status"));
+        catalogCrossSelect.put("customer_iam.identity_profile",
+                List.of("account_id", "real_name_status"));
+        catalogCrossSelect.put("organization_access.organization", List.of("id", "status"));
+        catalogCrossSelect.put("organization_access.organization_membership",
+                List.of("organization_id", "account_id", "role", "status"));
+        catalogCrossSelect.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "revision"));
+        Map<String, List<String>> s1AllColumns = new java.util.LinkedHashMap<>();
+        s1AllColumns.put("customer_iam.customer_account",
+                List.of("id", "display_name", "status", "revision", "created_at", "updated_at"));
+        s1AllColumns.put("customer_iam.identity_profile",
+                List.of("id", "account_id", "real_name_status", "legal_name_ciphertext",
+                        "id_number_ciphertext", "id_number_hmac", "verification_ref_ciphertext",
+                        "verified_at", "revision"));
+        s1AllColumns.put("organization_access.organization",
+                List.of("id", "display_name", "status", "revision", "created_at", "updated_at"));
+        s1AllColumns.put("organization_access.organization_membership",
+                List.of("id", "organization_id", "account_id", "role", "department_label",
+                        "status", "revision"));
+        s1AllColumns.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "source",
+                        "real_name_status", "real_name_verified_at", "revision", "created_at",
+                        "updated_at"));
+
+        assertThat(runtimeUpdateColumns.get("catalog_order.catalog_version")).hasSize(12);
+        assertThat(runtimeUpdateColumns.get("catalog_order.catalog_offer")).hasSize(3);
+        assertThat(runtimeUpdateColumns.get("catalog_order.customer_order")).hasSize(4);
+        assertThat(runtimeUpdateColumns.get("catalog_order.payment_order")).hasSize(4);
+        assertThat(meteringCrossSelect.get("catalog_order.customer_order")).hasSize(10);
+        assertThat(meteringCrossSelect.get("catalog_order.payment_order")).hasSize(6);
+        assertThat(meteringCrossSelect.get("catalog_order.payment_event")).hasSize(8);
+
+        List<String> matrixRoles = new ArrayList<>(S1_ROLES);
+        matrixRoles.addAll(V004_ROLES);
+        for (String table : V004_TABLES) {
+            for (String role : matrixRoles) {
+                boolean ownerRow = role.equals("catalog_order_owner");
+                boolean catalogRuntimeRow = role.equals("catalog_order_role");
+                boolean meteringRow = role.equals("entitlement_metering_role");
+                List<String> meteringColumns = meteringCrossSelect.getOrDefault(table, List.of());
+                assertThat(hasTable(connection, role, table, "SELECT"))
+                        .as("matrix %s table SELECT %s", role, table)
+                        .isEqualTo(ownerRow || catalogRuntimeRow);
+                assertThat(hasTable(connection, role, table, "INSERT"))
+                        .as("matrix %s table INSERT %s", role, table)
+                        .isEqualTo(ownerRow || catalogRuntimeRow);
+                assertThat(hasTable(connection, role, table, "UPDATE"))
+                        .as("matrix %s table UPDATE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "DELETE"))
+                        .as("matrix %s table DELETE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "TRUNCATE"))
+                        .as("matrix %s table TRUNCATE %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "REFERENCES"))
+                        .as("matrix %s table REFERENCES %s", role, table)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, table, "TRIGGER"))
+                        .as("matrix %s table TRIGGER %s", role, table)
+                        .isEqualTo(ownerRow);
+                for (String column : allColumnsByTable.get(table)) {
+                    boolean expectColumnSelect = ownerRow || catalogRuntimeRow
+                            || (meteringRow && meteringColumns.contains(column));
+                    boolean expectColumnInsert = ownerRow || catalogRuntimeRow;
+                    boolean expectColumnUpdate = ownerRow
+                            || (catalogRuntimeRow
+                                    && runtimeUpdateColumns.get(table).contains(column));
+                    assertThat(hasColumn(connection, role, table, column, "SELECT"))
+                            .as("matrix %s column SELECT %s.%s", role, table, column)
+                            .isEqualTo(expectColumnSelect);
+                    assertThat(hasColumn(connection, role, table, column, "INSERT"))
+                            .as("matrix %s column INSERT %s.%s", role, table, column)
+                            .isEqualTo(expectColumnInsert);
+                    assertThat(hasColumn(connection, role, table, column, "UPDATE"))
+                            .as("matrix %s column UPDATE %s.%s", role, table, column)
+                            .isEqualTo(expectColumnUpdate);
+                }
+            }
+        }
+
+        // Cross-module reads for catalog_order_role on the five V004-touched S1 tables:
+        // exact column SELECT only; no table-level privilege of any kind (including
+        // REFERENCES/TRIGGER) and no column INSERT/UPDATE on any column.
+        for (Map.Entry<String, List<String>> entry : catalogCrossSelect.entrySet()) {
+            String table = entry.getKey();
+            List<String> grantedColumns = entry.getValue();
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "catalog_order_role", table, privilege))
+                        .as("catalog_order_role must not hold table %s on %s", privilege, table)
+                        .isFalse();
+            }
+            for (String column : s1AllColumns.get(table)) {
+                boolean expectSelect = grantedColumns.contains(column);
+                assertThat(hasColumn(connection, "catalog_order_role", table, column, "SELECT"))
+                        .as("catalog_order_role SELECT %s.%s", table, column)
+                        .isEqualTo(expectSelect);
+                assertThat(hasColumn(connection, "catalog_order_role", table, column, "INSERT"))
+                        .as("catalog_order_role must not INSERT %s.%s", table, column).isFalse();
+                assertThat(hasColumn(connection, "catalog_order_role", table, column, "UPDATE"))
+                        .as("catalog_order_role must not UPDATE %s.%s", table, column).isFalse();
+            }
+        }
+
+        // ivr_role, activation_consent_role and entitlement_metering_role hold no table or
+        // column privilege on any V004-touched S1 table at V004 (plan 6.6.5).
+        for (Map.Entry<String, List<String>> entry : s1AllColumns.entrySet()) {
+            String table = entry.getKey();
+            for (String role : List.of("ivr_role", "activation_consent_role",
+                    "entitlement_metering_role")) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                        "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                    assertThat(hasTable(connection, role, table, privilege))
+                            .as("%s must not hold table %s on %s", role, privilege, table)
+                            .isFalse();
+                }
+                for (String column : entry.getValue()) {
+                    for (String privilege : List.of("SELECT", "INSERT", "UPDATE")) {
+                        assertThat(hasColumn(connection, role, table, column, privilege))
+                                .as("%s must not %s %s.%s", role, privilege, table, column)
+                                .isFalse();
+                    }
+                }
+            }
+        }
+        // activation_consent/entitlement_metering tables do not exist at V004; the schema
+        // USAGE matrix asserts the catalog_order_role wave boundary for those schemas.
+    }
+
+    private static void assertV004PublicAclIsZero(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace n, "
+                        + "aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a "
+                        + "WHERE n.nspname IN ('catalog_order','ivr','entitlement_metering','activation_consent') "
+                        + "AND a.grantee = 0"))
+                .as("PUBLIC has no V004 schema privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a "
+                        + "WHERE n.nspname = 'catalog_order' AND c.relkind IN ('r','p') AND a.grantee = 0"))
+                .as("PUBLIC has no V004 table privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+                        + "WHERE n.nspname = 'catalog_order' AND a.grantee = 0"))
+                .as("PUBLIC has no V004 function privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE n.nspname = 'catalog_order' "
+                        + "AND c.relkind IN ('r','p') "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped "
+                        + "AND x.grantee = 0"))
+                .as("PUBLIC has no V004 column privilege").isZero();
+        // PA3 F-S1-01 pattern: touched S1 tables have zero PUBLIC column ACL after V004 grants
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE ((n.nspname = 'customer_iam' AND c.relname IN "
+                        + "('customer_account','identity_profile')) "
+                        + "OR (n.nspname = 'organization_access' AND c.relname IN "
+                        + "('organization','organization_membership')) "
+                        + "OR (n.nspname = 'subject_number' AND c.relname = 'business_subject')) "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped "
+                        + "AND x.grantee = 0"))
+                .as("PUBLIC has no column ACL on V004-touched S1 tables").isZero();
+    }
+
+    private static void assertV004GuardFunctionExecuteBoundaries(Connection connection)
+            throws SQLException {
+        // F-PA4-S1-01 fix 1: complete EXECUTE matrix (accepted plan 6.6.4, 6.6.5 and 8.3).
+        // catalog_order_owner holds owner-inherent EXECUTE on all five V004 functions;
+        // catalog_order_role holds EXECUTE on the four guards only; every other S1 or V004
+        // role and PUBLIC holds no EXECUTE on any guard or reject_row_mutation, so an
+        // out-of-matrix guard or reject_row_mutation EXECUTE grant fails the suite closed.
+        List<String> guardFunctions = List.of(
+                "catalog_order.guard_catalog_version_published()",
+                "catalog_order.guard_catalog_offer()",
+                "catalog_order.guard_customer_order_snapshot()",
+                "catalog_order.guard_payment_order_identity()");
+        List<String> functionMatrixRoles = new ArrayList<>(S1_ROLES);
+        functionMatrixRoles.addAll(V004_ROLES);
+        for (String function : guardFunctions) {
+            assertThat(hasFunction(connection, "catalog_order_owner", function, "EXECUTE"))
+                    .as("catalog_order_owner EXECUTE %s", function).isTrue();
+            assertThat(hasFunction(connection, "catalog_order_role", function, "EXECUTE"))
+                    .as("catalog_order_role EXECUTE %s", function).isTrue();
+            for (String role : functionMatrixRoles) {
+                if (role.equals("catalog_order_owner") || role.equals("catalog_order_role")) {
+                    continue;
+                }
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s must not EXECUTE %s", role, function).isFalse();
+            }
+            assertThat(hasFunction(connection, "public", function, "EXECUTE"))
+                    .as("PUBLIC must not EXECUTE %s", function).isFalse();
+        }
+        assertThat(hasFunction(connection, "catalog_order_owner",
+                "catalog_order.reject_row_mutation()", "EXECUTE"))
+                .as("catalog_order_owner EXECUTE reject_row_mutation").isTrue();
+        assertThat(hasFunction(connection, "catalog_order_role",
+                "catalog_order.reject_row_mutation()", "EXECUTE"))
+                .as("runtime must not EXECUTE reject_row_mutation").isFalse();
+        for (String role : functionMatrixRoles) {
+            if (role.equals("catalog_order_owner")) {
+                continue;
+            }
+            assertThat(hasFunction(connection, role,
+                    "catalog_order.reject_row_mutation()", "EXECUTE"))
+                    .as("%s must not EXECUTE reject_row_mutation", role).isFalse();
+        }
+        assertThat(hasFunction(connection, "public",
+                "catalog_order.reject_row_mutation()", "EXECUTE"))
+                .as("PUBLIC must not EXECUTE reject_row_mutation").isFalse();
+
+        // four S1 functions granted to the four S2 runtime roles
+        for (String role : List.of("catalog_order_role", "ivr_role", "entitlement_metering_role",
+                "activation_consent_role")) {
+            for (String function : PLATFORM_FUNCTIONS) {
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s EXECUTE %s", role, function).isTrue();
+            }
+            assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
+                    .as("%s EXECUTE audit.append_fact", role).isTrue();
+        }
+        // entitlement_metering_owner has no platform capability
+        assertThat(hasSchema(connection, "entitlement_metering_owner", "platform", "USAGE")).isFalse();
+        assertThat(hasFunction(connection, "entitlement_metering_owner",
+                "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)", "EXECUTE"))
+                .isFalse();
+        assertThat(queryLong(
+                connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
+                .as("no issue_first_trial at V004").isZero();
     }
 
     private static void assertV003SchemaUsageExactAndNoCreate(Connection connection) throws SQLException {
@@ -6779,14 +8113,29 @@ class PostgresContainerIT {
                 expectSqlFailure(connection, "23503", "fk_risk_binding",
                         "DELETE FROM subject_number.caller_number_binding WHERE id = ?", bindingId);
 
+                assertThat(queryStrings(connection,
+                        "SELECT n.nspname FROM pg_namespace n WHERE n.nspname IN "
+                                + "('ivr','entitlement_metering','activation_consent') ORDER BY n.nspname"))
+                        .as("S2 schemas exist")
+                        .containsExactly("activation_consent", "entitlement_metering", "ivr");
                 assertThat(queryLong(connection,
-                        "SELECT count(*) FROM pg_namespace WHERE nspname IN "
-                                + "('catalog_order','ivr','entitlement_metering','activation_consent',"
-                                + "'evidence','sharing')"))
-                        .as("OPEN risk state creates no dialing/IVR schema")
+                        "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                + "WHERE n.nspname IN ('ivr','entitlement_metering','activation_consent') "
+                                + "AND c.relkind = 'r'"))
+                        .as("no IVR/entitlement/consent table")
+                        .isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
+                        .as("no evidence/sharing schema")
                         .isZero();
                 assertThat(toRegclass(connection, "ivr.call_task")).isNull();
                 assertThat(toRegclass(connection, "ivr.call_session")).isNull();
+                assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNull();
+                assertThat(toRegclass(connection, "ivr.inbound_session")).isNull();
+                assertThat(toRegclass(connection, "ivr.call_record")).isNull();
+                assertThat(toRegclass(connection, "ivr.call_leg")).isNull();
+                assertThat(toRegclass(connection, "ivr.call_event")).isNull();
+                assertThat(toRegclass(connection, "ivr.ivr_decision")).isNull();
             } finally {
                 connection.rollback();
             }
