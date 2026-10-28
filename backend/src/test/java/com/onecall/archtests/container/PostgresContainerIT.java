@@ -9163,23 +9163,9 @@ class PostgresContainerIT {
                         "UPDATE catalog_order.catalog_version SET published_at = NULL WHERE id = ?",
                         versionId);
 
-                // ACTIVE -> OFFSALE succeeds with revision+1.
+                // Offer mutable updates succeed under the runtime role; relation
+                // changes raise the guard on the owner path.
                 switchLocalRole(connection, "catalog_order_role");
-                assertThat(executeUpdate(connection,
-                        "UPDATE catalog_order.catalog_version "
-                                + "SET sale_status = 'OFFSALE', revision = revision + 1 "
-                                + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 3",
-                        versionId)).isEqualTo(1);
-
-                // Re-activate for guard/unique probes: retire path then second ACTIVE.
-                assertThat(executeUpdate(connection,
-                        "UPDATE catalog_order.catalog_version "
-                                + "SET sale_status = 'ACTIVE', published_at = now(), "
-                                + "revision = revision + 1 "
-                                + "WHERE id = ? AND sale_status = 'OFFSALE' AND revision = 4",
-                        versionId)).isEqualTo(1);
-
-                // Offer mutable updates succeed; relation changes raise the guard.
                 assertThat(executeUpdate(connection,
                         "UPDATE catalog_order.catalog_offer "
                                 + "SET version_token = 's2-token-2', revision = revision + 1 "
@@ -9198,7 +9184,8 @@ class PostgresContainerIT {
                         "UPDATE catalog_order.catalog_offer SET catalog_version_id = ? WHERE id = ?",
                         UUID.randomUUID(), offerId);
 
-                // Second ACTIVE on the same product fails the partial unique index.
+                // Second ACTIVE on the same product fails the partial unique index
+                // while the first published version remains ACTIVE.
                 switchLocalRole(connection, "catalog_order_role");
                 expectSqlFailure(connection, "23505", "uq_catalog_version_active",
                         "UPDATE catalog_order.catalog_version "
@@ -9207,11 +9194,14 @@ class PostgresContainerIT {
                                 + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
                         secondVersionId);
 
-                // Retire-then-activate leaves exactly one ACTIVE.
+                // Legally retire the first ACTIVE (ACTIVE -> OFFSALE, terminal per
+                // docs/14 7.3) and then publish the second DRAFT. OFFSALE is never
+                // reactivated: these are synthetic DB backstop probes only, and
+                // service-owned terminality is not proven here.
                 assertThat(executeUpdate(connection,
                         "UPDATE catalog_order.catalog_version "
                                 + "SET sale_status = 'OFFSALE', revision = revision + 1 "
-                                + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 5",
+                                + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 3",
                         versionId)).isEqualTo(1);
                 assertThat(executeUpdate(connection,
                         "UPDATE catalog_order.catalog_version "
@@ -9219,6 +9209,7 @@ class PostgresContainerIT {
                                 + "revision = revision + 1 "
                                 + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
                         secondVersionId)).isEqualTo(1);
+                // Retire-then-activate leaves exactly one ACTIVE.
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM catalog_order.catalog_version "
                                 + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
@@ -9422,6 +9413,9 @@ class PostgresContainerIT {
         UUID offerId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         UUID paymentOrderId = UUID.randomUUID();
+        UUID closedOrderId = UUID.randomUUID();
+        UUID closedPaymentOrderOrderId = UUID.randomUUID();
+        UUID closedPaymentOrderId = UUID.randomUUID();
         UUID verifiedEventId = UUID.randomUUID();
         UUID unverifiedEventId = UUID.randomUUID();
         String orderNo = "S2ORD" + UUID.randomUUID().toString().replace("-", "");
@@ -9429,7 +9423,16 @@ class PostgresContainerIT {
         String fingerprint = randomSha256();
         String orderSnapshotSha = randomSha256();
         String merchantNo = "S2MER" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
-        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+        // Anchor fixture timestamps to the database clock so now() based
+        // paid_at/closed_at/updated_at probes compare against the same clock
+        // even when the host JVM and the container clock drift slightly.
+        OffsetDateTime createdAt;
+        try (Connection connection = openConnection();
+                Statement statement = connection.createStatement();
+                ResultSet resultSet = statement.executeQuery("SELECT now()")) {
+            assertThat(resultSet.next()).isTrue();
+            createdAt = resultSet.getObject(1, OffsetDateTime.class);
+        }
 
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
@@ -9488,7 +9491,10 @@ class PostgresContainerIT {
                         "UPDATE catalog_order.customer_order SET purchase_consent_id = ? WHERE id = ?",
                         UUID.randomUUID(), orderId);
 
-                // Valid payment transitions with conditional revision updates.
+                // Legal UNPAID -> PAID with conditional revision; the PAID fixture
+                // stays terminal (docs/14 7.3). The database owns only shapes, so
+                // these are synthetic DB backstop probes and never prove
+                // service-owned PAID -> CLOSED.
                 switchLocalRole(connection, "catalog_order_role");
                 assertThat(executeUpdate(connection,
                         "UPDATE catalog_order.customer_order "
@@ -9496,34 +9502,61 @@ class PostgresContainerIT {
                                 + "revision = revision + 1 "
                                 + "WHERE id = ? AND payment_status = 'UNPAID' AND revision = 1",
                         orderId)).isEqualTo(1);
-                assertThat(executeUpdate(connection,
-                        "UPDATE catalog_order.customer_order "
-                                + "SET payment_status = 'CLOSED', paid_at = NULL, closed_at = now(), "
-                                + "revision = revision + 1 "
-                                + "WHERE id = ? AND payment_status = 'PAID' AND revision = 2",
-                        orderId)).isEqualTo(1);
-                assertThat(executeUpdate(connection,
-                        "UPDATE catalog_order.customer_order "
-                                + "SET payment_status = 'CLOSED', closed_at = now(), "
-                                + "revision = revision + 1 "
-                                + "WHERE id = ? AND payment_status = 'PAID' AND revision = 2",
-                        orderId))
-                        .as("stale order revision update affects zero rows").isZero();
                 assertThat(queryString(connection,
                         "SELECT payment_status || '|' || (paid_at IS NULL)::text || '|' "
                                 + "|| (closed_at IS NOT NULL)::text || '|' || revision::text "
                                 + "FROM catalog_order.customer_order WHERE id = ?",
-                        orderId)).isEqualTo("CLOSED|true|true|3");
+                        orderId)).isEqualTo("PAID|false|false|2");
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'PAID', paid_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'UNPAID' AND revision = 1",
+                        orderId))
+                        .as("stale order revision update affects zero rows").isZero();
 
-                // Invalid payment shapes fail 23514 with the exact check name.
+                // The CLOSED shape is reached only through an independent legal
+                // UNPAID -> CLOSED fixture; the PAID fixture is never closed.
+                String closedOrderNo = "S2ORDCLS"
+                        + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+                assertThat(insertCustomerOrder(connection, closedOrderId, closedOrderNo,
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":2}",
+                        orderSnapshotSha, "s2-order-token",
+                        "s2-idem-cls-" + UUID.randomUUID(), randomSha256(), createdAt,
+                        null, null, 1)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'CLOSED', closed_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'UNPAID' AND revision = 1",
+                        closedOrderId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT payment_status || '|' || (paid_at IS NULL)::text || '|' "
+                                + "|| (closed_at IS NOT NULL)::text || '|' || revision::text "
+                                + "FROM catalog_order.customer_order WHERE id = ?",
+                        closedOrderId)).isEqualTo("CLOSED|true|true|2");
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'CLOSED', closed_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'CLOSED' AND revision = 1",
+                        closedOrderId))
+                        .as("stale closed-order revision update affects zero rows").isZero();
+
+                // Synthetic invalid-shape probe (expected failure, not a lifecycle):
+                // marking the CLOSED fixture PAID without paid_at must fail the exact
+                // shape check instead of succeeding as a zero-row no-op.
                 expectSqlFailure(connection, "23514", "ck_customer_order_payment_shape",
                         "UPDATE catalog_order.customer_order "
                                 + "SET payment_status = 'PAID', paid_at = NULL, "
                                 + "revision = revision + 1 "
-                                + "WHERE id = ? AND payment_status = 'CLOSED' AND revision = 3",
-                        orderId);
+                                + "WHERE id = ? AND payment_status = 'CLOSED' AND revision = 2",
+                        closedOrderId);
 
-                // Payment-order insert and valid status/transaction transitions.
+                // Payment-order insert and legal UNPAID -> PAID transition with a
+                // provider transaction id; the PAID fixture stays terminal
+                // (docs/14 7.3; synthetic DB backstop probe only).
                 assertThat(insertPaymentOrder(connection, paymentOrderId, orderId, merchantNo,
                         null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1)).isEqualTo(1);
                 assertThat(executeUpdate(connection,
@@ -9534,17 +9567,42 @@ class PostgresContainerIT {
                         "txn-s2-" + UUID.randomUUID(), paymentOrderId)).isEqualTo(1);
                 assertThat(executeUpdate(connection,
                         "UPDATE catalog_order.payment_order "
-                                + "SET status = 'CLOSED', updated_at = now(), "
-                                + "revision = revision + 1 "
-                                + "WHERE id = ? AND status = 'PAID' AND revision = 2",
-                        paymentOrderId)).isEqualTo(1);
-                assertThat(executeUpdate(connection,
-                        "UPDATE catalog_order.payment_order "
                                 + "SET status = 'PAID', updated_at = now(), "
                                 + "revision = revision + 1 "
-                                + "WHERE id = ? AND status = 'UNPAID' AND revision = 1",
+                                + "WHERE id = ? AND status = 'PAID' AND revision = 1",
                         paymentOrderId))
                         .as("stale payment_order revision update affects zero rows").isZero();
+
+                // CLOSED shape comes from an independent legal UNPAID -> CLOSED
+                // fixture on its own order row (uq_payment_order_order); the PAID
+                // fixture is never closed.
+                assertThat(insertCustomerOrder(connection, closedPaymentOrderOrderId,
+                        "S2ORDPCL" + UUID.randomUUID().toString().replace("-", "")
+                                .substring(0, 8),
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":3}",
+                        orderSnapshotSha, "s2-order-token",
+                        "s2-idem-pcls-" + UUID.randomUUID(), randomSha256(), createdAt,
+                        null, null, 1)).isEqualTo(1);
+                assertThat(insertPaymentOrder(connection, closedPaymentOrderId,
+                        closedPaymentOrderOrderId,
+                        "S2MERCLS" + UUID.randomUUID().toString().replace("-", "")
+                                .substring(0, 16),
+                        null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.payment_order "
+                                + "SET status = 'CLOSED', updated_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'UNPAID' AND revision = 1",
+                        closedPaymentOrderId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.payment_order "
+                                + "SET status = 'CLOSED', updated_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'CLOSED' AND revision = 1",
+                        closedPaymentOrderId))
+                        .as("stale closed payment_order revision update affects zero rows")
+                        .isZero();
 
                 // Payment-order identity guard rejects all six identity columns (owner path).
                 switchLocalRole(connection, "catalog_order_owner");
@@ -9569,14 +9627,16 @@ class PostgresContainerIT {
                         paymentOrderId);
                 switchLocalRole(connection, "catalog_order_role");
 
-                // Runtime PAID without provider_transaction_id fails the paid-shape check.
+                // Synthetic invalid-shape probe (expected failure, not a lifecycle):
+                // marking the CLOSED fixture PAID without provider_transaction_id
+                // must fail the exact paid-shape check instead of a zero-row no-op.
                 expectSqlFailure(connection, "23514", "ck_payment_order_paid_shape",
                         "UPDATE catalog_order.payment_order "
                                 + "SET status = 'PAID', provider_transaction_id = NULL, "
                                 + "updated_at = now(), "
                                 + "revision = revision + 1 "
-                                + "WHERE id = ? AND status = 'CLOSED' AND revision = 3",
-                        paymentOrderId);
+                                + "WHERE id = ? AND status = 'CLOSED' AND revision = 2",
+                        closedPaymentOrderId);
 
                 // Payment events: verified/unverified retained; duplicate identity rejected.
                 assertThat(insertPaymentEvent(connection, verifiedEventId, paymentOrderId,
@@ -9836,8 +9896,11 @@ class PostgresContainerIT {
                     "SELECT count(*) FROM catalog_order.customer_order WHERE id = ? OR order_no = ?",
                     orderId, orderNo)).isZero();
             assertThat(queryLong(connection,
-                    "SELECT count(*) FROM catalog_order.payment_order WHERE id = ?",
-                    paymentOrderId)).isZero();
+                    "SELECT count(*) FROM catalog_order.customer_order WHERE id IN (?, ?)",
+                    closedOrderId, closedPaymentOrderOrderId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.payment_order WHERE id IN (?, ?)",
+                    paymentOrderId, closedPaymentOrderId)).isZero();
             assertThat(queryLong(connection,
                     "SELECT count(*) FROM catalog_order.payment_event WHERE id IN (?, ?)",
                     verifiedEventId, unverifiedEventId)).isZero();
