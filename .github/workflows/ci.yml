@@ -102,6 +102,10 @@ jobs:
               "concurrentActiveBindingUniquenessHasOneWinner",
               "v004CatalogOrderInventoryAndGuardsAreExact",
               "v004OwnerPublicRuntimeAndCrossModuleAclsAreExact",
+              "v004CatalogVersionLifecycleAndGuardBackstops",
+              "v004OrderPaymentLifecycleAndAppendOnlyBackstops",
+              "v004ForeignKeyAndAbsentConsentFkBackstops",
+              "concurrentCatalogPublicationAndCommerceIdentityHasOneWinner",
           }
           if int(suite.get("tests", "0")) != len(expected):
               sys.exit("container IT did not report the V004 test count")

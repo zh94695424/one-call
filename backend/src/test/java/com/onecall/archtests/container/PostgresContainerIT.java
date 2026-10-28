@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -356,6 +357,64 @@ class PostgresContainerIT {
             "CREATE UNIQUE INDEX uq_payment_order_merchant ON catalog_order.payment_order USING btree (merchant_order_no)",
             "CREATE UNIQUE INDEX uq_payment_order_order ON catalog_order.payment_order USING btree (order_id)",
             "CREATE UNIQUE INDEX uq_payment_order_transaction ON catalog_order.payment_order USING btree (provider_transaction_id) WHERE (provider_transaction_id IS NOT NULL)");
+
+    /**
+     * PA4 V004 S2 coverage contract: every table|check_name pair that must receive a
+     * {@code 23514}+exact-constraint-name probe. The runtime helpers assert that the probed
+     * name set equals {@link #V004_CHECK_DEF_MAP}'s flattened name set (exactly 51 entries).
+     */
+    private static final List<String> V004_CHECK_PROBES = List.of(
+            "catalog_product|ck_catalog_product_code",
+            "catalog_product|ck_catalog_product_family",
+            "catalog_version|ck_catalog_version_audience",
+            "catalog_version|ck_catalog_version_audience_shape",
+            "catalog_version|ck_catalog_version_billing_matrix",
+            "catalog_version|ck_catalog_version_currency",
+            "catalog_version|ck_catalog_version_no",
+            "catalog_version|ck_catalog_version_offer_type",
+            "catalog_version|ck_catalog_version_price",
+            "catalog_version|ck_catalog_version_published_shape",
+            "catalog_version|ck_catalog_version_revision",
+            "catalog_version|ck_catalog_version_sale_status",
+            "catalog_version|ck_catalog_version_snapshot_sha",
+            "catalog_version|ck_catalog_version_snapshot_type",
+            "catalog_offer|ck_catalog_offer_channel",
+            "catalog_offer|ck_catalog_offer_revision",
+            "catalog_offer|ck_catalog_offer_status",
+            "catalog_offer|ck_catalog_offer_token",
+            "catalog_benefit_line|ck_catalog_benefit_interval",
+            "catalog_benefit_line|ck_catalog_benefit_quantity",
+            "catalog_benefit_line|ck_catalog_benefit_type",
+            "catalog_benefit_line|ck_catalog_benefit_validity",
+            "customer_order|ck_customer_order_amount",
+            "customer_order|ck_customer_order_channel",
+            "customer_order|ck_customer_order_currency",
+            "customer_order|ck_customer_order_fingerprint",
+            "customer_order|ck_customer_order_idempotency",
+            "customer_order|ck_customer_order_no",
+            "customer_order|ck_customer_order_payment_shape",
+            "customer_order|ck_customer_order_payment_status",
+            "customer_order|ck_customer_order_revision",
+            "customer_order|ck_customer_order_snapshot_sha",
+            "customer_order|ck_customer_order_snapshot_type",
+            "customer_order|ck_customer_order_time_order",
+            "customer_order|ck_customer_order_version_token",
+            "payment_event|ck_payment_event_amount",
+            "payment_event|ck_payment_event_event_id",
+            "payment_event|ck_payment_event_payload_ciphertext",
+            "payment_event|ck_payment_event_payload_sha",
+            "payment_event|ck_payment_event_provider",
+            "payment_event|ck_payment_event_transaction",
+            "payment_event|ck_payment_event_type",
+            "payment_order|ck_payment_order_amount",
+            "payment_order|ck_payment_order_currency",
+            "payment_order|ck_payment_order_merchant_no",
+            "payment_order|ck_payment_order_paid_shape",
+            "payment_order|ck_payment_order_provider",
+            "payment_order|ck_payment_order_revision",
+            "payment_order|ck_payment_order_status",
+            "payment_order|ck_payment_order_time_order",
+            "payment_order|ck_payment_order_transaction");
 
     /**
      * F-PA2-PR-01: explicit frozen mapping of schema.table -> (check name -> expected PostgreSQL 16
@@ -1573,6 +1632,28 @@ class PostgresContainerIT {
             assertV004PublicAclIsZero(connection);
             assertV004GuardFunctionExecuteBoundaries(connection);
         }
+    }
+
+    // PA4 V004 S2: executable lifecycle, guard, FK and bounded concurrency backstops. No
+    // application service exists; these methods prove database-visible behavior only.
+    @Test
+    void v004CatalogVersionLifecycleAndGuardBackstops() throws Exception {
+        assertV004CatalogVersionLifecycleAndGuardBackstops();
+    }
+
+    @Test
+    void v004OrderPaymentLifecycleAndAppendOnlyBackstops() throws Exception {
+        assertV004OrderPaymentLifecycleAndAppendOnlyBackstops();
+    }
+
+    @Test
+    void v004ForeignKeyAndAbsentConsentFkBackstops() throws Exception {
+        assertV004ForeignKeyAndAbsentConsentFkBackstops();
+    }
+
+    @Test
+    void concurrentCatalogPublicationAndCommerceIdentityHasOneWinner() throws Exception {
+        runConcurrentCatalogPublicationAndCommerceIdentity();
     }
 
     /**
@@ -3268,6 +3349,49 @@ class PostgresContainerIT {
                 .as("the transaction-local state-shape isolation is fully rolled back")
                 .isEqualTo(2);
         switchLocalRole(connection, "customer_iam_role");
+    }
+
+    /**
+     * {@code ck_catalog_version_offer_type} is logically subsumed by
+     * {@code ck_catalog_version_billing_matrix}: every value outside the offer-type allow-list also
+     * fails the billing-matrix predicate, so PostgreSQL reports only the latter for any invalid
+     * offer type. This bounded helper isolates the frozen offer-type check by dropping the
+     * billing-matrix constraint inside a savepoint as {@code catalog_order_owner}, inserting the
+     * violating row (exact 23514 and exact constraint name), then rolling back to the savepoint so
+     * the dropped constraint and the failed row are both fully restored.
+     */
+    private static void expectCatalogVersionOfferTypeViolationWithIsolatedConstraint(
+            Connection connection, CheckProbe probe) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "catalog_order_owner");
+            execute(connection,
+                    "ALTER TABLE catalog_order.catalog_version "
+                            + "DROP CONSTRAINT ck_catalog_version_billing_matrix");
+            try (PreparedStatement prepared = connection.prepareStatement(probe.sql())) {
+                bind(prepared, probe.parameters());
+                prepared.executeUpdate();
+            }
+            fail("expected SQL failure 23514 for ck_catalog_version_offer_type "
+                    + "but the statement succeeded");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for ck_catalog_version_offer_type").isEqualTo("23514");
+            assertThat(exception.getMessage())
+                    .as("exact constraint marker for ck_catalog_version_offer_type")
+                    .contains("ck_catalog_version_offer_type");
+        } finally {
+            connection.rollback(savepoint);
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND r.relname = 'catalog_version' "
+                        + "AND c.conname IN ('ck_catalog_version_offer_type',"
+                        + "'ck_catalog_version_billing_matrix')"))
+                .as("the transaction-local billing-matrix isolation is fully rolled back")
+                .isEqualTo(2);
+        switchLocalRole(connection, "catalog_order_role");
     }
 
     private static void assertForeignKeyMissingParentAndParentDeleteRestrict() throws Exception {
@@ -6962,6 +7086,29 @@ class PostgresContainerIT {
         }
         // activation_consent/entitlement_metering tables do not exist at V004; the schema
         // USAGE matrix asserts the catalog_order_role wave boundary for those schemas.
+
+        // RR-09 (S2, test-only): the four S2 owner roles hold no table or column privilege
+        // on any of the five V004-touched S1 tables. Owner-inherent privileges apply only
+        // within their own schemas; no live grant exists.
+        for (Map.Entry<String, List<String>> entry : s1AllColumns.entrySet()) {
+            String table = entry.getKey();
+            for (String role : List.of("catalog_order_owner", "ivr_owner",
+                    "entitlement_metering_owner", "activation_consent_owner")) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                        "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                    assertThat(hasTable(connection, role, table, privilege))
+                            .as("RR-09: %s must not hold table %s on %s", role, privilege, table)
+                            .isFalse();
+                }
+                for (String column : entry.getValue()) {
+                    for (String privilege : List.of("SELECT", "INSERT", "UPDATE")) {
+                        assertThat(hasColumn(connection, role, table, column, privilege))
+                                .as("RR-09: %s must not %s %s.%s", role, privilege, table, column)
+                                .isFalse();
+                    }
+                }
+            }
+        }
     }
 
     private static void assertV004PublicAclIsZero(Connection connection) throws SQLException {
@@ -8802,6 +8949,1849 @@ class PostgresContainerIT {
     private static void bind(PreparedStatement prepared, Object... parameters) throws SQLException {
         for (int index = 0; index < parameters.length; index++) {
             prepared.setObject(index + 1, parameters[index]);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // PA4 V004 S2: lifecycle, guard, FK, named-check and concurrency helpers
+    // ------------------------------------------------------------------
+
+    private static List<String> v004ExpectedCheckNames(String... tables) {
+        assertThat(V004_CHECK_PROBES).as("V004_CHECK_PROBES has exactly 51 entries").hasSize(51);
+        List<String> expectedAll = new ArrayList<>();
+        for (Map.Entry<String, Map<String, String>> entry : V004_CHECK_DEF_MAP.entrySet()) {
+            for (String name : entry.getValue().keySet()) {
+                expectedAll.add(entry.getKey() + "|" + name);
+            }
+        }
+        assertThat(expectedAll)
+                .as("V004_CHECK_PROBES equals flattened V004_CHECK_DEF_MAP name set")
+                .containsExactlyInAnyOrderElementsOf(V004_CHECK_PROBES);
+        List<String> subset = new ArrayList<>();
+        for (String table : tables) {
+            assertThat(V004_CHECK_DEF_MAP).as("check map for %s", table).containsKey(table);
+            subset.addAll(V004_CHECK_DEF_MAP.get(table).keySet());
+        }
+        return subset;
+    }
+
+    private static String randomProductCode() {
+        return "P" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT);
+    }
+
+    private static int insertCatalogProduct(Connection connection, UUID id, String productCode)
+            throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.catalog_product (id, product_code, product_family) "
+                        + "VALUES (?, ?, 'CORE')",
+                id, productCode);
+    }
+
+    private static int insertCatalogVersion(
+            Connection connection,
+            UUID id,
+            UUID productId,
+            int versionNo,
+            String saleStatus,
+            String offerType,
+            String audience,
+            Long priceCents,
+            String currency,
+            String billingCycle,
+            int installments,
+            int grantIntervalMonths,
+            String snapshot,
+            String snapshotSha256,
+            UUID createdByEmployeeId,
+            OffsetDateTime publishedAt,
+            int revision) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.catalog_version "
+                        + "(id, product_id, version_no, sale_status, offer_type, audience, "
+                        + "price_cents, currency, billing_cycle, installments, "
+                        + "grant_interval_months, snapshot, snapshot_sha256, "
+                        + "created_by_employee_id, published_at, revision) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?)",
+                id, productId, versionNo, saleStatus, offerType, audience, priceCents, currency,
+                billingCycle, installments, grantIntervalMonths, snapshot, snapshotSha256,
+                createdByEmployeeId, publishedAt, revision);
+    }
+
+    private static int insertCatalogOffer(
+            Connection connection, UUID id, UUID catalogVersionId, String channel, String versionToken)
+            throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.catalog_offer "
+                        + "(id, catalog_version_id, channel, offer_status, version_token, revision) "
+                        + "VALUES (?, ?, ?, 'ACTIVE', ?, 1)",
+                id, catalogVersionId, channel, versionToken);
+    }
+
+    private static int insertCatalogBenefitLine(
+            Connection connection, UUID id, UUID catalogVersionId, String entitlementType,
+            long quantity, int validityDays, int grantIntervalMonths) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.catalog_benefit_line "
+                        + "(id, catalog_version_id, entitlement_type, quantity, validity_days, "
+                        + "grant_interval_months) VALUES (?, ?, ?, ?, ?, ?)",
+                id, catalogVersionId, entitlementType, quantity, validityDays, grantIntervalMonths);
+    }
+
+    private static int insertCustomerOrder(
+            Connection connection,
+            UUID id,
+            String orderNo,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID catalogVersionId,
+            UUID catalogOfferId,
+            UUID purchaseConsentId,
+            long amountCents,
+            String currency,
+            String paymentStatus,
+            String snapshot,
+            String snapshotSha256,
+            String versionToken,
+            String idempotencyKey,
+            String requestFingerprint,
+            OffsetDateTime createdAt,
+            OffsetDateTime paidAt,
+            OffsetDateTime closedAt,
+            int revision) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.customer_order "
+                        + "(id, order_no, account_id, owner_organization_id, subject_id, channel, "
+                        + "catalog_version_id, catalog_offer_id, purchase_consent_id, amount_cents, "
+                        + "currency, payment_status, snapshot, snapshot_sha256, version_token, "
+                        + "idempotency_key, request_fingerprint, revision, created_at, paid_at, "
+                        + "closed_at) "
+                        + "VALUES (?, ?, ?, ?, ?, 'WEB', ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, orderNo, accountId, organizationId, subjectId, catalogVersionId,
+                catalogOfferId, purchaseConsentId, amountCents, currency, paymentStatus, snapshot,
+                snapshotSha256, versionToken, idempotencyKey, requestFingerprint, revision,
+                createdAt, paidAt, closedAt);
+    }
+
+    private static int insertPaymentOrder(
+            Connection connection,
+            UUID id,
+            UUID orderId,
+            String merchantOrderNo,
+            String providerTransactionId,
+            String status,
+            long amountCents,
+            String currency,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt,
+            int revision) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.payment_order "
+                        + "(id, order_id, provider, merchant_order_no, provider_transaction_id, "
+                        + "status, amount_cents, currency, created_at, updated_at, revision) "
+                        + "VALUES (?, ?, 'WECHAT', ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, orderId, merchantOrderNo, providerTransactionId, status, amountCents, currency,
+                createdAt, updatedAt, revision);
+    }
+
+    private static int insertPaymentEvent(
+            Connection connection,
+            UUID id,
+            UUID paymentOrderId,
+            String providerEventId,
+            String eventType,
+            boolean signatureVerified,
+            String payloadCiphertext,
+            String payloadSha256,
+            String transactionId,
+            long amountCents,
+            OffsetDateTime occurredAt) throws SQLException {
+        return executeUpdate(connection,
+                "INSERT INTO catalog_order.payment_event "
+                        + "(id, payment_order_id, provider, provider_event_id, event_type, "
+                        + "signature_verified, payload_ciphertext, payload_sha256, transaction_id, "
+                        + "amount_cents, occurred_at) "
+                        + "VALUES (?, ?, 'WECHAT', ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, paymentOrderId, providerEventId, eventType, signatureVerified,
+                payloadCiphertext, payloadSha256, transactionId, amountCents, occurredAt);
+    }
+
+    private static void assertV004CatalogVersionLifecycleAndGuardBackstops() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID secondVersionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID benefitId = UUID.randomUUID();
+        String snapshotSha = randomSha256();
+        String snapshot = "{\"plan\":\"pa4-s2\"}";
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "s2***cat",
+                        "onecall-ops", randomSha256(), "PA4 S2 Catalog Employee", "ADMIN"))
+                        .isEqualTo(1);
+                setLocalRole(connection, "catalog_order_role");
+                assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, versionId, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1, snapshot,
+                        snapshotSha, employeeId, null, 1)).isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, secondVersionId, productId, 2, "DRAFT",
+                        "ONE_TIME", "PERSONAL", 5000L, "CNY", "ONCE", 1, 0,
+                        "{\"plan\":\"pa4-s2-v2\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogOffer(connection, offerId, versionId, "WEB", "s2-token-1"))
+                        .isEqualTo(1);
+                assertThat(insertCatalogBenefitLine(connection, benefitId, versionId,
+                        "RECORDING_SECONDS", 100, 30, 1)).isEqualTo(1);
+
+                // Valid conditional revision update and stale-revision zero row.
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version SET revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                        versionId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version SET revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                        versionId)).as("stale revision update affects zero rows").isZero();
+
+                // Publication: DRAFT -> ACTIVE sets published_at and bumps revision.
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version "
+                                + "SET sale_status = 'ACTIVE', published_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 2",
+                        versionId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT sale_status || '|' || (published_at IS NOT NULL)::text "
+                                + "|| '|' || revision::text "
+                                + "FROM catalog_order.catalog_version WHERE id = ?",
+                        versionId)).isEqualTo("ACTIVE|true|3");
+
+                // Published content update is immutable (owner path; trigger fires first).
+                switchLocalRole(connection, "catalog_order_owner");
+                expectSqlFailure(connection, "P0001", "CATALOG_VERSION_PUBLISHED_IMMUTABLE",
+                        "UPDATE catalog_order.catalog_version SET snapshot = "
+                                + "'{\"tampered\":true}'::jsonb WHERE id = ?",
+                        versionId);
+                expectSqlFailure(connection, "P0001", "CATALOG_VERSION_PUBLISHED_IMMUTABLE",
+                        "UPDATE catalog_order.catalog_version SET published_at = NULL WHERE id = ?",
+                        versionId);
+
+                // ACTIVE -> OFFSALE succeeds with revision+1.
+                switchLocalRole(connection, "catalog_order_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version "
+                                + "SET sale_status = 'OFFSALE', revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 3",
+                        versionId)).isEqualTo(1);
+
+                // Re-activate for guard/unique probes: retire path then second ACTIVE.
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version "
+                                + "SET sale_status = 'ACTIVE', published_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'OFFSALE' AND revision = 4",
+                        versionId)).isEqualTo(1);
+
+                // Offer mutable updates succeed; relation changes raise the guard.
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_offer "
+                                + "SET version_token = 's2-token-2', revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 1",
+                        offerId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_offer "
+                                + "SET offer_status = 'WITHDRAWN', revision = revision + 1 "
+                                + "WHERE id = ? AND revision = 2",
+                        offerId)).isEqualTo(1);
+                switchLocalRole(connection, "catalog_order_owner");
+                expectSqlFailure(connection, "P0001", "CATALOG_OFFER_RELATION_IMMUTABLE",
+                        "UPDATE catalog_order.catalog_offer SET channel = 'MINIAPP' WHERE id = ?",
+                        offerId);
+                expectSqlFailure(connection, "P0001", "CATALOG_OFFER_RELATION_IMMUTABLE",
+                        "UPDATE catalog_order.catalog_offer SET catalog_version_id = ? WHERE id = ?",
+                        UUID.randomUUID(), offerId);
+
+                // Second ACTIVE on the same product fails the partial unique index.
+                switchLocalRole(connection, "catalog_order_role");
+                expectSqlFailure(connection, "23505", "uq_catalog_version_active",
+                        "UPDATE catalog_order.catalog_version "
+                                + "SET sale_status = 'ACTIVE', published_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                        secondVersionId);
+
+                // Retire-then-activate leaves exactly one ACTIVE.
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version "
+                                + "SET sale_status = 'OFFSALE', revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 5",
+                        versionId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.catalog_version "
+                                + "SET sale_status = 'ACTIVE', published_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                        secondVersionId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.catalog_version "
+                                + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                        productId)).isEqualTo(1);
+                assertThat(queryString(connection,
+                        "SELECT id::text FROM catalog_order.catalog_version "
+                                + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                        productId)).isEqualTo(secondVersionId.toString());
+
+                // Product/benefit append-only: runtime 42501, owner P0001.
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE catalog_order.catalog_product SET product_family = 'OTHER' WHERE id = ?",
+                        productId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "DELETE FROM catalog_order.catalog_product WHERE id = ?", productId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE catalog_order.catalog_benefit_line SET quantity = 1 WHERE id = ?",
+                        benefitId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "DELETE FROM catalog_order.catalog_benefit_line WHERE id = ?", benefitId);
+                switchLocalRole(connection, "catalog_order_owner");
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "UPDATE catalog_order.catalog_product SET product_family = 'OTHER' WHERE id = ?",
+                        productId);
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "DELETE FROM catalog_order.catalog_product WHERE id = ?", productId);
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "UPDATE catalog_order.catalog_benefit_line SET quantity = 1 WHERE id = ?",
+                        benefitId);
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "DELETE FROM catalog_order.catalog_benefit_line WHERE id = ?", benefitId);
+                switchLocalRole(connection, "catalog_order_role");
+
+                // One 23514+exact-name probe for each of the 22 product/version/offer/benefit
+                // checks (plan 8.4).
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_catalog_product_code",
+                                "INSERT INTO catalog_order.catalog_product "
+                                        + "(id, product_code, product_family) VALUES (?, ?, 'CORE')",
+                                UUID.randomUUID(), "bad"),
+                        checkProbe("ck_catalog_product_family",
+                                "INSERT INTO catalog_order.catalog_product "
+                                        + "(id, product_code, product_family) VALUES (?, ?, 'bad')",
+                                UUID.randomUUID(), randomProductCode()),
+                        checkProbe("ck_catalog_version_no",
+                                versionProbeSql(), UUID.randomUUID(), productId, 0, "DRAFT",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_sale_status",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "INVALID",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId,
+                                OffsetDateTime.now(ZoneOffset.UTC), 1),
+                        checkProbe("ck_catalog_version_offer_type",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "INVALID", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_audience",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "SUBSCRIPTION", "INVALID", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_audience_shape",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "ONE_TIME", "ENTERPRISE", 9900L, "CNY", "ONCE", 1, 0,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_price",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "ONE_TIME", "PERSONAL", null, "CNY", "ONCE", 1, 0,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_currency",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CN", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_billing_matrix",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "ONCE", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_snapshot_type",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                "[]", snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_snapshot_sha",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, "abc", employeeId, null, 1),
+                        checkProbe("ck_catalog_version_published_shape",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "ACTIVE",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 1),
+                        checkProbe("ck_catalog_version_revision",
+                                versionProbeSql(), UUID.randomUUID(), productId, 3, "DRAFT",
+                                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                                snapshot, snapshotSha, employeeId, null, 0),
+                        checkProbe("ck_catalog_offer_channel",
+                                "INSERT INTO catalog_order.catalog_offer "
+                                        + "(id, catalog_version_id, channel, offer_status, "
+                                        + "version_token, revision) VALUES (?, ?, ?, 'ACTIVE', "
+                                        + "'s2-token', 1)",
+                                UUID.randomUUID(), versionId, "IVR"),
+                        checkProbe("ck_catalog_offer_status",
+                                "INSERT INTO catalog_order.catalog_offer "
+                                        + "(id, catalog_version_id, channel, offer_status, "
+                                        + "version_token, revision) VALUES (?, ?, 'WEB', ?, "
+                                        + "'s2-token', 1)",
+                                UUID.randomUUID(), versionId, "RETIRED"),
+                        checkProbe("ck_catalog_offer_token",
+                                "INSERT INTO catalog_order.catalog_offer "
+                                        + "(id, catalog_version_id, channel, offer_status, "
+                                        + "version_token, revision) VALUES (?, ?, 'WEB', 'ACTIVE', "
+                                        + "?, 1)",
+                                UUID.randomUUID(), versionId, "   "),
+                        checkProbe("ck_catalog_offer_revision",
+                                "INSERT INTO catalog_order.catalog_offer "
+                                        + "(id, catalog_version_id, channel, offer_status, "
+                                        + "version_token, revision) VALUES (?, ?, 'WEB', 'ACTIVE', "
+                                        + "'s2-token', 0)",
+                                UUID.randomUUID(), versionId),
+                        checkProbe("ck_catalog_benefit_type",
+                                "INSERT INTO catalog_order.catalog_benefit_line "
+                                        + "(id, catalog_version_id, entitlement_type, quantity, "
+                                        + "validity_days, grant_interval_months) "
+                                        + "VALUES (?, ?, ?, 1, 30, 1)",
+                                UUID.randomUUID(), versionId, "INVALID"),
+                        checkProbe("ck_catalog_benefit_quantity",
+                                "INSERT INTO catalog_order.catalog_benefit_line "
+                                        + "(id, catalog_version_id, entitlement_type, quantity, "
+                                        + "validity_days, grant_interval_months) "
+                                        + "VALUES (?, ?, 'AI_SECONDS', 0, 30, 1)",
+                                UUID.randomUUID(), versionId),
+                        checkProbe("ck_catalog_benefit_validity",
+                                "INSERT INTO catalog_order.catalog_benefit_line "
+                                        + "(id, catalog_version_id, entitlement_type, quantity, "
+                                        + "validity_days, grant_interval_months) "
+                                        + "VALUES (?, ?, 'EVIDENCE_COUNT', 1, 0, 1)",
+                                UUID.randomUUID(), versionId),
+                        checkProbe("ck_catalog_benefit_interval",
+                                "INSERT INTO catalog_order.catalog_benefit_line "
+                                        + "(id, catalog_version_id, entitlement_type, quantity, "
+                                        + "validity_days, grant_interval_months) "
+                                        + "VALUES (?, ?, 'STORAGE_BYTES', 1, 30, -1)",
+                                UUID.randomUUID(), versionId));
+                List<String> probed = new ArrayList<>();
+                for (CheckProbe probe : probes) {
+                    if ("ck_catalog_version_offer_type".equals(probe.constraint())) {
+                        expectCatalogVersionOfferTypeViolationWithIsolatedConstraint(
+                                connection, probe);
+                    } else {
+                        expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                                probe.parameters());
+                    }
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all 22 product/version/offer/benefit named checks have a probe")
+                        .containsExactlyInAnyOrderElementsOf(v004ExpectedCheckNames(
+                                "catalog_product", "catalog_version", "catalog_offer",
+                                "catalog_benefit_line"));
+                assertThat(probed).hasSize(22);
+
+                // All fixtures rolled back; no committed row.
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_product WHERE id = ?", productId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_version WHERE id IN (?, ?)",
+                    versionId, secondVersionId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_offer WHERE id = ?", offerId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_benefit_line WHERE id = ?",
+                    benefitId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?",
+                    employeeId)).isZero();
+        }
+    }
+
+    private static String versionProbeSql() {
+        return "INSERT INTO catalog_order.catalog_version "
+                + "(id, product_id, version_no, sale_status, offer_type, audience, price_cents, "
+                + "currency, billing_cycle, installments, grant_interval_months, snapshot, "
+                + "snapshot_sha256, created_by_employee_id, published_at, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?)";
+    }
+
+    private static void assertV004OrderPaymentLifecycleAndAppendOnlyBackstops() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID paymentOrderId = UUID.randomUUID();
+        UUID verifiedEventId = UUID.randomUUID();
+        UUID unverifiedEventId = UUID.randomUUID();
+        String orderNo = "S2ORD" + UUID.randomUUID().toString().replace("-", "");
+        String idempotencyKey = "s2-idem-" + UUID.randomUUID();
+        String fingerprint = randomSha256();
+        String orderSnapshotSha = randomSha256();
+        String merchantNo = "S2MER" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "s2***pay",
+                        "onecall-ops", randomSha256(), "PA4 S2 Payment Employee", "ADMIN"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "PA4 S2 Order Customer"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "PA4 S2 Order Org"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                switchLocalRole(connection, "catalog_order_role");
+                assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, versionId, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"plan\":\"pa4-s2-order\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogOffer(connection, offerId, versionId, "WEB", "s2-order-token"))
+                        .isEqualTo(1);
+
+                // Valid order insert with a random purchase_consent_id (no parent) succeeds.
+                assertThat(insertCustomerOrder(connection, orderId, orderNo, accountId,
+                        organizationId, subjectId, versionId, offerId, UUID.randomUUID(), 9900L,
+                        "CNY", "UNPAID", "{\"line\":1}", orderSnapshotSha, "s2-order-token",
+                        idempotencyKey, fingerprint, createdAt, null, null, 1)).isEqualTo(1);
+
+                // purchase_consent_id=NULL fails NOT NULL.
+                expectSqlFailure(connection, "23502", "purchase_consent_id",
+                        "INSERT INTO catalog_order.customer_order "
+                                + "(id, order_no, account_id, owner_organization_id, subject_id, "
+                                + "channel, catalog_version_id, catalog_offer_id, "
+                                + "purchase_consent_id, amount_cents, currency, payment_status, "
+                                + "snapshot, snapshot_sha256, version_token, idempotency_key, "
+                                + "request_fingerprint, revision) "
+                                + "VALUES (?, ?, ?, ?, ?, 'WEB', ?, ?, NULL, 9900, 'CNY', 'UNPAID', "
+                                + "'{\"line\":1}', ?, 's2-order-token', ?, ?, 1)",
+                        UUID.randomUUID(), "S2ORDNULL" + UUID.randomUUID().toString()
+                                .replace("-", "").substring(0, 8),
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        orderSnapshotSha, "s2-idem-null-" + UUID.randomUUID(), fingerprint);
+
+                // Order immutable-column update raises the snapshot guard (owner path).
+                switchLocalRole(connection, "catalog_order_owner");
+                expectSqlFailure(connection, "P0001", "CUSTOMER_ORDER_SNAPSHOT_IMMUTABLE",
+                        "UPDATE catalog_order.customer_order SET order_no = 'tampered' WHERE id = ?",
+                        orderId);
+                expectSqlFailure(connection, "P0001", "CUSTOMER_ORDER_SNAPSHOT_IMMUTABLE",
+                        "UPDATE catalog_order.customer_order SET amount_cents = 1 WHERE id = ?",
+                        orderId);
+                expectSqlFailure(connection, "P0001", "CUSTOMER_ORDER_SNAPSHOT_IMMUTABLE",
+                        "UPDATE catalog_order.customer_order SET purchase_consent_id = ? WHERE id = ?",
+                        UUID.randomUUID(), orderId);
+
+                // Valid payment transitions with conditional revision updates.
+                switchLocalRole(connection, "catalog_order_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'PAID', paid_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'UNPAID' AND revision = 1",
+                        orderId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'CLOSED', paid_at = NULL, closed_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'PAID' AND revision = 2",
+                        orderId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'CLOSED', closed_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'PAID' AND revision = 2",
+                        orderId))
+                        .as("stale order revision update affects zero rows").isZero();
+                assertThat(queryString(connection,
+                        "SELECT payment_status || '|' || (paid_at IS NULL)::text || '|' "
+                                + "|| (closed_at IS NOT NULL)::text || '|' || revision::text "
+                                + "FROM catalog_order.customer_order WHERE id = ?",
+                        orderId)).isEqualTo("CLOSED|true|true|3");
+
+                // Invalid payment shapes fail 23514 with the exact check name.
+                expectSqlFailure(connection, "23514", "ck_customer_order_payment_shape",
+                        "UPDATE catalog_order.customer_order "
+                                + "SET payment_status = 'PAID', paid_at = NULL, "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND payment_status = 'CLOSED' AND revision = 3",
+                        orderId);
+
+                // Payment-order insert and valid status/transaction transitions.
+                assertThat(insertPaymentOrder(connection, paymentOrderId, orderId, merchantNo,
+                        null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.payment_order "
+                                + "SET status = 'PAID', provider_transaction_id = ?, "
+                                + "updated_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'UNPAID' AND revision = 1",
+                        "txn-s2-" + UUID.randomUUID(), paymentOrderId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.payment_order "
+                                + "SET status = 'CLOSED', updated_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'PAID' AND revision = 2",
+                        paymentOrderId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE catalog_order.payment_order "
+                                + "SET status = 'PAID', updated_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'UNPAID' AND revision = 1",
+                        paymentOrderId))
+                        .as("stale payment_order revision update affects zero rows").isZero();
+
+                // Payment-order identity guard rejects all six identity columns (owner path).
+                switchLocalRole(connection, "catalog_order_owner");
+                expectSqlFailure(connection, "P0001", "PAYMENT_ORDER_IDENTITY_IMMUTABLE",
+                        "UPDATE catalog_order.payment_order SET order_id = ? WHERE id = ?",
+                        UUID.randomUUID(), paymentOrderId);
+                expectSqlFailure(connection, "P0001", "PAYMENT_ORDER_IDENTITY_IMMUTABLE",
+                        "UPDATE catalog_order.payment_order SET provider = 'ALIPAY' WHERE id = ?",
+                        paymentOrderId);
+                expectSqlFailure(connection, "P0001", "PAYMENT_ORDER_IDENTITY_IMMUTABLE",
+                        "UPDATE catalog_order.payment_order SET merchant_order_no = 'tampered' "
+                                + "WHERE id = ?",
+                        paymentOrderId);
+                expectSqlFailure(connection, "P0001", "PAYMENT_ORDER_IDENTITY_IMMUTABLE",
+                        "UPDATE catalog_order.payment_order SET amount_cents = 1 WHERE id = ?",
+                        paymentOrderId);
+                expectSqlFailure(connection, "P0001", "PAYMENT_ORDER_IDENTITY_IMMUTABLE",
+                        "UPDATE catalog_order.payment_order SET currency = 'USD' WHERE id = ?",
+                        paymentOrderId);
+                expectSqlFailure(connection, "P0001", "PAYMENT_ORDER_IDENTITY_IMMUTABLE",
+                        "UPDATE catalog_order.payment_order SET created_at = now() WHERE id = ?",
+                        paymentOrderId);
+                switchLocalRole(connection, "catalog_order_role");
+
+                // Runtime PAID without provider_transaction_id fails the paid-shape check.
+                expectSqlFailure(connection, "23514", "ck_payment_order_paid_shape",
+                        "UPDATE catalog_order.payment_order "
+                                + "SET status = 'PAID', provider_transaction_id = NULL, "
+                                + "updated_at = now(), "
+                                + "revision = revision + 1 "
+                                + "WHERE id = ? AND status = 'CLOSED' AND revision = 3",
+                        paymentOrderId);
+
+                // Payment events: verified/unverified retained; duplicate identity rejected.
+                assertThat(insertPaymentEvent(connection, verifiedEventId, paymentOrderId,
+                        "evt-s2-verified-" + UUID.randomUUID(), "TRANSACTION.SUCCESS", true,
+                        "v1.s2.event.verified", randomSha256(), "txn-s2-verified", 9900L,
+                        createdAt)).isEqualTo(1);
+                assertThat(insertPaymentEvent(connection, unverifiedEventId, paymentOrderId,
+                        "evt-s2-unverified-" + UUID.randomUUID(), "TRANSACTION.FAILED", false,
+                        "v1.s2.event.unverified", randomSha256(), null, 9900L, createdAt))
+                        .isEqualTo(1);
+                String duplicateEventId = queryString(connection,
+                        "SELECT provider_event_id FROM catalog_order.payment_event WHERE id = ?",
+                        verifiedEventId);
+                expectSqlFailure(connection, "23505", "uq_payment_event_provider_event",
+                        "INSERT INTO catalog_order.payment_event "
+                                + "(id, payment_order_id, provider, provider_event_id, event_type, "
+                                + "signature_verified, payload_ciphertext, payload_sha256, "
+                                + "transaction_id, amount_cents, occurred_at) "
+                                + "VALUES (?, ?, 'WECHAT', ?, 'TRANSACTION.SUCCESS', true, "
+                                + "'v1.s2.event.dup', ?, NULL, 9900, ?)",
+                        UUID.randomUUID(), paymentOrderId, duplicateEventId, randomSha256(),
+                        createdAt);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.payment_event "
+                                + "WHERE payment_order_id = ?",
+                        paymentOrderId)).isEqualTo(2);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.payment_event "
+                                + "WHERE payment_order_id = ? AND signature_verified",
+                        paymentOrderId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.payment_event "
+                                + "WHERE payment_order_id = ? AND NOT signature_verified",
+                        paymentOrderId)).isEqualTo(1);
+
+                // Event append-only: runtime 42501, owner P0001.
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "UPDATE catalog_order.payment_event SET event_type = 'TAMPERED' WHERE id = ?",
+                        verifiedEventId);
+                expectSqlFailure(connection, "42501", "permission denied",
+                        "DELETE FROM catalog_order.payment_event WHERE id = ?", verifiedEventId);
+                switchLocalRole(connection, "catalog_order_owner");
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "UPDATE catalog_order.payment_event SET event_type = 'TAMPERED' WHERE id = ?",
+                        verifiedEventId);
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "DELETE FROM catalog_order.payment_event WHERE id = ?", verifiedEventId);
+                switchLocalRole(connection, "catalog_order_role");
+
+                // One 23514+exact-name probe for each of the 29
+                // customer_order/payment_order/payment_event checks (plan 8.4).
+                List<CheckProbe> probes = List.of(
+                        checkProbe("ck_customer_order_no",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "   ", accountId, organizationId, subjectId, "WEB", versionId,
+                                offerId, UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_channel",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDCH" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "IVR", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_amount",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDAMT" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), -1L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_currency",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDCUR" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CN", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_payment_status",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDSTS" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "REFUNDED", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_payment_shape",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDSHP" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "PAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_time_order",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDTIM" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "PAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1,
+                                OffsetDateTime.parse("2026-01-02T00:00:00Z"),
+                                OffsetDateTime.parse("2026-01-01T00:00:00Z"), null),
+                        checkProbe("ck_customer_order_snapshot_type",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDSNT" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "[]",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_snapshot_sha",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDSHS" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                "abc", "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_version_token",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDVTK" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "   ", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_idempotency",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDIDM" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "x".repeat(476),
+                                fingerprint, 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_fingerprint",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDFPR" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                "abc", 1, createdAt, null, null),
+                        checkProbe("ck_customer_order_revision",
+                                customerOrderProbeSql(), UUID.randomUUID(),
+                                "S2ORDREV" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                accountId, organizationId, subjectId, "WEB", versionId, offerId,
+                                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                                orderSnapshotSha, "s2-token", "s2-idem-probe-" + UUID.randomUUID(),
+                                fingerprint, 0, createdAt, null, null),
+                        checkProbe("ck_payment_order_provider",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "ALIPAY",
+                                "S2POPROV" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_merchant_no",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "   ", null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_transaction",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POTRX" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                "   ", "UNPAID", 9900L, "CNY", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_status",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POSTS" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "REFUNDED", 9900L, "CNY", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_paid_shape",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POSHP" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "PAID", 9900L, "CNY", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_amount",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POAMT" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "UNPAID", -1L, "CNY", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_currency",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POCUR" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "UNPAID", 9900L, "CN", createdAt, createdAt, 1),
+                        checkProbe("ck_payment_order_time_order",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POTIM" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "UNPAID", 9900L, "CNY",
+                                OffsetDateTime.parse("2026-01-01T00:00:00Z"),
+                                OffsetDateTime.parse("2025-12-31T23:59:59Z"), 1),
+                        checkProbe("ck_payment_order_revision",
+                                paymentOrderProbeSql(), UUID.randomUUID(), orderId, "WECHAT",
+                                "S2POREV" + UUID.randomUUID().toString().replace("-", "")
+                                        .substring(0, 8),
+                                null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 0),
+                        checkProbe("ck_payment_event_provider",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "ALIPAY", "evt-s2-probe-" + UUID.randomUUID(),
+                                "TRANSACTION.SUCCESS", "v1.s2.event.probe", randomSha256(), null,
+                                9900L, createdAt),
+                        checkProbe("ck_payment_event_event_id",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "WECHAT", "   ", "TRANSACTION.SUCCESS", "v1.s2.event.probe",
+                                randomSha256(), null, 9900L, createdAt),
+                        checkProbe("ck_payment_event_type",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "WECHAT", "evt-s2-probe-" + UUID.randomUUID(), "   ",
+                                "v1.s2.event.probe", randomSha256(), null, 9900L, createdAt),
+                        checkProbe("ck_payment_event_payload_ciphertext",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "WECHAT", "evt-s2-probe-" + UUID.randomUUID(),
+                                "TRANSACTION.SUCCESS", "plaintext", randomSha256(), null, 9900L,
+                                createdAt),
+                        checkProbe("ck_payment_event_payload_sha",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "WECHAT", "evt-s2-probe-" + UUID.randomUUID(),
+                                "TRANSACTION.SUCCESS", "v1.s2.event.probe", "abc", null, 9900L,
+                                createdAt),
+                        checkProbe("ck_payment_event_transaction",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "WECHAT", "evt-s2-probe-" + UUID.randomUUID(),
+                                "TRANSACTION.SUCCESS", "v1.s2.event.probe", randomSha256(), "   ",
+                                9900L, createdAt),
+                        checkProbe("ck_payment_event_amount",
+                                paymentEventProbeSql(), UUID.randomUUID(), paymentOrderId,
+                                "WECHAT", "evt-s2-probe-" + UUID.randomUUID(),
+                                "TRANSACTION.SUCCESS", "v1.s2.event.probe", randomSha256(), null,
+                                -1L, createdAt));
+                List<String> probed = new ArrayList<>();
+                for (CheckProbe probe : probes) {
+                    expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                            probe.parameters());
+                    probed.add(probe.constraint());
+                }
+                assertThat(probed)
+                        .as("all 29 customer_order/payment_order/payment_event named checks "
+                                + "have a probe")
+                        .containsExactlyInAnyOrderElementsOf(v004ExpectedCheckNames(
+                                "customer_order", "payment_order", "payment_event"));
+                assertThat(probed).hasSize(29);
+
+                // All fixtures rolled back; no committed append-only row.
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.customer_order WHERE id = ? OR order_no = ?",
+                    orderId, orderNo)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.payment_order WHERE id = ?",
+                    paymentOrderId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.payment_event WHERE id IN (?, ?)",
+                    verifiedEventId, unverifiedEventId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
+                    accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
+                    subjectId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?",
+                    employeeId)).isZero();
+        }
+    }
+
+    private static String customerOrderProbeSql() {
+        return "INSERT INTO catalog_order.customer_order "
+                + "(id, order_no, account_id, owner_organization_id, subject_id, channel, "
+                + "catalog_version_id, catalog_offer_id, purchase_consent_id, amount_cents, "
+                + "currency, payment_status, snapshot, snapshot_sha256, version_token, "
+                + "idempotency_key, request_fingerprint, revision, created_at, paid_at, closed_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static String paymentOrderProbeSql() {
+        return "INSERT INTO catalog_order.payment_order "
+                + "(id, order_id, provider, merchant_order_no, provider_transaction_id, status, "
+                + "amount_cents, currency, created_at, updated_at, revision) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static String paymentEventProbeSql() {
+        return "INSERT INTO catalog_order.payment_event "
+                + "(id, payment_order_id, provider, provider_event_id, event_type, "
+                + "signature_verified, payload_ciphertext, payload_sha256, transaction_id, "
+                + "amount_cents, occurred_at) "
+                + "VALUES (?, ?, ?, ?, ?, false, ?, ?, ?, ?, ?)";
+    }
+
+    private static void assertV004ForeignKeyAndAbsentConsentFkBackstops() throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID versionWithOffer = UUID.randomUUID();
+        UUID versionWithBenefit = UUID.randomUUID();
+        UUID versionForEmployeeDelete = UUID.randomUUID();
+        UUID versionForOrder = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID benefitId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID paymentOrderId = UUID.randomUUID();
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "s2***fk",
+                        "onecall-ops", randomSha256(), "PA4 S2 FK Employee", "ADMIN"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "PA4 S2 FK Customer"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "PA4 S2 FK Org"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                switchLocalRole(connection, "catalog_order_role");
+                assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, versionWithOffer, productId, 1,
+                        "DRAFT", "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"p\":1}", randomSha256(), employeeId, null, 1)).isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, versionWithBenefit, productId, 2,
+                        "DRAFT", "ONE_TIME", "PERSONAL", 5000L, "CNY", "ONCE", 1, 0,
+                        "{\"p\":2}", randomSha256(), employeeId, null, 1)).isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, versionForEmployeeDelete, productId, 3,
+                        "DRAFT", "ADD_ON", "PERSONAL", 100L, "CNY", "ONCE", 1, 0,
+                        "{\"p\":3}", randomSha256(), employeeId, null, 1)).isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, versionForOrder, productId, 4, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"p\":4}", randomSha256(), employeeId, null, 1)).isEqualTo(1);
+                assertThat(insertCatalogOffer(connection, offerId, versionWithOffer, "WEB",
+                        "s2-fk-token")).isEqualTo(1);
+                assertThat(insertCatalogBenefitLine(connection, benefitId, versionWithBenefit,
+                        "AI_SECONDS", 10, 7, 0)).isEqualTo(1);
+                assertThat(insertCustomerOrder(connection, orderId,
+                        "S2ORDFK" + UUID.randomUUID().toString().replace("-", ""),
+                        accountId, organizationId, subjectId, versionForOrder, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                        randomSha256(), "s2-fk-token", "s2-idem-fk-" + UUID.randomUUID(),
+                        randomSha256(), createdAt, null, null, 1)).isEqualTo(1);
+                assertThat(insertPaymentOrder(connection, paymentOrderId, orderId,
+                        "S2MERFK" + UUID.randomUUID().toString().replace("-", "").substring(0, 16),
+                        null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1)).isEqualTo(1);
+
+                // Missing-parent 23503 + exact constraint name for all 11 FKs.
+                expectSqlFailure(connection, "23503", "fk_catalog_version_product",
+                        "INSERT INTO catalog_order.catalog_version "
+                                + "(id, product_id, version_no, sale_status, offer_type, audience, "
+                                + "price_cents, currency, billing_cycle, installments, "
+                                + "grant_interval_months, snapshot, snapshot_sha256, "
+                                + "created_by_employee_id, revision) "
+                                + "VALUES (?, ?, 99, 'DRAFT', 'SUBSCRIPTION', 'PERSONAL', 100, "
+                                + "'CNY', 'MONTHLY', 1, 1, '{\"p\":9}', ?, ?, 1)",
+                        UUID.randomUUID(), UUID.randomUUID(), randomSha256(), employeeId);
+                expectSqlFailure(connection, "23503", "fk_catalog_version_employee",
+                        "INSERT INTO catalog_order.catalog_version "
+                                + "(id, product_id, version_no, sale_status, offer_type, audience, "
+                                + "price_cents, currency, billing_cycle, installments, "
+                                + "grant_interval_months, snapshot, snapshot_sha256, "
+                                + "created_by_employee_id, revision) "
+                                + "VALUES (?, ?, 99, 'DRAFT', 'SUBSCRIPTION', 'PERSONAL', 100, "
+                                + "'CNY', 'MONTHLY', 1, 1, '{\"p\":9}', ?, ?, 1)",
+                        UUID.randomUUID(), productId, randomSha256(), UUID.randomUUID());
+                expectSqlFailure(connection, "23503", "fk_catalog_offer_version",
+                        "INSERT INTO catalog_order.catalog_offer "
+                                + "(id, catalog_version_id, channel, offer_status, version_token, "
+                                + "revision) VALUES (?, ?, 'MINIAPP', 'ACTIVE', 's2-fk', 1)",
+                        UUID.randomUUID(), UUID.randomUUID());
+                expectSqlFailure(connection, "23503", "fk_catalog_benefit_version",
+                        "INSERT INTO catalog_order.catalog_benefit_line "
+                                + "(id, catalog_version_id, entitlement_type, quantity, "
+                                + "validity_days, grant_interval_months) "
+                                + "VALUES (?, ?, 'STORAGE_BYTES', 1, 1, 0)",
+                        UUID.randomUUID(), UUID.randomUUID());
+                expectSqlFailure(connection, "23503", "fk_customer_order_account",
+                        customerOrderMissingParentSql("fk_customer_order_account"),
+                        UUID.randomUUID(),
+                        "S2ORDPACC" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                        UUID.randomUUID(), organizationId, subjectId, versionForOrder, offerId,
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-pacc-" + UUID.randomUUID(), randomSha256());
+                expectSqlFailure(connection, "23503", "fk_customer_order_organization",
+                        customerOrderMissingParentSql("fk_customer_order_organization"),
+                        UUID.randomUUID(),
+                        "S2ORDPORG" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                        accountId, UUID.randomUUID(), subjectId, versionForOrder, offerId,
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-porg-" + UUID.randomUUID(), randomSha256());
+                expectSqlFailure(connection, "23503", "fk_customer_order_subject",
+                        customerOrderMissingParentSql("fk_customer_order_subject"),
+                        UUID.randomUUID(),
+                        "S2ORDPSUB" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                        accountId, organizationId, UUID.randomUUID(), versionForOrder, offerId,
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-psub-" + UUID.randomUUID(), randomSha256());
+                expectSqlFailure(connection, "23503", "fk_customer_order_version",
+                        customerOrderMissingParentSql("fk_customer_order_version"),
+                        UUID.randomUUID(),
+                        "S2ORDPVER" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                        accountId, organizationId, subjectId, UUID.randomUUID(), offerId,
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-pver-" + UUID.randomUUID(), randomSha256());
+                expectSqlFailure(connection, "23503", "fk_customer_order_offer",
+                        customerOrderMissingParentSql("fk_customer_order_offer"),
+                        UUID.randomUUID(),
+                        "S2ORDPOFF" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                        accountId, organizationId, subjectId, versionForOrder, UUID.randomUUID(),
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-poff-" + UUID.randomUUID(), randomSha256());
+                expectSqlFailure(connection, "23503", "fk_payment_order_order",
+                        "INSERT INTO catalog_order.payment_order "
+                                + "(id, order_id, provider, merchant_order_no, status, "
+                                + "amount_cents, currency, revision) "
+                                + "VALUES (?, ?, 'WECHAT', ?, 'UNPAID', 100, 'CNY', 1)",
+                        UUID.randomUUID(), UUID.randomUUID(),
+                        "S2MERMISS" + UUID.randomUUID().toString().replace("-", "")
+                                .substring(0, 8));
+                expectSqlFailure(connection, "23503", "fk_payment_event_order",
+                        "INSERT INTO catalog_order.payment_event "
+                                + "(id, payment_order_id, provider, provider_event_id, event_type, "
+                                + "signature_verified, payload_ciphertext, payload_sha256, "
+                                + "amount_cents, occurred_at) "
+                                + "VALUES (?, ?, 'WECHAT', ?, 'TRANSACTION.SUCCESS', false, "
+                                + "'v1.s2.event.missing', ?, 100, ?)",
+                        UUID.randomUUID(), UUID.randomUUID(),
+                        "evt-s2-missing-" + UUID.randomUUID(), randomSha256(), createdAt);
+
+                // Parent-delete RESTRICT 23503 where the parent has no append-only trigger.
+                resetToMigrationIdentity(connection);
+                // One valid payment-event child so the payment_order parent delete below
+                // hits fk_payment_event_order RESTRICT (the missing-parent probe above
+                // used a random parent id and left no child row).
+                assertThat(insertPaymentEvent(connection, UUID.randomUUID(), paymentOrderId,
+                        "evt-s2-fkparent-" + UUID.randomUUID(), "TRANSACTION.SUCCESS", false,
+                        "v1.s2.event.fkparent", randomSha256(), null, 9900L, createdAt))
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_catalog_offer_version",
+                        "DELETE FROM catalog_order.catalog_version WHERE id = ?",
+                        versionWithOffer);
+                expectSqlFailure(connection, "23503", "fk_catalog_benefit_version",
+                        "DELETE FROM catalog_order.catalog_version WHERE id = ?",
+                        versionWithBenefit);
+                expectSqlFailure(connection, "23503", "fk_payment_order_order",
+                        "DELETE FROM catalog_order.customer_order WHERE id = ?", orderId);
+                expectSqlFailure(connection, "23503", "fk_payment_event_order",
+                        "DELETE FROM catalog_order.payment_order WHERE id = ?", paymentOrderId);
+                expectSqlFailure(connection, "23503", "fk_customer_order_account",
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                expectSqlFailure(connection, "23503", "fk_customer_order_organization",
+                        "DELETE FROM organization_access.organization WHERE id = ?",
+                        organizationId);
+                expectSqlFailure(connection, "23503", "fk_customer_order_subject",
+                        "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
+                expectSqlFailure(connection, "23503", "fk_catalog_version_employee",
+                        "DELETE FROM operations_iam.employee_account WHERE id = ?", employeeId);
+
+                // catalog_product delete is shadowed by trg_catalog_product_immutable (P0001),
+                // not a 23503; the FK metadata still records confdeltype='r'.
+                expectSqlFailure(connection, "P0001", "CATALOG_ROW_APPEND_ONLY",
+                        "DELETE FROM catalog_order.catalog_product WHERE id = ?", productId);
+                assertThat(queryString(connection,
+                        "SELECT c.confupdtype::text || c.confdeltype::text || "
+                                + "c.confmatchtype::text || '|' || c.condeferrable::text || '|' "
+                                + "|| c.condeferred::text || '|' || c.convalidated::text "
+                                + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'catalog_order' "
+                                + "AND c.conname = 'fk_catalog_version_product'"))
+                        .isEqualTo("rrs|false|false|true");
+
+                // Exact 11-row FK map; consent FK absent; purchase_consent_id properties.
+                assertThat(V004_FK_DEFS).as("expected V004 FK map size").hasSize(11);
+                for (String row : V004_FK_DEFS) {
+                    String[] expected = row.split("\\|", -1);
+                    assertThat(queryString(connection,
+                            "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                    + "JOIN pg_class r ON r.oid = c.conrelid "
+                                    + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                    + "WHERE n.nspname = 'catalog_order' AND c.conname = ?",
+                            expected[0])).as("FK def %s", expected[0]).isEqualTo(expected[1]);
+                    assertThat(queryStrings(connection,
+                            "SELECT c.confupdtype::text || c.confdeltype::text || "
+                                    + "c.confmatchtype::text || '|' || c.condeferrable::text || "
+                                    + "'|' || c.condeferred::text || '|' || c.convalidated::text "
+                                    + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                                    + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                    + "WHERE n.nspname = 'catalog_order' AND c.conname = ?",
+                            expected[0]))
+                            .as("FK properties %s", expected[0])
+                            .containsExactly("rrs|false|false|true");
+                }
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'catalog_order' "
+                                + "AND c.conname = 'fk_customer_order_consent'"))
+                        .as("fk_customer_order_consent is deferred to V007").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM information_schema.columns "
+                                + "WHERE table_schema = 'catalog_order' "
+                                + "AND table_name = 'customer_order' "
+                                + "AND column_name = 'purchase_consent_id' "
+                                + "AND is_nullable = 'NO' AND column_default IS NULL"))
+                        .as("purchase_consent_id is NOT NULL with no default").isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM information_schema.key_column_usage k "
+                                + "JOIN information_schema.table_constraints c "
+                                + "ON k.constraint_name = c.constraint_name "
+                                + "AND k.table_schema = c.table_schema "
+                                + "WHERE k.table_schema = 'catalog_order' "
+                                + "AND k.table_name = 'customer_order' "
+                                + "AND k.column_name = 'purchase_consent_id' "
+                                + "AND c.constraint_type = 'FOREIGN KEY'"))
+                        .as("purchase_consent_id has no FK at V004").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM information_schema.tables "
+                                + "WHERE table_schema = 'activation_consent'"))
+                        .as("activation_consent has zero tables at V004").isZero();
+
+                // All fixtures rolled back.
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_product WHERE id = ?",
+                    productId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_version "
+                            + "WHERE id IN (?, ?, ?, ?)",
+                    versionWithOffer, versionWithBenefit, versionForEmployeeDelete,
+                    versionForOrder)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.customer_order WHERE id = ?", orderId))
+                    .isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
+                    accountId)).isZero();
+        }
+    }
+
+    private static String customerOrderMissingParentSql(String ignoredConstraint) {
+        return "INSERT INTO catalog_order.customer_order "
+                + "(id, order_no, account_id, owner_organization_id, subject_id, channel, "
+                + "catalog_version_id, catalog_offer_id, purchase_consent_id, amount_cents, "
+                + "currency, payment_status, snapshot, snapshot_sha256, version_token, "
+                + "idempotency_key, request_fingerprint, revision) "
+                + "VALUES (?, ?, ?, ?, ?, 'WEB', ?, ?, ?, 9900, 'CNY', 'UNPAID', '{\"line\":1}', "
+                + "?, 's2-fk', ?, ?, 1)";
+    }
+
+    private static void runConcurrentCatalogPublicationAndCommerceIdentity() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            commitCustomerAccounts(accountId);
+            commitOrganization(organizationId);
+            commitSubjects(subjectId);
+            commitEmployees(List.of(employeeId));
+
+            runUnlockedPublicationRace(executor, employeeId);
+            runAdvisoryLockPublicationProtocol(executor, employeeId);
+            runOrderIdempotencyRace(executor, accountId, organizationId, subjectId, employeeId);
+            runPaymentOrderIdentityRaces(executor, accountId, organizationId, subjectId,
+                    employeeId);
+            runPaymentEventIdentityRace(executor, accountId, organizationId, subjectId,
+                    employeeId);
+        } finally {
+            executor.shutdownNow();
+            cleanupV004ConcurrentFixtures(accountId, organizationId, subjectId, employeeId);
+        }
+    }
+
+    private static void runUnlockedPublicationRace(ExecutorService executor, UUID employeeId)
+            throws Exception {
+        UUID productId = UUID.randomUUID();
+        UUID winnerVersion = UUID.randomUUID();
+        UUID loserVersion = UUID.randomUUID();
+        String winnerApplication = "pa4-s2-publication-unlocked-winner";
+        String loserApplication = "pa4-s2-publication-unlocked-loser";
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCatalogProduct(setup, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, winnerVersion, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"race\":\"unlocked-w\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, loserVersion, productId, 2, "DRAFT",
+                        "ONE_TIME", "PERSONAL", 5000L, "CNY", "ONCE", 1, 0,
+                        "{\"race\":\"unlocked-l\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "catalog_order_role");
+            assertThat(executeUpdate(winner,
+                    "UPDATE catalog_order.catalog_version "
+                            + "SET sale_status = 'ACTIVE', published_at = now(), "
+                            + "revision = revision + 1 "
+                            + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                    winnerVersion)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "catalog_order_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> executeUpdate(loser,
+                    "UPDATE catalog_order.catalog_version "
+                            + "SET sale_status = 'ACTIVE', published_at = now(), "
+                            + "revision = revision + 1 "
+                            + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                    loserVersion));
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the publication loser must not commit a second ACTIVE version");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_catalog_version_active");
+            }
+            loser.rollback();
+            setLocalRole(loser, "catalog_order_role");
+            assertThat(queryString(loser,
+                    "SELECT id::text FROM catalog_order.catalog_version "
+                            + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                    productId)).isEqualTo(winnerVersion.toString());
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.catalog_version "
+                            + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                    productId)).isEqualTo(1);
+            // The loser's UPDATE failed on uq_catalog_version_active and its transaction
+            // rolled back, so the pre-existing loser row remains exactly as committed:
+            // DRAFT with published_at still NULL (the query renders published_at IS NULL,
+            // so the unchanged NULL timestamp reads as true) and revision 1.
+            assertThat(queryString(verify,
+                    "SELECT sale_status || '|' || (published_at IS NULL)::text || '|' "
+                            + "|| revision::text "
+                            + "FROM catalog_order.catalog_version WHERE id = ?",
+                    loserVersion)).isEqualTo("DRAFT|true|1");
+        }
+    }
+
+    private static void runAdvisoryLockPublicationProtocol(ExecutorService executor, UUID employeeId)
+            throws Exception {
+        UUID productId = UUID.randomUUID();
+        UUID activeVersion = UUID.randomUUID();
+        UUID candidateVersion = UUID.randomUUID();
+        String lockKey = "catalog_order.publication:" + productId;
+        String winnerApplication = "pa4-s2-publication-lock-winner";
+        String loserApplication = "pa4-s2-publication-lock-loser";
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCatalogProduct(setup, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, activeVersion, productId, 1, "ACTIVE",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"race\":\"protocol-active\"}", randomSha256(), employeeId,
+                        createdAt, 2)).isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, candidateVersion, productId, 2, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"race\":\"protocol-candidate\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "catalog_order_role");
+            execute(winner, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey);
+            assertThat(executeUpdate(winner,
+                    "UPDATE catalog_order.catalog_version "
+                            + "SET sale_status = 'OFFSALE', revision = revision + 1 "
+                            + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 2",
+                    activeVersion)).isEqualTo(1);
+            assertThat(executeUpdate(winner,
+                    "UPDATE catalog_order.catalog_version "
+                            + "SET sale_status = 'ACTIVE', published_at = now(), "
+                            + "revision = revision + 1 "
+                            + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                    candidateVersion)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "catalog_order_role", loserApplication);
+            Future<Void> loserFuture = executor.submit(() -> {
+                try {
+                    execute(loser, "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                            lockKey);
+                    String currentActive = queryString(loser,
+                            "SELECT id::text FROM catalog_order.catalog_version "
+                                    + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                            productId);
+                    assertThat(currentActive)
+                            .as("stale loser observes the winner's ACTIVE candidate")
+                            .isEqualTo(candidateVersion.toString());
+                    assertThat(executeUpdate(loser,
+                            "UPDATE catalog_order.catalog_version "
+                                    + "SET sale_status = 'OFFSALE', revision = revision + 1 "
+                                    + "WHERE id = ? AND sale_status = 'ACTIVE' AND revision = 2",
+                            activeVersion))
+                            .as("stale retire of the previous ACTIVE affects zero rows")
+                            .isZero();
+                    assertThat(executeUpdate(loser,
+                            "UPDATE catalog_order.catalog_version "
+                                    + "SET sale_status = 'ACTIVE', published_at = now(), "
+                                    + "revision = revision + 1 "
+                                    + "WHERE id = ? AND sale_status = 'DRAFT' AND revision = 1",
+                            candidateVersion))
+                            .as("stale activate of the candidate affects zero rows")
+                            .isZero();
+                    loser.rollback();
+                    return null;
+                } catch (SQLException exception) {
+                    throw new IllegalStateException(exception);
+                }
+            });
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+            winner.close();
+            loser.close();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.catalog_version "
+                            + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                    productId)).isEqualTo(1);
+            assertThat(queryString(verify,
+                    "SELECT id::text FROM catalog_order.catalog_version "
+                            + "WHERE product_id = ? AND sale_status = 'ACTIVE'",
+                    productId)).isEqualTo(candidateVersion.toString());
+            assertThat(queryString(verify,
+                    "SELECT sale_status || '|' || revision::text "
+                            + "FROM catalog_order.catalog_version WHERE id = ?",
+                    activeVersion)).isEqualTo("OFFSALE|3");
+            assertThat(queryString(verify,
+                    "SELECT sale_status || '|' || revision::text "
+                            + "FROM catalog_order.catalog_version WHERE id = ?",
+                    candidateVersion)).isEqualTo("ACTIVE|2");
+        }
+    }
+
+    private static void runOrderIdempotencyRace(
+            ExecutorService executor,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID employeeId) throws Exception {
+        UUID productId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID winnerOrder = UUID.randomUUID();
+        UUID loserOrder = UUID.randomUUID();
+        String idempotencyKey = "s2-idem-race-" + UUID.randomUUID();
+        String winnerApplication = "pa4-s2-order-idem-winner";
+        String loserApplication = "pa4-s2-order-idem-loser";
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCatalogProduct(setup, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, versionId, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"race\":\"order\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogOffer(setup, offerId, versionId, "WEB", "s2-race-token"))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "catalog_order_role");
+            assertThat(insertCustomerOrder(winner, winnerOrder,
+                    "S2ORDW" + UUID.randomUUID().toString().replace("-", ""),
+                    accountId, organizationId, subjectId, versionId, offerId,
+                    UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                    "s2-race-token", idempotencyKey, randomSha256(), createdAt, null, null, 1))
+                    .isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "catalog_order_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> insertCustomerOrder(loser,
+                    loserOrder,
+                    "S2ORDL" + UUID.randomUUID().toString().replace("-", ""),
+                    accountId, organizationId, subjectId, versionId, offerId,
+                    UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                    "s2-race-token", idempotencyKey, randomSha256(), createdAt, null, null, 1));
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the idempotency loser must not commit a second order");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_customer_order_idempotency");
+            }
+            loser.rollback();
+            setLocalRole(loser, "catalog_order_role");
+            assertThat(queryString(loser,
+                    "SELECT id::text FROM catalog_order.customer_order "
+                            + "WHERE account_id = ? AND idempotency_key = ?",
+                    accountId, idempotencyKey)).isEqualTo(winnerOrder.toString());
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.customer_order "
+                            + "WHERE account_id = ? AND idempotency_key = ?",
+                    accountId, idempotencyKey)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.customer_order WHERE id = ?",
+                    loserOrder)).isZero();
+        }
+    }
+
+    private static void runPaymentOrderIdentityRaces(
+            ExecutorService executor,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID employeeId) throws Exception {
+        UUID productId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCatalogProduct(setup, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, versionId, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"race\":\"payment\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogOffer(setup, offerId, versionId, "WEB", "s2-pay-token"))
+                        .isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        // Race 1: same order_id.
+        UUID orderForIdRace = UUID.randomUUID();
+        UUID winnerPayment = UUID.randomUUID();
+        UUID loserPayment = UUID.randomUUID();
+        String orderRaceWinnerApp = "pa4-s2-payment-order-winner";
+        String orderRaceLoserApp = "pa4-s2-payment-order-loser";
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCustomerOrder(setup, orderForIdRace,
+                        "S2ORDPID" + UUID.randomUUID().toString().replace("-", ""),
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        "s2-pay-token", "s2-idem-pid-" + UUID.randomUUID(), randomSha256(),
+                        createdAt, null, null, 1)).isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + orderRaceWinnerApp + "'");
+            }
+            setLocalRole(winner, "catalog_order_role");
+            assertThat(insertPaymentOrder(winner, winnerPayment, orderForIdRace,
+                    "S2MERW" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
+                    null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1)).isEqualTo(1);
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "catalog_order_role", orderRaceLoserApp);
+            Future<Integer> loserFuture = executor.submit(() -> insertPaymentOrder(loser,
+                    loserPayment, orderForIdRace,
+                    "S2MERL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
+                    null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1));
+            awaitBlockedBackend(orderRaceLoserApp);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the payment_order order_id loser must not commit");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_payment_order_order");
+            }
+            loser.rollback();
+            setLocalRole(loser, "catalog_order_role");
+            assertThat(queryString(loser,
+                    "SELECT id::text FROM catalog_order.payment_order WHERE order_id = ?",
+                    orderForIdRace)).isEqualTo(winnerPayment.toString());
+            loser.rollback();
+        }
+
+        // Race 2: same non-null provider_transaction_id on two orders.
+        UUID orderTxnA = UUID.randomUUID();
+        UUID orderTxnB = UUID.randomUUID();
+        UUID winnerTxnPayment = UUID.randomUUID();
+        UUID loserTxnPayment = UUID.randomUUID();
+        String sharedTransaction = "txn-s2-race-" + UUID.randomUUID();
+        String txnRaceWinnerApp = "pa4-s2-payment-txn-winner";
+        String txnRaceLoserApp = "pa4-s2-payment-txn-loser";
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCustomerOrder(setup, orderTxnA,
+                        "S2ORDTXA" + UUID.randomUUID().toString().replace("-", ""),
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        "s2-pay-token", "s2-idem-txa-" + UUID.randomUUID(), randomSha256(),
+                        createdAt, null, null, 1)).isEqualTo(1);
+                assertThat(insertCustomerOrder(setup, orderTxnB,
+                        "S2ORDTXB" + UUID.randomUUID().toString().replace("-", ""),
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        "s2-pay-token", "s2-idem-txb-" + UUID.randomUUID(), randomSha256(),
+                        createdAt, null, null, 1)).isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + txnRaceWinnerApp + "'");
+            }
+            setLocalRole(winner, "catalog_order_role");
+            assertThat(insertPaymentOrder(winner, winnerTxnPayment, orderTxnA,
+                    "S2MERTXA" + UUID.randomUUID().toString().replace("-", "").substring(0, 10),
+                    sharedTransaction, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1))
+                    .isEqualTo(1);
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "catalog_order_role", txnRaceLoserApp);
+            Future<Integer> loserFuture = executor.submit(() -> insertPaymentOrder(loser,
+                    loserTxnPayment, orderTxnB,
+                    "S2MERTXB" + UUID.randomUUID().toString().replace("-", "").substring(0, 10),
+                    sharedTransaction, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1));
+            awaitBlockedBackend(txnRaceLoserApp);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the provider_transaction_id loser must not commit");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_payment_order_transaction");
+            }
+            loser.rollback();
+            setLocalRole(loser, "catalog_order_role");
+            assertThat(queryString(loser,
+                    "SELECT id::text FROM catalog_order.payment_order "
+                            + "WHERE provider_transaction_id = ?",
+                    sharedTransaction)).isEqualTo(winnerTxnPayment.toString());
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.payment_order WHERE order_id = ?",
+                    orderForIdRace)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.payment_order WHERE id IN (?, ?)",
+                    winnerPayment, loserPayment)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.payment_order "
+                            + "WHERE provider_transaction_id = ?",
+                    sharedTransaction)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.payment_order WHERE id = ?",
+                    loserTxnPayment)).isZero();
+        }
+    }
+
+    private static void runPaymentEventIdentityRace(
+            ExecutorService executor,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID employeeId) throws Exception {
+        UUID productId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID paymentOrderId = UUID.randomUUID();
+        UUID winnerEvent = UUID.randomUUID();
+        UUID loserEvent = UUID.randomUUID();
+        String providerEventId = "evt-s2-race-" + UUID.randomUUID();
+        String winnerApplication = "pa4-s2-event-identity-winner";
+        String loserApplication = "pa4-s2-event-identity-loser";
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection setup = openConnection()) {
+            setup.setAutoCommit(false);
+            try {
+                setLocalRole(setup, "catalog_order_role");
+                assertThat(insertCatalogProduct(setup, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(setup, versionId, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"race\":\"event\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogOffer(setup, offerId, versionId, "WEB", "s2-evt-token"))
+                        .isEqualTo(1);
+                assertThat(insertCustomerOrder(setup, orderId,
+                        "S2ORDEVT" + UUID.randomUUID().toString().replace("-", ""),
+                        accountId, organizationId, subjectId, versionId, offerId,
+                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        "s2-evt-token", "s2-idem-evt-" + UUID.randomUUID(), randomSha256(),
+                        createdAt, null, null, 1)).isEqualTo(1);
+                assertThat(insertPaymentOrder(setup, paymentOrderId, orderId,
+                        "S2MEREVT" + UUID.randomUUID().toString().replace("-", "").substring(0, 10),
+                        null, "UNPAID", 9900L, "CNY", createdAt, createdAt, 1)).isEqualTo(1);
+                setup.commit();
+            } catch (SQLException | RuntimeException exception) {
+                setup.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            setLocalRole(winner, "catalog_order_role");
+            assertThat(insertPaymentEvent(winner, winnerEvent, paymentOrderId, providerEventId,
+                    "TRANSACTION.SUCCESS", false, "v1.s2.event.race", randomSha256(), null,
+                    9900L, createdAt)).isEqualTo(1);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "catalog_order_role", loserApplication);
+            Future<Integer> loserFuture = executor.submit(() -> insertPaymentEvent(loser,
+                    loserEvent, paymentOrderId, providerEventId, "TRANSACTION.SUCCESS", false,
+                    "v1.s2.event.race", randomSha256(), null, 9900L, createdAt));
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the payment_event identity loser must not commit");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState()).isEqualTo("23505");
+                assertThat(exception.getMessage()).contains("uq_payment_event_provider_event");
+            }
+            loser.rollback();
+            setLocalRole(loser, "catalog_order_role");
+            assertThat(queryString(loser,
+                    "SELECT id::text FROM catalog_order.payment_event "
+                            + "WHERE provider = 'WECHAT' AND provider_event_id = ?",
+                    providerEventId)).isEqualTo(winnerEvent.toString());
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.payment_event "
+                            + "WHERE payment_order_id = ? AND provider = 'WECHAT' "
+                            + "AND provider_event_id = ?",
+                    paymentOrderId, providerEventId)).isEqualTo(1);
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM catalog_order.payment_event WHERE id = ?",
+                    loserEvent)).isZero();
+        }
+    }
+
+    private static void cleanupV004ConcurrentFixtures(
+            UUID accountId, UUID organizationId, UUID subjectId, UUID employeeId)
+            throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                // One TRUNCATE covering all seven catalog_order tables in a single statement:
+                // the only way to remove committed append-only fixtures; test-fixture hygiene
+                // only. Runtime TRUNCATE denial remains asserted by the S1 ACL matrix.
+                execute(connection,
+                        "TRUNCATE TABLE catalog_order.catalog_product, "
+                                + "catalog_order.catalog_version, catalog_order.catalog_offer, "
+                                + "catalog_order.catalog_benefit_line, "
+                                + "catalog_order.customer_order, catalog_order.payment_order, "
+                                + "catalog_order.payment_event");
+                // FK-safe parent deletes.
+                executeUpdate(connection,
+                        "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
+                executeUpdate(connection,
+                        "DELETE FROM organization_access.organization WHERE id = ?",
+                        organizationId);
+                executeUpdate(connection,
+                        "DELETE FROM operations_iam.employee_account WHERE id = ?", employeeId);
+                executeUpdate(connection,
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            // After the single migration-identity TRUNCATE, all seven catalog_order tables
+            // are empty (this method is the only committed catalog writer; sibling methods
+            // roll back), and every method-local V002/V003 parent UUID is gone.
+            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.catalog_product"))
+                    .as("catalog_product empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.catalog_version"))
+                    .as("catalog_version empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.catalog_offer"))
+                    .as("catalog_offer empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.catalog_benefit_line"))
+                    .as("catalog_benefit_line empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.customer_order"))
+                    .as("customer_order empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.payment_order"))
+                    .as("payment_order empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.payment_event"))
+                    .as("payment_event empty after TRUNCATE").isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
+                    accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
+                    subjectId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?",
+                    employeeId)).isZero();
         }
     }
 }
