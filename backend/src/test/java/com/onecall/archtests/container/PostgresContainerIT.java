@@ -2141,6 +2141,26 @@ class PostgresContainerIT {
         assertV006IssueFirstTrialSemantics();
     }
 
+    @Test
+    void v006TrialBalanceIssuanceLifecycleAndAppendOnlyBackstops() throws Exception {
+        runV006TrialBalanceIssuanceLifecycleAndAppendOnlyBackstops();
+    }
+
+    @Test
+    void v006ReservationUsageForeignKeyAndLateFkBackstops() throws Exception {
+        runV006ReservationUsageForeignKeyAndLateFkBackstops();
+    }
+
+    @Test
+    void v006NestedOutboxAtomicityAndReplayRollbackEvidence() throws Exception {
+        runV006NestedOutboxAtomicityAndReplayRollbackEvidence();
+    }
+
+    @Test
+    void concurrentV006FirstTrialAndReservationIdentityHasOneWinner() throws Exception {
+        runConcurrentV006FirstTrialAndReservationIdentityHasOneWinner();
+    }
+
     /**
      * S3 T-S1-09 last-enabled-admin protocol as exact transient SQL (no database function):
      * advisory lock, target row FOR UPDATE, enabled-admin count, then either a conditional
@@ -9498,6 +9518,2238 @@ class PostgresContainerIT {
                 assertThat(resultSet.next()).isFalse();
                 return value;
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // PA6 V006 S2: lifecycle/guard, FK/late-FK, nested-Outbox and concurrency
+    // ------------------------------------------------------------------
+
+    private static final List<String> V006_S2_TRIGGER_NAMES = List.of(
+            "ivr.trg_ivr_decision_immutable",
+            "entitlement_metering.trg_usage_fact_immutable",
+            "entitlement_metering.trg_trial_grant_immutable",
+            "entitlement_metering.trg_entitlement_grant_immutable");
+
+    /** Method-local committed-fixture registry for FK-safe scoped cleanup. */
+    private static final class V006S2LocalRows {
+        final List<UUID> decisionIds = new ArrayList<>();
+        final List<String> outboxDedupeKeys = new ArrayList<>();
+        final List<UUID> usageFactIds = new ArrayList<>();
+        final List<UUID> reservationIds = new ArrayList<>();
+        final List<UUID> issuanceIds = new ArrayList<>();
+        final List<UUID> balanceIds = new ArrayList<>();
+        final List<UUID> trialGrantIds = new ArrayList<>();
+        final List<UUID> grantIds = new ArrayList<>();
+        final List<UUID> policyIds = new ArrayList<>();
+        final List<UUID> employeeIds = new ArrayList<>();
+        final List<UUID> callRecordIds = new ArrayList<>();
+        final List<UUID> sessionIds = new ArrayList<>();
+        final List<UUID> taskIds = new ArrayList<>();
+        final List<UUID> bindingIds = new ArrayList<>();
+        final List<UUID> subjectIds = new ArrayList<>();
+        final List<UUID> accountIds = new ArrayList<>();
+        final List<UUID> organizationIds = new ArrayList<>();
+    }
+
+    private static String v006S2CallId() {
+        return "pa6-s2-call-" + UUID.randomUUID();
+    }
+
+    private static String v006S2TaskId() {
+        return "pa6-s2-task-" + UUID.randomUUID();
+    }
+
+    private static void v006S2InsertGrantAsOwner(
+            Connection connection,
+            UUID grantId,
+            UUID subjectId,
+            UUID policyId,
+            long grantedUnits,
+            OffsetDateTime validFrom,
+            OffsetDateTime grantedAt,
+            OffsetDateTime expiresAt) throws SQLException {
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256, "
+                        + "granted_at) VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', ?, ?, ?, "
+                        + "'{}'::jsonb, ?, ?)",
+                grantId, subjectId, policyId, grantedUnits, validFrom, expiresAt,
+                randomSha256(), grantedAt)).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void v006S2InsertBalanceAsOwner(
+            Connection connection,
+            UUID balanceId,
+            UUID grantId,
+            long grantedUnits) throws SQLException {
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_balance "
+                        + "(id, grant_id, granted_units, reserved_units, consumed_units, status, "
+                        + "revision, updated_at) VALUES (?, ?, ?, 0, 0, 'AVAILABLE', 1, now())",
+                balanceId, grantId, grantedUnits)).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void v006S2InsertReservationAsOwner(
+            Connection connection,
+            UUID reservationId,
+            String callId,
+            UUID balanceId,
+            UUID subjectId,
+            long authorizedUnits) throws SQLException {
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.usage_reservation "
+                        + "(id, call_id, balance_id, subject_id, authorized_units, "
+                        + "authorization_expires_at) VALUES (?, ?, ?, ?, ?, now() + interval '30 seconds')",
+                reservationId, callId, balanceId, subjectId, authorizedUnits)).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void v006S2InsertUsageFactAsOwner(
+            Connection connection,
+            UUID usageFactId,
+            UUID reservationId,
+            UUID balanceId,
+            String callId,
+            String sourceEventId) throws SQLException {
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.usage_fact "
+                        + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                        + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                        + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                        + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                usageFactId, reservationId, balanceId, callId, sourceEventId, randomSha256()))
+                .isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void v006S2InsertIssuanceAsOwner(
+            Connection connection,
+            UUID issuanceId,
+            UUID orderId,
+            int installmentNo) throws SQLException {
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_issuance "
+                        + "(id, order_id, installment_no, entitlement_type, status, "
+                        + "source_event_domain, source_event_id) "
+                        + "VALUES (?, ?, ?, 'RECORDING_SECONDS', 'PENDING', 'PAYMENT', ?)",
+                issuanceId, orderId, installmentNo,
+                "pa6-s2-pay-evt-" + UUID.randomUUID())).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    /**
+     * Inserts V002/V003/V005 parents plus a method-local call_record for reservation/usage FK
+     * parents. Ends as migration identity on the same connection.
+     */
+    private static void v006S2InsertCallParents(
+            Connection connection,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID bindingId,
+            UUID sessionId,
+            UUID callRecordId,
+            String callId,
+            String hmac) throws SQLException {
+        v005InsertParents(connection, accountId, organizationId, subjectId, bindingId, hmac);
+        setLocalRole(connection, "ivr_role");
+        assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac)).isEqualTo(1);
+        assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId, hmac))
+                .isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void disableV006S2CleanupTriggers(Connection connection) throws SQLException {
+        for (String qualified : V006_S2_TRIGGER_NAMES) {
+            int separator = qualified.indexOf('.');
+            String schema = qualified.substring(0, separator);
+            String trigger = qualified.substring(separator + 1);
+            execute(connection,
+                    "ALTER TABLE " + schema + "." + v006S2TriggerTable(trigger)
+                            + " DISABLE TRIGGER " + trigger);
+        }
+    }
+
+    private static void enableV006S2CleanupTriggers(Connection connection) throws SQLException {
+        for (String qualified : V006_S2_TRIGGER_NAMES) {
+            int separator = qualified.indexOf('.');
+            String schema = qualified.substring(0, separator);
+            String trigger = qualified.substring(separator + 1);
+            execute(connection,
+                    "ALTER TABLE " + schema + "." + v006S2TriggerTable(trigger)
+                            + " ENABLE TRIGGER " + trigger);
+        }
+        for (String qualified : V006_S2_TRIGGER_NAMES) {
+            int separator = qualified.indexOf('.');
+            String schema = qualified.substring(0, separator);
+            String trigger = qualified.substring(separator + 1);
+            assertThat(queryString(connection,
+                    "SELECT tgenabled FROM pg_trigger t "
+                            + "JOIN pg_class c ON c.oid = t.tgrelid "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = ? AND c.relname = ? AND t.tgname = ?",
+                    schema, v006S2TriggerTable(trigger), trigger))
+                    .as("trigger %s restored to enabled/origin", qualified)
+                    .isEqualTo("O");
+        }
+    }
+
+    private static String v006S2TriggerTable(String trigger) {
+        return switch (trigger) {
+            case "trg_ivr_decision_immutable" -> "ivr_decision";
+            case "trg_usage_fact_immutable" -> "usage_fact";
+            case "trg_trial_grant_immutable" -> "trial_grant";
+            case "trg_entitlement_grant_immutable" -> "entitlement_grant";
+            default -> throw new IllegalArgumentException("unknown S2 trigger " + trigger);
+        };
+    }
+
+    /**
+     * Deletes only recorded method-local rows in the accepted dependency order after
+     * transactionally disabling exactly the four named append-only triggers. Any error
+     * rolls back deletes and trigger-state changes and fails the test.
+     */
+    private static void cleanupV006S2LocalRows(V006S2LocalRows rows) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                disableV006S2CleanupTriggers(connection);
+                for (UUID id : rows.decisionIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.ivr_decision WHERE id = ?", id);
+                }
+                for (String key : rows.outboxDedupeKeys) {
+                    executeUpdate(connection,
+                            "DELETE FROM platform.outbox_event "
+                                    + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                            key);
+                }
+                for (UUID id : rows.usageFactIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.usage_fact WHERE id = ?", id);
+                }
+                for (UUID id : rows.reservationIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.usage_reservation WHERE id = ?", id);
+                }
+                for (UUID id : rows.issuanceIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.entitlement_issuance WHERE id = ?",
+                            id);
+                }
+                for (UUID id : rows.balanceIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                            id);
+                }
+                for (UUID id : rows.trialGrantIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.trial_grant WHERE id = ?", id);
+                }
+                for (UUID id : rows.grantIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.entitlement_grant WHERE id = ?", id);
+                }
+                for (UUID id : rows.policyIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.trial_policy_version WHERE id = ?",
+                            id);
+                }
+                for (UUID id : rows.callRecordIds) {
+                    executeUpdate(connection, "DELETE FROM ivr.call_record WHERE id = ?", id);
+                }
+                for (UUID id : rows.sessionIds) {
+                    executeUpdate(connection, "DELETE FROM ivr.inbound_session WHERE id = ?", id);
+                }
+                for (UUID id : rows.taskIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.outbound_call_task WHERE id = ?", id);
+                }
+                for (UUID id : rows.bindingIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM subject_number.caller_number_binding WHERE id = ?", id);
+                }
+                for (UUID id : rows.subjectIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM subject_number.business_subject WHERE id = ?", id);
+                }
+                for (UUID id : rows.employeeIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM operations_iam.employee_account WHERE id = ?", id);
+                }
+                for (UUID id : rows.organizationIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM organization_access.organization WHERE id = ?", id);
+                }
+                for (UUID id : rows.accountIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM customer_iam.customer_account WHERE id = ?", id);
+                }
+                enableV006S2CleanupTriggers(connection);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    exception.addSuppressed(rollbackFailure);
+                }
+                throw exception;
+            }
+        }
+
+        try (Connection verify = openConnection()) {
+            for (UUID id : rows.decisionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.ivr_decision WHERE id = ?", id)).isZero();
+            }
+            for (String key : rows.outboxDedupeKeys) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", key))
+                        .isZero();
+            }
+            for (UUID id : rows.usageFactIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.usage_fact WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : rows.reservationIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.usage_reservation WHERE id = ?",
+                        id)).isZero();
+            }
+            for (UUID id : rows.issuanceIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_issuance WHERE id = ?",
+                        id)).isZero();
+            }
+            for (UUID id : rows.balanceIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                        id)).isZero();
+            }
+            for (UUID id : rows.trialGrantIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : rows.grantIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        id)).isZero();
+            }
+            for (UUID id : rows.policyIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.trial_policy_version WHERE id = ?",
+                        id)).isZero();
+            }
+            for (UUID id : rows.callRecordIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.call_record WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : rows.sessionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.inbound_session WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : rows.taskIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.outbound_call_task WHERE id = ?", id)).isZero();
+            }
+            for (UUID id : rows.bindingIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
+                        id)).isZero();
+            }
+            for (UUID id : rows.subjectIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : rows.employeeIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : rows.organizationIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM organization_access.organization WHERE id = ?", id))
+                        .isZero();
+            }
+            for (UUID id : rows.accountIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", id))
+                        .isZero();
+            }
+        }
+    }
+
+    private static void runV006TrialBalanceIssuanceLifecycleAndAppendOnlyBackstops()
+            throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        UUID draftPolicyId = UUID.randomUUID();
+        UUID publishedPolicyId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID balanceId = UUID.randomUUID();
+        UUID trialId = UUID.randomUUID();
+        UUID usageFactId = UUID.randomUUID();
+        OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v006InsertSubject(connection, subjectId);
+
+                // Draft, then the single allowed publication UPDATE.
+                switchLocalRole(connection, "operations_iam_role");
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "pa6***s2pol",
+                        "onecall-ops", randomSha256(), "PA6 S2 Policy", "OPS")).isEqualTo(1);
+                switchLocalRole(connection, "entitlement_metering_owner");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "enabled, snapshot, snapshot_sha256, published_by_employee_id, "
+                                + "published_at, revision) "
+                                + "VALUES (?, 'FIRST-TRIAL', 1, 600, 7, true, "
+                                + "'{\"grantedSeconds\":600,\"validDays\":7}'::jsonb, ?, ?, NULL, 1)",
+                        draftPolicyId, randomSha256(), employeeId)).isEqualTo(1);
+                // Publication shape: enabled true, revision+1, published_at from NULL.
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET enabled = TRUE, published_by_employee_id = ?, "
+                                + "published_at = now(), revision = revision + 1 "
+                                + "WHERE id = ? AND published_at IS NULL AND revision = 1",
+                        employeeId, draftPolicyId)).isEqualTo(1);
+
+                // Disable the published policy, then publish a second enabled+published row
+                // for uq_trial_policy_enabled.
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET enabled = FALSE, revision = revision + 1 WHERE id = ?",
+                        draftPolicyId)).isEqualTo(1);
+                switchLocalRole(connection, "operations_iam_role");
+                UUID secondEmployeeId = UUID.randomUUID();
+                assertThat(insertEmployee(connection, secondEmployeeId, randomSha256(),
+                        "pa6***s2p2", "onecall-ops", randomSha256(), "PA6 S2 Policy2", "OPS"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "entitlement_metering_owner");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "enabled, snapshot, snapshot_sha256, published_by_employee_id, "
+                                + "published_at, revision) "
+                                + "VALUES (?, 'FIRST-TRIAL', 2, 600, 7, true, "
+                                + "'{\"grantedSeconds\":600,\"validDays\":7}'::jsonb, ?, ?, "
+                                + "now(), 1)",
+                        publishedPolicyId, randomSha256(), secondEmployeeId)).isEqualTo(1);
+                // A third enabled+published policy violates the partial unique index.
+                expectSqlFailure(connection, "23505", "uq_trial_policy_enabled",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "enabled, snapshot, snapshot_sha256, published_by_employee_id, "
+                                + "published_at, revision) "
+                                + "VALUES (?, 'FIRST-TRIAL', 3, 600, 7, true, "
+                                + "'{}'::jsonb, ?, ?, now(), 1)",
+                        UUID.randomUUID(), randomSha256(), employeeId);
+
+                // Guard: later content/publisher changes rejected after publication.
+                expectSqlFailure(connection, "P0001", "TRIAL_POLICY_IMMUTABLE",
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET granted_seconds = 1 WHERE id = ?", publishedPolicyId);
+                expectSqlFailure(connection, "P0001", "TRIAL_POLICY_IMMUTABLE",
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET published_by_employee_id = ? WHERE id = ?",
+                        employeeId, publishedPolicyId);
+                expectSqlFailure(connection, "P0001", "TRIAL_POLICY_IMMUTABLE",
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET published_at = published_at + interval '1 second' "
+                                + "WHERE id = ?",
+                        publishedPolicyId);
+                expectSqlFailure(connection, "P0001", "TRIAL_POLICY_IMMUTABLE",
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET campaign_key = 'OTHER' WHERE id = ?", publishedPolicyId);
+
+                // Fixtures for append-only and balance/issuance probes.
+                v006S2InsertGrantAsOwner(connection, grantId, subjectId, publishedPolicyId,
+                        600L, base, base, base.plusDays(7));
+                v006S2InsertBalanceAsOwner(connection, balanceId, grantId, 600L);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                + "?, ?, ?, ?)",
+                        trialId, subjectId, publishedPolicyId, grantId,
+                        "pa6-s2-trial-" + UUID.randomUUID(), randomSha256(), base,
+                        base.plusDays(7))).isEqualTo(1);
+                String reservationCallId = v006S2CallId();
+                UUID sessionId = UUID.randomUUID();
+                UUID callRecordId = UUID.randomUUID();
+                UUID reservationId = UUID.randomUUID();
+                UUID callSubjectId = UUID.randomUUID();
+                v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                        callSubjectId, UUID.randomUUID(), sessionId, callRecordId,
+                        reservationCallId, randomSha256());
+                v006S2InsertReservationAsOwner(connection, reservationId, reservationCallId,
+                        balanceId, subjectId, 10L);
+                v006S2InsertUsageFactAsOwner(connection, usageFactId, reservationId, balanceId,
+                        reservationCallId, "pa6-s2-uf-" + UUID.randomUUID());
+
+                // Owner P0001 append-only guards (savepoint-bounded; full transaction retained).
+                expectSqlFailure(connection, "P0001", "ENTITLEMENT_GRANT_IMMUTABLE",
+                        "UPDATE entitlement_metering.entitlement_grant "
+                                + "SET granted_units = 1 WHERE id = ?", grantId);
+                expectSqlFailure(connection, "P0001", "ENTITLEMENT_GRANT_IMMUTABLE",
+                        "DELETE FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        grantId);
+                expectSqlFailure(connection, "P0001", "TRIAL_GRANT_IMMUTABLE",
+                        "UPDATE entitlement_metering.trial_grant "
+                                + "SET request_fingerprint = ? WHERE id = ?",
+                        randomSha256(), trialId);
+                expectSqlFailure(connection, "P0001", "TRIAL_GRANT_IMMUTABLE",
+                        "DELETE FROM entitlement_metering.trial_grant WHERE id = ?",
+                        trialId);
+                expectSqlFailure(connection, "P0001", "USAGE_FACT_APPEND_ONLY",
+                        "UPDATE entitlement_metering.usage_fact SET units = 1 WHERE id = ?",
+                        usageFactId);
+                expectSqlFailure(connection, "P0001", "USAGE_FACT_APPEND_ONLY",
+                        "DELETE FROM entitlement_metering.usage_fact WHERE id = ?",
+                        usageFactId);
+
+                // Runtime 42501 denials for the same three append-only tables.
+                switchLocalRole(connection, "entitlement_metering_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.entitlement_grant SET granted_units = 2 "
+                                + "WHERE id = ?", grantId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM entitlement_metering.entitlement_grant WHERE id = ?", grantId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.trial_grant SET request_fingerprint = ? "
+                                + "WHERE id = ?", randomSha256(), trialId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM entitlement_metering.trial_grant WHERE id = ?", trialId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.usage_fact SET units = 2 WHERE id = ?",
+                        usageFactId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM entitlement_metering.usage_fact WHERE id = ?", usageFactId);
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE entitlement_metering.usage_fact");
+                resetToMigrationIdentity(connection);
+
+                // Balance invariant probes with exact 23514 names.
+                switchLocalRole(connection, "entitlement_metering_owner");
+                expectSqlFailure(connection, "23514", "ck_entitlement_balance_units",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units, reserved_units, consumed_units) "
+                                + "VALUES (?, ?, 10, 8, 5)",
+                        UUID.randomUUID(), grantId);
+                expectSqlFailure(connection, "23514", "ck_entitlement_balance_status_shape",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units, reserved_units, consumed_units, "
+                                + "status) VALUES (?, ?, 10, 0, 0, 'EXHAUSTED')",
+                        UUID.randomUUID(), grantId);
+                // Positive control: valid AVAILABLE balance insert (same grant already has one
+                // balance via uq; use a fresh grant).
+                UUID controlGrantId = UUID.randomUUID();
+                v006S2InsertGrantAsOwner(connection, controlGrantId, subjectId,
+                        publishedPolicyId, 100L, base, base, base.plusDays(7));
+                UUID controlBalanceId = UUID.randomUUID();
+                v006S2InsertBalanceAsOwner(connection, controlBalanceId, controlGrantId, 100L);
+                assertThat(queryString(connection,
+                        "SELECT status FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                        controlBalanceId)).isEqualTo("AVAILABLE");
+
+                // Issuance state shape and terminal ISSUED.
+                UUID orderId = UUID.randomUUID();
+                switchLocalRole(connection, "operations_iam_role");
+                assertThat(insertEmployee(connection, UUID.randomUUID(), randomSha256(),
+                        "pa6***s2emp", "onecall-ops", randomSha256(), "PA6 S2 Emp", "OPS"))
+                        .isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                // Issuance needs a real customer_order parent for FK; use purchase fixture.
+                UUID issuanceOrderId = v006InsertPurchaseOrderFixture(connection, employeeId);
+                UUID issuanceId = UUID.randomUUID();
+                v006S2InsertIssuanceAsOwner(connection, issuanceId, issuanceOrderId, 1);
+                assertThat(queryString(connection,
+                        "SELECT status FROM entitlement_metering.entitlement_issuance WHERE id = ?",
+                        issuanceId)).isEqualTo("PENDING");
+                // Terminal ISSUED requires grant_id + issued_at.
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.entitlement_issuance "
+                                + "SET status = 'ISSUED', grant_id = ?, issued_at = now(), "
+                                + "updated_at = now(), revision = revision + 1 WHERE id = ?",
+                        grantId, issuanceId)).isEqualTo(1);
+                // ISSUED→FAILED is rejected by state shape.
+                expectSqlFailure(connection, "23514", "ck_issuance_state_shape",
+                        "UPDATE entitlement_metering.entitlement_issuance "
+                                + "SET status = 'FAILED', last_error_code = 'X', "
+                                + "updated_at = now(), revision = revision + 1 WHERE id = ?",
+                        issuanceId);
+
+                // Probe all 7+8+5+5+10 named checks with exact 23514 + constraint name.
+                List<String> probed = new ArrayList<>();
+                probed.addAll(probeV006TrialPolicyChecks(connection, employeeId));
+                probed.addAll(probeV006EntitlementGrantChecks(connection, subjectId,
+                        publishedPolicyId, issuanceOrderId));
+                probed.addAll(probeV006TrialGrantChecks(connection, subjectId,
+                        publishedPolicyId, grantId));
+                probed.addAll(probeV006BalanceChecks(connection, grantId));
+                probed.addAll(probeV006IssuanceChecks(connection, issuanceOrderId));
+                List<String> expected = new ArrayList<>();
+                for (String table : List.of("trial_policy_version", "entitlement_grant",
+                        "trial_grant", "entitlement_balance", "entitlement_issuance")) {
+                    expected.addAll(V006_CHECK_DEF_MAP.get(table).keySet());
+                }
+                assertThat(probed)
+                        .as("every trial/grant/balance/issuance named check has one probe")
+                        .hasSize(35)
+                        .containsExactlyInAnyOrderElementsOf(expected);
+
+                resetToMigrationIdentity(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_policy_version WHERE id = ?",
+                    draftPolicyId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                    grantId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.usage_fact WHERE id = ?",
+                    usageFactId)).isZero();
+        }
+    }
+
+    private static List<String> probeV006TrialPolicyChecks(
+            Connection connection, UUID employeeId) throws SQLException {
+        List<CheckProbe> probes = List.of(
+                checkProbe("ck_trial_policy_campaign",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id) "
+                                + "VALUES (?, 'OTHER', 1, 600, 7, '{}'::jsonb, ?, ?)",
+                        UUID.randomUUID(), randomSha256(), employeeId),
+                checkProbe("ck_trial_policy_version_no",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id) "
+                                + "VALUES (?, 'FIRST-TRIAL', 0, 600, 7, '{}'::jsonb, ?, ?)",
+                        UUID.randomUUID(), randomSha256(), employeeId),
+                checkProbe("ck_trial_policy_granted_seconds",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id) "
+                                + "VALUES (?, 'FIRST-TRIAL', 1, 0, 7, '{}'::jsonb, ?, ?)",
+                        UUID.randomUUID(), randomSha256(), employeeId),
+                checkProbe("ck_trial_policy_valid_days",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id) "
+                                + "VALUES (?, 'FIRST-TRIAL', 1, 600, 0, '{}'::jsonb, ?, ?)",
+                        UUID.randomUUID(), randomSha256(), employeeId),
+                checkProbe("ck_trial_policy_snapshot_type",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id) "
+                                + "VALUES (?, 'FIRST-TRIAL', 1, 600, 7, '[]'::jsonb, ?, ?)",
+                        UUID.randomUUID(), randomSha256(), employeeId),
+                checkProbe("ck_trial_policy_snapshot_sha",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id) "
+                                + "VALUES (?, 'FIRST-TRIAL', 1, 600, 7, '{}'::jsonb, 'not-sha', ?)",
+                        UUID.randomUUID(), employeeId),
+                checkProbe("ck_trial_policy_revision",
+                        "INSERT INTO entitlement_metering.trial_policy_version "
+                                + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                                + "snapshot, snapshot_sha256, published_by_employee_id, revision) "
+                                + "VALUES (?, 'FIRST-TRIAL', 1, 600, 7, '{}'::jsonb, ?, ?, 0)",
+                        UUID.randomUUID(), randomSha256(), employeeId));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : probes) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        return names;
+    }
+
+    private static List<String> probeV006EntitlementGrantChecks(
+            Connection connection,
+            UUID subjectId,
+            UUID policyId,
+            UUID orderId) throws SQLException {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<CheckProbe> all = new ArrayList<>();
+        all.add(checkProbe("ck_entitlement_grant_source",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, "
+                        + "entitlement_type, granted_units, valid_from, expires_at, "
+                        + "snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'BAD', ?, 'RECORDING_SECONDS', 1, ?, ?, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, policyId, now, now.plusDays(1),
+                randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_source_shape",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, "
+                        + "entitlement_type, granted_units, valid_from, expires_at, "
+                        + "order_id, installment_no, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 1, ?, ?, ?, 1, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, policyId, now, now.plusDays(1), orderId,
+                randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_type",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'BAD_TYPE', 1, ?, ?, '{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, policyId, now, now.plusDays(1), randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_units",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 0, ?, ?, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, policyId, now, now.plusDays(1), randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_expiry",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 1, ?, ?, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, policyId, now, now, randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_installment",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, order_id, installment_no, "
+                        + "snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'PURCHASE', ?, 'RECORDING_SECONDS', 1, ?, ?, ?, 0, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, orderId, now, now.plusDays(1), orderId,
+                randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_snapshot_type",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 1, ?, ?, "
+                        + "'[]'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, policyId, now, now.plusDays(1), randomSha256()));
+        all.add(checkProbe("ck_entitlement_grant_snapshot_sha",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 1, ?, ?, "
+                        + "'{}'::jsonb, 'not-sha')",
+                UUID.randomUUID(), subjectId, policyId, now, now.plusDays(1)));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : all) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        return names;
+    }
+
+    private static List<String> probeV006TrialGrantChecks(
+            Connection connection,
+            UUID subjectId,
+            UUID policyId,
+            UUID grantId) throws SQLException {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<CheckProbe> probes = List.of(
+                checkProbe("ck_trial_grant_campaign",
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'OTHER', ?, ?, 'IVR_CONFIRM', ?, ?, "
+                                + "?, ?)",
+                        UUID.randomUUID(), subjectId, policyId, grantId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256(), now, now.plusDays(1)),
+                checkProbe("ck_trial_grant_action_domain",
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'BAD', ?, ?, "
+                                + "?, ?)",
+                        UUID.randomUUID(), subjectId, policyId, grantId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256(), now, now.plusDays(1)),
+                checkProbe("ck_trial_grant_event_id",
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                + "'  ', ?, ?, ?)",
+                        UUID.randomUUID(), subjectId, policyId, grantId, randomSha256(), now,
+                        now.plusDays(1)),
+                checkProbe("ck_trial_grant_fingerprint",
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                + "?, 'not-sha', ?, ?)",
+                        UUID.randomUUID(), subjectId, policyId, grantId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), now, now.plusDays(1)),
+                checkProbe("ck_trial_grant_expiry",
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                + "?, ?, ?, ?)",
+                        UUID.randomUUID(), subjectId, policyId, grantId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256(), now, now));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : probes) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        return names;
+    }
+
+    private static List<String> probeV006BalanceChecks(
+            Connection connection, UUID grantId) throws SQLException {
+        List<CheckProbe> probes = List.of(
+                checkProbe("ck_entitlement_balance_granted",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units) VALUES (?, ?, 0)",
+                        UUID.randomUUID(), grantId),
+                checkProbe("ck_entitlement_balance_units",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units, reserved_units, consumed_units) "
+                                + "VALUES (?, ?, 5, 4, 4)",
+                        UUID.randomUUID(), grantId),
+                checkProbe("ck_entitlement_balance_status",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units, status) "
+                                + "VALUES (?, ?, 5, 'BAD')",
+                        UUID.randomUUID(), grantId),
+                checkProbe("ck_entitlement_balance_status_shape",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units, reserved_units, consumed_units, "
+                                + "status) VALUES (?, ?, 5, 0, 0, 'EXHAUSTED')",
+                        UUID.randomUUID(), grantId),
+                checkProbe("ck_entitlement_balance_revision",
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units, revision) "
+                                + "VALUES (?, ?, 5, 0)",
+                        UUID.randomUUID(), grantId));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : probes) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        return names;
+    }
+
+    private static List<String> probeV006IssuanceChecks(
+            Connection connection, UUID orderId) throws SQLException {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<CheckProbe> probes = List.of(
+                checkProbe("ck_issuance_installment",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 0, 'RECORDING_SECONDS', 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_type",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'BAD', 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_status",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, status, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', 'BAD', 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_state_shape",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, status, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', 'ISSUED', 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_attempt_count",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "attempt_count, source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', -1, 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_revision",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, revision, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', 0, 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_last_error",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "last_error_code, source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', '  ', 'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_event_domain",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', 'BAD', ?)",
+                        UUID.randomUUID(), orderId, "pa6-s2-ck-" + UUID.randomUUID()),
+                checkProbe("ck_issuance_event_id",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', 'PAYMENT', '  ')",
+                        UUID.randomUUID(), orderId),
+                checkProbe("ck_issuance_time_order",
+                        "INSERT INTO entitlement_metering.entitlement_issuance "
+                                + "(id, order_id, installment_no, entitlement_type, "
+                                + "first_attempt_at, issued_at, status, "
+                                + "source_event_domain, source_event_id) "
+                                + "VALUES (?, ?, 1, 'RECORDING_SECONDS', ?, ?, 'PENDING', "
+                                + "'PAYMENT', ?)",
+                        UUID.randomUUID(), orderId, now, now.minusSeconds(1),
+                        "pa6-s2-ck-" + UUID.randomUUID()));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : probes) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        return names;
+    }
+
+    private static void runV006ReservationUsageForeignKeyAndLateFkBackstops() throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID bindingId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID callRecordId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID balanceId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        UUID usageFactId = UUID.randomUUID();
+        String callId = v006S2CallId();
+        String hmac = randomSha256();
+        OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v005InsertParents(connection, accountId, organizationId, subjectId, bindingId,
+                        hmac);
+                setLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, sessionId, callId, subjectId, hmac))
+                        .isEqualTo(1);
+                assertThat(v005InsertCall(connection, callRecordId, callId, sessionId, subjectId,
+                        hmac)).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+
+                UUID employeeId = UUID.randomUUID();
+                UUID policyId = UUID.randomUUID();
+                v006InsertPublishedPolicy(connection, employeeId, policyId, 1, 600, 7, true);
+                v006S2InsertGrantAsOwner(connection, grantId, subjectId, policyId, 600L,
+                        base, base, base.plusDays(7));
+                v006S2InsertBalanceAsOwner(connection, balanceId, grantId, 600L);
+                v006S2InsertReservationAsOwner(connection, reservationId, callId, balanceId,
+                        subjectId, 10L);
+                v006S2InsertUsageFactAsOwner(connection, usageFactId, reservationId, balanceId,
+                        callId, "pa6-s2-fk-uf-" + UUID.randomUUID());
+
+                // Reservation state shapes: legal HELD/SETTLED/RELEASED and exact rejects.
+                // Legal inserts need real call_record parents (fk_usage_reservation_call).
+                String reconCallId = v006S2CallId();
+                String settleCallId = v006S2CallId();
+                String releaseCallId = v006S2CallId();
+                v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), reconCallId, randomSha256());
+                v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), settleCallId, randomSha256());
+                v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), releaseCallId, randomSha256());
+                switchLocalRole(connection, "entitlement_metering_owner");
+                UUID legalReconciling = UUID.randomUUID();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "status, reconciliation_due_at, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 5, 'RECONCILING', now(), now() + interval '30 seconds')",
+                        legalReconciling, reconCallId, balanceId, subjectId))
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "23514", "ck_usage_reservation_settled",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "settled_units, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 5, 6, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId);
+                expectSqlFailure(connection, "23514", "ck_usage_reservation_state_shape",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "settled_units, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 5, 1, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId);
+                // SETTLED positive shape.
+                UUID legalSettled = UUID.randomUUID();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "status, settled_units, authority_source, terminal_at, "
+                                + "authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 5, 'SETTLED', 5, 'IVR', now(), "
+                                + "now() + interval '30 seconds')",
+                        legalSettled, settleCallId, balanceId, subjectId))
+                        .isEqualTo(1);
+                UUID legalReleased = UUID.randomUUID();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "status, settled_units, authority_source, terminal_at, "
+                                + "authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 5, 'RELEASED', 0, 'OPERATIONS', now(), "
+                                + "now() + interval '30 seconds')",
+                        legalReleased, releaseCallId, balanceId, subjectId))
+                        .isEqualTo(1);
+
+                // Usage-fact unique identities.
+                UUID secondFactId = UUID.randomUUID();
+                expectSqlFailure(connection, "23505", "uq_usage_fact_reservation_type",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                        secondFactId, reservationId, balanceId, callId,
+                        "pa6-s2-dup-" + UUID.randomUUID(), randomSha256());
+                // Source-unique probe uses a DIFFERENT reservation so
+                // uq_usage_fact_reservation_type cannot fire before uq_usage_fact_source.
+                String sourceProbeCallId = v006S2CallId();
+                v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), sourceProbeCallId, randomSha256());
+                UUID sourceProbeReservation = UUID.randomUUID();
+                v006S2InsertReservationAsOwner(connection, sourceProbeReservation,
+                        sourceProbeCallId, balanceId, subjectId, 10L);
+                expectSqlFailure(connection, "23505", "uq_usage_fact_source",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                        UUID.randomUUID(), sourceProbeReservation, balanceId, sourceProbeCallId,
+                        // Same source_event_id as the existing fact.
+                        queryString(connection,
+                                "SELECT source_event_id FROM entitlement_metering.usage_fact "
+                                        + "WHERE id = ?", usageFactId),
+                        randomSha256());
+
+                // All 16 missing-parent 23503 probes with exact names.
+                UUID orderId = v006InsertPurchaseOrderFixture(connection, employeeId);
+                List<String> fkProbed = probeV006MissingParentFks(connection, subjectId,
+                        balanceId, callId, reservationId, grantId, sessionId,
+                        policyId, orderId);
+                assertThat(fkProbed)
+                        .as("all 16 V006 FK decisions probed")
+                        .hasSize(16);
+
+                // Representative parent-delete RESTRICT 23503 (balance, then grant).
+                // Balance is referenced by both usage_reservation and usage_fact; the
+                // first-raised FK name depends on trigger order, so assert SQLSTATE plus
+                // a fragment guaranteed present in either FK message.
+                Savepoint balanceDeleteSp = connection.setSavepoint();
+                try {
+                    try {
+                        executeUpdate(connection,
+                                "DELETE FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                                balanceId);
+                        fail("expected RESTRICT on entitlement_balance delete");
+                    } catch (SQLException exception) {
+                        assertThat(exception.getSQLState()).isEqualTo("23503");
+                        assertThat(exception.getMessage())
+                                .contains("entitlement_balance");
+                    }
+                } finally {
+                    connection.rollback(balanceDeleteSp);
+                }
+                // Grant DELETE is blocked by the append-only BEFORE trigger (P0001)
+                // before any FK RESTRICT can fire; the balance delete above is the
+                // representative native 23503 parent-delete RESTRICT evidence.
+                expectSqlFailure(connection, "P0001", "ENTITLEMENT_GRANT_IMMUTABLE",
+                        "DELETE FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        grantId);
+
+                // Late FK: exists only after V006, immediate/not deferrable.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class cls ON cls.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = cls.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND cls.relname = 'ivr_decision' "
+                                + "AND c.conname = 'fk_ivr_decision_reservation'"))
+                        .as("late fk_ivr_decision_reservation present after V006").isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class cls ON cls.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = cls.relnamespace "
+                                + "WHERE n.nspname = 'ivr' AND cls.relname = 'ivr_decision' "
+                                + "AND c.conname = 'fk_ivr_decision_reservation' "
+                                + "AND c.condeferrable = false AND c.condeferred = false"))
+                        .as("late FK is immediate and not deferrable").isEqualTo(1);
+
+                // source_ref_id has no FK.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class cls ON cls.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = cls.relnamespace "
+                                + "WHERE n.nspname = 'entitlement_metering' "
+                                + "AND cls.relname = 'entitlement_grant' "
+                                + "AND c.contype = 'f' "
+                                + "AND c.conkey = ARRAY["
+                                + "(SELECT attnum FROM pg_attribute a "
+                                + "WHERE a.attrelid = cls.oid AND a.attname = 'source_ref_id')]"
+                                + "::smallint[]"))
+                        .as("source_ref_id is intentionally non-FK").isZero();
+
+                // Probe all 9+6 reservation/usage checks.
+                List<String> reservationProbes = probeV006ReservationChecks(
+                        connection, balanceId, subjectId, callId);
+                List<String> usageProbes = probeV006UsageFactChecks(
+                        connection, reservationId, balanceId, callId);
+                List<String> expected = new ArrayList<>();
+                expected.addAll(V006_CHECK_DEF_MAP.get("usage_reservation").keySet());
+                expected.addAll(V006_CHECK_DEF_MAP.get("usage_fact").keySet());
+                List<String> allProbes = new ArrayList<>(reservationProbes);
+                allProbes.addAll(usageProbes);
+                assertThat(allProbes)
+                        .as("every reservation/usage named check has one probe")
+                        .hasSize(15)
+                        .containsExactlyInAnyOrderElementsOf(expected);
+
+                resetToMigrationIdentity(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.usage_reservation WHERE id = ?",
+                    reservationId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.usage_fact WHERE id = ?",
+                    usageFactId)).isZero();
+        }
+    }
+
+    private static List<String> probeV006MissingParentFks(
+            Connection connection,
+            UUID subjectId,
+            UUID balanceId,
+            String callId,
+            UUID reservationId,
+            UUID grantId,
+            UUID sessionId,
+            UUID policyId,
+            UUID orderId) throws SQLException {
+        UUID missing = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<String> names = new ArrayList<>();
+
+        // fk_trial_policy_employee (distinct version_no to avoid uq_trial_policy_campaign_version)
+        expectSqlFailure(connection, "23503", "fk_trial_policy_employee",
+                "INSERT INTO entitlement_metering.trial_policy_version "
+                        + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                        + "snapshot, snapshot_sha256, published_by_employee_id) "
+                        + "VALUES (?, 'FIRST-TRIAL', 99, 600, 7, '{}'::jsonb, ?, ?)",
+                UUID.randomUUID(), randomSha256(), missing);
+        names.add("fk_trial_policy_employee");
+
+        // fk_entitlement_grant_subject (source_ref_id has no FK; only subject missing)
+        expectSqlFailure(connection, "23503", "fk_entitlement_grant_subject",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 1, ?, ?, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), missing, policyId, now, now.plusDays(1),
+                randomSha256());
+        names.add("fk_entitlement_grant_subject");
+
+        // fk_entitlement_grant_order (PURCHASE with missing order; subject real)
+        UUID missingOrder = UUID.randomUUID();
+        expectSqlFailure(connection, "23503", "fk_entitlement_grant_order",
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, order_id, installment_no, "
+                        + "snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'PURCHASE', ?, 'RECORDING_SECONDS', 1, ?, ?, ?, 1, "
+                        + "'{}'::jsonb, ?)",
+                UUID.randomUUID(), subjectId, missingOrder, now, now.plusDays(1), missingOrder,
+                randomSha256());
+        names.add("fk_entitlement_grant_order");
+
+        // fk_trial_grant_subject (policy and grant real; only subject missing)
+        expectSqlFailure(connection, "23503", "fk_trial_grant_subject",
+                "INSERT INTO entitlement_metering.trial_grant "
+                        + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                        + "entitlement_grant_id, source_action_domain, source_action_event_id, "
+                        + "request_fingerprint, granted_at, expires_at) "
+                        + "VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', ?, ?, ?, ?)",
+                UUID.randomUUID(), missing, policyId, grantId,
+                "pa6-s2-fk-" + UUID.randomUUID(), randomSha256(), now, now.plusDays(1));
+        names.add("fk_trial_grant_subject");
+
+        // fk_trial_grant_policy (subject and grant real; only policy missing)
+        expectSqlFailure(connection, "23503", "fk_trial_grant_policy",
+                "INSERT INTO entitlement_metering.trial_grant "
+                        + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                        + "entitlement_grant_id, source_action_domain, source_action_event_id, "
+                        + "request_fingerprint, granted_at, expires_at) "
+                        + "VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', ?, ?, ?, ?)",
+                UUID.randomUUID(), subjectId, missing, grantId,
+                "pa6-s2-fk-" + UUID.randomUUID(), randomSha256(), now, now.plusDays(1));
+        names.add("fk_trial_grant_policy");
+
+        // fk_trial_grant_grant (subject and policy real; only grant missing)
+        expectSqlFailure(connection, "23503", "fk_trial_grant_grant",
+                "INSERT INTO entitlement_metering.trial_grant "
+                        + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                        + "entitlement_grant_id, source_action_domain, source_action_event_id, "
+                        + "request_fingerprint, granted_at, expires_at) "
+                        + "VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', ?, ?, ?, ?)",
+                UUID.randomUUID(), subjectId, policyId, missing,
+                "pa6-s2-fk-" + UUID.randomUUID(), randomSha256(), now, now.plusDays(1));
+        names.add("fk_trial_grant_grant");
+
+        // fk_entitlement_balance_grant
+        expectSqlFailure(connection, "23503", "fk_entitlement_balance_grant",
+                "INSERT INTO entitlement_metering.entitlement_balance "
+                        + "(id, grant_id, granted_units) VALUES (?, ?, 1)",
+                UUID.randomUUID(), missing);
+        names.add("fk_entitlement_balance_grant");
+
+        // fk_issuance_order (missing order; grant_id null so only order FK fires)
+        expectSqlFailure(connection, "23503", "fk_issuance_order",
+                "INSERT INTO entitlement_metering.entitlement_issuance "
+                        + "(id, order_id, installment_no, entitlement_type, "
+                        + "source_event_domain, source_event_id) "
+                        + "VALUES (?, ?, 1, 'RECORDING_SECONDS', 'PAYMENT', ?)",
+                UUID.randomUUID(), missing, "pa6-s2-fk-" + UUID.randomUUID());
+        names.add("fk_issuance_order");
+
+        // fk_issuance_grant (real order; only grant missing)
+        expectSqlFailure(connection, "23503", "fk_issuance_grant",
+                "INSERT INTO entitlement_metering.entitlement_issuance "
+                        + "(id, order_id, installment_no, entitlement_type, grant_id, "
+                        + "source_event_domain, source_event_id) "
+                        + "VALUES (?, ?, 1, 'RECORDING_SECONDS', ?, 'PAYMENT', ?)",
+                UUID.randomUUID(), orderId, missing,
+                "pa6-s2-fk-" + UUID.randomUUID());
+        names.add("fk_issuance_grant");
+
+        // fk_usage_reservation_call (balance and subject real; only call missing)
+        expectSqlFailure(connection, "23503", "fk_usage_reservation_call",
+                "INSERT INTO entitlement_metering.usage_reservation "
+                        + "(id, call_id, balance_id, subject_id, authorized_units, "
+                        + "authorization_expires_at) "
+                        + "VALUES (?, ?, ?, ?, 1, now() + interval '30 seconds')",
+                UUID.randomUUID(), "pa6-s2-missing-" + UUID.randomUUID(), balanceId, subjectId);
+        names.add("fk_usage_reservation_call");
+
+        // fk_usage_reservation_balance and fk_usage_reservation_subject use a fresh
+        // method-local call_id so uq_usage_reservation_call cannot fire first. The
+        // call_id FK would fail next if the balance/subject FK somehow passed; to
+        // isolate the intended FK we insert a temporary call_record under a new
+        // session for these two probes only.
+        String fkProbeCallId = "pa6-s2-fkcall-" + UUID.randomUUID();
+        v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), fkProbeCallId, randomSha256());
+        // fk_usage_reservation_balance (call and subject real; only balance missing)
+        expectSqlFailure(connection, "23503", "fk_usage_reservation_balance",
+                "INSERT INTO entitlement_metering.usage_reservation "
+                        + "(id, call_id, balance_id, subject_id, authorized_units, "
+                        + "authorization_expires_at) "
+                        + "VALUES (?, ?, ?, ?, 1, now() + interval '30 seconds')",
+                UUID.randomUUID(), fkProbeCallId, missing, subjectId);
+        names.add("fk_usage_reservation_balance");
+
+        // fk_usage_reservation_subject (call and balance real; only subject missing)
+        expectSqlFailure(connection, "23503", "fk_usage_reservation_subject",
+                "INSERT INTO entitlement_metering.usage_reservation "
+                        + "(id, call_id, balance_id, subject_id, authorized_units, "
+                        + "authorization_expires_at) "
+                        + "VALUES (?, ?, ?, ?, 1, now() + interval '30 seconds')",
+                UUID.randomUUID(), fkProbeCallId, balanceId, missing);
+        names.add("fk_usage_reservation_subject");
+
+        // fk_usage_fact_reservation (balance and call real; only reservation missing)
+        expectSqlFailure(connection, "23503", "fk_usage_fact_reservation",
+                "INSERT INTO entitlement_metering.usage_fact "
+                        + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                        + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                        + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                        + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                UUID.randomUUID(), missing, balanceId, callId,
+                "pa6-s2-fk-" + UUID.randomUUID(), randomSha256());
+        names.add("fk_usage_fact_reservation");
+
+        // fk_usage_fact_balance and fk_usage_fact_call use fresh reservations (no
+        // RECORDING_SECONDS fact yet) so uq_usage_fact_reservation_type cannot fire.
+        String factBalanceCallId = "pa6-s2-fkfb-" + UUID.randomUUID();
+        v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), factBalanceCallId, randomSha256());
+        UUID factBalanceReservation = UUID.randomUUID();
+        v006S2InsertReservationAsOwner(connection, factBalanceReservation, factBalanceCallId,
+                balanceId, subjectId, 10L);
+        // fk_usage_fact_balance (reservation and call real; only balance missing)
+        expectSqlFailure(connection, "23503", "fk_usage_fact_balance",
+                "INSERT INTO entitlement_metering.usage_fact "
+                        + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                        + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                        + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                        + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                UUID.randomUUID(), factBalanceReservation, missing, factBalanceCallId,
+                "pa6-s2-fk-" + UUID.randomUUID(), randomSha256());
+        names.add("fk_usage_fact_balance");
+
+        String factCallCallId = "pa6-s2-fkfc-" + UUID.randomUUID();
+        v006S2InsertCallParents(connection, UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), factCallCallId, randomSha256());
+        UUID factCallReservation = UUID.randomUUID();
+        v006S2InsertReservationAsOwner(connection, factCallReservation, factCallCallId,
+                balanceId, subjectId, 10L);
+        // fk_usage_fact_call (reservation and balance real; only call missing)
+        expectSqlFailure(connection, "23503", "fk_usage_fact_call",
+                "INSERT INTO entitlement_metering.usage_fact "
+                        + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                        + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                        + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                        + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                UUID.randomUUID(), factCallReservation, balanceId,
+                "pa6-s2-missing-" + UUID.randomUUID(),
+                "pa6-s2-fk-" + UUID.randomUUID(), randomSha256());
+        names.add("fk_usage_fact_call");
+
+        // late fk_ivr_decision_reservation: real session/call, DIAL_TASK_CALLEE shape
+        // (required when reservation_id is set on INBOUND_RESOLVE), only reservation missing.
+        expectSqlFailure(connection, "23503", "fk_ivr_decision_reservation",
+                "INSERT INTO ivr.ivr_decision "
+                        + "(id, session_id, call_id, purpose, request_fingerprint, action, "
+                        + "reason_code, response_snapshot, response_payload_ciphertext, "
+                        + "response_sha256, key_version, reservation_id) "
+                        + "VALUES (?, ?, ?, 'INBOUND_RESOLVE', ?, 'DIAL_TASK_CALLEE', "
+                        + "'ACTIVATION_REQUIRED', '{}'::jsonb, ?, ?, 1, ?)",
+                UUID.randomUUID(), sessionId, callId, randomSha256(),
+                "v1.s2.ivr.ciphertext", randomSha256(), missing);
+        names.add("fk_ivr_decision_reservation");
+
+        return names;
+    }
+
+    private static List<String> probeV006ReservationChecks(
+            Connection connection,
+            UUID balanceId,
+            UUID subjectId,
+            String callId) throws SQLException {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        // Invalid status co-fails with ck_usage_reservation_state_shape (every
+        // state_shape OR branch requires a valid status). PostgreSQL reports
+        // state_shape first, so probe only SQLSTATE here and register the
+        // status name manually; the constraint itself is asserted by catalog.
+        expectSqlFailure(connection, "23514", null,
+                "INSERT INTO entitlement_metering.usage_reservation "
+                        + "(id, call_id, balance_id, subject_id, authorized_units, "
+                        + "status, authorization_expires_at) "
+                        + "VALUES (?, ?, ?, ?, 1, 'BAD', now() + interval '30 seconds')",
+                UUID.randomUUID(), v006S2CallId(), balanceId, subjectId);
+        long statusConstraintCount = 0;
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT count(*) FROM pg_constraint c "
+                        + "JOIN pg_class cls ON cls.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = cls.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' "
+                        + "AND cls.relname = 'usage_reservation' "
+                        + "AND c.conname = 'ck_usage_reservation_status' "
+                        + "AND c.contype = 'c'")) {
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                resultSet.next();
+                statusConstraintCount = resultSet.getLong(1);
+            }
+        }
+        assertThat(statusConstraintCount)
+                .as("ck_usage_reservation_status exists in catalog").isEqualTo(1L);
+        List<CheckProbe> probes = List.of(
+                checkProbe("ck_usage_reservation_authorized",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 0, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId),
+                checkProbe("ck_usage_reservation_settled",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "settled_units, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, 2, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId),
+                checkProbe("ck_usage_reservation_state_shape",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "settled_units, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, 1, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId),
+                checkProbe("ck_usage_reservation_reconciliation_attempts",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "reconciliation_attempt_count, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, -1, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId),
+                checkProbe("ck_usage_reservation_authority",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "authority_source, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, 'BAD', now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId),
+                checkProbe("ck_usage_reservation_last_error",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "last_error_code, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, '  ', now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId),
+                checkProbe("ck_usage_reservation_time_order",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "status, authority_source, created_at, terminal_at, "
+                                + "authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, 'RELEASED', 'IVR', ?, ?, "
+                                + "now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId, now,
+                        now.minusSeconds(1)),
+                checkProbe("ck_usage_reservation_revision",
+                        "INSERT INTO entitlement_metering.usage_reservation "
+                                + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                + "revision, authorization_expires_at) "
+                                + "VALUES (?, ?, ?, ?, 1, 0, now() + interval '30 seconds')",
+                        UUID.randomUUID(), v006S2CallId(), balanceId, subjectId));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : probes) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        names.add("ck_usage_reservation_status");
+        return names;
+    }
+
+    private static List<String> probeV006UsageFactChecks(
+            Connection connection,
+            UUID reservationId,
+            UUID balanceId,
+            String callId) throws SQLException {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        List<CheckProbe> probes = List.of(
+                checkProbe("ck_usage_fact_type",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'BAD', 1, 'IVR_EVENT', "
+                                + "?, now(), '{}'::jsonb, ?)",
+                        UUID.randomUUID(), reservationId, balanceId, callId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256()),
+                checkProbe("ck_usage_fact_units",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 0, "
+                                + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                        UUID.randomUUID(), reservationId, balanceId, callId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256()),
+                checkProbe("ck_usage_fact_event_domain",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                + "'BAD', ?, now(), '{}'::jsonb, ?)",
+                        UUID.randomUUID(), reservationId, balanceId, callId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256()),
+                checkProbe("ck_usage_fact_event_id",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                + "'IVR_EVENT', '  ', now(), '{}'::jsonb, ?)",
+                        UUID.randomUUID(), reservationId, balanceId, callId, randomSha256()),
+                checkProbe("ck_usage_fact_snapshot_type",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                + "'IVR_EVENT', ?, now(), '[]'::jsonb, ?)",
+                        UUID.randomUUID(), reservationId, balanceId, callId,
+                        "pa6-s2-ck-" + UUID.randomUUID(), randomSha256()),
+                checkProbe("ck_usage_fact_snapshot_sha",
+                        "INSERT INTO entitlement_metering.usage_fact "
+                                + "(id, reservation_id, balance_id, call_id, usage_type, units, "
+                                + "source_event_domain, source_event_id, occurred_at, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                + "'IVR_EVENT', ?, now(), '{}'::jsonb, 'not-sha')",
+                        UUID.randomUUID(), reservationId, balanceId, callId,
+                        "pa6-s2-ck-" + UUID.randomUUID()));
+        List<String> names = new ArrayList<>();
+        for (CheckProbe probe : probes) {
+            expectSqlFailure(connection, "23514", probe.constraint(), probe.sql(),
+                    probe.parameters());
+            names.add(probe.constraint());
+        }
+        return names;
+    }
+
+    private static void runV006NestedOutboxAtomicityAndReplayRollbackEvidence() throws Exception {
+        V006S2LocalRows rows = new V006S2LocalRows();
+        try {
+            UUID subjectId = UUID.randomUUID();
+            UUID policyId = UUID.randomUUID();
+            UUID employeeId = UUID.randomUUID();
+            rows.subjectIds.add(subjectId);
+            rows.policyIds.add(policyId);
+            rows.employeeIds.add(employeeId);
+            String fingerprint = randomSha256();
+            String actionEventId = "pa6-s2-nested-" + UUID.randomUUID();
+
+            // Part A: transactional REVOKE forces native nested-Outbox 42501.
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    // Commit parents so they survive the outer rollback demonstration below.
+                    v006InsertSubject(connection, subjectId);
+                    v006InsertPublishedPolicy(connection, employeeId, policyId, 1, 600, 7, true);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    setLocalRole(connection, "platform_reliability_owner");
+                    execute(connection,
+                            "REVOKE EXECUTE ON FUNCTION "
+                                    + "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text) "
+                                    + "FROM entitlement_metering_owner");
+                    resetToMigrationIdentity(connection);
+                    assertThat(hasFunction(connection, "entitlement_metering_owner",
+                            "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
+                            "EXECUTE"))
+                            .as("owner EXECUTE revoked inside the method-local transaction")
+                            .isFalse();
+
+                    Savepoint savepoint = connection.setSavepoint();
+                    try {
+                        callIssueFirstTrial(connection, subjectId, "FIRST-TRIAL", policyId,
+                                "IVR_CONFIRM", actionEventId, fingerprint);
+                        fail("expected native 42501 when nested outbox_append is denied");
+                    } catch (SQLException exception) {
+                        assertThat(exception.getSQLState())
+                                .as("nested Outbox denial is native 42501, not translated")
+                                .isEqualTo("42501");
+                        assertThat(exception.getMessage())
+                                .contains("permission denied for function outbox_append");
+                    }
+                    connection.rollback(savepoint);
+                    resetToMigrationIdentity(connection);
+                    assertThat(queryLong(connection,
+                            "SELECT count(*) FROM entitlement_metering.trial_grant "
+                                    + "WHERE subject_id = ?", subjectId))
+                            .as("no trial row after savepoint-rolled-back nested failure")
+                            .isZero();
+                    assertThat(queryLong(connection,
+                            "SELECT count(*) FROM entitlement_metering.entitlement_grant "
+                                    + "WHERE subject_id = ?", subjectId)).isZero();
+                    assertThat(queryLong(connection,
+                            "SELECT count(*) FROM entitlement_metering.entitlement_balance "
+                                    + "WHERE grant_id IN (SELECT id FROM "
+                                    + "entitlement_metering.entitlement_grant WHERE subject_id = ?)",
+                            subjectId)).isZero();
+                    // Zero method-local Outbox rows: no ACTIVATION FIRST_TRIAL_GRANTED event
+                    // may reference any trial_grant of this subject.
+                    assertThat(queryLong(connection,
+                            "SELECT count(*) FROM platform.outbox_event o "
+                                    + "WHERE o.event_domain = 'ACTIVATION' "
+                                    + "AND o.event_type = 'FIRST_TRIAL_GRANTED' "
+                                    + "AND EXISTS (SELECT 1 FROM entitlement_metering.trial_grant tg "
+                                    + "WHERE o.aggregate_id = tg.id AND tg.subject_id = ?)",
+                            subjectId)).isZero();
+                    assertThat(hasFunction(connection, "entitlement_metering_owner",
+                            "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
+                            "EXECUTE"))
+                            .as("owner EXECUTE remains false until outer rollback")
+                            .isFalse();
+                    connection.rollback();
+                } finally {
+                    connection.rollback();
+                }
+            }
+
+            // Fresh connection: EXECUTE restored, normal call succeeds.
+            try (Connection connection = openConnection()) {
+                assertThat(hasFunction(connection, "entitlement_metering_owner",
+                        "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
+                        "EXECUTE"))
+                        .as("outer rollback restores owner EXECUTE").isTrue();
+                connection.setAutoCommit(false);
+                try {
+                    IssueFirstTrialResult granted = callIssueFirstTrial(connection, subjectId,
+                            "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId, fingerprint);
+                    assertThat(granted.outcome()).isEqualTo("GRANTED");
+                    connection.rollback();
+                } finally {
+                    connection.rollback();
+                }
+            }
+
+            // Part B: whole-transaction failure after trial writes rolls back everything.
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    IssueFirstTrialResult partial = callIssueFirstTrial(connection, subjectId,
+                            "FIRST-TRIAL", policyId, "IVR_CONFIRM",
+                            "pa6-s2-tx-" + UUID.randomUUID(), randomSha256());
+                    assertThat(partial.outcome()).isEqualTo("GRANTED");
+                    // Force a whole-transaction failure after trial writes.
+                    expectSqlQueryFailure(connection, "42P01",
+                            "SELECT * FROM definitely_missing_table_s2");
+                    connection.rollback();
+                } finally {
+                    connection.rollback();
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                        subjectId))
+                        .as("whole-transaction failure after trial writes leaves no trial")
+                        .isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_grant "
+                                + "WHERE subject_id = ?", subjectId)).isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance "
+                                + "WHERE grant_id IN (SELECT id FROM "
+                                + "entitlement_metering.entitlement_grant WHERE subject_id = ?)",
+                        subjectId)).isZero();
+            }
+
+            // Part C: committed GRANTED observation + REPLAY/ALREADY add nothing + cleanup.
+            String committedEventId = "pa6-s2-commit-" + UUID.randomUUID();
+            UUID trialGrantId;
+            UUID grantId;
+            UUID balanceId;
+            OffsetDateTime grantedAt;
+            String outboxKey;
+            String payloadSha;
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    IssueFirstTrialResult committed = callIssueFirstTrial(connection, subjectId,
+                            "FIRST-TRIAL", policyId, "IVR_CONFIRM", committedEventId,
+                            fingerprint);
+                    assertThat(committed.outcome()).isEqualTo("GRANTED");
+                    connection.commit();
+                    trialGrantId = committed.trialGrantId();
+                    grantId = committed.entitlementGrantId();
+                    balanceId = committed.entitlementBalanceId();
+                    grantedAt = committed.firstGrantedAt();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            rows.trialGrantIds.add(trialGrantId);
+            rows.grantIds.add(grantId);
+            rows.balanceIds.add(balanceId);
+            outboxKey = "trial_grant:" + trialGrantId;
+            rows.outboxDedupeKeys.add(outboxKey);
+
+            try (Connection observe = openConnection()) {
+                assertThat(queryLong(observe,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE id = ?",
+                        trialGrantId)).isEqualTo(1);
+                assertThat(queryLong(observe,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        grantId)).isEqualTo(1);
+                assertThat(queryLong(observe,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                        balanceId)).isEqualTo(1);
+                assertThat(queryLong(observe,
+                        "SELECT count(*) FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey)).isEqualTo(1);
+                payloadSha = queryString(observe,
+                        "SELECT payload_sha256 FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", outboxKey);
+                assertThat(payloadSha).matches("^[0-9a-f]{64}$");
+                OffsetDateTime persisted = queryObjectOffset(observe,
+                        "SELECT granted_at FROM entitlement_metering.trial_grant WHERE id = ?",
+                        trialGrantId);
+                assertThat(persisted).isEqualTo(grantedAt);
+            }
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    IssueFirstTrialResult replay = callIssueFirstTrial(connection, subjectId,
+                            "FIRST-TRIAL", policyId, "IVR_CONFIRM", committedEventId, fingerprint);
+                    assertThat(replay.outcome()).isEqualTo("REPLAY");
+                    assertThat(replay.trialGrantId()).isEqualTo(trialGrantId);
+                    IssueFirstTrialResult already = callIssueFirstTrial(connection, subjectId,
+                            "FIRST-TRIAL", policyId, "IVR_CONFIRM",
+                            "pa6-s2-other-" + UUID.randomUUID(), randomSha256());
+                    assertThat(already.outcome()).isEqualTo("ALREADY_GRANTED");
+                    assertThat(already.trialGrantId()).isEqualTo(trialGrantId);
+                    connection.rollback();
+                } finally {
+                    connection.rollback();
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                        subjectId))
+                        .as("REPLAY/ALREADY_GRANTED add no second trial").isEqualTo(1);
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey)).isEqualTo(1);
+            }
+        } finally {
+            cleanupV006S2LocalRows(rows);
+        }
+    }
+
+    private static void runConcurrentV006FirstTrialAndReservationIdentityHasOneWinner()
+            throws Exception {
+        V006S2LocalRows rows = new V006S2LocalRows();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            UUID subjectId = UUID.randomUUID();
+            UUID policyId = UUID.randomUUID();
+            UUID employeeId = UUID.randomUUID();
+            rows.subjectIds.add(subjectId);
+            rows.policyIds.add(policyId);
+            rows.employeeIds.add(employeeId);
+            String fingerprint = randomSha256();
+
+            // Commit subject + policy for issue_first_trial race.
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    v006InsertSubject(connection, subjectId);
+                    v006InsertPublishedPolicy(connection, employeeId, policyId, 1, 600, 7, true);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+
+            // Race A: two issue_first_trial calls for one subject. Reuse the
+            // already-enabled policyId (campaign_key is constrained to
+            // FIRST-TRIAL and uq_trial_policy_enabled allows only one
+            // enabled+published row per campaign).
+            UUID raceSubject = UUID.randomUUID();
+            rows.subjectIds.add(raceSubject);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    v006InsertSubject(connection, raceSubject);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            raceV006IssueFirstTrial(executor, raceSubject, policyId, fingerprint, rows);
+
+            // Race B-D parents: one subject + grant + balance + call for reservation/usage races.
+            UUID raceAccountId = UUID.randomUUID();
+            UUID raceOrganizationId = UUID.randomUUID();
+            UUID raceBindingId = UUID.randomUUID();
+            UUID raceCallSubjectId = UUID.randomUUID();
+            UUID raceSessionId = UUID.randomUUID();
+            UUID raceCallRecordId = UUID.randomUUID();
+            UUID raceGrantId = UUID.randomUUID();
+            UUID raceBalanceId = UUID.randomUUID();
+            String raceCallId = v006S2CallId();
+            String raceHmac = randomSha256();
+            OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
+            rows.accountIds.add(raceAccountId);
+            rows.organizationIds.add(raceOrganizationId);
+            rows.bindingIds.add(raceBindingId);
+            rows.subjectIds.add(raceCallSubjectId);
+            rows.sessionIds.add(raceSessionId);
+            rows.callRecordIds.add(raceCallRecordId);
+            rows.grantIds.add(raceGrantId);
+            rows.balanceIds.add(raceBalanceId);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    v006S2InsertCallParents(connection, raceAccountId, raceOrganizationId,
+                            raceCallSubjectId, raceBindingId, raceSessionId, raceCallRecordId,
+                            raceCallId, raceHmac);
+                    UUID racePolicyForGrant = policyId;
+                    v006S2InsertGrantAsOwner(connection, raceGrantId, raceCallSubjectId,
+                            racePolicyForGrant, 600L, base, base, base.plusDays(7));
+                    v006S2InsertBalanceAsOwner(connection, raceBalanceId, raceGrantId, 600L);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+
+            // Race B: two usage_reservation inserts for one call_id.
+            UUID winnerReservation = UUID.randomUUID();
+            UUID loserReservation = UUID.randomUUID();
+            rows.reservationIds.add(winnerReservation);
+            raceV006UniqueInsert(executor,
+                    "pa6-s2-race-res-w", "pa6-s2-race-res-l",
+                    winnerReservation, loserReservation,
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_reservation "
+                                    + "(id, call_id, balance_id, subject_id, "
+                                    + "authorized_units, authorization_expires_at) "
+                                    + "VALUES (?, ?, ?, ?, 10, now() + interval '30 seconds')",
+                            rowId, raceCallId, raceBalanceId, raceCallSubjectId))
+                            .isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_reservation "
+                                    + "(id, call_id, balance_id, subject_id, "
+                                    + "authorized_units, authorization_expires_at) "
+                                    + "VALUES (?, ?, ?, ?, 10, now() + interval '30 seconds')",
+                            rowId, raceCallId, raceBalanceId, raceCallSubjectId))
+                            .isEqualTo(1),
+                    loserException -> {
+                        assertThat(loserException.getSQLState()).isEqualTo("23505");
+                        assertThat(loserException.getMessage())
+                                .contains("uq_usage_reservation_call");
+                    });
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM entitlement_metering.usage_reservation "
+                                + "WHERE call_id = ?", raceCallId))
+                        .as("exactly one reservation wins the call_id race").isEqualTo(1);
+            }
+
+            // Race C: two trial_grant inserts for one subject_id (owner INSERT).
+            UUID trialGrantSubject = UUID.randomUUID();
+            rows.subjectIds.add(trialGrantSubject);
+            UUID winnerTrialGrant = UUID.randomUUID();
+            UUID trialGrantGrant = UUID.randomUUID();
+            rows.grantIds.add(trialGrantGrant);
+            OffsetDateTime trialBase = OffsetDateTime.now(ZoneOffset.UTC);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    v006InsertSubject(connection, trialGrantSubject);
+                    v006S2InsertGrantAsOwner(connection, trialGrantGrant, trialGrantSubject,
+                            policyId, 100L, trialBase, trialBase, trialBase.plusDays(1));
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            rows.trialGrantIds.add(winnerTrialGrant);
+            UUID loserTrialGrant = UUID.randomUUID();
+            raceV006UniqueInsert(executor,
+                    "pa6-s2-race-tg-w", "pa6-s2-race-tg-l",
+                    winnerTrialGrant, loserTrialGrant,
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.trial_grant "
+                                    + "(id, subject_id, campaign_key, "
+                                    + "trial_policy_version_id, entitlement_grant_id, "
+                                    + "source_action_domain, source_action_event_id, "
+                                    + "request_fingerprint, granted_at, expires_at) "
+                                    + "VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                    + "?, ?, ?, ?)",
+                            rowId, trialGrantSubject, policyId, trialGrantGrant,
+                            "pa6-s2-tg-w-" + UUID.randomUUID(), randomSha256(),
+                            trialBase, trialBase.plusDays(1)))
+                            .isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.trial_grant "
+                                    + "(id, subject_id, campaign_key, "
+                                    + "trial_policy_version_id, entitlement_grant_id, "
+                                    + "source_action_domain, source_action_event_id, "
+                                    + "request_fingerprint, granted_at, expires_at) "
+                                    + "VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                    + "?, ?, ?, ?)",
+                            rowId, trialGrantSubject, policyId, trialGrantGrant,
+                            "pa6-s2-tg-l-" + UUID.randomUUID(), randomSha256(),
+                            trialBase, trialBase.plusDays(1)))
+                            .isEqualTo(1),
+                    loserException -> {
+                        assertThat(loserException.getSQLState()).isEqualTo("23505");
+                        assertThat(loserException.getMessage()).contains("uq_trial_grant_subject");
+                    });
+
+            // Race D1: usage_fact unique (reservation_id, usage_type).
+            UUID winnerFact = UUID.randomUUID();
+            UUID loserFact = UUID.randomUUID();
+            rows.usageFactIds.add(winnerFact);
+            raceV006UniqueInsert(executor,
+                    "pa6-s2-race-uf-w", "pa6-s2-race-uf-l",
+                    winnerFact, loserFact,
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_fact "
+                                    + "(id, reservation_id, balance_id, call_id, "
+                                    + "usage_type, units, source_event_domain, "
+                                    + "source_event_id, occurred_at, snapshot, "
+                                    + "snapshot_sha256) "
+                                    + "VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                    + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                            rowId, winnerReservation, raceBalanceId, raceCallId,
+                            "pa6-s2-uf-w-" + UUID.randomUUID(), randomSha256()))
+                            .isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_fact "
+                                    + "(id, reservation_id, balance_id, call_id, "
+                                    + "usage_type, units, source_event_domain, "
+                                    + "source_event_id, occurred_at, snapshot, "
+                                    + "snapshot_sha256) "
+                                    + "VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                    + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                            rowId, winnerReservation, raceBalanceId, raceCallId,
+                            "pa6-s2-uf-l-" + UUID.randomUUID(), randomSha256()))
+                            .isEqualTo(1),
+                    loserException -> {
+                        assertThat(loserException.getSQLState()).isEqualTo("23505");
+                        assertThat(loserException.getMessage())
+                                .contains("uq_usage_fact_reservation_type");
+                    });
+
+            // Race D2: usage_fact unique source (domain, id). Winner and loser use
+            // DIFFERENT reservations so uq_usage_fact_reservation_type cannot fire
+            // before the source unique; they share only source (domain, id).
+            String winnerSourceCallId = v006S2CallId();
+            UUID winnerSourceSessionId = UUID.randomUUID();
+            UUID winnerSourceCallRecordId = UUID.randomUUID();
+            UUID winnerSourceReservation = UUID.randomUUID();
+            String loserSourceCallId = v006S2CallId();
+            UUID loserSourceSessionId = UUID.randomUUID();
+            UUID loserSourceCallRecordId = UUID.randomUUID();
+            UUID loserSourceReservation = UUID.randomUUID();
+            rows.sessionIds.add(winnerSourceSessionId);
+            rows.callRecordIds.add(winnerSourceCallRecordId);
+            rows.reservationIds.add(winnerSourceReservation);
+            rows.sessionIds.add(loserSourceSessionId);
+            rows.callRecordIds.add(loserSourceCallRecordId);
+            rows.reservationIds.add(loserSourceReservation);
+            UUID winnerSourceAccount = UUID.randomUUID();
+            UUID winnerSourceOrganization = UUID.randomUUID();
+            UUID winnerSourceBinding = UUID.randomUUID();
+            UUID loserSourceAccount = UUID.randomUUID();
+            UUID loserSourceOrganization = UUID.randomUUID();
+            UUID loserSourceBinding = UUID.randomUUID();
+            rows.accountIds.add(winnerSourceAccount);
+            rows.organizationIds.add(winnerSourceOrganization);
+            rows.bindingIds.add(winnerSourceBinding);
+            rows.accountIds.add(loserSourceAccount);
+            rows.organizationIds.add(loserSourceOrganization);
+            rows.bindingIds.add(loserSourceBinding);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    UUID winnerSourceSubject = UUID.randomUUID();
+                    rows.subjectIds.add(winnerSourceSubject);
+                    v006S2InsertCallParents(connection, winnerSourceAccount,
+                            winnerSourceOrganization, winnerSourceSubject,
+                            winnerSourceBinding, winnerSourceSessionId,
+                            winnerSourceCallRecordId, winnerSourceCallId, randomSha256());
+                    v006S2InsertReservationAsOwner(connection, winnerSourceReservation,
+                            winnerSourceCallId, raceBalanceId, winnerSourceSubject, 10L);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    UUID loserSourceSubject = UUID.randomUUID();
+                    rows.subjectIds.add(loserSourceSubject);
+                    v006S2InsertCallParents(connection, loserSourceAccount,
+                            loserSourceOrganization, loserSourceSubject,
+                            loserSourceBinding, loserSourceSessionId,
+                            loserSourceCallRecordId, loserSourceCallId, randomSha256());
+                    v006S2InsertReservationAsOwner(connection, loserSourceReservation,
+                            loserSourceCallId, raceBalanceId, loserSourceSubject, 10L);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            String sharedSourceEventId = "pa6-s2-src-" + UUID.randomUUID();
+            UUID winnerSourceFact = UUID.randomUUID();
+            UUID loserSourceFact = UUID.randomUUID();
+            rows.usageFactIds.add(winnerSourceFact);
+            raceV006UniqueInsert(executor,
+                    "pa6-s2-race-src-w", "pa6-s2-race-src-l",
+                    winnerSourceFact, loserSourceFact,
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_fact "
+                                    + "(id, reservation_id, balance_id, call_id, "
+                                    + "usage_type, units, source_event_domain, "
+                                    + "source_event_id, occurred_at, snapshot, "
+                                    + "snapshot_sha256) "
+                                    + "VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                    + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                            rowId, winnerSourceReservation, raceBalanceId, winnerSourceCallId,
+                            sharedSourceEventId, randomSha256()))
+                            .isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_fact "
+                                    + "(id, reservation_id, balance_id, call_id, "
+                                    + "usage_type, units, source_event_domain, "
+                                    + "source_event_id, occurred_at, snapshot, "
+                                    + "snapshot_sha256) "
+                                    + "VALUES (?, ?, ?, ?, 'RECORDING_SECONDS', 1, "
+                                    + "'IVR_EVENT', ?, now(), '{}'::jsonb, ?)",
+                            rowId, loserSourceReservation, raceBalanceId, loserSourceCallId,
+                            sharedSourceEventId, randomSha256()))
+                            .isEqualTo(1),
+                    loserException -> {
+                        assertThat(loserException.getSQLState()).isEqualTo("23505");
+                        assertThat(loserException.getMessage())
+                                .contains("uq_usage_fact_source");
+                    });
+
+            // Category-2: savepoint clears a failed reservation/issuance insert while a
+            // committed trial/grant/balance survives on the same connection.
+            assertV006CategoryTwoSavepointPreservesCommittedTrial(rows, policyId);
+
+            // Category-3: whole-transaction failure after trial writes leaves no partial rows.
+            assertV006CategoryThreeWholeRollbackLeavesNoPartialTrial(policyId);
+        } finally {
+            executor.shutdownNow();
+            cleanupV006S2LocalRows(rows);
+        }
+    }
+
+    @FunctionalInterface
+    private interface V006S2RaceAction {
+        void run(Connection connection, UUID rowId) throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface V006S2RaceExpectation {
+        void accept(SQLException exception) throws Exception;
+    }
+
+    private static void raceV006UniqueInsert(
+            ExecutorService executor,
+            String winnerApplication,
+            String loserApplication,
+            UUID winnerId,
+            UUID loserId,
+            V006S2RaceAction winnerAction,
+            V006S2RaceAction loserAction,
+            V006S2RaceExpectation loserExpectation) throws Exception {
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            setLocalRole(winner, "entitlement_metering_owner");
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET application_name = '" + winnerApplication + "'");
+            }
+            // Winner inserts uncommitted so the loser blocks on the unique index.
+            winnerAction.run(winner, winnerId);
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "entitlement_metering_owner", loserApplication);
+            Future<?> loserFuture = executor.submit(() -> {
+                try {
+                    loserAction.run(loser, loserId);
+                    return null;
+                } catch (Exception exception) {
+                    throw exception;
+                }
+            });
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the unique loser must not commit a second row");
+            } catch (SQLException exception) {
+                loserExpectation.accept(exception);
+            }
+            loser.rollback();
+        }
+    }
+
+    private static void raceV006IssueFirstTrial(
+            ExecutorService executor,
+            UUID subjectId,
+            UUID policyId,
+            String fingerprint,
+            V006S2LocalRows rows) throws Exception {
+        String winnerApplication = "pa6-s2-trial-race-w";
+        String loserApplication = "pa6-s2-trial-race-l";
+        String winnerEvent = "pa6-s2-trial-w-" + UUID.randomUUID();
+        String loserEvent = "pa6-s2-trial-l-" + UUID.randomUUID();
+
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET LOCAL application_name = '" + winnerApplication + "'");
+            }
+            IssueFirstTrialResult winnerResult = callIssueFirstTrial(winner, subjectId,
+                    "FIRST-TRIAL", policyId, "IVR_CONFIRM", winnerEvent, fingerprint);
+            assertThat(winnerResult.outcome()).isEqualTo("GRANTED");
+            rows.trialGrantIds.add(winnerResult.trialGrantId());
+            rows.grantIds.add(winnerResult.entitlementGrantId());
+            rows.balanceIds.add(winnerResult.entitlementBalanceId());
+            rows.outboxDedupeKeys.add("trial_grant:" + winnerResult.trialGrantId());
+
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "entitlement_metering_role", loserApplication);
+            Future<IssueFirstTrialResult> loserFuture = executor.submit(
+                    () -> callIssueFirstTrial(loser, subjectId, "FIRST-TRIAL", policyId,
+                            "IVR_CONFIRM", loserEvent, fingerprint));
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            IssueFirstTrialResult loserResult = awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+            assertThat(loserResult.outcome())
+                    .as("loser observes REPLAY/ALREADY_GRANTED/TRIAL_ACTION_CONFLICT per identity")
+                    .isIn("REPLAY", "ALREADY_GRANTED", "TRIAL_ACTION_CONFLICT");
+            assertThat(loserResult.trialGrantId()).isEqualTo(winnerResult.trialGrantId());
+            loser.rollback();
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    subjectId))
+                    .as("never two trials for one subject").isEqualTo(1);
+        }
+    }
+
+    private static void assertV006CategoryTwoSavepointPreservesCommittedTrial(
+            V006S2LocalRows rows, UUID policyId) throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID balanceId = UUID.randomUUID();
+        OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
+        rows.subjectIds.add(subjectId);
+        rows.grantIds.add(grantId);
+        rows.balanceIds.add(balanceId);
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v006InsertSubject(connection, subjectId);
+                v006S2InsertGrantAsOwner(connection, grantId, subjectId, policyId, 600L,
+                        base, base, base.plusDays(7));
+                v006S2InsertBalanceAsOwner(connection, balanceId, grantId, 600L);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                Savepoint savepoint = connection.setSavepoint();
+                switchLocalRole(connection, "entitlement_metering_owner");
+                try {
+                    // Invalid reservation (settled > authorized) fails after trial rows exist.
+                    executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.usage_reservation "
+                                    + "(id, call_id, balance_id, subject_id, authorized_units, "
+                                    + "settled_units, authorization_expires_at) "
+                                    + "VALUES (?, ?, ?, ?, 1, 2, now() + interval '30 seconds')",
+                            UUID.randomUUID(), v006S2CallId(), balanceId, subjectId);
+                    fail("expected 23514 inside category-2 savepoint");
+                } catch (SQLException exception) {
+                    assertThat(exception.getSQLState()).isEqualTo("23514");
+                    assertThat(exception.getMessage())
+                            .contains("ck_usage_reservation_settled");
+                }
+                connection.rollback(savepoint);
+                resetToMigrationIdentity(connection);
+                // Committed trial/grant/balance still visible on this connection.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        grantId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                        balanceId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.usage_reservation "
+                                + "WHERE balance_id = ?", balanceId))
+                        .as("failed reservation rolled back to savepoint").isZero();
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static void assertV006CategoryThreeWholeRollbackLeavesNoPartialTrial(UUID policyId)
+            throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v006InsertSubject(connection, subjectId);
+                IssueFirstTrialResult granted = callIssueFirstTrial(connection, subjectId,
+                        "FIRST-TRIAL", policyId, "IVR_CONFIRM",
+                        "pa6-s2-cat3-" + UUID.randomUUID(), randomSha256());
+                assertThat(granted.outcome()).isEqualTo("GRANTED");
+                // Force an error after trial writes, then whole-transaction rollback.
+                expectSqlQueryFailure(connection, "42P01",
+                        "SELECT * FROM definitely_missing_table_cat3");
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    subjectId))
+                    .as("category-3 whole rollback leaves no trial").isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.entitlement_grant "
+                            + "WHERE subject_id = ?", subjectId)).isZero();
         }
     }
 
