@@ -1680,7 +1680,7 @@ Keys and indexes:
 - FK `fk_entitlement_grant_subject (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
 - FK `fk_entitlement_grant_order (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
 
-Append-only control: `trg_entitlement_grant_immutable` uses `entitlement_metering.reject_row_mutation()`; `entitlement_metering_role` has `SELECT` and `INSERT` only. Trial source uniqueness is enforced by `trial_grant.subject_id`; the paid partial unique enforces the order/installment/type key. A grant is never updated after insertion.
+Append-only control: `trg_entitlement_grant_immutable` uses `entitlement_metering.guard_entitlement_grant()`; `entitlement_metering_role` has `SELECT` and `INSERT` only. Trial source uniqueness is enforced by `trial_grant.subject_id`; the paid partial unique enforces the order/installment/type key. A grant is never updated after insertion.
 
 Sensitive representation: the snapshot contains frozen commercial/grant facts only; no protected value. `source_ref_id` and `order_id` are internal.
 
@@ -1720,7 +1720,7 @@ Keys and indexes:
 - FK `fk_trial_grant_policy (trial_policy_version_id) REFERENCES entitlement_metering.trial_policy_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
 - FK `fk_trial_grant_grant (entitlement_grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT`.
 
-Append-only control: `trg_trial_grant_immutable` uses `entitlement_metering.reject_row_mutation()`; only `issue_first_trial` inserts this row and its balance in the same activation transaction. The same `(source_action_domain, source_action_event_id)` with the same `request_fingerprint` replays the original ids; the same action with a changed fingerprint raises `TRIAL_ACTION_CONFLICT`; a different action for an already-granted subject returns `ALREADY_GRANTED` with the original ids. No second trial, grant or balance is ever created.
+Append-only control: `trg_trial_grant_immutable` uses `entitlement_metering.guard_trial_grant()`; only `issue_first_trial` inserts this row and its balance in the same activation transaction. The same `(source_action_domain, source_action_event_id)` with the same `request_fingerprint` replays the original ids; the same action with a changed fingerprint raises `TRIAL_ACTION_CONFLICT`; a different action for an already-granted subject returns `ALREADY_GRANTED` with the original ids. No second trial, grant or balance is ever created.
 
 Sensitive representation: no protected value; the source action identity and fingerprint are internal replay facts.
 
