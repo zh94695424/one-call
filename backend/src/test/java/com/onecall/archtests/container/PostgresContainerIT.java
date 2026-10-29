@@ -25,6 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
+import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.output.MigrateResult;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -34,19 +35,18 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * PA1/PA2/PA3 S1 PostgreSQL 16 proof for the frozen V001, V002 and V003 contracts: V001-then-
- * V002-then-V003 migration, exact V001+V002+V003 inventory (including the F-PA2-PR-01 34-check
- * and F-PA3-PR-01 25-check normalized pg_get_constraintdef maps) and failure-visibility;
- * idempotency/Outbox first-result and transaction atomicity; audit append-only, reason/denylist,
- * fixed-search-path (V001 functions, the six V002 guards and the four subject_number functions)
- * and privilege boundaries; the PA2 S3 runtime/cross-module privilege matrix and last-enabled-admin
- * serialization protocol (transient SQL, no database function); the PA3 S1 exact V003
- * catalog/guard inventory and owner/PUBLIC/runtime ACL matrix; and the PA3 S2 V003 subject
- * owner/real-name, binding lifecycle/active-number, append-only claim, risk revision and
- * active-binding concurrency backstops. There is no skip path: an
- * unavailable Docker daemon, failed image pull, failed container start, JDBC failure, Flyway
- * failure or assertion failure fails the Maven build. The password is generated per JVM run and
- * never persisted.
+ * PA0/PA1/PA2/PA3/PA4/PA5/PA6 PostgreSQL 16 proof for the frozen V001-V006 contracts:
+ * V001-then-...-then-V006 migration, exact V001+V002+V003+V004+V005+V006 inventory
+ * (including the normalized pg_get_constraintdef maps) and failure-visibility;
+ * idempotency/Outbox first-result and transaction atomicity; audit append-only,
+ * reason/denylist, fixed-search-path and privilege boundaries; runtime/cross-module
+ * privilege matrices and last-enabled-admin serialization protocol (transient SQL);
+ * V003-V005 catalog/ACL and database backstop evidence; and PA6 V006 S1 exact
+ * entitlement_metering inventory/ACL plus issue_first_trial GRANTED/REPLAY/
+ * ALREADY_GRANTED/TRIAL_* database semantics. Exactly 41 container methods. There is
+ * no skip path: an unavailable Docker daemon, failed image pull, failed container
+ * start, JDBC failure, Flyway failure or assertion failure fails the Maven build.
+ * The password is generated per JVM run and never persisted.
  */
 class PostgresContainerIT {
 
@@ -863,7 +863,12 @@ class PostgresContainerIT {
 
     private static String url;
     private static Flyway flyway;
+    private static MigrateResult stagedV005Migration;
     private static MigrateResult initialMigration;
+    private static boolean stagedV005IssueFirstTrialAbsent;
+    private static boolean stagedV005LateFkAbsent;
+    private static boolean stagedV005EntitlementTablesAbsent;
+    private static boolean stagedV005ReservationIdNullable;
 
     @BeforeAll
     static void startContainerAndMigrate() throws Exception {
@@ -873,6 +878,39 @@ class PostgresContainerIT {
                 POSTGRES.getHost(), POSTGRES.getMappedPort(5432));
 
         assertCleanBeforeMigration();
+
+        flyway = Flyway.configure()
+                .dataSource(url, DB_USER, PASSWORD)
+                .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("005"))
+                .load();
+        stagedV005Migration = flyway.migrate();
+
+        try (Connection connection = openConnection()) {
+            stagedV005IssueFirstTrialAbsent =
+                    queryLong(connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'")
+                            == 0;
+            stagedV005LateFkAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'")
+                    == 0;
+            stagedV005EntitlementTablesAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
+                            + "AND c.relkind = 'r'")
+                    == 0;
+            stagedV005ReservationIdNullable = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_attribute a "
+                            + "JOIN pg_class c ON c.oid = a.attrelid "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'ivr' AND c.relname = 'ivr_decision' "
+                            + "AND a.attname = 'reservation_id' AND a.attnotnull")
+                    == 0;
+        }
 
         flyway = Flyway.configure()
                 .dataSource(url, DB_USER, PASSWORD)
@@ -887,8 +925,17 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThroughV005MigrateCleanPostgres16WithoutSkipping() throws Exception {
-        assertThat(initialMigration.migrationsExecuted).isEqualTo(5);
+    void v001ThroughV006MigrateCleanPostgres16WithoutSkipping() throws Exception {
+        assertThat(stagedV005Migration.migrationsExecuted).isEqualTo(5);
+        assertThat(initialMigration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV005IssueFirstTrialAbsent)
+                .as("staged V005 prefix has no issue_first_trial").isTrue();
+        assertThat(stagedV005LateFkAbsent)
+                .as("staged V005 prefix has no fk_ivr_decision_reservation").isTrue();
+        assertThat(stagedV005EntitlementTablesAbsent)
+                .as("staged V005 prefix has zero entitlement/consent tables").isTrue();
+        assertThat(stagedV005ReservationIdNullable)
+                .as("staged V005 ivr_decision.reservation_id remains nullable").isTrue();
 
         try (Connection connection = openConnection();
                 Statement statement = connection.createStatement();
@@ -938,6 +985,15 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V005__ivr_task_session_call.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("006");
+            assertThat(resultSet.getString("description"))
+                    .isEqualTo("trial entitlement issuance reservation usage");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script"))
+                    .isEqualTo("V006__trial_entitlement_issuance_reservation_usage.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -1473,6 +1529,31 @@ class PostgresContainerIT {
                             "ivr.guard_outbound_call_task|false|ivr_owner|search_path=ivr, pg_temp",
                             "ivr.reject_row_mutation|false|ivr_owner|search_path=ivr, pg_temp");
 
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
+                            + "|| pg_get_userbyid(p.proowner) || '|' "
+                            + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                            + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'entitlement_metering' ORDER BY 1"))
+                    .containsExactly(
+                            "entitlement_metering.guard_entitlement_balance|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                            "entitlement_metering.guard_entitlement_grant|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                            "entitlement_metering.guard_entitlement_issuance|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                            "entitlement_metering.guard_trial_grant|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                            "entitlement_metering.guard_trial_policy_version|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                            "entitlement_metering.guard_usage_reservation|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                            "entitlement_metering.issue_first_trial|true|entitlement_metering_owner"
+                                    + "|search_path=entitlement_metering, platform, pg_temp",
+                            "entitlement_metering.reject_row_mutation|false"
+                                    + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp");
+
             // A PL/pgSQL body uses ordinary BEGIN/END block delimiters, so this assertion
             // matches only transaction-control statements, never BEGIN/END themselves.
             assertThat(queryLong(
@@ -1492,7 +1573,12 @@ class PostgresContainerIT {
                             + "'reject_row_mutation')) "
                             + "OR (n.nspname = 'ivr' AND p.proname IN "
                             + "('guard_outbound_call_task','guard_inbound_session',"
-                            + "'guard_call_record_parties','guard_call_leg','reject_row_mutation'))) "
+                            + "'guard_call_record_parties','guard_call_leg','reject_row_mutation')) "
+                            + "OR (n.nspname = 'entitlement_metering' AND p.proname IN "
+                            + "('guard_trial_policy_version','guard_entitlement_grant',"
+                            + "'guard_trial_grant','guard_entitlement_balance',"
+                            + "'guard_entitlement_issuance','guard_usage_reservation',"
+                            + "'reject_row_mutation','issue_first_trial'))) "
                             + "AND p.prosrc ~* "
                             + "'\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
                     .as("declared functions contain no transaction-control statement")
@@ -1504,10 +1590,13 @@ class PostgresContainerIT {
                             + "JOIN pg_namespace n ON n.oid = p.pronamespace "
                             + "WHERE ((n.nspname = 'platform' AND p.proname IN "
                             + "('idempotency_begin','idempotency_complete','outbox_append')) "
-                            + "OR (n.nspname = 'audit' AND p.proname = 'append_fact')) "
+                            + "OR (n.nspname = 'audit' AND p.proname = 'append_fact') "
+                            + "OR (n.nspname = 'entitlement_metering' "
+                            + "AND p.proname = 'issue_first_trial')) "
                             + "AND p.prosrc LIKE '%pg_catalog.gen_random_uuid()%' ORDER BY 1"))
                     .containsExactly(
                             "audit.append_fact",
+                            "entitlement_metering.issue_first_trial",
                             "platform.idempotency_begin",
                             "platform.outbox_append");
 
@@ -1545,16 +1634,32 @@ class PostgresContainerIT {
                     .isZero();
 
             assertThat(queryLong(
-                    connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
-                    .as("issue_first_trial is a V006 function absent from V001-V005")
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'entitlement_metering' "
+                            + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                    .as("only issue_first_trial generates IDs in entitlement_metering")
+                    .isEqualTo(1);
+            assertThat(queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'entitlement_metering' "
+                            + "AND p.proname <> 'issue_first_trial' "
+                            + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                    .as("V006 trigger functions never generate IDs")
                     .isZero();
+            assertThat(queryLong(
+                    connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
+                    .as("issue_first_trial is present after V006")
+                    .isEqualTo(1);
             assertThat(queryStrings(
                     connection,
                     "SELECT n.nspname || '.' || p.proname FROM pg_proc p "
                             + "JOIN pg_namespace n ON n.oid = p.pronamespace "
                             + "WHERE p.proname IN "
-                            + "('select_call_action','record_activation_next_action')"))
-                    .as("no IVR SQL service function exists at V005")
+                            + "('select_call_action','record_activation_next_action',"
+                            + "'reserve_call_usage','settle_call_usage')"))
+                    .as("no deferred IVR/metering SQL service function exists")
                     .isEmpty();
         }
     }
@@ -1956,7 +2061,7 @@ class PostgresContainerIT {
             assertV005CheckPredicateInventory(connection);
             assertV005FunctionsAndTriggersExact(connection);
             assertV005NoIdDefaultsOrSequences(connection);
-            assertNoV006PlusObjects(connection);
+            assertV006PresenceAndLateFk(connection);
         }
         // PA5 S1 fix-1 (F-PA5-S1-01/02): bounded regression probes for the user-authorized
         // frozen CHECK errata, run inside the suite with a rolled-back fixture transaction.
@@ -2003,6 +2108,37 @@ class PostgresContainerIT {
     @Test
     void concurrentV005TaskClaimAndActiveCallHasOneWinner() throws Exception {
         runConcurrentV005TaskClaimAndActiveCall();
+    }
+
+    /**
+     * PA6 V006 S1: exact entitlement_metering inventory, guard shapes, independent
+     * Outbox-payload oracle support constants, and absence of any V007+ object.
+     */
+    @Test
+    void v006EntitlementReservationUsageInventoryAndGuardShapesAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV006TablesColumnsChecksIndexesFks(connection);
+            assertV006CheckPredicateInventory(connection);
+            assertV006FunctionsAndTriggersExact(connection);
+            assertV006NoIdDefaultsOrSequences(connection);
+            assertNoV007PlusObjects(connection);
+        }
+    }
+
+    @Test
+    void v006OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV006SchemaUsageMatrix(connection);
+            assertV006OwnedAndCrossModuleGrants(connection);
+            assertV006PublicAclIsZero(connection);
+            assertV006GuardFunctionExecuteBoundaries(connection);
+        }
+        assertV006RuntimeDenialsAndLegalUpdateControl();
+    }
+
+    @Test
+    void v006IssueFirstTrialGrantReplayConflictAndPolicySemantics() throws Exception {
+        assertV006IssueFirstTrialSemantics();
     }
 
     /**
@@ -5802,6 +5938,14 @@ class PostgresContainerIT {
                         "customer_iam.guard_auth_identity",
                         "customer_iam.guard_customer_account",
                         "customer_iam.guard_identity_profile",
+                        "entitlement_metering.guard_entitlement_balance",
+                        "entitlement_metering.guard_entitlement_grant",
+                        "entitlement_metering.guard_entitlement_issuance",
+                        "entitlement_metering.guard_trial_grant",
+                        "entitlement_metering.guard_trial_policy_version",
+                        "entitlement_metering.guard_usage_reservation",
+                        "entitlement_metering.issue_first_trial",
+                        "entitlement_metering.reject_row_mutation",
                         "ivr.guard_call_leg",
                         "ivr.guard_call_record_parties",
                         "ivr.guard_inbound_session",
@@ -5904,7 +6048,7 @@ class PostgresContainerIT {
                 .isZero();
 
         assertThat(queryLong(connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
-                .isZero();
+                .isEqualTo(1);
 
         assertThat(queryStrings(
                 connection,
@@ -5925,6 +6069,13 @@ class PostgresContainerIT {
                         "customer_iam.auth_identity.trg_auth_identity_guard",
                         "customer_iam.customer_account.trg_customer_account_guard",
                         "customer_iam.identity_profile.trg_identity_profile_guard",
+                        "entitlement_metering.entitlement_balance.trg_entitlement_balance_guard",
+                        "entitlement_metering.entitlement_grant.trg_entitlement_grant_immutable",
+                        "entitlement_metering.entitlement_issuance.trg_entitlement_issuance_guard",
+                        "entitlement_metering.trial_grant.trg_trial_grant_immutable",
+                        "entitlement_metering.trial_policy_version.trg_trial_policy_version_guard",
+                        "entitlement_metering.usage_fact.trg_usage_fact_immutable",
+                        "entitlement_metering.usage_reservation.trg_usage_reservation_guard",
                         "ivr.call_leg.trg_call_leg_guard",
                         "ivr.call_record.trg_call_record_guard",
                         "ivr.inbound_session.trg_inbound_session_guard",
@@ -5970,6 +6121,70 @@ class PostgresContainerIT {
                     assertThat(resultSet.getBoolean("has_truncate")).as("%s no TRUNCATE", entry.getKey()).isFalse();
                     assertThat(resultSet.getBoolean("calls_expected_function"))
                             .as("%s calls %s", entry.getKey(), entry.getValue()).isTrue();
+                    assertThat(resultSet.next()).isFalse();
+                }
+            }
+        }
+
+        Map<String, String[]> v006TriggerFunctionByTrigger = Map.of(
+                "trg_trial_policy_version_guard", new String[] {
+                        "entitlement_metering.trial_policy_version",
+                        "entitlement_metering.guard_trial_policy_version()", "1", "1", "1", "0"},
+                "trg_entitlement_grant_immutable", new String[] {
+                        "entitlement_metering.entitlement_grant",
+                        "entitlement_metering.guard_entitlement_grant()", "1", "1", "1", "1"},
+                "trg_trial_grant_immutable", new String[] {
+                        "entitlement_metering.trial_grant",
+                        "entitlement_metering.guard_trial_grant()", "1", "1", "1", "1"},
+                "trg_entitlement_balance_guard", new String[] {
+                        "entitlement_metering.entitlement_balance",
+                        "entitlement_metering.guard_entitlement_balance()", "1", "1", "1", "0"},
+                "trg_entitlement_issuance_guard", new String[] {
+                        "entitlement_metering.entitlement_issuance",
+                        "entitlement_metering.guard_entitlement_issuance()", "1", "1", "1", "0"},
+                "trg_usage_reservation_guard", new String[] {
+                        "entitlement_metering.usage_reservation",
+                        "entitlement_metering.guard_usage_reservation()", "1", "1", "1", "0"},
+                "trg_usage_fact_immutable", new String[] {
+                        "entitlement_metering.usage_fact",
+                        "entitlement_metering.reject_row_mutation()", "1", "1", "1", "1"});
+        for (Map.Entry<String, String[]> entry : v006TriggerFunctionByTrigger.entrySet()) {
+            String[] expected = entry.getValue();
+            try (PreparedStatement prepared = connection.prepareStatement(
+                    "SELECT t.tgrelid = ?::regclass AS on_table, "
+                            + "t.tgfoid = ?::regprocedure AS calls_function, "
+                            + "(t.tgtype & 2) <> 0 AS is_before, "
+                            + "(t.tgtype & 1) <> 0 AS is_row, "
+                            + "(t.tgtype & 16) <> 0 AS has_update, "
+                            + "(t.tgtype & 8) <> 0 AS has_delete, "
+                            + "(t.tgtype & 4) <> 0 AS has_insert, "
+                            + "(t.tgtype & 32) <> 0 AS has_truncate "
+                            + "FROM pg_trigger t WHERE t.tgname = ? AND NOT t.tgisinternal")) {
+                prepared.setString(1, expected[0]);
+                prepared.setString(2, expected[1]);
+                prepared.setString(3, entry.getKey());
+                try (ResultSet resultSet = prepared.executeQuery()) {
+                    assertThat(resultSet.next()).as("trigger %s exists", entry.getKey()).isTrue();
+                    assertThat(resultSet.getBoolean("on_table"))
+                            .as("%s on %s", entry.getKey(), expected[0]).isTrue();
+                    assertThat(resultSet.getBoolean("calls_function"))
+                            .as("%s calls %s", entry.getKey(), expected[1]).isTrue();
+                    assertThat(resultSet.getBoolean("is_before"))
+                            .as("%s BEFORE", entry.getKey())
+                            .isEqualTo("1".equals(expected[2]));
+                    assertThat(resultSet.getBoolean("is_row"))
+                            .as("%s FOR EACH ROW", entry.getKey())
+                            .isEqualTo("1".equals(expected[3]));
+                    assertThat(resultSet.getBoolean("has_update"))
+                            .as("%s fires on UPDATE", entry.getKey())
+                            .isEqualTo("1".equals(expected[4]));
+                    assertThat(resultSet.getBoolean("has_delete"))
+                            .as("%s fires on DELETE", entry.getKey())
+                            .isEqualTo("1".equals(expected[5]));
+                    assertThat(resultSet.getBoolean("has_insert"))
+                            .as("%s no INSERT", entry.getKey()).isFalse();
+                    assertThat(resultSet.getBoolean("has_truncate"))
+                            .as("%s no TRUNCATE", entry.getKey()).isFalse();
                     assertThat(resultSet.next()).isFalse();
                 }
             }
@@ -6609,7 +6824,315 @@ class PostgresContainerIT {
                 .as("no V003 sequence exists").isZero();
     }
 
-    private static void assertNoV006PlusObjects(Connection connection) throws SQLException {
+    /** Exact V006 table names created in entitlement_metering by V006. */
+    private static final List<String> V006_TABLES = List.of(
+            "entitlement_balance", "entitlement_grant", "entitlement_issuance",
+            "trial_grant", "trial_policy_version", "usage_fact", "usage_reservation");
+
+    /**
+     * PA6 V006: frozen mapping of bare table name -&gt; (check name -&gt; expected PostgreSQL 16
+     * canonical {@code pg_get_constraintdef} output) for all 50 V006 named checks. Each literal
+     * derives from the accepted plan / docs/14 frozen dictionaries and is compared by
+     * whole-definition equality after ASCII-whitespace-only normalization. Substring/contains/
+     * prefix/regex/semantic equivalence is forbidden.
+     */
+    private static final Map<String, Map<String, String>> V006_CHECK_DEF_MAP;
+
+    static {
+        Map<String, Map<String, String>> map = new java.util.LinkedHashMap<>();
+        map.put("trial_policy_version", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_trial_policy_campaign",
+                        "CHECK ((campaign_key = 'FIRST-TRIAL'::text))"),
+                java.util.Map.entry("ck_trial_policy_version_no",
+                        "CHECK ((version_no >= 1))"),
+                java.util.Map.entry("ck_trial_policy_granted_seconds",
+                        "CHECK ((granted_seconds >= 1))"),
+                java.util.Map.entry("ck_trial_policy_valid_days",
+                        "CHECK ((valid_days >= 1))"),
+                java.util.Map.entry("ck_trial_policy_snapshot_type",
+                        "CHECK ((jsonb_typeof(snapshot) = 'object'::text))"),
+                java.util.Map.entry("ck_trial_policy_snapshot_sha",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_trial_policy_revision",
+                        "CHECK ((revision >= 1))"))));
+        map.put("entitlement_grant", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_entitlement_grant_source",
+                        "CHECK ((source_type = ANY (ARRAY['TRIAL'::text, 'PURCHASE'::text])))"),
+                java.util.Map.entry("ck_entitlement_grant_source_shape",
+                        "CHECK ((((source_type = 'TRIAL'::text) AND (order_id IS NULL) AND (installment_no IS NULL)) OR ((source_type = 'PURCHASE'::text) AND (order_id IS NOT NULL) AND (installment_no IS NOT NULL) AND (installment_no >= 1) AND (source_ref_id = order_id))))"),
+                java.util.Map.entry("ck_entitlement_grant_type",
+                        "CHECK ((entitlement_type = ANY (ARRAY['RECORDING_SECONDS'::text, 'AI_SECONDS'::text, 'EVIDENCE_COUNT'::text, 'STORAGE_BYTES'::text])))"),
+                java.util.Map.entry("ck_entitlement_grant_units",
+                        "CHECK ((granted_units >= 1))"),
+                java.util.Map.entry("ck_entitlement_grant_installment",
+                        "CHECK (((installment_no IS NULL) OR (installment_no >= 1)))"),
+                java.util.Map.entry("ck_entitlement_grant_expiry",
+                        "CHECK ((expires_at > valid_from))"),
+                java.util.Map.entry("ck_entitlement_grant_snapshot_type",
+                        "CHECK ((jsonb_typeof(snapshot) = 'object'::text))"),
+                java.util.Map.entry("ck_entitlement_grant_snapshot_sha",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"))));
+        map.put("trial_grant", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_trial_grant_campaign",
+                        "CHECK ((campaign_key = 'FIRST-TRIAL'::text))"),
+                java.util.Map.entry("ck_trial_grant_action_domain",
+                        "CHECK ((source_action_domain = ANY (ARRAY['IVR_CONFIRM'::text, 'ACTIVATION'::text])))"),
+                java.util.Map.entry("ck_trial_grant_event_id",
+                        "CHECK ((((length(source_action_event_id) >= 1) AND (length(source_action_event_id) <= 128)) AND (btrim(source_action_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_trial_grant_fingerprint",
+                        "CHECK ((request_fingerprint ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_trial_grant_expiry",
+                        "CHECK ((expires_at > granted_at))"))));
+        map.put("entitlement_balance", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_entitlement_balance_granted",
+                        "CHECK ((granted_units >= 1))"),
+                java.util.Map.entry("ck_entitlement_balance_units",
+                        "CHECK (((reserved_units >= 0) AND (consumed_units >= 0) AND ((reserved_units + consumed_units) <= granted_units)))"),
+                java.util.Map.entry("ck_entitlement_balance_status",
+                        "CHECK ((status = ANY (ARRAY['AVAILABLE'::text, 'EXHAUSTED'::text, 'EXPIRED'::text])))"),
+                java.util.Map.entry("ck_entitlement_balance_status_shape",
+                        "CHECK (((status = 'EXHAUSTED'::text) = (consumed_units = granted_units)))"),
+                java.util.Map.entry("ck_entitlement_balance_revision",
+                        "CHECK ((revision >= 1))"))));
+        map.put("entitlement_issuance", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_issuance_installment",
+                        "CHECK ((installment_no >= 1))"),
+                java.util.Map.entry("ck_issuance_type",
+                        "CHECK ((entitlement_type = ANY (ARRAY['RECORDING_SECONDS'::text, 'AI_SECONDS'::text, 'EVIDENCE_COUNT'::text, 'STORAGE_BYTES'::text])))"),
+                java.util.Map.entry("ck_issuance_status",
+                        "CHECK ((status = ANY (ARRAY['PENDING'::text, 'ISSUED'::text, 'FAILED'::text])))"),
+                java.util.Map.entry("ck_issuance_state_shape",
+                        "CHECK ((((status = 'ISSUED'::text) = ((grant_id IS NOT NULL) AND (issued_at IS NOT NULL))) AND ((status = 'FAILED'::text) = (last_error_code IS NOT NULL))))"),
+                java.util.Map.entry("ck_issuance_attempt_count",
+                        "CHECK ((attempt_count >= 0))"),
+                java.util.Map.entry("ck_issuance_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_issuance_last_error",
+                        "CHECK (((last_error_code IS NULL) OR (((length(last_error_code) >= 1) AND (length(last_error_code) <= 64)) AND (btrim(last_error_code) <> ''::text))))"),
+                java.util.Map.entry("ck_issuance_event_domain",
+                        "CHECK ((source_event_domain = 'PAYMENT'::text))"),
+                java.util.Map.entry("ck_issuance_event_id",
+                        "CHECK ((((length(source_event_id) >= 1) AND (length(source_event_id) <= 128)) AND (btrim(source_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_issuance_time_order",
+                        "CHECK (((issued_at IS NULL) OR (first_attempt_at IS NULL) OR (issued_at >= first_attempt_at)))"))));
+        map.put("usage_reservation", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_usage_reservation_authorized",
+                        "CHECK ((authorized_units >= 1))"),
+                java.util.Map.entry("ck_usage_reservation_status",
+                        "CHECK ((status = ANY (ARRAY['HELD'::text, 'RECONCILING'::text, 'SETTLED'::text, 'RELEASED'::text])))"),
+                java.util.Map.entry("ck_usage_reservation_settled",
+                        "CHECK (((settled_units >= 0) AND (settled_units <= authorized_units)))"),
+                java.util.Map.entry("ck_usage_reservation_state_shape",
+                        "CHECK ((((status = 'HELD'::text) AND (terminal_at IS NULL) AND (settled_units = 0) AND (reconciliation_due_at IS NULL)) OR ((status = 'RECONCILING'::text) AND (terminal_at IS NULL) AND (settled_units = 0) AND (reconciliation_due_at IS NOT NULL)) OR ((status = 'SETTLED'::text) AND (terminal_at IS NOT NULL) AND (settled_units > 0) AND (authority_source IS NOT NULL)) OR ((status = 'RELEASED'::text) AND (terminal_at IS NOT NULL) AND (settled_units = 0) AND (authority_source IS NOT NULL))))"),
+                java.util.Map.entry("ck_usage_reservation_reconciliation_attempts",
+                        "CHECK ((reconciliation_attempt_count >= 0))"),
+                java.util.Map.entry("ck_usage_reservation_authority",
+                        "CHECK (((authority_source IS NULL) OR (authority_source = ANY (ARRAY['IVR'::text, 'OPERATIONS'::text]))))"),
+                java.util.Map.entry("ck_usage_reservation_last_error",
+                        "CHECK (((last_error_code IS NULL) OR (((length(last_error_code) >= 1) AND (length(last_error_code) <= 64)) AND (btrim(last_error_code) <> ''::text))))"),
+                java.util.Map.entry("ck_usage_reservation_time_order",
+                        "CHECK (((terminal_at IS NULL) OR (terminal_at >= created_at)))"),
+                java.util.Map.entry("ck_usage_reservation_revision",
+                        "CHECK ((revision >= 1))"))));
+        map.put("usage_fact", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_usage_fact_type",
+                        "CHECK ((usage_type = 'RECORDING_SECONDS'::text))"),
+                java.util.Map.entry("ck_usage_fact_units",
+                        "CHECK ((units >= 1))"),
+                java.util.Map.entry("ck_usage_fact_event_domain",
+                        "CHECK ((source_event_domain = 'IVR_EVENT'::text))"),
+                java.util.Map.entry("ck_usage_fact_event_id",
+                        "CHECK ((((length(source_event_id) >= 1) AND (length(source_event_id) <= 128)) AND (btrim(source_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_usage_fact_snapshot_type",
+                        "CHECK ((jsonb_typeof(snapshot) = 'object'::text))"),
+                java.util.Map.entry("ck_usage_fact_snapshot_sha",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"))));
+        V006_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Frozen PK/ordinary-unique constraint inventory for V006: table|name|contype|definition|
+     * columns. The three partial unique indexes appear only in {@link #V006_INDEX_DEFS}.
+     * Plan item 7 labels the constant "(12)" as the 9 ordinary uniques + 3 partial unique
+     * keys; this constraint list is the proven V004/V005 query shape (7 PK + 9 ordinary).
+     */
+    private static final List<String> V006_PK_UNIQUE_DEFS = List.of(
+            "entitlement_balance|pk_entitlement_balance|p|PRIMARY KEY (id)|id",
+            "entitlement_balance|uq_entitlement_balance_grant|u|UNIQUE (grant_id)|grant_id",
+            "entitlement_grant|pk_entitlement_grant|p|PRIMARY KEY (id)|id",
+            "entitlement_issuance|pk_entitlement_issuance|p|PRIMARY KEY (id)|id",
+            "entitlement_issuance|uq_issuance_line|u|UNIQUE (order_id, installment_no, entitlement_type)|order_id,installment_no,entitlement_type",
+            "trial_grant|pk_trial_grant|p|PRIMARY KEY (id)|id",
+            "trial_grant|uq_trial_grant_grant|u|UNIQUE (entitlement_grant_id)|entitlement_grant_id",
+            "trial_grant|uq_trial_grant_source|u|UNIQUE (source_action_domain, source_action_event_id)|source_action_domain,source_action_event_id",
+            "trial_grant|uq_trial_grant_subject|u|UNIQUE (subject_id)|subject_id",
+            "trial_policy_version|pk_trial_policy_version|p|PRIMARY KEY (id)|id",
+            "trial_policy_version|uq_trial_policy_campaign_version|u|UNIQUE (campaign_key, version_no)|campaign_key,version_no",
+            "usage_fact|pk_usage_fact|p|PRIMARY KEY (id)|id",
+            "usage_fact|uq_usage_fact_reservation_type|u|UNIQUE (reservation_id, usage_type)|reservation_id,usage_type",
+            "usage_fact|uq_usage_fact_source|u|UNIQUE (source_event_domain, source_event_id)|source_event_domain,source_event_id",
+            "usage_reservation|pk_usage_reservation|p|PRIMARY KEY (id)|id",
+            "usage_reservation|uq_usage_reservation_call|u|UNIQUE (call_id)|call_id");
+
+    /**
+     * Frozen FK inventory for V006 owned tables in entitlement_metering:
+     * name|definition|rrs|false|false|true. The late fk_ivr_decision_reservation lives on
+     * ivr.ivr_decision and is asserted separately.
+     */
+    private static final List<String> V006_FK_DEFS = List.of(
+            "fk_entitlement_balance_grant|FOREIGN KEY (grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_entitlement_grant_order|FOREIGN KEY (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_entitlement_grant_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_issuance_grant|FOREIGN KEY (grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_issuance_order|FOREIGN KEY (order_id) REFERENCES catalog_order.customer_order(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_trial_grant_grant|FOREIGN KEY (entitlement_grant_id) REFERENCES entitlement_metering.entitlement_grant(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_trial_grant_policy|FOREIGN KEY (trial_policy_version_id) REFERENCES entitlement_metering.trial_policy_version(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_trial_grant_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_trial_policy_employee|FOREIGN KEY (published_by_employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_usage_fact_balance|FOREIGN KEY (balance_id) REFERENCES entitlement_metering.entitlement_balance(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_usage_fact_call|FOREIGN KEY (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_usage_fact_reservation|FOREIGN KEY (reservation_id) REFERENCES entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_usage_reservation_balance|FOREIGN KEY (balance_id) REFERENCES entitlement_metering.entitlement_balance(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_usage_reservation_call|FOREIGN KEY (call_id) REFERENCES ivr.call_record(call_id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_usage_reservation_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true");
+
+    /** Frozen pg_indexes.indexdef values for V006 (29). */
+    private static final List<String> V006_INDEX_DEFS = List.of(
+            "CREATE INDEX ix_entitlement_balance_status ON entitlement_metering.entitlement_balance USING btree (status)",
+            "CREATE UNIQUE INDEX pk_entitlement_balance ON entitlement_metering.entitlement_balance USING btree (id)",
+            "CREATE UNIQUE INDEX uq_entitlement_balance_grant ON entitlement_metering.entitlement_balance USING btree (grant_id)",
+            "CREATE INDEX ix_entitlement_grant_order ON entitlement_metering.entitlement_grant USING btree (order_id, installment_no)",
+            "CREATE INDEX ix_entitlement_grant_subject_type ON entitlement_metering.entitlement_grant USING btree (subject_id, entitlement_type, expires_at)",
+            "CREATE UNIQUE INDEX pk_entitlement_grant ON entitlement_metering.entitlement_grant USING btree (id)",
+            "CREATE UNIQUE INDEX uq_entitlement_grant_paid ON entitlement_metering.entitlement_grant USING btree (order_id, installment_no, entitlement_type) WHERE (source_type = 'PURCHASE'::text)",
+            "CREATE INDEX ix_issuance_event ON entitlement_metering.entitlement_issuance USING btree (source_event_domain, source_event_id)",
+            "CREATE INDEX ix_issuance_order_status ON entitlement_metering.entitlement_issuance USING btree (order_id, status)",
+            "CREATE UNIQUE INDEX pk_entitlement_issuance ON entitlement_metering.entitlement_issuance USING btree (id)",
+            "CREATE UNIQUE INDEX uq_issuance_grant ON entitlement_metering.entitlement_issuance USING btree (grant_id) WHERE (grant_id IS NOT NULL)",
+            "CREATE UNIQUE INDEX uq_issuance_line ON entitlement_metering.entitlement_issuance USING btree (order_id, installment_no, entitlement_type)",
+            "CREATE INDEX ix_trial_grant_campaign_time ON entitlement_metering.trial_grant USING btree (campaign_key, granted_at)",
+            "CREATE UNIQUE INDEX pk_trial_grant ON entitlement_metering.trial_grant USING btree (id)",
+            "CREATE UNIQUE INDEX uq_trial_grant_grant ON entitlement_metering.trial_grant USING btree (entitlement_grant_id)",
+            "CREATE UNIQUE INDEX uq_trial_grant_source ON entitlement_metering.trial_grant USING btree (source_action_domain, source_action_event_id)",
+            "CREATE UNIQUE INDEX uq_trial_grant_subject ON entitlement_metering.trial_grant USING btree (subject_id)",
+            "CREATE INDEX ix_trial_policy_enabled ON entitlement_metering.trial_policy_version USING btree (enabled, published_at)",
+            "CREATE UNIQUE INDEX pk_trial_policy_version ON entitlement_metering.trial_policy_version USING btree (id)",
+            "CREATE UNIQUE INDEX uq_trial_policy_campaign_version ON entitlement_metering.trial_policy_version USING btree (campaign_key, version_no)",
+            "CREATE UNIQUE INDEX uq_trial_policy_enabled ON entitlement_metering.trial_policy_version USING btree (campaign_key) WHERE (enabled AND (published_at IS NOT NULL))",
+            "CREATE INDEX ix_usage_fact_call ON entitlement_metering.usage_fact USING btree (call_id)",
+            "CREATE UNIQUE INDEX pk_usage_fact ON entitlement_metering.usage_fact USING btree (id)",
+            "CREATE UNIQUE INDEX uq_usage_fact_reservation_type ON entitlement_metering.usage_fact USING btree (reservation_id, usage_type)",
+            "CREATE UNIQUE INDEX uq_usage_fact_source ON entitlement_metering.usage_fact USING btree (source_event_domain, source_event_id)",
+            "CREATE INDEX ix_usage_reservation_balance_status ON entitlement_metering.usage_reservation USING btree (balance_id, status)",
+            "CREATE INDEX ix_usage_reservation_reconcile ON entitlement_metering.usage_reservation USING btree (status, reconciliation_due_at)",
+            "CREATE UNIQUE INDEX pk_usage_reservation ON entitlement_metering.usage_reservation USING btree (id)",
+            "CREATE UNIQUE INDEX uq_usage_reservation_call ON entitlement_metering.usage_reservation USING btree (call_id)");
+
+    /** Exact V006 column details in ordinal order for the seven frozen tables (84). */
+    private static final Map<String, List<String>> V006_COLUMN_DETAILS = new java.util.LinkedHashMap<>();
+
+    static {
+        V006_COLUMN_DETAILS.put("trial_policy_version", List.of(
+                "id|uuid|NO|<none>",
+                "campaign_key|text|NO|<none>",
+                "version_no|integer|NO|<none>",
+                "granted_seconds|integer|NO|<none>",
+                "valid_days|integer|NO|<none>",
+                "enabled|boolean|NO|true",
+                "snapshot|jsonb|NO|<none>",
+                "snapshot_sha256|text|NO|<none>",
+                "published_by_employee_id|uuid|NO|<none>",
+                "published_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1"));
+        V006_COLUMN_DETAILS.put("entitlement_grant", List.of(
+                "id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "source_type|text|NO|<none>",
+                "source_ref_id|uuid|NO|<none>",
+                "entitlement_type|text|NO|<none>",
+                "granted_units|bigint|NO|<none>",
+                "valid_from|timestamp with time zone|NO|<none>",
+                "expires_at|timestamp with time zone|NO|<none>",
+                "order_id|uuid|YES|<none>",
+                "installment_no|integer|YES|<none>",
+                "snapshot|jsonb|NO|<none>",
+                "snapshot_sha256|text|NO|<none>",
+                "granted_at|timestamp with time zone|NO|now()"));
+        V006_COLUMN_DETAILS.put("trial_grant", List.of(
+                "id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "campaign_key|text|NO|<none>",
+                "trial_policy_version_id|uuid|NO|<none>",
+                "entitlement_grant_id|uuid|NO|<none>",
+                "source_action_domain|text|NO|<none>",
+                "source_action_event_id|text|NO|<none>",
+                "request_fingerprint|text|NO|<none>",
+                "granted_at|timestamp with time zone|NO|now()",
+                "expires_at|timestamp with time zone|NO|<none>"));
+        V006_COLUMN_DETAILS.put("entitlement_balance", List.of(
+                "id|uuid|NO|<none>",
+                "grant_id|uuid|NO|<none>",
+                "granted_units|bigint|NO|<none>",
+                "reserved_units|bigint|NO|0",
+                "consumed_units|bigint|NO|0",
+                "status|text|NO|'AVAILABLE'::text",
+                "revision|integer|NO|1",
+                "updated_at|timestamp with time zone|NO|now()"));
+        V006_COLUMN_DETAILS.put("entitlement_issuance", List.of(
+                "id|uuid|NO|<none>",
+                "order_id|uuid|NO|<none>",
+                "installment_no|integer|NO|<none>",
+                "entitlement_type|text|NO|<none>",
+                "status|text|NO|'PENDING'::text",
+                "attempt_count|integer|NO|0",
+                "revision|integer|NO|1",
+                "last_error_code|text|YES|<none>",
+                "grant_id|uuid|YES|<none>",
+                "source_event_domain|text|NO|<none>",
+                "source_event_id|text|NO|<none>",
+                "first_attempt_at|timestamp with time zone|YES|<none>",
+                "issued_at|timestamp with time zone|YES|<none>",
+                "updated_at|timestamp with time zone|NO|now()"));
+        V006_COLUMN_DETAILS.put("usage_reservation", List.of(
+                "id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "balance_id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "authorized_units|bigint|NO|<none>",
+                "status|text|NO|'HELD'::text",
+                "authorization_expires_at|timestamp with time zone|NO|<none>",
+                "settled_units|bigint|NO|0",
+                "reconciliation_due_at|timestamp with time zone|YES|<none>",
+                "reconciliation_attempt_count|integer|NO|0",
+                "last_reconciled_at|timestamp with time zone|YES|<none>",
+                "authority_source|text|YES|<none>",
+                "last_error_code|text|YES|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "terminal_at|timestamp with time zone|YES|<none>",
+                "revision|integer|NO|1"));
+        V006_COLUMN_DETAILS.put("usage_fact", List.of(
+                "id|uuid|NO|<none>",
+                "reservation_id|uuid|NO|<none>",
+                "balance_id|uuid|NO|<none>",
+                "call_id|text|NO|<none>",
+                "usage_type|text|NO|<none>",
+                "units|bigint|NO|<none>",
+                "source_event_domain|text|NO|<none>",
+                "source_event_id|text|NO|<none>",
+                "occurred_at|timestamp with time zone|NO|<none>",
+                "created_at|timestamp with time zone|NO|now()",
+                "snapshot|jsonb|NO|<none>",
+                "snapshot_sha256|text|NO|<none>"));
+    }
+
+    /** Exact Outbox canonical key order for the finite issue_first_trial payload. */
+    private static final List<String> V006_OUTBOX_CANONICAL_KEYS = List.of(
+            "campaignKey", "entitlementBalanceId", "entitlementGrantId", "expiresAt",
+            "grantedAt", "grantedUnits", "subjectId", "trialGrantId",
+            "trialPolicyVersionId", "validFrom");
+
+
+    private static void assertNoV007PlusObjects(Connection connection) throws SQLException {
         assertThat(queryStrings(
                 connection,
                 "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -6617,12 +7140,17 @@ class PostgresContainerIT {
                 .containsExactlyElementsOf(List.of(
                         "call_event", "call_leg", "call_record", "inbound_session",
                         "ivr_decision", "outbound_call_task"));
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the seven V006 entitlement_metering tables")
+                .containsExactlyElementsOf(V006_TABLES);
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                        + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
-                        + "AND c.relkind = 'r'"))
-                .isZero();
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
+                .as("activation_consent has zero tables").isZero();
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
@@ -6632,43 +7160,76 @@ class PostgresContainerIT {
                 "SELECT count(*) FROM pg_roles WHERE rolname IN "
                         + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
                 .isZero();
-        assertThat(queryLong(
+        assertThat(queryStrings(
                 connection,
-                "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
-                .isZero();
+                "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' "
+                        + "AND p.prosecdef ORDER BY 1"))
+                .as("issue_first_trial is the only SECURITY DEFINER service function")
+                .containsExactly("issue_first_trial");
         assertThat(queryStrings(
                 connection,
                 "SELECT proname FROM pg_proc WHERE proname IN "
-                        + "('select_call_action','record_activation_next_action')"))
+                        + "('select_call_action','record_activation_next_action',"
+                        + "'reserve_call_usage','settle_call_usage','publish_trial_policy',"
+                        + "'disable_trial_policy','record_activation_next_action')"))
                 .isEmpty();
         assertThat(toRegclass(connection, "ivr.call_task")).isNull();
         assertThat(toRegclass(connection, "ivr.call_session")).isNull();
-        for (String v006Name : List.of(
-                "trial_policy_version", "entitlement_grant", "trial_grant",
-                "entitlement_balance", "entitlement_issuance", "usage_reservation", "usage_fact",
-                "consent_record", "service_activation", "service_activation_transition",
-                "media_object", "recording", "evidence_record", "evidence_artifact",
-                "evidence_event", "evidence_share_grant", "share_admission", "share_access_event")) {
-            assertThat(toRegclass(connection, "activation_consent." + v006Name)).isNull();
-            assertThat(toRegclass(connection, "entitlement_metering." + v006Name)).isNull();
-            assertThat(toRegclass(connection, "evidence." + v006Name)).isNull();
-            assertThat(toRegclass(connection, "sharing." + v006Name)).isNull();
-        }
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_constraint c "
                         + "JOIN pg_class r ON r.oid = c.conrelid "
                         + "JOIN pg_namespace n ON n.oid = r.relnamespace "
-                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'"))
-                .isZero();
+                        + "WHERE n.nspname = 'catalog' AND c.conname = 'fk_customer_order_consent'"))
+                .as("no V007 consent FK").isZero();
+        for (String v007Name : List.of(
+                "consent_record", "service_activation", "service_activation_transition",
+                "media_object", "recording", "evidence_record", "evidence_artifact",
+                "evidence_event", "evidence_share_grant", "share_admission", "share_access_event")) {
+            assertThat(toRegclass(connection, "activation_consent." + v007Name)).isNull();
+            assertThat(toRegclass(connection, "entitlement_metering." + v007Name)).isNull();
+            assertThat(toRegclass(connection, "evidence." + v007Name)).isNull();
+            assertThat(toRegclass(connection, "sharing." + v007Name)).isNull();
+        }
+    }
+
+    /** Exact late-FK presence and nullable-child evidence after V006. */
+    private static void assertV006PresenceAndLateFk(Connection connection) throws SQLException {
         assertThat(queryStrings(
                 connection,
-                "SELECT a.attname FROM pg_attribute a "
-                        + "JOIN pg_class c ON c.oid = a.attrelid "
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1"))
+                .containsExactlyElementsOf(V006_TABLES);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND p.proname = 'issue_first_trial'"))
+                .isEqualTo(1);
+        List<String> lateFkRows = queryStrings(
+                connection,
+                "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                        + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE c.confdeltype::text END "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'");
+        assertThat(lateFkRows).containsExactly(
+                "fk_ivr_decision_reservation|FOREIGN KEY (reservation_id) REFERENCES "
+                        + "entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE "
+                        + "RESTRICT|rrs|false|false|true");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
                         + "JOIN pg_namespace n ON n.oid = c.relnamespace "
                         + "WHERE n.nspname = 'ivr' AND c.relname = 'ivr_decision' "
                         + "AND a.attname = 'reservation_id' AND a.attnotnull"))
-                .isEmpty();
+                .as("reservation_id remains nullable").isZero();
     }
 
     private static void assertV005TablesColumnsChecksIndexesFks(Connection connection)
@@ -6887,15 +7448,29 @@ class PostgresContainerIT {
                         + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
                         + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
                         + "JOIN pg_namespace n ON n.oid = r.relnamespace "
-                        + "WHERE n.nspname = 'ivr' AND c.contype = 'f' ORDER BY 1");
+                        + "WHERE n.nspname = 'ivr' AND c.contype = 'f' "
+                        + "AND c.conname <> 'fk_ivr_decision_reservation' ORDER BY 1");
         assertThat(fkRows).containsExactlyInAnyOrderElementsOf(V005_FK_DEFS);
         assertThat(V005_FK_DEFS).hasSize(15);
+        List<String> lateFkRows = queryStrings(
+                connection,
+                "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                        + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE c.confdeltype::text END "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'");
+        assertThat(lateFkRows).containsExactly(
+                "fk_ivr_decision_reservation|FOREIGN KEY (reservation_id) REFERENCES "
+                        + "entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE "
+                        + "RESTRICT|rrs|false|false|true");
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
-                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
-                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'"))
-                .isZero();
+                "SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.relname = 'ivr_decision' "
+                        + "AND a.attname = 'reservation_id' AND a.attnotnull"))
+                .as("reservation_id remains nullable").isZero();
 
         assertThat(queryLong(
                 connection,
@@ -7034,7 +7609,8 @@ class PostgresContainerIT {
                 "subject_number_role", "catalog_order_role", "ivr_role"));
         usageRolesBySchema.put("subject_number", List.of(
                 "subject_number_owner", "subject_number_role",
-                "subject_identity_verification_role", "catalog_order_role", "ivr_role"));
+                "subject_identity_verification_role", "catalog_order_role", "ivr_role",
+                "entitlement_metering_role"));
         Map<String, String> ownerBySchema = new java.util.LinkedHashMap<>();
         ownerBySchema.put("ivr", "ivr_owner");
         ownerBySchema.put("customer_iam", "customer_iam_owner");
@@ -7061,7 +7637,7 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
                 .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
         assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
-                .as("entitlement_metering_role subject USAGE is deferred to V006").isFalse();
+                .as("entitlement_metering_role subject USAGE is granted by V006").isTrue();
     }
 
     private static void assertV005OwnedAndCrossModuleGrants(Connection connection)
@@ -7283,6 +7859,1646 @@ class PostgresContainerIT {
         }
         assertThat(hasFunction(connection, "public", "ivr.reject_row_mutation()", "EXECUTE"))
                 .as("PUBLIC must not EXECUTE reject_row_mutation").isFalse();
+    }
+
+
+    private static void assertV006TablesColumnsChecksIndexesFks(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT table_schema || '.' || table_name FROM information_schema.tables "
+                        + "WHERE table_schema = 'entitlement_metering' ORDER BY 1"))
+                .containsExactlyElementsOf(V006_TABLES.stream()
+                        .map(table -> "entitlement_metering." + table).toList());
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'entitlement_metering'"))
+                .as("total V006 columns").isEqualTo(84);
+
+        Map<String, String> v006ColumnOrder = new java.util.LinkedHashMap<>();
+        v006ColumnOrder.put("trial_policy_version",
+                "id,campaign_key,version_no,granted_seconds,valid_days,enabled,snapshot,"
+                        + "snapshot_sha256,published_by_employee_id,published_at,revision");
+        v006ColumnOrder.put("entitlement_grant",
+                "id,subject_id,source_type,source_ref_id,entitlement_type,granted_units,"
+                        + "valid_from,expires_at,order_id,installment_no,snapshot,snapshot_sha256,"
+                        + "granted_at");
+        v006ColumnOrder.put("trial_grant",
+                "id,subject_id,campaign_key,trial_policy_version_id,entitlement_grant_id,"
+                        + "source_action_domain,source_action_event_id,request_fingerprint,"
+                        + "granted_at,expires_at");
+        v006ColumnOrder.put("entitlement_balance",
+                "id,grant_id,granted_units,reserved_units,consumed_units,status,revision,updated_at");
+        v006ColumnOrder.put("entitlement_issuance",
+                "id,order_id,installment_no,entitlement_type,status,attempt_count,revision,"
+                        + "last_error_code,grant_id,source_event_domain,source_event_id,"
+                        + "first_attempt_at,issued_at,updated_at");
+        v006ColumnOrder.put("usage_reservation",
+                "id,call_id,balance_id,subject_id,authorized_units,status,"
+                        + "authorization_expires_at,settled_units,reconciliation_due_at,"
+                        + "reconciliation_attempt_count,last_reconciled_at,authority_source,"
+                        + "last_error_code,created_at,terminal_at,revision");
+        v006ColumnOrder.put("usage_fact",
+                "id,reservation_id,balance_id,call_id,usage_type,units,source_event_domain,"
+                        + "source_event_id,occurred_at,created_at,snapshot,snapshot_sha256");
+        for (Map.Entry<String, String> entry : v006ColumnOrder.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name FROM information_schema.columns "
+                            + "WHERE table_schema = 'entitlement_metering' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("ordered columns for entitlement_metering.%s", entry.getKey())
+                    .containsExactlyElementsOf(List.of(entry.getValue().split(",")));
+        }
+
+        for (Map.Entry<String, List<String>> entry : V006_COLUMN_DETAILS.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name || '|' || data_type || '|' || is_nullable || '|' "
+                            + "|| coalesce(column_default, '<none>') "
+                            + "FROM information_schema.columns "
+                            + "WHERE table_schema = 'entitlement_metering' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("exact column details for entitlement_metering.%s", entry.getKey())
+                    .containsExactlyElementsOf(entry.getValue());
+        }
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns c "
+                        + "JOIN pg_attrdef d ON d.adrelid = (c.table_schema || '.' || c.table_name)::regclass "
+                        + "AND d.adnum = c.ordinal_position "
+                        + "WHERE c.table_schema = 'entitlement_metering'"))
+                .as("V006 defaulted columns").isEqualTo(19);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'entitlement_metering' "
+                        + "AND column_default IS NOT NULL AND column_name = 'id'"))
+                .as("zero id defaults").isZero();
+
+        List<String> checkNames = queryStrings(
+                connection,
+                "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.contype = 'c' "
+                        + "ORDER BY conname");
+        assertThat(checkNames).hasSize(50);
+
+        List<String> pkUniqueRows = queryStrings(
+                connection,
+                "SELECT r.relname || '|' || c.conname || '|' || c.contype::text || '|' "
+                        + "|| pg_get_constraintdef(c.oid) || '|' "
+                        + "|| (SELECT string_agg(a.attname, ',' ORDER BY x.ord) "
+                        + "FROM unnest(c.conkey) WITH ORDINALITY AS x(attnum, ord) "
+                        + "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = x.attnum) "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.contype IN ('p','u') "
+                        + "AND NOT EXISTS (SELECT 1 FROM pg_index i "
+                        + "WHERE i.indexrelid = c.conindid AND i.indpred IS NOT NULL) "
+                        + "ORDER BY 1");
+        assertThat(pkUniqueRows).containsExactlyInAnyOrderElementsOf(V006_PK_UNIQUE_DEFS);
+        assertThat(V006_PK_UNIQUE_DEFS).hasSize(16);
+
+        List<String> fkRows = queryStrings(
+                connection,
+                "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                        + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE c.confdeltype::text END "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.contype = 'f' "
+                        + "ORDER BY 1");
+        assertThat(fkRows).containsExactlyInAnyOrderElementsOf(V006_FK_DEFS);
+        assertThat(V006_FK_DEFS).hasSize(15);
+
+        List<String> lateFkRows = queryStrings(
+                connection,
+                "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                        + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE c.confdeltype::text END "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'");
+        assertThat(lateFkRows).containsExactly(
+                "fk_ivr_decision_reservation|FOREIGN KEY (reservation_id) REFERENCES "
+                        + "entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE "
+                        + "RESTRICT|rrs|false|false|true");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' "
+                        + "AND c.conrelid = 'entitlement_metering.entitlement_grant'::regclass "
+                        + "AND c.contype = 'f' "
+                        + "AND EXISTS (SELECT 1 FROM pg_attribute a "
+                        + "WHERE a.attrelid = c.conrelid AND a.attname = 'source_ref_id' "
+                        + "AND a.attnum = ANY (c.conkey))"))
+                .as("source_ref_id intentionally has no FK").isZero();
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'entitlement_metering' "
+                        + "ORDER BY 1"))
+                .containsExactlyInAnyOrderElementsOf(V006_INDEX_DEFS);
+        assertThat(V006_INDEX_DEFS).hasSize(29);
+
+        List<String> tableOwners = queryStrings(
+                connection,
+                "SELECT c.relname || '|' || pg_get_userbyid(c.relowner) "
+                        + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' "
+                        + "ORDER BY 1");
+        assertThat(tableOwners).containsExactly(
+                "entitlement_balance|entitlement_metering_owner",
+                "entitlement_grant|entitlement_metering_owner",
+                "entitlement_issuance|entitlement_metering_owner",
+                "trial_grant|entitlement_metering_owner",
+                "trial_policy_version|entitlement_metering_owner",
+                "usage_fact|entitlement_metering_owner",
+                "usage_reservation|entitlement_metering_owner");
+    }
+
+    private static void assertV006CheckPredicateInventory(Connection connection) throws SQLException {
+        assertThat(V006_CHECK_DEF_MAP).as("expected V006 check map tables").hasSize(7);
+        int totalChecks = 0;
+        for (Map.Entry<String, Map<String, String>> tableEntry : V006_CHECK_DEF_MAP.entrySet()) {
+            String table = tableEntry.getKey();
+            totalChecks += tableEntry.getValue().size();
+            List<String> actualNames = queryStrings(
+                    connection,
+                    "SELECT conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'entitlement_metering' AND r.relname = ? "
+                            + "AND c.contype = 'c' ORDER BY conname",
+                    table);
+            List<String> expectedNames = new ArrayList<>(tableEntry.getValue().keySet());
+            expectedNames.sort(String::compareTo);
+            assertThat(actualNames)
+                    .as("exact check-name set for entitlement_metering.%s", table)
+                    .containsExactlyElementsOf(expectedNames);
+            for (Map.Entry<String, String> checkEntry : tableEntry.getValue().entrySet()) {
+                String checkName = checkEntry.getKey();
+                List<String> actualDefs = queryStrings(
+                        connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'entitlement_metering' AND r.relname = ? "
+                                + "AND c.contype = 'c' AND c.conname = ?",
+                        table, checkName);
+                assertThat(actualDefs)
+                        .as("exactly one row for entitlement_metering.%s.%s", table, checkName)
+                        .hasSize(1);
+                assertThat(normalizeCheckDef(actualDefs.get(0)))
+                        .as("whole pg_get_constraintdef equality for entitlement_metering.%s.%s",
+                                table, checkName)
+                        .isEqualTo(normalizeCheckDef(checkEntry.getValue()));
+            }
+        }
+        assertThat(totalChecks).as("total V006 checks").isEqualTo(50);
+    }
+
+    private static void assertV006FunctionsAndTriggersExact(Connection connection)
+            throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering'"))
+                .as("exactly eight entitlement_metering functions").isEqualTo(8);
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
+                        + "|| '|' || p.prosecdef || '|' || pg_get_userbyid(p.proowner) || '|' "
+                        + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' ORDER BY 1"))
+                .containsExactly(
+                        "entitlement_metering.guard_entitlement_balance()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                        "entitlement_metering.guard_entitlement_grant()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                        "entitlement_metering.guard_entitlement_issuance()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                        "entitlement_metering.guard_trial_grant()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                        "entitlement_metering.guard_trial_policy_version()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                        "entitlement_metering.guard_usage_reservation()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp",
+                        "entitlement_metering.issue_first_trial(p_subject_id uuid, "
+                                + "p_campaign_key text, p_trial_policy_version_id uuid, "
+                                + "p_action_domain text, p_action_event_id text, "
+                                + "p_request_fingerprint text)|true|entitlement_metering_owner"
+                                + "|search_path=entitlement_metering, platform, pg_temp",
+                        "entitlement_metering.reject_row_mutation()|false"
+                                + "|entitlement_metering_owner|search_path=entitlement_metering, pg_temp");
+
+        List<String> triggerRows = queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || c.relname || '.' || t.tgname || '|' "
+                        + "|| CASE WHEN (t.tgtype & 2) <> 0 THEN 'BEFORE' ELSE 'AFTER' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 4) <> 0 THEN 'INSERT' ELSE '' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 16) <> 0 THEN 'UPDATE' ELSE '' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 8) <> 0 THEN 'DELETE' ELSE '' END || '|' "
+                        + "|| CASE WHEN (t.tgtype & 32) <> 0 THEN 'TRUNCATE' ELSE '' END || '|' "
+                        + "|| p.proname "
+                        + "FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_proc p ON p.oid = t.tgfoid "
+                        + "WHERE NOT t.tgisinternal AND n.nspname = 'entitlement_metering' "
+                        + "ORDER BY 1");
+        assertThat(triggerRows).containsExactly(
+                "entitlement_metering.entitlement_balance.trg_entitlement_balance_guard"
+                        + "|BEFORE|ROW||UPDATE|||guard_entitlement_balance",
+                "entitlement_metering.entitlement_grant.trg_entitlement_grant_immutable"
+                        + "|BEFORE|ROW||UPDATE|DELETE||guard_entitlement_grant",
+                "entitlement_metering.entitlement_issuance.trg_entitlement_issuance_guard"
+                        + "|BEFORE|ROW||UPDATE|||guard_entitlement_issuance",
+                "entitlement_metering.trial_grant.trg_trial_grant_immutable"
+                        + "|BEFORE|ROW||UPDATE|DELETE||guard_trial_grant",
+                "entitlement_metering.trial_policy_version.trg_trial_policy_version_guard"
+                        + "|BEFORE|ROW||UPDATE|||guard_trial_policy_version",
+                "entitlement_metering.usage_fact.trg_usage_fact_immutable"
+                        + "|BEFORE|ROW||UPDATE|DELETE||reject_row_mutation",
+                "entitlement_metering.usage_reservation.trg_usage_reservation_guard"
+                        + "|BEFORE|ROW||UPDATE|||guard_usage_reservation");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' "
+                        + "AND p.prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
+                .as("no transaction control in V006 functions").isZero();
+    }
+
+    private static void assertV006NoIdDefaultsOrSequences(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'entitlement_metering' AND column_name = 'id' "
+                        + "AND column_default IS NOT NULL"))
+                .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'S'"))
+                .isZero();
+    }
+
+    private static void assertV006SchemaUsageMatrix(Connection connection) throws SQLException {
+        List<String> grantees = new ArrayList<>(S1_ROLES);
+        grantees.addAll(V004_ROLES);
+        grantees.add("public");
+        List<String> entitlementMeteringUsage = List.of(
+                "entitlement_metering_owner", "entitlement_metering_role",
+                "activation_consent_role", "ivr_role", "catalog_order_role");
+        List<String> subjectNumberUsage = List.of(
+                "subject_number_owner", "subject_number_role",
+                "subject_identity_verification_role", "catalog_order_role", "ivr_role",
+                "entitlement_metering_role");
+        List<String> catalogOrderUsage = List.of(
+                "catalog_order_owner", "catalog_order_role", "entitlement_metering_role");
+        List<String> platformUsage = List.of(
+                "platform_reliability_owner", "platform_reliability_role",
+                "platform_dispatcher_role", "customer_iam_role", "organization_access_role",
+                "operations_iam_role", "subject_number_role", "catalog_order_role", "ivr_role",
+                "entitlement_metering_owner", "entitlement_metering_role",
+                "activation_consent_role");
+        for (String grantee : grantees) {
+            assertThat(hasSchema(connection, grantee, "entitlement_metering", "USAGE"))
+                    .as("%s entitlement_metering USAGE", grantee)
+                    .isEqualTo(entitlementMeteringUsage.contains(grantee));
+            assertThat(hasSchema(connection, grantee, "entitlement_metering", "CREATE"))
+                    .as("%s entitlement_metering CREATE", grantee)
+                    .isEqualTo("entitlement_metering_owner".equals(grantee));
+            assertThat(hasSchema(connection, grantee, "subject_number", "USAGE"))
+                    .as("%s subject_number USAGE", grantee)
+                    .isEqualTo(subjectNumberUsage.contains(grantee));
+            assertThat(hasSchema(connection, grantee, "catalog_order", "USAGE"))
+                    .as("%s catalog_order USAGE", grantee)
+                    .isEqualTo(catalogOrderUsage.contains(grantee));
+            assertThat(hasSchema(connection, grantee, "platform", "USAGE"))
+                    .as("%s platform USAGE", grantee)
+                    .isEqualTo(platformUsage.contains(grantee));
+        }
+        assertThat(hasSchema(connection, "catalog_order_role", "entitlement_metering", "USAGE"))
+                .as("catalog_order_role entitlement_metering USAGE is granted by V006").isTrue();
+        assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
+                .as("entitlement_metering_role subject USAGE is granted by V006").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
+                .as("activation_consent_role subject USAGE is deferred to V007").isFalse();
+    }
+
+    private static void assertV006OwnedAndCrossModuleGrants(Connection connection)
+            throws SQLException {
+        Map<String, List<String>> allColumnsByTable = new java.util.LinkedHashMap<>();
+        allColumnsByTable.put("entitlement_metering.trial_policy_version", List.of(
+                "id", "campaign_key", "version_no", "granted_seconds", "valid_days", "enabled",
+                "snapshot", "snapshot_sha256", "published_by_employee_id", "published_at",
+                "revision"));
+        allColumnsByTable.put("entitlement_metering.entitlement_grant", List.of(
+                "id", "subject_id", "source_type", "source_ref_id", "entitlement_type",
+                "granted_units", "valid_from", "expires_at", "order_id", "installment_no",
+                "snapshot", "snapshot_sha256", "granted_at"));
+        allColumnsByTable.put("entitlement_metering.trial_grant", List.of(
+                "id", "subject_id", "campaign_key", "trial_policy_version_id",
+                "entitlement_grant_id", "source_action_domain", "source_action_event_id",
+                "request_fingerprint", "granted_at", "expires_at"));
+        allColumnsByTable.put("entitlement_metering.entitlement_balance", List.of(
+                "id", "grant_id", "granted_units", "reserved_units", "consumed_units", "status",
+                "revision", "updated_at"));
+        allColumnsByTable.put("entitlement_metering.entitlement_issuance", List.of(
+                "id", "order_id", "installment_no", "entitlement_type", "status", "attempt_count",
+                "revision", "last_error_code", "grant_id", "source_event_domain",
+                "source_event_id", "first_attempt_at", "issued_at", "updated_at"));
+        allColumnsByTable.put("entitlement_metering.usage_reservation", List.of(
+                "id", "call_id", "balance_id", "subject_id", "authorized_units", "status",
+                "authorization_expires_at", "settled_units", "reconciliation_due_at",
+                "reconciliation_attempt_count", "last_reconciled_at", "authority_source",
+                "last_error_code", "created_at", "terminal_at", "revision"));
+        allColumnsByTable.put("entitlement_metering.usage_fact", List.of(
+                "id", "reservation_id", "balance_id", "call_id", "usage_type", "units",
+                "source_event_domain", "source_event_id", "occurred_at", "created_at", "snapshot",
+                "snapshot_sha256"));
+
+        Map<String, List<String>> runtimeUpdateColumns = new java.util.LinkedHashMap<>();
+        runtimeUpdateColumns.put("entitlement_metering.trial_policy_version", List.of(
+                "published_by_employee_id", "enabled", "published_at", "revision"));
+        runtimeUpdateColumns.put("entitlement_metering.entitlement_grant", List.of());
+        runtimeUpdateColumns.put("entitlement_metering.trial_grant", List.of());
+        runtimeUpdateColumns.put("entitlement_metering.entitlement_balance", List.of(
+                "reserved_units", "consumed_units", "status", "revision", "updated_at"));
+        runtimeUpdateColumns.put("entitlement_metering.entitlement_issuance", List.of(
+                "status", "attempt_count", "last_error_code", "grant_id", "first_attempt_at",
+                "issued_at", "updated_at", "revision"));
+        runtimeUpdateColumns.put("entitlement_metering.usage_reservation", List.of(
+                "status", "settled_units", "reconciliation_due_at",
+                "reconciliation_attempt_count", "last_reconciled_at", "authority_source",
+                "last_error_code", "terminal_at", "revision"));
+        runtimeUpdateColumns.put("entitlement_metering.usage_fact", List.of());
+
+        Map<String, List<String>> runtimeInsertAllowed = new java.util.LinkedHashMap<>();
+        runtimeInsertAllowed.put("entitlement_metering.trial_policy_version", List.of(
+                "entitlement_metering_role"));
+        runtimeInsertAllowed.put("entitlement_metering.entitlement_grant", List.of(
+                "entitlement_metering_role"));
+        runtimeInsertAllowed.put("entitlement_metering.trial_grant", List.of());
+        runtimeInsertAllowed.put("entitlement_metering.entitlement_balance", List.of(
+                "entitlement_metering_role"));
+        runtimeInsertAllowed.put("entitlement_metering.entitlement_issuance", List.of(
+                "entitlement_metering_role"));
+        runtimeInsertAllowed.put("entitlement_metering.usage_reservation", List.of(
+                "entitlement_metering_role"));
+        runtimeInsertAllowed.put("entitlement_metering.usage_fact", List.of(
+                "entitlement_metering_role"));
+
+        Map<String, List<String>> ivrCrossSelect = new java.util.LinkedHashMap<>();
+        ivrCrossSelect.put("entitlement_metering.entitlement_balance",
+                List.of("id", "grant_id", "granted_units", "reserved_units", "consumed_units",
+                        "status"));
+        ivrCrossSelect.put("entitlement_metering.entitlement_grant",
+                List.of("id", "subject_id", "entitlement_type", "granted_units", "valid_from",
+                        "expires_at"));
+        Map<String, List<String>> catalogCrossSelect = new java.util.LinkedHashMap<>();
+        catalogCrossSelect.put("entitlement_metering.entitlement_issuance",
+                List.of("order_id", "installment_no", "entitlement_type", "status", "grant_id",
+                        "issued_at", "last_error_code"));
+        catalogCrossSelect.put("entitlement_metering.entitlement_grant",
+                List.of("id", "subject_id", "entitlement_type", "granted_units", "valid_from",
+                        "expires_at"));
+
+        List<String> matrixRoles = new ArrayList<>(S1_ROLES);
+        matrixRoles.addAll(V004_ROLES);
+        for (Map.Entry<String, List<String>> entry : allColumnsByTable.entrySet()) {
+            String qualifiedTable = entry.getKey();
+            for (String role : matrixRoles) {
+                boolean ownerRow = role.equals("entitlement_metering_owner");
+                boolean runtimeRow = role.equals("entitlement_metering_role");
+                assertThat(hasTable(connection, role, qualifiedTable, "SELECT"))
+                        .as("matrix %s table SELECT %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow || runtimeRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "INSERT"))
+                        .as("matrix %s table INSERT %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow
+                                || runtimeInsertAllowed.get(qualifiedTable).contains(role));
+                assertThat(hasTable(connection, role, qualifiedTable, "UPDATE"))
+                        .as("matrix %s table UPDATE %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "DELETE"))
+                        .as("matrix %s table DELETE %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "TRUNCATE"))
+                        .as("matrix %s table TRUNCATE %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "REFERENCES"))
+                        .as("matrix %s table REFERENCES %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "TRIGGER"))
+                        .as("matrix %s table TRIGGER %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                for (String column : entry.getValue()) {
+                    boolean expectColumnUpdate = ownerRow
+                            || (runtimeRow
+                                    && runtimeUpdateColumns.get(qualifiedTable).contains(column));
+                    // F-02: cross-module roles assert exact column-SELECT expected sets
+                    // across all seven tables; undeclared table/column SELECT is false.
+                    if (role.equals("ivr_role")) {
+                        assertThat(hasColumn(connection, role, qualifiedTable, column, "SELECT"))
+                                .as("matrix %s column SELECT %s.%s", role, qualifiedTable, column)
+                                .isEqualTo(ivrCrossSelect
+                                        .getOrDefault(qualifiedTable, List.of())
+                                        .contains(column));
+                    } else if (role.equals("catalog_order_role")) {
+                        assertThat(hasColumn(connection, role, qualifiedTable, column, "SELECT"))
+                                .as("matrix %s column SELECT %s.%s", role, qualifiedTable, column)
+                                .isEqualTo(catalogCrossSelect
+                                        .getOrDefault(qualifiedTable, List.of())
+                                        .contains(column));
+                    } else {
+                        assertThat(hasColumn(connection, role, qualifiedTable, column, "SELECT"))
+                                .as("matrix %s column SELECT %s.%s", role, qualifiedTable, column)
+                                .isEqualTo(ownerRow || runtimeRow);
+                    }
+                    boolean expectColumnInsert = ownerRow
+                            || (runtimeRow
+                                    && runtimeInsertAllowed.get(qualifiedTable).contains(role));
+                    assertThat(hasColumn(connection, role, qualifiedTable, column, "INSERT"))
+                            .as("matrix %s column INSERT %s.%s", role, qualifiedTable, column)
+                            .isEqualTo(expectColumnInsert);
+                    assertThat(hasColumn(connection, role, qualifiedTable, column, "UPDATE"))
+                            .as("matrix %s column UPDATE %s.%s", role, qualifiedTable, column)
+                            .isEqualTo(expectColumnUpdate);
+                }
+            }
+        }
+
+        for (Map.Entry<String, List<String>> entry : ivrCrossSelect.entrySet()) {
+            String table = entry.getKey();
+            List<String> columns = queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_class c "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                            + "WHERE n.nspname || '.' || c.relname = ? "
+                            + "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+                    table);
+            assertThat(columns).isNotEmpty();
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "ivr_role", table, privilege))
+                        .as("ivr_role must not hold table %s on %s", privilege, table)
+                        .isFalse();
+            }
+            for (String column : columns) {
+                assertThat(hasColumn(connection, "ivr_role", table, column, "SELECT"))
+                        .as("ivr_role SELECT %s.%s", table, column)
+                        .isEqualTo(entry.getValue().contains(column));
+                assertThat(hasColumn(connection, "ivr_role", table, column, "INSERT"))
+                        .as("ivr_role must not INSERT %s.%s", table, column).isFalse();
+                assertThat(hasColumn(connection, "ivr_role", table, column, "UPDATE"))
+                        .as("ivr_role must not UPDATE %s.%s", table, column).isFalse();
+            }
+        }
+
+        for (Map.Entry<String, List<String>> entry : catalogCrossSelect.entrySet()) {
+            String table = entry.getKey();
+            List<String> columns = queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_class c "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                            + "WHERE n.nspname || '.' || c.relname = ? "
+                            + "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+                    table);
+            assertThat(columns).isNotEmpty();
+            for (String column : columns) {
+                assertThat(hasColumn(connection, "catalog_order_role", table, column, "SELECT"))
+                        .as("catalog_order_role SELECT %s.%s", table, column)
+                        .isEqualTo(entry.getValue().contains(column));
+                assertThat(hasColumn(connection, "catalog_order_role", table, column, "INSERT"))
+                        .as("catalog_order_role must not INSERT %s.%s", table, column).isFalse();
+                assertThat(hasColumn(connection, "catalog_order_role", table, column, "UPDATE"))
+                        .as("catalog_order_role must not UPDATE %s.%s", table, column).isFalse();
+            }
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "catalog_order_role", table, privilege))
+                        .as("catalog_order_role must not hold table %s on %s", privilege, table)
+                        .isFalse();
+            }
+        }
+
+        List<String> meteringSubjectColumns = List.of(
+                "id", "owner_account_id", "owner_organization_id", "revision");
+        List<String> allSubjectColumns = queryStrings(
+                connection,
+                "SELECT a.attname FROM pg_class c "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                        + "WHERE n.nspname || '.' || c.relname = 'subject_number.business_subject' "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum");
+        assertThat(allSubjectColumns).isNotEmpty();
+        for (String column : allSubjectColumns) {
+            assertThat(hasColumn(connection, "entitlement_metering_role",
+                    "subject_number.business_subject", column, "SELECT"))
+                    .as("entitlement_metering_role SELECT business_subject.%s", column)
+                    .isEqualTo(meteringSubjectColumns.contains(column));
+            assertThat(hasColumn(connection, "entitlement_metering_role",
+                    "subject_number.business_subject", column, "INSERT"))
+                    .isFalse();
+            assertThat(hasColumn(connection, "entitlement_metering_role",
+                    "subject_number.business_subject", column, "UPDATE"))
+                    .isFalse();
+        }
+        for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                "TRUNCATE", "REFERENCES", "TRIGGER")) {
+            assertThat(hasTable(connection, "entitlement_metering_role",
+                    "subject_number.business_subject", privilege))
+                    .isFalse();
+        }
+
+        assertThat(hasTable(connection, "activation_consent_role",
+                "entitlement_metering.entitlement_grant", "INSERT"))
+                .as("activation_consent_role must not INSERT entitlement_grant").isFalse();
+        assertThat(hasColumn(connection, "activation_consent_role",
+                "entitlement_metering.trial_grant", "id", "SELECT"))
+                .as("activation_consent_role must not SELECT trial_grant.id").isFalse();
+        assertThat(hasFunction(connection, "activation_consent_role",
+                "entitlement_metering.issue_first_trial(uuid,text,uuid,text,text,text)",
+                "EXECUTE"))
+                .as("activation_consent_role EXECUTE issue_first_trial").isTrue();
+        assertThat(hasFunction(connection, "entitlement_metering_role",
+                "entitlement_metering.issue_first_trial(uuid,text,uuid,text,text,text)",
+                "EXECUTE"))
+                .as("entitlement_metering_role EXECUTE issue_first_trial").isTrue();
+    }
+
+    private static void assertV006PublicAclIsZero(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace n, "
+                        + "aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a "
+                        + "WHERE n.nspname = 'entitlement_metering' AND a.grantee = 0"))
+                .as("PUBLIC has no entitlement_metering schema privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind IN ('r','p') "
+                        + "AND a.grantee = 0"))
+                .as("PUBLIC has no entitlement_metering table privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+                        + "WHERE n.nspname = 'entitlement_metering' AND a.grantee = 0"))
+                .as("PUBLIC has no entitlement_metering function privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind IN ('r','p') "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND x.grantee = 0"))
+                .as("PUBLIC has no entitlement_metering column privilege").isZero();
+    }
+
+    private static void assertV006GuardFunctionExecuteBoundaries(Connection connection)
+            throws SQLException {
+        // has_function_privilege identity form is schema.name(argtypes) without
+        // parameter names; named-parameter identity only appears in catalog dumps.
+        String issueFirstTrial =
+                "entitlement_metering.issue_first_trial(uuid,text,uuid,text,text,text)";
+        List<String> guardFunctions = List.of(
+                "entitlement_metering.guard_trial_policy_version()",
+                "entitlement_metering.guard_entitlement_grant()",
+                "entitlement_metering.guard_trial_grant()",
+                "entitlement_metering.guard_entitlement_balance()",
+                "entitlement_metering.guard_entitlement_issuance()",
+                "entitlement_metering.guard_usage_reservation()");
+        List<String> functionMatrixRoles = new ArrayList<>(S1_ROLES);
+        functionMatrixRoles.addAll(V004_ROLES);
+        for (String function : guardFunctions) {
+            assertThat(hasFunction(connection, "entitlement_metering_owner", function, "EXECUTE"))
+                    .as("owner EXECUTE %s", function).isTrue();
+            assertThat(hasFunction(connection, "entitlement_metering_role", function, "EXECUTE"))
+                    .as("runtime EXECUTE %s", function).isTrue();
+            for (String role : functionMatrixRoles) {
+                if (role.equals("entitlement_metering_owner")
+                        || role.equals("entitlement_metering_role")) {
+                    continue;
+                }
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s must not EXECUTE %s", role, function).isFalse();
+            }
+            assertThat(hasFunction(connection, "public", function, "EXECUTE"))
+                    .as("PUBLIC must not EXECUTE %s", function).isFalse();
+        }
+        for (String role : functionMatrixRoles) {
+            boolean expectExecute = role.equals("entitlement_metering_owner")
+                    || role.equals("entitlement_metering_role")
+                    || role.equals("activation_consent_role");
+            assertThat(hasFunction(connection, role, issueFirstTrial, "EXECUTE"))
+                    .as("%s EXECUTE issue_first_trial", role)
+                    .isEqualTo(expectExecute);
+        }
+        assertThat(hasFunction(connection, "public", issueFirstTrial, "EXECUTE"))
+                .as("PUBLIC must not EXECUTE issue_first_trial").isFalse();
+        assertThat(hasFunction(connection, "entitlement_metering_owner",
+                "entitlement_metering.reject_row_mutation()", "EXECUTE"))
+                .as("owner EXECUTE reject_row_mutation").isTrue();
+        for (String role : functionMatrixRoles) {
+            if (role.equals("entitlement_metering_owner")) {
+                continue;
+            }
+            assertThat(hasFunction(connection, role,
+                    "entitlement_metering.reject_row_mutation()", "EXECUTE"))
+                    .as("%s must not EXECUTE reject_row_mutation", role).isFalse();
+        }
+        assertThat(hasFunction(connection, "public",
+                "entitlement_metering.reject_row_mutation()", "EXECUTE"))
+                .as("PUBLIC must not EXECUTE reject_row_mutation").isFalse();
+
+        assertThat(hasFunction(connection, "entitlement_metering_owner",
+                "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)",
+                "EXECUTE"))
+                .as("F-02 owner outbox_append EXECUTE").isTrue();
+        assertThat(hasSchema(connection, "entitlement_metering_owner", "platform", "USAGE"))
+                .as("F-02 owner platform USAGE").isTrue();
+        for (String role : List.of(
+                "catalog_order_owner", "ivr_owner", "activation_consent_owner",
+                "customer_iam_owner", "organization_access_owner", "operations_iam_owner",
+                "subject_number_owner", "audit_owner", "platform_reliability_owner")) {
+            assertThat(hasSchema(connection, role, "platform", "USAGE")
+                    && hasFunction(connection, role,
+                            "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)",
+                            "EXECUTE")
+                    && !role.equals("platform_reliability_owner"))
+                    .as("no other owner receives outbox_append capability via V006")
+                    .isFalse();
+        }
+        assertThat(hasFunction(connection, "public",
+                "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)",
+                "EXECUTE"))
+                .as("PUBLIC must not EXECUTE outbox_append").isFalse();
+    }
+
+    private static void assertV006RuntimeDenialsAndLegalUpdateControl() throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID policyId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v006InsertSubject(connection, subjectId);
+                v006InsertPublishedPolicy(connection, employeeId, policyId, 1, 600, 7, true);
+
+                switchLocalRole(connection, "entitlement_metering_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.entitlement_balance "
+                                + "SET reserved_units = reserved_units, consumed_units = consumed_units, "
+                                + "status = status, revision = revision, updated_at = now() "
+                                + "WHERE id = ?", UUID.randomUUID()))
+                        .as("legal balance column UPDATE with zero rows is still authorized")
+                        .isZero();
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET enabled = enabled, revision = revision WHERE id = ?",
+                        policyId))
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.entitlement_grant SET granted_units = 1 "
+                                + "WHERE id = ?", UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE entitlement_metering.entitlement_grant");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.trial_grant SET request_fingerprint = ? "
+                                + "WHERE id = ?", randomSha256(), UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM entitlement_metering.trial_grant WHERE id = ?",
+                        UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE entitlement_metering.trial_grant");
+                // F-04: trial_grant INSERT is function-only; direct runtime INSERT is 42501.
+                expectSqlFailure(connection, "42501", null,
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                + "?, ?, now(), now() + interval '1 day')",
+                        UUID.randomUUID(), subjectId, policyId, UUID.randomUUID(),
+                        "pa6-direct-insert-" + UUID.randomUUID(), randomSha256());
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.usage_fact SET units = 1 WHERE id = ?",
+                        UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM entitlement_metering.usage_fact WHERE id = ?",
+                        UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE entitlement_metering.usage_fact");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.entitlement_balance SET grant_id = ? "
+                                + "WHERE id = ?", UUID.randomUUID(), UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.usage_reservation SET call_id = ? "
+                                + "WHERE id = ?", "denied", UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.entitlement_issuance SET order_id = ? "
+                                + "WHERE id = ?", UUID.randomUUID(), UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT * FROM entitlement_metering.trial_grant FOR UPDATE");
+
+                switchLocalRole(connection, "ivr_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.entitlement_balance SET status = 'EXPIRED' "
+                                + "WHERE id = ?", UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "INSERT INTO entitlement_metering.entitlement_balance "
+                                + "(id, grant_id, granted_units) VALUES (?, ?, 1)",
+                        UUID.randomUUID(), UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT order_id FROM entitlement_metering.entitlement_issuance");
+
+                switchLocalRole(connection, "catalog_order_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE entitlement_metering.entitlement_issuance SET status = 'ISSUED' "
+                                + "WHERE id = ?", UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "INSERT INTO entitlement_metering.entitlement_grant "
+                                + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                                + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256) "
+                                + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 1, now(), "
+                                + "now() + interval '1 day', '{}'::jsonb, ?)",
+                        UUID.randomUUID(), subjectId, policyId, randomSha256());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT reservation_id FROM ivr.ivr_decision FOR UPDATE");
+
+                resetToMigrationIdentity(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private record IssueFirstTrialResult(
+            UUID trialGrantId,
+            UUID entitlementGrantId,
+            UUID entitlementBalanceId,
+            String outcome,
+            OffsetDateTime firstGrantedAt) {
+    }
+
+    private static void v006InsertSubject(Connection connection, UUID subjectId)
+            throws SQLException {
+        switchLocalRole(connection, "subject_number_role");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO subject_number.business_subject (id, source) VALUES (?, 'IVR')",
+                subjectId)).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void v006InsertPublishedPolicy(
+            Connection connection,
+            UUID employeeId,
+            UUID policyId,
+            int versionNo,
+            int grantedSeconds,
+            int validDays,
+            boolean enabled) throws SQLException {
+        switchLocalRole(connection, "operations_iam_role");
+        assertThat(insertEmployee(connection, employeeId, randomSha256(), "pa6***policy",
+                "onecall-ops", randomSha256(), "PA6 Trial Policy", "OPS")).isEqualTo(1);
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.trial_policy_version "
+                        + "(id, campaign_key, version_no, granted_seconds, valid_days, enabled, "
+                        + "snapshot, snapshot_sha256, published_by_employee_id, published_at, revision) "
+                        + "VALUES (?, 'FIRST-TRIAL', ?, ?, ?, ?, '{\"grantedSeconds\":"
+                        + grantedSeconds + ",\"validDays\":" + validDays + "}'::jsonb, ?, ?, "
+                        + "now(), 1)",
+                policyId, versionNo, grantedSeconds, validDays, enabled, randomSha256(), employeeId))
+                .isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static void v006InsertUnpublishedPolicy(
+            Connection connection,
+            UUID employeeId,
+            UUID policyId,
+            int versionNo,
+            int grantedSeconds,
+            int validDays) throws SQLException {
+        switchLocalRole(connection, "operations_iam_role");
+        assertThat(insertEmployee(connection, employeeId, randomSha256(), "pa6***draft",
+                "onecall-ops", randomSha256(), "PA6 Draft Policy", "OPS")).isEqualTo(1);
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.trial_policy_version "
+                        + "(id, campaign_key, version_no, granted_seconds, valid_days, enabled, "
+                        + "snapshot, snapshot_sha256, published_by_employee_id, published_at, revision) "
+                        + "VALUES (?, 'FIRST-TRIAL', ?, ?, ?, true, '{}'::jsonb, ?, ?, NULL, 1)",
+                policyId, versionNo, grantedSeconds, validDays, randomSha256(), employeeId))
+                .isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static IssueFirstTrialResult callIssueFirstTrial(
+            Connection connection,
+            UUID subjectId,
+            String campaignKey,
+            UUID policyId,
+            String actionDomain,
+            String actionEventId,
+            String requestFingerprint) throws SQLException {
+        switchLocalRole(connection, "entitlement_metering_role");
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT trial_grant_id, entitlement_grant_id, entitlement_balance_id, outcome, "
+                        + "first_granted_at FROM entitlement_metering.issue_first_trial(?, ?, ?, ?, ?, ?)")) {
+            prepared.setObject(1, subjectId);
+            prepared.setString(2, campaignKey);
+            prepared.setObject(3, policyId);
+            prepared.setString(4, actionDomain);
+            prepared.setString(5, actionEventId);
+            prepared.setString(6, requestFingerprint);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).as("issue_first_trial returns one row").isTrue();
+                IssueFirstTrialResult result = new IssueFirstTrialResult(
+                        (UUID) resultSet.getObject(1),
+                        (UUID) resultSet.getObject(2),
+                        (UUID) resultSet.getObject(3),
+                        resultSet.getString(4),
+                        resultSet.getObject(5, OffsetDateTime.class));
+                assertThat(resultSet.next()).isFalse();
+                resetToMigrationIdentity(connection);
+                return result;
+            }
+        } catch (SQLException exception) {
+            // A P0001 abort leaves the transaction unusable; RESET ROLE would surface
+            // 25P02 and mask the stable error. expectIssueFirstTrialFailure rolls back
+            // its savepoint, then resets the role.
+            throw exception;
+        }
+    }
+
+    private static void expectIssueFirstTrialFailure(
+            Connection connection,
+            String expectedCode,
+            UUID subjectId,
+            String campaignKey,
+            UUID policyId,
+            String actionDomain,
+            String actionEventId,
+            String requestFingerprint) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            try {
+                callIssueFirstTrial(connection, subjectId, campaignKey, policyId,
+                        actionDomain, actionEventId, requestFingerprint);
+                fail("expected P0001 " + expectedCode + " but the call succeeded");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState())
+                        .as("SQLSTATE for %s", expectedCode)
+                        .isEqualTo("P0001");
+                assertThat(exception.getMessage())
+                        .as("stable error code for %s", expectedCode)
+                        .contains(expectedCode);
+            }
+        } finally {
+            connection.rollback(savepoint);
+            resetToMigrationIdentity(connection);
+        }
+    }
+
+    /**
+     * Independent Java canonicalizer for the finite ten-field issue_first_trial Outbox payload.
+     * It re-serializes the already-stored JSON tokens in fixed UTF-16 key order and hashes the
+     * UTF-8 bytes. This is not a generic RFC 8785 implementation.
+     */
+    private static String v006CanonicalOutboxSha256(String payloadRedacted) throws Exception {
+        Map<String, String> tokens = v006ParseFlatJsonTokens(payloadRedacted);
+        assertThat(tokens.keySet())
+                .as("exact Outbox payload field set")
+                .containsExactlyInAnyOrderElementsOf(V006_OUTBOX_CANONICAL_KEYS);
+        StringBuilder canonical = new StringBuilder("{");
+        boolean first = true;
+        for (String key : V006_OUTBOX_CANONICAL_KEYS) {
+            if (!first) {
+                canonical.append(',');
+            }
+            first = false;
+            canonical.append('"').append(key).append("\":").append(tokens.get(key));
+        }
+        canonical.append('}');
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(canonical.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        StringBuilder hex = new StringBuilder(hash.length * 2);
+        for (byte value : hash) {
+            hex.append(String.format(Locale.ROOT, "%02x", value));
+        }
+        return hex.toString();
+    }
+
+    /** Minimal flat-JSON token reader for the finite Outbox payload only. */
+    private static Map<String, String> v006ParseFlatJsonTokens(String json) {
+        Map<String, String> tokens = new java.util.LinkedHashMap<>();
+        int index = 0;
+        String text = json.trim();
+        assertThat(text.startsWith("{") && text.endsWith("}"))
+                .as("Outbox payload is a JSON object").isTrue();
+        index = 1;
+        while (index < text.length() - 1) {
+            while (index < text.length() && (text.charAt(index) == ',' || Character.isWhitespace(text.charAt(index)))) {
+                index++;
+            }
+            if (index >= text.length() - 1) {
+                break;
+            }
+            assertThat(text.charAt(index)).as("key quote").isEqualTo('"');
+            int keyEnd = text.indexOf('"', index + 1);
+            assertThat(keyEnd).isGreaterThan(index + 1);
+            String key = text.substring(index + 1, keyEnd);
+            index = keyEnd + 1;
+            while (index < text.length() && Character.isWhitespace(text.charAt(index))) {
+                index++;
+            }
+            assertThat(text.charAt(index)).as("colon after key").isEqualTo(':');
+            index++;
+            while (index < text.length() && Character.isWhitespace(text.charAt(index))) {
+                index++;
+            }
+            String token;
+            if (text.charAt(index) == '"') {
+                int valueEnd = index + 1;
+                StringBuilder value = new StringBuilder();
+                while (valueEnd < text.length()) {
+                    char current = text.charAt(valueEnd);
+                    if (current == '\\' && valueEnd + 1 < text.length()) {
+                        value.append(current).append(text.charAt(valueEnd + 1));
+                        valueEnd += 2;
+                        continue;
+                    }
+                    if (current == '"') {
+                        break;
+                    }
+                    value.append(current);
+                    valueEnd++;
+                }
+                token = "\"" + value + "\"";
+                index = valueEnd + 1;
+            } else {
+                int valueEnd = index;
+                while (valueEnd < text.length()
+                        && text.charAt(valueEnd) != ',' && text.charAt(valueEnd) != '}') {
+                    valueEnd++;
+                }
+                token = text.substring(index, valueEnd).trim();
+                index = valueEnd;
+            }
+            tokens.put(key, token);
+        }
+        return tokens;
+    }
+
+    private static void assertV006IssueFirstTrialSemantics() throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID otherSubjectId = UUID.randomUUID();
+        UUID policyId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        UUID missingPolicyId = UUID.randomUUID();
+        UUID stalePolicyId = UUID.randomUUID();
+        String fingerprint = randomSha256();
+        String actionEventId = "pa6-s1-evt-" + UUID.randomUUID();
+        String otherActionEventId = "pa6-s1-evt-" + UUID.randomUUID();
+        UUID afterRollbackTrialGrantId = null;
+        UUID integritySubject = UUID.randomUUID();
+        UUID unitMismatchSubject = UUID.randomUUID();
+        UUID missingGrantSubject = UUID.randomUUID();
+        UUID subjectMismatchSubject = UUID.randomUUID();
+        UUID sourceTypeSubject = UUID.randomUUID();
+        UUID sourceRefSubject = UUID.randomUUID();
+        UUID entitlementTypeSubject = UUID.randomUUID();
+        UUID validFromSubject = UUID.randomUUID();
+        UUID grantTimeSubject = UUID.randomUUID();
+        UUID expiresAtSubject = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                v006InsertSubject(connection, subjectId);
+                v006InsertSubject(connection, otherSubjectId);
+                v006InsertPublishedPolicy(connection, employeeId, policyId, 1, 600, 7, true);
+
+                // Argument / campaign failures create nothing.
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        null, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId, fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", null, "IVR_CONFIRM", actionEventId, fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "SMS", actionEventId, fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", "", fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", "   ", fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM",
+                        "x".repeat(129), fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId, null);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
+                        "not-a-sha");
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
+                        fingerprint.toUpperCase(Locale.ROOT));
+                expectIssueFirstTrialFailure(connection, "TRIAL_CAMPAIGN_INVALID",
+                        subjectId, "OTHER-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
+                        fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_CAMPAIGN_INVALID",
+                        subjectId, " FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
+                        fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_CAMPAIGN_INVALID",
+                        subjectId, "   ", policyId, "IVR_CONFIRM", actionEventId, fingerprint);
+
+                expectIssueFirstTrialFailure(connection, "TRIAL_POLICY_NOT_FOUND",
+                        subjectId, "FIRST-TRIAL", missingPolicyId, "IVR_CONFIRM",
+                        actionEventId, fingerprint);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                        subjectId)).isZero();
+
+                UUID draftPolicyId = UUID.randomUUID();
+                v006InsertUnpublishedPolicy(connection, UUID.randomUUID(), draftPolicyId, 2, 600, 7);
+                expectIssueFirstTrialFailure(connection, "TRIAL_POLICY_NOT_FOUND",
+                        subjectId, "FIRST-TRIAL", draftPolicyId, "IVR_CONFIRM",
+                        actionEventId, fingerprint);
+
+                UUID disabledPolicyId = UUID.randomUUID();
+                v006InsertPublishedPolicy(connection, UUID.randomUUID(), disabledPolicyId, 3, 300, 3,
+                        false);
+                expectIssueFirstTrialFailure(connection, "TRIAL_POLICY_NOT_FOUND",
+                        subjectId, "FIRST-TRIAL", disabledPolicyId, "IVR_CONFIRM",
+                        actionEventId, fingerprint);
+
+                // GRANTED.
+                IssueFirstTrialResult granted = callIssueFirstTrial(connection, subjectId,
+                        "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId, fingerprint);
+                assertThat(granted.outcome()).isEqualTo("GRANTED");
+                assertThat(granted.trialGrantId()).isNotNull();
+                assertThat(granted.entitlementGrantId()).isNotNull();
+                assertThat(granted.entitlementBalanceId()).isNotNull();
+                assertThat(granted.firstGrantedAt()).isNotNull();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE id = ?",
+                        granted.trialGrantId())).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        granted.entitlementGrantId())).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                        granted.entitlementBalanceId())).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance "
+                                + "WHERE grant_id = ?", granted.entitlementGrantId()))
+                        .isEqualTo(1);
+                OffsetDateTime persistedGrantedAt = queryObjectOffset(connection,
+                        "SELECT granted_at FROM entitlement_metering.trial_grant WHERE id = ?",
+                        granted.trialGrantId());
+                assertThat(granted.firstGrantedAt()).isEqualTo(persistedGrantedAt);
+                OffsetDateTime grantValidFrom = queryObjectOffset(connection,
+                        "SELECT valid_from FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        granted.entitlementGrantId());
+                OffsetDateTime grantGrantedAt = queryObjectOffset(connection,
+                        "SELECT granted_at FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        granted.entitlementGrantId());
+                OffsetDateTime grantExpiresAt = queryObjectOffset(connection,
+                        "SELECT expires_at FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        granted.entitlementGrantId());
+                OffsetDateTime trialExpiresAt = queryObjectOffset(connection,
+                        "SELECT expires_at FROM entitlement_metering.trial_grant WHERE id = ?",
+                        granted.trialGrantId());
+                assertThat(grantValidFrom).isEqualTo(grantGrantedAt);
+                assertThat(grantGrantedAt).isEqualTo(persistedGrantedAt);
+                assertThat(grantExpiresAt).isEqualTo(trialExpiresAt);
+                assertThat(grantExpiresAt)
+                        .isEqualTo(persistedGrantedAt.plusDays(7));
+                assertThat(queryLong(connection,
+                        "SELECT granted_units FROM entitlement_metering.entitlement_grant "
+                                + "WHERE id = ?", granted.entitlementGrantId())).isEqualTo(600);
+                assertThat(queryLong(connection,
+                        "SELECT granted_units FROM entitlement_metering.entitlement_balance "
+                                + "WHERE id = ?", granted.entitlementBalanceId())).isEqualTo(600);
+                assertThat(queryString(connection,
+                        "SELECT snapshot::text FROM entitlement_metering.entitlement_grant "
+                                + "WHERE id = ?", granted.entitlementGrantId()))
+                        .as("grant snapshot equals selected policy snapshot")
+                        .isEqualTo(queryString(connection,
+                                "SELECT snapshot::text FROM "
+                                        + "entitlement_metering.trial_policy_version WHERE id = ?",
+                                policyId));
+                assertThat(queryString(connection,
+                        "SELECT snapshot_sha256 FROM entitlement_metering.entitlement_grant "
+                                + "WHERE id = ?", granted.entitlementGrantId()))
+                        .as("grant snapshot_sha256 equals selected policy snapshot_sha256")
+                        .isEqualTo(queryString(connection,
+                                "SELECT snapshot_sha256 FROM "
+                                        + "entitlement_metering.trial_policy_version WHERE id = ?",
+                                policyId));
+
+                String outboxKey = "trial_grant:" + granted.trialGrantId();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey)).isEqualTo(1);
+                String payload = queryString(connection,
+                        "SELECT payload_redacted::text FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey);
+                String aggregateType = queryString(connection,
+                        "SELECT aggregate_type FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey);
+                String eventType = queryString(connection,
+                        "SELECT event_type FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey);
+                UUID aggregateId = queryUuid(connection,
+                        "SELECT aggregate_id FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey);
+                String storedSha = queryString(connection,
+                        "SELECT payload_sha256 FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey);
+                assertThat(aggregateType).isEqualTo("TRIAL_GRANT");
+                assertThat(aggregateId).isEqualTo(granted.trialGrantId());
+                assertThat(eventType).isEqualTo("FIRST_TRIAL_GRANTED");
+                Map<String, String> payloadTokens = v006ParseFlatJsonTokens(payload);
+                assertThat(payloadTokens.keySet())
+                        .containsExactlyInAnyOrderElementsOf(V006_OUTBOX_CANONICAL_KEYS);
+                assertThat(payloadTokens.get("campaignKey")).isEqualTo("\"FIRST-TRIAL\"");
+                assertThat(payloadTokens.get("trialGrantId"))
+                        .isEqualTo("\"" + granted.trialGrantId() + "\"");
+                assertThat(payloadTokens.get("entitlementGrantId"))
+                        .isEqualTo("\"" + granted.entitlementGrantId() + "\"");
+                assertThat(payloadTokens.get("entitlementBalanceId"))
+                        .isEqualTo("\"" + granted.entitlementBalanceId() + "\"");
+                assertThat(payloadTokens.get("subjectId")).isEqualTo("\"" + subjectId + "\"");
+                assertThat(payloadTokens.get("trialPolicyVersionId"))
+                        .isEqualTo("\"" + policyId + "\"");
+                assertThat(payloadTokens.get("grantedUnits")).isEqualTo("600");
+                // F-01/R-C: payload timestamp tokens equal persisted facts in the
+                // same UTC microsecond format the function writes.
+                assertThat(payloadTokens.get("validFrom"))
+                        .as("Outbox validFrom equals persisted grant.valid_from")
+                        .isEqualTo("\"" + v006FormatUtcMicros(grantValidFrom) + "\"");
+                assertThat(payloadTokens.get("expiresAt"))
+                        .as("Outbox expiresAt equals persisted grant.expires_at")
+                        .isEqualTo("\"" + v006FormatUtcMicros(grantExpiresAt) + "\"");
+                assertThat(payloadTokens.get("grantedAt"))
+                        .as("Outbox grantedAt equals persisted trial.granted_at")
+                        .isEqualTo("\"" + v006FormatUtcMicros(persistedGrantedAt) + "\"");
+                assertThat(v006CanonicalOutboxSha256(payload)).isEqualTo(storedSha);
+
+                // REPLAY returns original ids and persisted granted_at.
+                IssueFirstTrialResult replay = callIssueFirstTrial(connection, subjectId,
+                        "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId, fingerprint);
+                assertThat(replay.outcome()).isEqualTo("REPLAY");
+                assertThat(replay.trialGrantId()).isEqualTo(granted.trialGrantId());
+                assertThat(replay.entitlementGrantId()).isEqualTo(granted.entitlementGrantId());
+                assertThat(replay.entitlementBalanceId()).isEqualTo(granted.entitlementBalanceId());
+                assertThat(replay.firstGrantedAt()).isEqualTo(persistedGrantedAt);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey)).isEqualTo(1);
+
+                // ALREADY_GRANTED for a different action identity.
+                IssueFirstTrialResult already = callIssueFirstTrial(connection, subjectId,
+                        "FIRST-TRIAL", policyId, "ACTIVATION", otherActionEventId, randomSha256());
+                assertThat(already.outcome()).isEqualTo("ALREADY_GRANTED");
+                assertThat(already.trialGrantId()).isEqualTo(granted.trialGrantId());
+                assertThat(already.firstGrantedAt()).isEqualTo(persistedGrantedAt);
+
+                // Same action + changed fingerprint is TRIAL_ACTION_CONFLICT.
+                expectIssueFirstTrialFailure(connection, "TRIAL_ACTION_CONFLICT",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
+                        randomSha256());
+
+                // Stale expected policy is TRIAL_POLICY_NOT_FOUND after a successor is enabled.
+                switchLocalRole(connection, "entitlement_metering_owner");
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.trial_policy_version "
+                                + "SET enabled = false, revision = revision + 1 WHERE id = ?",
+                        policyId)).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                v006InsertPublishedPolicy(connection, UUID.randomUUID(), stalePolicyId, 4, 120, 1,
+                        true);
+                expectIssueFirstTrialFailure(connection, "TRIAL_POLICY_NOT_FOUND",
+                        otherSubjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM",
+                        otherActionEventId, fingerprint);
+
+                // F-01: after the expected policy is disabled, an already-granted subject
+                // still returns exact REPLAY / ALREADY_GRANTED with no new policy selection.
+                IssueFirstTrialResult postDisableReplay = callIssueFirstTrial(connection,
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
+                        fingerprint);
+                assertThat(postDisableReplay.outcome()).isEqualTo("REPLAY");
+                assertThat(postDisableReplay.trialGrantId()).isEqualTo(granted.trialGrantId());
+                assertThat(postDisableReplay.entitlementGrantId())
+                        .isEqualTo(granted.entitlementGrantId());
+                assertThat(postDisableReplay.entitlementBalanceId())
+                        .isEqualTo(granted.entitlementBalanceId());
+                assertThat(postDisableReplay.firstGrantedAt()).isEqualTo(persistedGrantedAt);
+                IssueFirstTrialResult postDisableAlready = callIssueFirstTrial(connection,
+                        subjectId, "FIRST-TRIAL", policyId, "ACTIVATION",
+                        "pa6-post-disable-" + UUID.randomUUID(), randomSha256());
+                assertThat(postDisableAlready.outcome()).isEqualTo("ALREADY_GRANTED");
+                assertThat(postDisableAlready.trialGrantId()).isEqualTo(granted.trialGrantId());
+                assertThat(postDisableAlready.firstGrantedAt()).isEqualTo(persistedGrantedAt);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant "
+                                + "WHERE subject_id = ?", subjectId))
+                        .as("replay/already-granted create no new trial_grant")
+                        .isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                        outboxKey))
+                        .as("replay/already-granted create no new outbox event")
+                        .isEqualTo(1);
+
+                // TRIAL_DATA_INTEGRITY: missing balance for the subject's trial.
+                v006InsertSubject(connection, integritySubject);
+                UUID orphanTrialId = UUID.randomUUID();
+                UUID orphanGrantId = UUID.randomUUID();
+                OffsetDateTime orphanGrantedAt = OffsetDateTime.now(ZoneOffset.UTC);
+                OffsetDateTime orphanExpiresAt = orphanGrantedAt.plusDays(7);
+                switchLocalRole(connection, "entitlement_metering_owner");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.entitlement_grant "
+                                + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                                + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256, "
+                                + "granted_at) VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 60, "
+                                + "?, ?, '{}'::jsonb, ?, ?)",
+                        orphanGrantId, integritySubject, policyId, orphanGrantedAt,
+                        orphanExpiresAt, randomSha256(), orphanGrantedAt)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', ?, "
+                                + "?, ?, ?)",
+                        orphanTrialId, integritySubject, policyId, orphanGrantId,
+                        "pa6-missing-balance-" + UUID.randomUUID(), randomSha256(),
+                        orphanGrantedAt, orphanExpiresAt)).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        integritySubject, "FIRST-TRIAL", policyId, "IVR_CONFIRM",
+                        "pa6-other-evt-" + UUID.randomUUID(), fingerprint);
+
+                // TRIAL_DATA_INTEGRITY: grant/balance unit mismatch via owner mutation.
+                v006InsertSubject(connection, unitMismatchSubject);
+                IssueFirstTrialResult unitGrant = callIssueFirstTrial(connection,
+                        unitMismatchSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-units-" + UUID.randomUUID(), fingerprint);
+                switchLocalRole(connection, "entitlement_metering_owner");
+                execute(connection,
+                        "ALTER TABLE entitlement_metering.entitlement_balance "
+                                + "DISABLE TRIGGER trg_entitlement_balance_guard");
+                assertThat(executeUpdate(connection,
+                        "UPDATE entitlement_metering.entitlement_balance SET granted_units = 1 "
+                                + "WHERE id = ?", unitGrant.entitlementBalanceId())).isEqualTo(1);
+                execute(connection,
+                        "ALTER TABLE entitlement_metering.entitlement_balance "
+                                + "ENABLE TRIGGER trg_entitlement_balance_guard");
+                resetToMigrationIdentity(connection);
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        unitMismatchSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-units-other-" + UUID.randomUUID(), fingerprint);
+
+                // TRIAL_DATA_INTEGRITY: source identity bound to another subject. The
+                // predicate only runs on the trial-first path, so subject A must already
+                // hold a trial under a different action identity.
+                UUID sourceSubjectA = UUID.randomUUID();
+                UUID sourceSubjectB = UUID.randomUUID();
+                v006InsertSubject(connection, sourceSubjectA);
+                v006InsertSubject(connection, sourceSubjectB);
+                String actionA = "pa6-a-evt-" + UUID.randomUUID();
+                String sharedActionEvent = "pa6-shared-evt-" + UUID.randomUUID();
+                callIssueFirstTrial(connection, sourceSubjectA, "FIRST-TRIAL", stalePolicyId,
+                        "IVR_CONFIRM", actionA, fingerprint);
+                callIssueFirstTrial(connection, sourceSubjectB, "FIRST-TRIAL", stalePolicyId,
+                        "IVR_CONFIRM", sharedActionEvent, fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        sourceSubjectA, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        sharedActionEvent, randomSha256());
+
+                // F-01: remaining TRIAL_DATA_INTEGRITY classes. Each subject already
+                // holds trial+grant+balance; probes are method-local and rolled back.
+                OffsetDateTime integrityBase = OffsetDateTime.now(ZoneOffset.UTC);
+
+                // Missing referenced grant (transactional fk_trial_grant_grant drop/restore).
+                v006InsertSubject(connection, missingGrantSubject);
+                UUID missingGrantTrialId = UUID.randomUUID();
+                Savepoint missingGrantSavepoint = connection.setSavepoint();
+                try {
+                    switchLocalRole(connection, "entitlement_metering_owner");
+                    execute(connection,
+                            "ALTER TABLE entitlement_metering.trial_grant "
+                                    + "DROP CONSTRAINT fk_trial_grant_grant");
+                    assertThat(executeUpdate(connection,
+                            "INSERT INTO entitlement_metering.trial_grant "
+                                    + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                    + "entitlement_grant_id, source_action_domain, "
+                                    + "source_action_event_id, request_fingerprint, granted_at, "
+                                    + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, "
+                                    + "'IVR_CONFIRM', ?, ?, ?, ?)",
+                            missingGrantTrialId, missingGrantSubject, stalePolicyId,
+                            UUID.randomUUID(), "pa6-missing-grant-" + UUID.randomUUID(),
+                            randomSha256(), integrityBase, integrityBase.plusDays(7)))
+                            .isEqualTo(1);
+                    resetToMigrationIdentity(connection);
+                    expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                            missingGrantSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                            "pa6-missing-grant-other-" + UUID.randomUUID(), fingerprint);
+                } finally {
+                    connection.rollback(missingGrantSavepoint);
+                    resetToMigrationIdentity(connection);
+                }
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_constraint c "
+                                + "JOIN pg_class t ON t.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                                + "WHERE n.nspname = 'entitlement_metering' "
+                                + "AND t.relname = 'trial_grant' "
+                                + "AND c.conname = 'fk_trial_grant_grant'"))
+                        .as("fk_trial_grant_grant restored after missing-grant fixture")
+                        .isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE id = ?",
+                        missingGrantTrialId))
+                        .as("missing-grant fixture trial rolled back")
+                        .isZero();
+
+                // Grant subject_id mismatch.
+                UUID subjectMismatchOther = UUID.randomUUID();
+                v006InsertSubject(connection, subjectMismatchSubject);
+                v006InsertSubject(connection, subjectMismatchOther);
+                v006InsertCorruptTrialBundle(connection, subjectMismatchSubject,
+                        subjectMismatchOther, stalePolicyId, "TRIAL", stalePolicyId,
+                        "RECORDING_SECONDS", 120, integrityBase, integrityBase,
+                        integrityBase.plusDays(7), integrityBase, integrityBase.plusDays(7),
+                        null, null, "pa6-subject-mismatch-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        subjectMismatchSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-subject-mismatch-other-" + UUID.randomUUID(), fingerprint);
+
+                // source_type mismatch via PURCHASE-shaped grant (order FK satisfied).
+                v006InsertSubject(connection, sourceTypeSubject);
+                UUID purchaseOrderId = v006InsertPurchaseOrderFixture(connection, employeeId);
+                v006InsertCorruptTrialBundle(connection, sourceTypeSubject, sourceTypeSubject,
+                        stalePolicyId, "PURCHASE", purchaseOrderId, "RECORDING_SECONDS", 120,
+                        integrityBase, integrityBase, integrityBase.plusDays(7),
+                        integrityBase, integrityBase.plusDays(7), purchaseOrderId, 1,
+                        "pa6-source-type-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        sourceTypeSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-source-type-other-" + UUID.randomUUID(), fingerprint);
+
+                // source_ref_id ≠ trial_policy_version_id.
+                v006InsertSubject(connection, sourceRefSubject);
+                v006InsertCorruptTrialBundle(connection, sourceRefSubject, sourceRefSubject,
+                        stalePolicyId, "TRIAL", UUID.randomUUID(), "RECORDING_SECONDS", 120,
+                        integrityBase, integrityBase, integrityBase.plusDays(7),
+                        integrityBase, integrityBase.plusDays(7), null, null,
+                        "pa6-source-ref-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        sourceRefSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-source-ref-other-" + UUID.randomUUID(), fingerprint);
+
+                // entitlement_type ≠ RECORDING_SECONDS.
+                v006InsertSubject(connection, entitlementTypeSubject);
+                v006InsertCorruptTrialBundle(connection, entitlementTypeSubject,
+                        entitlementTypeSubject, stalePolicyId, "TRIAL", stalePolicyId,
+                        "AI_SECONDS", 120, integrityBase, integrityBase,
+                        integrityBase.plusDays(7), integrityBase, integrityBase.plusDays(7),
+                        null, null, "pa6-entitlement-type-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        entitlementTypeSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-entitlement-type-other-" + UUID.randomUUID(), fingerprint);
+
+                // valid_from ≠ grant.granted_at (only; grant.granted_at = trial.granted_at).
+                v006InsertSubject(connection, validFromSubject);
+                v006InsertCorruptTrialBundle(connection, validFromSubject, validFromSubject,
+                        stalePolicyId, "TRIAL", stalePolicyId, "RECORDING_SECONDS", 120,
+                        integrityBase, integrityBase.plusSeconds(1), integrityBase.plusDays(7),
+                        integrityBase.plusSeconds(1), integrityBase.plusDays(7), null, null,
+                        "pa6-valid-from-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        validFromSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-valid-from-other-" + UUID.randomUUID(), fingerprint);
+
+                // grant.granted_at ≠ trial.granted_at.
+                v006InsertSubject(connection, grantTimeSubject);
+                v006InsertCorruptTrialBundle(connection, grantTimeSubject, grantTimeSubject,
+                        stalePolicyId, "TRIAL", stalePolicyId, "RECORDING_SECONDS", 120,
+                        integrityBase, integrityBase, integrityBase.plusDays(7),
+                        integrityBase.plusHours(1), integrityBase.plusDays(7), null, null,
+                        "pa6-grant-time-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        grantTimeSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-grant-time-other-" + UUID.randomUUID(), fingerprint);
+
+                // grant.expires_at ≠ trial.expires_at.
+                v006InsertSubject(connection, expiresAtSubject);
+                v006InsertCorruptTrialBundle(connection, expiresAtSubject, expiresAtSubject,
+                        stalePolicyId, "TRIAL", stalePolicyId, "RECORDING_SECONDS", 120,
+                        integrityBase, integrityBase, integrityBase.plusDays(3),
+                        integrityBase, integrityBase.plusDays(7), null, null,
+                        "pa6-expires-at-" + UUID.randomUUID());
+                expectIssueFirstTrialFailure(connection, "TRIAL_DATA_INTEGRITY",
+                        expiresAtSubject, "FIRST-TRIAL", stalePolicyId, "IVR_CONFIRM",
+                        "pa6-expires-at-other-" + UUID.randomUUID(), fingerprint);
+
+                afterRollbackTrialGrantId = granted.trialGrantId();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    subjectId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    otherSubjectId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    unitMismatchSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant "
+                            + "WHERE subject_id = ?", integritySubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    missingGrantSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    sourceTypeSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    sourceRefSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    entitlementTypeSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    validFromSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    grantTimeSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    expiresAtSubject)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                    subjectMismatchSubject)).isZero();
+            assertThat(afterRollbackTrialGrantId).isNotNull();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM platform.outbox_event "
+                            + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
+                    "trial_grant:" + afterRollbackTrialGrantId)).isZero();
+        }
+    }
+
+    private static String v006FormatUtcMicros(OffsetDateTime time) {
+        OffsetDateTime utc = time.withOffsetSameInstant(ZoneOffset.UTC);
+        return String.format(Locale.ROOT,
+                "%04d-%02d-%02dT%02d:%02d:%02d.%06dZ",
+                utc.getYear(), utc.getMonthValue(), utc.getDayOfMonth(),
+                utc.getHour(), utc.getMinute(), utc.getSecond(),
+                utc.getNano() / 1000);
+    }
+
+    private static void v006InsertCorruptTrialBundle(
+            Connection connection,
+            UUID trialSubjectId,
+            UUID grantSubjectId,
+            UUID policyId,
+            String sourceType,
+            UUID sourceRefId,
+            String entitlementType,
+            long grantedUnits,
+            OffsetDateTime grantValidFrom,
+            OffsetDateTime grantGrantedAt,
+            OffsetDateTime grantExpiresAt,
+            OffsetDateTime trialGrantedAt,
+            OffsetDateTime trialExpiresAt,
+            UUID orderId,
+            Integer installmentNo,
+            String actionEventId) throws SQLException {
+        UUID trialId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID balanceId = UUID.randomUUID();
+        switchLocalRole(connection, "entitlement_metering_owner");
+        if (orderId == null) {
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO entitlement_metering.entitlement_grant "
+                            + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                            + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256, "
+                            + "granted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}'::jsonb, ?, ?)",
+                    grantId, grantSubjectId, sourceType, sourceRefId, entitlementType,
+                    grantedUnits, grantValidFrom, grantExpiresAt, randomSha256(),
+                    grantGrantedAt))
+                    .isEqualTo(1);
+        } else {
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO entitlement_metering.entitlement_grant "
+                            + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                            + "granted_units, valid_from, expires_at, order_id, installment_no, "
+                            + "snapshot, snapshot_sha256, granted_at) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}'::jsonb, ?, ?)",
+                    grantId, grantSubjectId, sourceType, sourceRefId, entitlementType,
+                    grantedUnits, grantValidFrom, grantExpiresAt, orderId, installmentNo,
+                    randomSha256(), grantGrantedAt))
+                    .isEqualTo(1);
+        }
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.trial_grant "
+                        + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                        + "entitlement_grant_id, source_action_domain, source_action_event_id, "
+                        + "request_fingerprint, granted_at, expires_at) "
+                        + "VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', ?, ?, ?, ?)",
+                trialId, trialSubjectId, policyId, grantId, actionEventId, randomSha256(),
+                trialGrantedAt, trialExpiresAt))
+                .isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_balance "
+                        + "(id, grant_id, granted_units, reserved_units, consumed_units, status, "
+                        + "revision, updated_at) VALUES (?, ?, ?, 0, 0, 'AVAILABLE', 1, ?)",
+                balanceId, grantId, grantedUnits, trialGrantedAt))
+                .isEqualTo(1);
+        resetToMigrationIdentity(connection);
+    }
+
+    private static UUID v006InsertPurchaseOrderFixture(Connection connection, UUID employeeId)
+            throws SQLException {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID orderSubjectId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        switchLocalRole(connection, "customer_iam_role");
+        assertThat(insertCustomerAccount(connection, accountId, "PA6 Fix1 Purchase Customer"))
+                .isEqualTo(1);
+        switchLocalRole(connection, "organization_access_role");
+        assertThat(insertOrganization(connection, organizationId, "PA6 Fix1 Purchase Org"))
+                .isEqualTo(1);
+        switchLocalRole(connection, "subject_number_role");
+        assertThat(insertSubject(connection, orderSubjectId, "IVR")).isEqualTo(1);
+        switchLocalRole(connection, "catalog_order_role");
+        assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
+                .isEqualTo(1);
+        assertThat(insertCatalogVersion(connection, versionId, productId, 1, "DRAFT",
+                "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                "{\"plan\":\"pa6-fix1\"}", randomSha256(), employeeId, null, 1))
+                .isEqualTo(1);
+        assertThat(insertCatalogOffer(connection, offerId, versionId, "WEB", "pa6-fix1-token"))
+                .isEqualTo(1);
+        assertThat(insertCustomerOrder(connection, orderId,
+                "PA6FIX1" + UUID.randomUUID().toString().replace("-", ""),
+                accountId, organizationId, orderSubjectId, versionId, offerId,
+                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}", randomSha256(),
+                "pa6-fix1-token", "pa6-fix1-idem-" + UUID.randomUUID(), randomSha256(),
+                OffsetDateTime.now(ZoneOffset.UTC), null, null, 1))
+                .isEqualTo(1);
+        resetToMigrationIdentity(connection);
+        return orderId;
+    }
+
+    private static OffsetDateTime queryObjectOffset(
+            Connection connection, String sql, Object... parameters) throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(sql)) {
+            bind(prepared, parameters);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                assertThat(resultSet.next()).isTrue();
+                OffsetDateTime value = resultSet.getObject(1, OffsetDateTime.class);
+                assertThat(resultSet.next()).isFalse();
+                return value;
+            }
+        }
     }
 
     private static void exerciseV005IvrInsertsAsRuntimeRoleAndRollBack() throws Exception {
@@ -7591,8 +9807,8 @@ class PostgresContainerIT {
      * (no reservation), resolve, activation and object-payload/matching-receipt shapes
      * pass. Each probe is savepoint-isolated inside one rolled-back fixture transaction,
      * so the {@code (call_id, purpose)} and event identities stay unique and no
-     * committed residue remains. The V006 reservation FK stays absent, so a random UUID
-     * reservation reference is legal.
+     * committed residue remains. Legal DIRECT_AUTHORIZATION shapes reference a
+     * method-local real usage_reservation parent required by the V006 late FK.
      */
     private static void assertV005ErrataCheckRegressionProbes() throws Exception {
         UUID accountId = UUID.randomUUID();
@@ -7690,7 +9906,11 @@ class PostgresContainerIT {
                         UUID.randomUUID(), sessionId, callId, "evt-direct-" + UUID.randomUUID(),
                         fingerprint, ciphertext, hmac);
 
-                // Legal decision shapes (savepoint-isolated success probes).
+                // Legal decision shapes (savepoint-isolated success probes). The
+                // DIRECT_AUTHORIZATION legal shape requires a real late-FK parent
+                // reservation now that fk_ivr_decision_reservation exists.
+                UUID errataReservationId =
+                        v006InsertReservationParentFixture(connection, subjectId, callId);
                 Savepoint directSuccess = connection.setSavepoint("s1fix1-direct-success");
                 try {
                     assertThat(executeUpdate(
@@ -7704,7 +9924,7 @@ class PostgresContainerIT {
                                     + "?, ?, NULL, 'DIRECT_AUTHORIZED', '{}'::jsonb, ?, ?, 1, ?)",
                             UUID.randomUUID(), sessionId, callId,
                             "evt-direct-" + UUID.randomUUID(), fingerprint, ciphertext, hmac,
-                            UUID.randomUUID())).isEqualTo(1);
+                            errataReservationId)).isEqualTo(1);
                 } finally {
                     connection.rollback(directSuccess);
                 }
@@ -8479,7 +10699,7 @@ class PostgresContainerIT {
         usageRolesBySchema.put("ivr", List.of("ivr_owner", "ivr_role"));
         usageRolesBySchema.put("entitlement_metering", List.of(
                 "entitlement_metering_owner", "entitlement_metering_role",
-                "activation_consent_role", "ivr_role"));
+                "activation_consent_role", "ivr_role", "catalog_order_role"));
         usageRolesBySchema.put("activation_consent", List.of(
                 "activation_consent_owner", "activation_consent_role", "ivr_role",
                 "catalog_order_role"));
@@ -8491,12 +10711,14 @@ class PostgresContainerIT {
                 "subject_number_role", "catalog_order_role", "ivr_role"));
         usageRolesBySchema.put("subject_number", List.of(
                 "subject_number_owner", "subject_number_role",
-                "subject_identity_verification_role", "catalog_order_role", "ivr_role"));
+                "subject_identity_verification_role", "catalog_order_role", "ivr_role",
+                "entitlement_metering_role"));
         usageRolesBySchema.put("platform", List.of(
                 "platform_reliability_owner", "platform_reliability_role",
                 "platform_dispatcher_role", "customer_iam_role", "organization_access_role",
                 "operations_iam_role", "subject_number_role", "catalog_order_role", "ivr_role",
-                "entitlement_metering_role", "activation_consent_role"));
+                "entitlement_metering_owner", "entitlement_metering_role",
+                "activation_consent_role"));
         usageRolesBySchema.put("audit", List.of(
                 "audit_owner", "customer_iam_role", "organization_access_role",
                 "operations_iam_role", "subject_number_role",
@@ -8523,7 +10745,7 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "catalog_order_role", "activation_consent", "USAGE"))
                 .as("catalog_order_role activation_consent USAGE is granted at V004").isTrue();
         assertThat(hasSchema(connection, "catalog_order_role", "entitlement_metering", "USAGE"))
-                .as("catalog_order_role first entitlement_metering USAGE is V006").isFalse();
+                .as("catalog_order_role entitlement_metering USAGE is granted by V006").isTrue();
         assertThat(hasSchema(connection, "catalog_order_role", "ivr", "USAGE"))
                 .as("catalog_order_role ivr USAGE is not granted at V004").isFalse();
         assertThat(hasSchema(connection, "ivr_role", "ivr", "USAGE"))
@@ -8533,7 +10755,7 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
                 .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
         assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
-                .as("entitlement_metering_role subject USAGE is deferred to V006").isFalse();
+                .as("entitlement_metering_role subject USAGE is granted by V006").isTrue();
     }
 
     private static void assertV004OwnedAndCrossModuleGrants(Connection connection) throws SQLException {
@@ -8621,6 +10843,10 @@ class PostgresContainerIT {
                 List.of("id", "subject_id", "number_hmac", "status", "verified_at", "revision"));
         ivrCrossSelect.put("subject_number.subject_risk_state",
                 List.of("caller_number_binding_id", "risk_type", "state", "revision"));
+
+        Map<String, List<String>> meteringS1UniverseCrossSelect = new java.util.LinkedHashMap<>();
+        meteringS1UniverseCrossSelect.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "revision"));
 
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_version")).hasSize(12);
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_offer")).hasSize(3);
@@ -8711,6 +10937,8 @@ class PostgresContainerIT {
             List<String> catalogGrantedColumns =
                     catalogCrossSelect.getOrDefault(table, List.of());
             List<String> ivrGrantedColumns = ivrCrossSelect.getOrDefault(table, List.of());
+            List<String> meteringGrantedColumns =
+                    meteringS1UniverseCrossSelect.getOrDefault(table, List.of());
             for (String role : V004_ROLES) {
                 for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
                         "TRUNCATE", "REFERENCES", "TRIGGER")) {
@@ -8726,7 +10954,10 @@ class PostgresContainerIT {
                                 && catalogGrantedColumns.contains(column))
                                 || (role.equals("ivr_role")
                                         && privilege.equals("SELECT")
-                                        && ivrGrantedColumns.contains(column));
+                                        && ivrGrantedColumns.contains(column))
+                                || (role.equals("entitlement_metering_role")
+                                        && privilege.equals("SELECT")
+                                        && meteringGrantedColumns.contains(column));
                         assertThat(hasColumn(connection, role, table, column, privilege))
                                 .as("%s %s %s.%s", role, privilege, table, column)
                                 .isEqualTo(expectGrant);
@@ -8844,25 +11075,34 @@ class PostgresContainerIT {
         // F-PA4-AGG-01: the four S2 owner roles hold EXECUTE=false on all four S1
         // functions (accepted plan 6.6.4 "no owner receives a runtime EXECUTE grant",
         // 6.6.5 and 8.3). Signatures reuse the existing PLATFORM_FUNCTIONS and
-        // AUDIT_FUNCTION constants whose positive runtime grants are asserted above;
-        // no live over-grant exists in V004, so this is fail-closed evidence only.
+        // AUDIT_FUNCTION constants whose positive runtime grants are asserted above.
+        // V006 F-02 later grants platform.outbox_append EXECUTE to
+        // entitlement_metering_owner only (asserted true below); the negative matrix
+        // therefore skips that one role/function pair while remaining fail-closed for
+        // idempotency, audit, and the other three owners.
         for (String role : List.of("catalog_order_owner", "ivr_owner",
                 "entitlement_metering_owner", "activation_consent_owner")) {
             for (String function : PLATFORM_FUNCTIONS) {
+                if ("entitlement_metering_owner".equals(role)
+                        && function.startsWith("platform.outbox_append(")) {
+                    continue;
+                }
                 assertThat(hasFunction(connection, role, function, "EXECUTE"))
                         .as("%s must not EXECUTE %s", role, function).isFalse();
             }
             assertThat(hasFunction(connection, role, AUDIT_FUNCTION, "EXECUTE"))
                     .as("%s must not EXECUTE audit.append_fact", role).isFalse();
         }
-        // entitlement_metering_owner has no platform capability
-        assertThat(hasSchema(connection, "entitlement_metering_owner", "platform", "USAGE")).isFalse();
+        // F-02: entitlement_metering_owner holds internal platform USAGE + outbox_append
+        // EXECUTE so nested issue_first_trial can append; the other S2 owner roles and
+        // PUBLIC still hold false above.
+        assertThat(hasSchema(connection, "entitlement_metering_owner", "platform", "USAGE")).isTrue();
         assertThat(hasFunction(connection, "entitlement_metering_owner",
                 "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)", "EXECUTE"))
-                .isFalse();
+                .isTrue();
         assertThat(queryLong(
                 connection, "SELECT count(*) FROM pg_proc WHERE proname = 'issue_first_trial'"))
-                .as("no issue_first_trial at V004").isZero();
+                .as("issue_first_trial is present after V006").isEqualTo(1);
     }
 
     private static void assertV003SchemaUsageExactAndNoCreate(Connection connection) throws SQLException {
@@ -9908,14 +12148,18 @@ class PostgresContainerIT {
                         .containsExactly("activation_consent", "entitlement_metering", "ivr");
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                                + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
-                                + "AND c.relkind = 'r'"))
-                        .as("V005 ivr tables exist; entitlement/consent tables absent")
+                                + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r'"))
+                        .as("exactly seven entitlement_metering tables after V006")
+                        .isEqualTo(7);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
+                        .as("activation_consent tables remain absent")
                         .isZero();
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                 + "WHERE n.nspname = 'ivr' AND c.relkind = 'r'"))
-                        .as("V005 ivr tables exist; entitlement/consent tables absent")
+                        .as("V005 ivr tables exist")
                         .isEqualTo(6);
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
@@ -12444,15 +14688,25 @@ class PostgresContainerIT {
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
-                // One TRUNCATE covering all seven catalog_order tables in a single statement:
-                // the only way to remove committed append-only fixtures; test-fixture hygiene
-                // only. Runtime TRUNCATE denial remains asserted by the S1 ACL matrix.
+                // One TRUNCATE covering all seven catalog_order tables, ivr.ivr_decision
+                // (late fk_ivr_decision_reservation references usage_reservation), and the
+                // V006 entitlement_metering tables, so the statement remains legal after
+                // V006 FKs land. Test-fixture hygiene only. Runtime TRUNCATE denial
+                // remains asserted by the S1 ACL matrix.
                 execute(connection,
                         "TRUNCATE TABLE catalog_order.catalog_product, "
                                 + "catalog_order.catalog_version, catalog_order.catalog_offer, "
                                 + "catalog_order.catalog_benefit_line, "
                                 + "catalog_order.customer_order, catalog_order.payment_order, "
-                                + "catalog_order.payment_event");
+                                + "catalog_order.payment_event, "
+                                + "ivr.ivr_decision, "
+                                + "entitlement_metering.usage_fact, "
+                                + "entitlement_metering.usage_reservation, "
+                                + "entitlement_metering.entitlement_balance, "
+                                + "entitlement_metering.entitlement_issuance, "
+                                + "entitlement_metering.trial_grant, "
+                                + "entitlement_metering.entitlement_grant, "
+                                + "entitlement_metering.trial_policy_version");
                 // FK-safe parent deletes.
                 executeUpdate(connection,
                         "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
@@ -13698,7 +15952,7 @@ class PostgresContainerIT {
                         "tampered-evt-" + UUID.randomUUID(), eventId);
 
                 // Legal decision shapes: inbound resolve, activation, ENTER_CALLEE,
-                // DIAL_TASK_CALLEE + random reservationUUID (no FK), direct success and
+                // DIAL_TASK_CALLEE + real late-FK parent reservation, direct success and
                 // refusal. DTMF/ENTER_CALLEE remain shapes only (service-owned input).
                 assertThat(executeUpdate(connection,
                         "INSERT INTO ivr.ivr_decision "
@@ -13731,7 +15985,8 @@ class PostgresContainerIT {
                                 + "?, ?, 1)",
                         enterCalleeDecisionId, secondSessionId, otherCallId, fingerprint,
                         v005Ciphertext(), sha)).isEqualTo(1);
-                UUID randomReservationId = UUID.randomUUID();
+                UUID dialReservationId =
+                        v006InsertReservationParentFixture(connection, subjectId, otherCallId);
                 assertThat(executeUpdate(connection,
                         "INSERT INTO ivr.ivr_decision "
                                 + "(id, session_id, call_id, purpose, source_event_domain, "
@@ -13743,20 +15998,21 @@ class PostgresContainerIT {
                                 + "?, ?, 1, ?)",
                         dialDecisionId, secondSessionId, otherCallId, "evt-dial-"
                                 + UUID.randomUUID(), fingerprint, v005Ciphertext(), sha,
-                        randomReservationId)).isEqualTo(1);
+                        dialReservationId)).isEqualTo(1);
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM ivr.ivr_decision WHERE id = ? AND reservation_id = ?",
-                        dialDecisionId, randomReservationId))
-                        .as("DIAL_TASK_CALLEE reservation UUID has no FK parent").isEqualTo(1);
+                        dialDecisionId, dialReservationId))
+                        .as("DIAL_TASK_CALLEE reservation links to real late-FK parent")
+                        .isEqualTo(1);
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_constraint c "
                                 + "JOIN pg_class r ON r.oid = c.conrelid "
                                 + "JOIN pg_namespace n ON n.oid = r.relnamespace "
                                 + "WHERE n.nspname = 'ivr' AND r.relname = 'ivr_decision' "
-                                + "AND c.contype = 'f' "
-                                + "AND pg_get_constraintdef(c.oid) LIKE '%reservation%'"))
-                        .as("reservation_id is intentional noFK").isZero();
-                UUID directReservationId = UUID.randomUUID();
+                                + "AND c.conname = 'fk_ivr_decision_reservation'"))
+                        .as("late fk_ivr_decision_reservation is present").isEqualTo(1);
+                UUID directReservationId =
+                        v006InsertReservationParentFixture(connection, subjectId, callId);
                 assertThat(executeUpdate(connection,
                         "INSERT INTO ivr.ivr_decision "
                                 + "(id, session_id, call_id, purpose, source_event_domain, "
@@ -14386,7 +16642,8 @@ class PostgresContainerIT {
                         .containsExactlyInAnyOrderElementsOf(v005ExpectedFkNames());
                 assertThat(fkProbed).hasSize(15);
 
-                // Whole FK map recheck against the frozen V005_FK_DEFS inventory.
+                // Whole FK map recheck against the frozen V005_FK_DEFS inventory
+                // (the late fk_ivr_decision_reservation is asserted separately).
                 List<String> fkRows = new ArrayList<>();
                 try (PreparedStatement prepared = connection.prepareStatement(
                         "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
@@ -14398,6 +16655,7 @@ class PostgresContainerIT {
                                 + "JOIN pg_class r ON r.oid = c.conrelid "
                                 + "JOIN pg_namespace n ON n.oid = r.relnamespace "
                                 + "WHERE n.nspname = 'ivr' AND c.contype = 'f' "
+                                + "AND c.conname <> 'fk_ivr_decision_reservation' "
                                 + "ORDER BY c.conname")) {
                     try (ResultSet resultSet = prepared.executeQuery()) {
                         while (resultSet.next()) {
@@ -14408,25 +16666,41 @@ class PostgresContainerIT {
                 assertThat(fkRows).containsExactlyInAnyOrderElementsOf(V005_FK_DEFS);
                 assertThat(V005_FK_DEFS).hasSize(15);
 
-                // Reservation noFK and no entitlement/activation tables.
-                assertThat(queryLong(connection,
-                        "SELECT count(*) FROM pg_constraint c "
+                // Late fk_ivr_decision_reservation is present with exact definition.
+                List<String> lateFkRows = new ArrayList<>();
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                                + "|| CASE WHEN c.confdeltype = 'r' THEN 'rrs' ELSE "
+                                + "c.confdeltype::text END "
+                                + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' "
+                                + "|| c.convalidated "
+                                + "FROM pg_constraint c "
                                 + "JOIN pg_class r ON r.oid = c.conrelid "
                                 + "JOIN pg_namespace n ON n.oid = r.relnamespace "
-                                + "WHERE n.nspname = 'ivr' AND c.contype = 'f' "
-                                + "AND pg_get_constraintdef(c.oid) LIKE '%reservation%'"))
-                        .as("no reservation FK exists in V005").isZero();
-                // Schema-level zero-table assertion (pg_class/pg_namespace), consistent with
-                // assertNoV006PlusObjects: the entitlement_metering/activation_consent tables
-                // would live in their own schemas, never inside 'ivr', so a table_schema='ivr'
-                // filter would prove nothing.
+                                + "WHERE n.nspname = 'ivr' "
+                                + "AND c.conname = 'fk_ivr_decision_reservation'")) {
+                    try (ResultSet resultSet = prepared.executeQuery()) {
+                        while (resultSet.next()) {
+                            lateFkRows.add(resultSet.getString(1));
+                        }
+                    }
+                }
+                assertThat(lateFkRows).containsExactly(
+                        "fk_ivr_decision_reservation|FOREIGN KEY (reservation_id) REFERENCES "
+                                + "entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT "
+                                + "ON DELETE RESTRICT|rrs|false|false|true");
+
+                // Seven entitlement_metering tables and zero activation_consent tables.
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c "
                                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
-                                + "WHERE n.nspname IN ('entitlement_metering','activation_consent') "
-                                + "AND c.relkind = 'r'"))
-                        .as("no entitlement/activation tables in V005 (schema-level)")
-                        .isZero();
+                                + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r'"))
+                        .as("exactly seven entitlement_metering tables").isEqualTo(7);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_class c "
+                                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
+                        .as("activation_consent tables remain absent").isZero();
 
                 // Representative unambiguous parent-delete RESTRICT probes. Each fixture
                 // attaches exactly one child FK so the reported constraint is exact.
@@ -14637,6 +16911,39 @@ class PostgresContainerIT {
                 "INSERT INTO subject_number.business_subject "
                         + "(id, source, owner_account_id) VALUES (?, 'IVR', ?)",
                 subjectId, accountId)).isEqualTo(1);
+    }
+
+    /**
+     * PA6 V006 S1: bounded method-local usage_reservation parent for late-FK legal
+     * decision fixtures. Creates grant + balance + reservation as the table owner and
+     * returns the reservation id. Never deletes or rewrites another method's rows.
+     */
+    private static UUID v006InsertReservationParentFixture(
+            Connection connection, UUID subjectId, String callId) throws SQLException {
+        UUID grantId = UUID.randomUUID();
+        UUID balanceId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_grant "
+                        + "(id, subject_id, source_type, source_ref_id, entitlement_type, "
+                        + "granted_units, valid_from, expires_at, snapshot, snapshot_sha256, "
+                        + "granted_at) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 600, now(), "
+                        + "now() + interval '1 day', '{}'::jsonb, ?, now())",
+                grantId, subjectId, UUID.randomUUID(), randomSha256())).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_balance "
+                        + "(id, grant_id, granted_units) VALUES (?, ?, 600)",
+                balanceId, grantId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.usage_reservation "
+                        + "(id, call_id, balance_id, subject_id, authorized_units, "
+                        + "authorization_expires_at) "
+                        + "VALUES (?, ?, ?, ?, 10, now() + interval '30 seconds')",
+                reservationId, callId, balanceId, subjectId)).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+        return reservationId;
     }
 
     private static void commitV005RaceParents(
@@ -15244,12 +17551,21 @@ class PostgresContainerIT {
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
-                // One TRUNCATE covering all six ivr tables in a single statement: the only
-                // way to remove committed append-only fixtures; test-fixture hygiene only.
-                // Runtime TRUNCATE denial remains asserted by the S1 ACL matrix.
+                // One TRUNCATE covering all six ivr tables plus the V006
+                // entitlement_metering tables that FK-reference call_record (added by the
+                // late fk_ivr_decision_reservation / fk_usage_*_call constraints), so the
+                // statement remains legal after V006. Test-fixture hygiene only. Runtime
+                // TRUNCATE denial remains asserted by the S1 ACL matrix.
                 execute(connection,
                         "TRUNCATE TABLE ivr.ivr_decision, ivr.call_event, ivr.call_leg, "
-                                + "ivr.call_record, ivr.inbound_session, ivr.outbound_call_task");
+                                + "ivr.call_record, ivr.inbound_session, ivr.outbound_call_task, "
+                                + "entitlement_metering.usage_fact, "
+                                + "entitlement_metering.usage_reservation, "
+                                + "entitlement_metering.entitlement_balance, "
+                                + "entitlement_metering.entitlement_issuance, "
+                                + "entitlement_metering.trial_grant, "
+                                + "entitlement_metering.entitlement_grant, "
+                                + "entitlement_metering.trial_policy_version");
                 // FK-safe parent deletes (no CASCADE, no runtime grants).
                 executeUpdate(connection,
                         "DELETE FROM subject_number.caller_number_binding WHERE id = ?", bindingId);
