@@ -43,7 +43,7 @@ import org.testcontainers.utility.DockerImageName;
  * privilege matrices and last-enabled-admin serialization protocol (transient SQL);
  * V003-V005 catalog/ACL and database backstop evidence; and PA6 V006 S1 exact
  * entitlement_metering inventory/ACL plus issue_first_trial GRANTED/REPLAY/
- * ALREADY_GRANTED/TRIAL_* database semantics. Exactly 41 container methods. There is
+ * ALREADY_GRANTED/TRIAL_* database semantics. Exactly 45 container methods. There is
  * no skip path: an unavailable Docker daemon, failed image pull, failed container
  * start, JDBC failure, Flyway failure or assertion failure fails the Maven build.
  * The password is generated per JVM run and never persisted.
@@ -3394,6 +3394,19 @@ class PostgresContainerIT {
     private static UUID queryUuid(Connection connection, String sql, Object... parameters)
             throws SQLException {
         return UUID.fromString(queryString(connection, sql, parameters));
+    }
+
+    private static void collectUuids(
+            Connection connection, List<UUID> target, String sql, Object... parameters)
+            throws SQLException {
+        try (PreparedStatement prepared = connection.prepareStatement(sql)) {
+            bind(prepared, parameters);
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                while (resultSet.next()) {
+                    target.add(resultSet.getObject(1, UUID.class));
+                }
+            }
+        }
     }
 
     private static void assertSixTableDefaultsAndConditionalRevisions() throws Exception {
@@ -8939,6 +8952,19 @@ class PostgresContainerIT {
                 expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
                         subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
                         fingerprint.toUpperCase(Locale.ROOT));
+                // SQL NULL probes for the remaining three non-null arguments: each is
+                // savepoint-bounded, expects exact P0001 TRIAL_ARGUMENT_INVALID and
+                // creates no trial/grant/balance/Outbox rows.
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, null, policyId, "IVR_CONFIRM", actionEventId, fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, null, actionEventId, fingerprint);
+                expectIssueFirstTrialFailure(connection, "TRIAL_ARGUMENT_INVALID",
+                        subjectId, "FIRST-TRIAL", policyId, "IVR_CONFIRM", null, fingerprint);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                        subjectId))
+                        .as("NULL-argument probes create no trial row").isZero();
                 expectIssueFirstTrialFailure(connection, "TRIAL_CAMPAIGN_INVALID",
                         subjectId, "OTHER-TRIAL", policyId, "IVR_CONFIRM", actionEventId,
                         fingerprint);
@@ -8967,6 +8993,51 @@ class PostgresContainerIT {
                 expectIssueFirstTrialFailure(connection, "TRIAL_POLICY_NOT_FOUND",
                         subjectId, "FIRST-TRIAL", disabledPolicyId, "IVR_CONFIRM",
                         actionEventId, fingerprint);
+
+                // Orphan subject with otherwise valid policy/arguments reaches the native
+                // FK backstop at the first grant write: the SECURITY DEFINER owner
+                // intentionally has no cross-module subject SELECT privilege, so subject
+                // existence is enforced by fk_entitlement_grant_subject (native 23503),
+                // never relabeled to a TRIAL_* code.
+                UUID orphanSubjectId = UUID.randomUUID();
+                Savepoint orphanSavepoint = connection.setSavepoint();
+                try {
+                    try {
+                        callIssueFirstTrial(connection, orphanSubjectId, "FIRST-TRIAL", policyId,
+                                "IVR_CONFIRM", "pa6-s1-orphan-" + UUID.randomUUID(), fingerprint);
+                        fail("expected native 23503 for an orphan subject at first grant write");
+                    } catch (SQLException exception) {
+                        assertThat(exception.getSQLState())
+                                .as("orphan subject is native FK 23503")
+                                .isEqualTo("23503");
+                        assertThat(exception.getMessage())
+                                .contains("fk_entitlement_grant_subject");
+                    }
+                } finally {
+                    connection.rollback(orphanSavepoint);
+                    resetToMigrationIdentity(connection);
+                }
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE subject_id = ?",
+                        orphanSubjectId))
+                        .as("orphan-subject probe leaves no trial row").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_grant "
+                                + "WHERE subject_id = ?", orphanSubjectId))
+                        .as("orphan-subject probe leaves no grant row").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.entitlement_balance "
+                                + "WHERE grant_id IN (SELECT id FROM "
+                                + "entitlement_metering.entitlement_grant WHERE subject_id = ?)",
+                        orphanSubjectId))
+                        .as("orphan-subject probe leaves no balance row").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM platform.outbox_event o "
+                                + "WHERE o.event_domain = 'ACTIVATION' "
+                                + "AND o.event_type = 'FIRST_TRIAL_GRANTED' "
+                                + "AND o.payload_redacted->>'subjectId' = ?::text",
+                        orphanSubjectId))
+                        .as("orphan-subject probe leaves no Outbox row").isZero();
 
                 // GRANTED.
                 IssueFirstTrialResult granted = callIssueFirstTrial(connection, subjectId,
@@ -10070,7 +10141,9 @@ class PostgresContainerIT {
                         "SELECT status FROM entitlement_metering.entitlement_balance WHERE id = ?",
                         controlBalanceId)).isEqualTo("AVAILABLE");
 
-                // Issuance state shape and terminal ISSUED.
+                // Issuance state shape: V006 enforces the row/state shapes (PENDING and the
+                // ISSUED-with-grant shape); the PENDING -> ISSUED terminal lifecycle rule
+                // itself is a future application-service rule, not a DB transition guard.
                 UUID orderId = UUID.randomUUID();
                 switchLocalRole(connection, "operations_iam_role");
                 assertThat(insertEmployee(connection, UUID.randomUUID(), randomSha256(),
@@ -10084,13 +10157,17 @@ class PostgresContainerIT {
                 assertThat(queryString(connection,
                         "SELECT status FROM entitlement_metering.entitlement_issuance WHERE id = ?",
                         issuanceId)).isEqualTo("PENDING");
-                // Terminal ISSUED requires grant_id + issued_at.
+                // The ISSUED state shape requires grant_id + issued_at.
                 assertThat(executeUpdate(connection,
                         "UPDATE entitlement_metering.entitlement_issuance "
                                 + "SET status = 'ISSUED', grant_id = ?, issued_at = now(), "
                                 + "updated_at = now(), revision = revision + 1 WHERE id = ?",
                         grantId, issuanceId)).isEqualTo(1);
-                // ISSUED→FAILED is rejected by state shape.
+                // Moving an ISSUED row (grant_id + issued_at set) to FAILED violates the
+                // state shape (ck_issuance_state_shape) because those columns must be null
+                // unless status = 'ISSUED'; this is a row-shape check, not a DB-owned
+                // legal-transition freeze — ISSUED terminality is a future
+                // application-service lifecycle rule.
                 expectSqlFailure(connection, "23514", "ck_issuance_state_shape",
                         "UPDATE entitlement_metering.entitlement_issuance "
                                 + "SET status = 'FAILED', last_error_code = 'X', "
@@ -11096,15 +11173,28 @@ class PostgresContainerIT {
                                     + "WHERE grant_id IN (SELECT id FROM "
                                     + "entitlement_metering.entitlement_grant WHERE subject_id = ?)",
                             subjectId)).isZero();
-                    // Zero method-local Outbox rows: no ACTIVATION FIRST_TRIAL_GRANTED event
-                    // may reference any trial_grant of this subject.
+                    // Zero method-local Outbox rows detected via payload identity, not by
+                    // joining through the rolled-back trial row: no ACTIVATION
+                    // FIRST_TRIAL_GRANTED event carries this subject's payload subjectId.
                     assertThat(queryLong(connection,
                             "SELECT count(*) FROM platform.outbox_event o "
                                     + "WHERE o.event_domain = 'ACTIVATION' "
                                     + "AND o.event_type = 'FIRST_TRIAL_GRANTED' "
-                                    + "AND EXISTS (SELECT 1 FROM entitlement_metering.trial_grant tg "
-                                    + "WHERE o.aggregate_id = tg.id AND tg.subject_id = ?)",
-                            subjectId)).isZero();
+                                    + "AND o.payload_redacted->>'subjectId' = ?::text",
+                            subjectId))
+                            .as("no Outbox row carries this subject's payload identity")
+                            .isZero();
+                    // Dedupe-key facts are also bounded: the function would have used
+                    // trial_grant:<new-uuid>, so no ACTIVATION row may exist whose dedupe
+                    // key references this method-local subject window at all.
+                    assertThat(queryLong(connection,
+                            "SELECT count(*) FROM platform.outbox_event o "
+                                    + "WHERE o.event_domain = 'ACTIVATION' "
+                                    + "AND o.event_type = 'FIRST_TRIAL_GRANTED' "
+                                    + "AND o.payload_redacted->>'trialPolicyVersionId' = ?::text",
+                            policyId))
+                            .as("no Outbox row carries this policy's payload identity")
+                            .isZero();
                     assertThat(hasFunction(connection, "entitlement_metering_owner",
                             "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
                             "EXECUTE"))
@@ -11163,6 +11253,14 @@ class PostgresContainerIT {
                                 + "WHERE grant_id IN (SELECT id FROM "
                                 + "entitlement_metering.entitlement_grant WHERE subject_id = ?)",
                         subjectId)).isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM platform.outbox_event o "
+                                + "WHERE o.event_domain = 'ACTIVATION' "
+                                + "AND o.event_type = 'FIRST_TRIAL_GRANTED' "
+                                + "AND o.payload_redacted->>'subjectId' = ?::text",
+                        subjectId))
+                        .as("whole-transaction failure after trial writes leaves no Outbox row")
+                        .isZero();
             }
 
             // Part C: committed GRANTED observation + REPLAY/ALREADY add nothing + cleanup.
@@ -11210,14 +11308,66 @@ class PostgresContainerIT {
                         "SELECT count(*) FROM platform.outbox_event "
                                 + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?",
                         outboxKey)).isEqualTo(1);
+                // Exact frozen Outbox identity, exact payload field set/values, persisted
+                // timestamp tokens and exact canonical SHA-256 (reusing the S1 oracle),
+                // not just a 64-hex shape.
+                String aggregateType = queryString(observe,
+                        "SELECT aggregate_type FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", outboxKey);
+                String eventType = queryString(observe,
+                        "SELECT event_type FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", outboxKey);
+                UUID aggregateId = queryUuid(observe,
+                        "SELECT aggregate_id FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", outboxKey);
+                String payload = queryString(observe,
+                        "SELECT payload_redacted::text FROM platform.outbox_event "
+                                + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", outboxKey);
                 payloadSha = queryString(observe,
                         "SELECT payload_sha256 FROM platform.outbox_event "
                                 + "WHERE event_domain = 'ACTIVATION' AND dedupe_key = ?", outboxKey);
-                assertThat(payloadSha).matches("^[0-9a-f]{64}$");
+                assertThat(aggregateType).isEqualTo("TRIAL_GRANT");
+                assertThat(aggregateId).isEqualTo(trialGrantId);
+                assertThat(eventType).isEqualTo("FIRST_TRIAL_GRANTED");
+                Map<String, String> payloadTokens = v006ParseFlatJsonTokens(payload);
+                assertThat(payloadTokens.keySet())
+                        .as("exact Outbox payload field set")
+                        .containsExactlyInAnyOrderElementsOf(V006_OUTBOX_CANONICAL_KEYS);
+                assertThat(payloadTokens.get("campaignKey")).isEqualTo("\"FIRST-TRIAL\"");
+                assertThat(payloadTokens.get("trialGrantId"))
+                        .isEqualTo("\"" + trialGrantId + "\"");
+                assertThat(payloadTokens.get("entitlementGrantId"))
+                        .isEqualTo("\"" + grantId + "\"");
+                assertThat(payloadTokens.get("entitlementBalanceId"))
+                        .isEqualTo("\"" + balanceId + "\"");
+                assertThat(payloadTokens.get("subjectId")).isEqualTo("\"" + subjectId + "\"");
+                assertThat(payloadTokens.get("trialPolicyVersionId"))
+                        .isEqualTo("\"" + policyId + "\"");
+                assertThat(payloadTokens.get("grantedUnits")).isEqualTo("600");
                 OffsetDateTime persisted = queryObjectOffset(observe,
                         "SELECT granted_at FROM entitlement_metering.trial_grant WHERE id = ?",
                         trialGrantId);
                 assertThat(persisted).isEqualTo(grantedAt);
+                OffsetDateTime grantValidFrom = queryObjectOffset(observe,
+                        "SELECT valid_from FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        grantId);
+                OffsetDateTime grantExpiresAt = queryObjectOffset(observe,
+                        "SELECT expires_at FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                        grantId);
+                // F-01/R-C pattern: payload timestamp tokens equal persisted facts in the
+                // same UTC microsecond format the function writes.
+                assertThat(payloadTokens.get("validFrom"))
+                        .as("Outbox validFrom equals persisted grant.valid_from")
+                        .isEqualTo("\"" + v006FormatUtcMicros(grantValidFrom) + "\"");
+                assertThat(payloadTokens.get("expiresAt"))
+                        .as("Outbox expiresAt equals persisted grant.expires_at")
+                        .isEqualTo("\"" + v006FormatUtcMicros(grantExpiresAt) + "\"");
+                assertThat(payloadTokens.get("grantedAt"))
+                        .as("Outbox grantedAt equals persisted trial.granted_at")
+                        .isEqualTo("\"" + v006FormatUtcMicros(persisted) + "\"");
+                assertThat(v006CanonicalOutboxSha256(payload))
+                        .as("stored payload_sha256 equals independent Java canonical SHA-256")
+                        .isEqualTo(payloadSha);
             }
 
             try (Connection connection = openConnection()) {
@@ -11666,10 +11816,12 @@ class PostgresContainerIT {
         UUID subjectId = UUID.randomUUID();
         UUID grantId = UUID.randomUUID();
         UUID balanceId = UUID.randomUUID();
+        UUID trialId = UUID.randomUUID();
         OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
         rows.subjectIds.add(subjectId);
         rows.grantIds.add(grantId);
         rows.balanceIds.add(balanceId);
+        rows.trialGrantIds.add(trialId);
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
@@ -11677,6 +11829,19 @@ class PostgresContainerIT {
                 v006S2InsertGrantAsOwner(connection, grantId, subjectId, policyId, 600L,
                         base, base, base.plusDays(7));
                 v006S2InsertBalanceAsOwner(connection, balanceId, grantId, 600L);
+                // Real method-local trial_grant linked to the committed grant/balance so
+                // the savepoint evidence observes a surviving trial row, not just
+                // grant/balance shapes.
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO entitlement_metering.trial_grant "
+                                + "(id, subject_id, campaign_key, trial_policy_version_id, "
+                                + "entitlement_grant_id, source_action_domain, "
+                                + "source_action_event_id, request_fingerprint, granted_at, "
+                                + "expires_at) VALUES (?, ?, 'FIRST-TRIAL', ?, ?, 'IVR_CONFIRM', "
+                                + "?, ?, ?, ?)",
+                        trialId, subjectId, policyId, grantId,
+                        "pa6-s2-cat2-" + UUID.randomUUID(), randomSha256(), base,
+                        base.plusDays(7))).isEqualTo(1);
                 connection.commit();
             } catch (SQLException | RuntimeException exception) {
                 connection.rollback();
@@ -11706,6 +11871,11 @@ class PostgresContainerIT {
                 connection.rollback(savepoint);
                 resetToMigrationIdentity(connection);
                 // Committed trial/grant/balance still visible on this connection.
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM entitlement_metering.trial_grant WHERE id = ?",
+                        trialId))
+                        .as("committed trial_grant survives the failed reservation savepoint")
+                        .isEqualTo(1);
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
                         grantId)).isEqualTo(1);
@@ -16937,29 +17107,73 @@ class PostgresContainerIT {
     private static void cleanupV004ConcurrentFixtures(
             UUID accountId, UUID organizationId, UUID subjectId, UUID employeeId)
             throws SQLException {
+        // Scoped, FK-safe cleanup rooted only at this method's parent ids: no TRUNCATE,
+        // no CASCADE, no unscoped DELETE, no session_replication_role and no global
+        // trigger disable. Collect the exact method-local child ids first, delete in
+        // dependency order, and restore the two named append-only triggers in the same
+        // transaction. Any error rolls back deletes and trigger state and fails the test.
+        List<UUID> productIds = new ArrayList<>();
+        List<UUID> versionIds = new ArrayList<>();
+        List<UUID> offerIds = new ArrayList<>();
+        List<UUID> orderIds = new ArrayList<>();
+        List<UUID> paymentOrderIds = new ArrayList<>();
+        List<UUID> paymentEventIds = new ArrayList<>();
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
-                // One TRUNCATE covering all seven catalog_order tables, ivr.ivr_decision
-                // (late fk_ivr_decision_reservation references usage_reservation), and the
-                // V006 entitlement_metering tables, so the statement remains legal after
-                // V006 FKs land. Test-fixture hygiene only. Runtime TRUNCATE denial
-                // remains asserted by the S1 ACL matrix.
+                collectUuids(connection, productIds,
+                        "SELECT id FROM catalog_order.catalog_product WHERE id IN "
+                                + "(SELECT product_id FROM catalog_order.catalog_version "
+                                + "WHERE created_by_employee_id = ?)", employeeId);
+                collectUuids(connection, versionIds,
+                        "SELECT id FROM catalog_order.catalog_version "
+                                + "WHERE created_by_employee_id = ?", employeeId);
+                collectUuids(connection, offerIds,
+                        "SELECT id FROM catalog_order.catalog_offer WHERE catalog_version_id IN "
+                                + "(SELECT id FROM catalog_order.catalog_version "
+                                + "WHERE created_by_employee_id = ?)", employeeId);
+                collectUuids(connection, orderIds,
+                        "SELECT id FROM catalog_order.customer_order WHERE account_id = ?",
+                        accountId);
+                collectUuids(connection, paymentOrderIds,
+                        "SELECT id FROM catalog_order.payment_order WHERE order_id IN "
+                                + "(SELECT id FROM catalog_order.customer_order WHERE account_id = ?)",
+                        accountId);
+                collectUuids(connection, paymentEventIds,
+                        "SELECT id FROM catalog_order.payment_event WHERE payment_order_id IN "
+                                + "(SELECT id FROM catalog_order.payment_order WHERE order_id IN "
+                                + "(SELECT id FROM catalog_order.customer_order WHERE account_id = ?))",
+                        accountId);
                 execute(connection,
-                        "TRUNCATE TABLE catalog_order.catalog_product, "
-                                + "catalog_order.catalog_version, catalog_order.catalog_offer, "
-                                + "catalog_order.catalog_benefit_line, "
-                                + "catalog_order.customer_order, catalog_order.payment_order, "
-                                + "catalog_order.payment_event, "
-                                + "ivr.ivr_decision, "
-                                + "entitlement_metering.usage_fact, "
-                                + "entitlement_metering.usage_reservation, "
-                                + "entitlement_metering.entitlement_balance, "
-                                + "entitlement_metering.entitlement_issuance, "
-                                + "entitlement_metering.trial_grant, "
-                                + "entitlement_metering.entitlement_grant, "
-                                + "entitlement_metering.trial_policy_version");
-                // FK-safe parent deletes.
+                        "ALTER TABLE catalog_order.payment_event "
+                                + "DISABLE TRIGGER trg_payment_event_immutable");
+                execute(connection,
+                        "ALTER TABLE catalog_order.catalog_product "
+                                + "DISABLE TRIGGER trg_catalog_product_immutable");
+                for (UUID id : paymentEventIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM catalog_order.payment_event WHERE id = ?", id);
+                }
+                for (UUID id : paymentOrderIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM catalog_order.payment_order WHERE id = ?", id);
+                }
+                for (UUID id : orderIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM catalog_order.customer_order WHERE id = ?", id);
+                }
+                for (UUID id : offerIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM catalog_order.catalog_offer WHERE id = ?", id);
+                }
+                for (UUID id : versionIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM catalog_order.catalog_version WHERE id = ?", id);
+                }
+                for (UUID id : productIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM catalog_order.catalog_product WHERE id = ?", id);
+                }
                 executeUpdate(connection,
                         "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
                 executeUpdate(connection,
@@ -16969,42 +17183,77 @@ class PostgresContainerIT {
                         "DELETE FROM operations_iam.employee_account WHERE id = ?", employeeId);
                 executeUpdate(connection,
                         "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                execute(connection,
+                        "ALTER TABLE catalog_order.payment_event "
+                                + "ENABLE TRIGGER trg_payment_event_immutable");
+                execute(connection,
+                        "ALTER TABLE catalog_order.catalog_product "
+                                + "ENABLE TRIGGER trg_catalog_product_immutable");
+                for (String[] qualified : new String[][] {
+                        {"catalog_order", "payment_event", "trg_payment_event_immutable"},
+                        {"catalog_order", "catalog_product", "trg_catalog_product_immutable"}}) {
+                    assertThat(queryString(connection,
+                            "SELECT tgenabled FROM pg_trigger t "
+                                    + "JOIN pg_class c ON c.oid = t.tgrelid "
+                                    + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                    + "WHERE n.nspname = ? AND c.relname = ? AND t.tgname = ?",
+                            qualified[0], qualified[1], qualified[2]))
+                            .as("trigger %s.%s restored to enabled/origin",
+                                    qualified[0], qualified[2])
+                            .isEqualTo("O");
+                }
                 connection.commit();
             } catch (SQLException | RuntimeException exception) {
-                connection.rollback();
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    exception.addSuppressed(rollbackFailure);
+                }
                 throw exception;
             }
         }
 
-        try (Connection connection = openConnection()) {
-            // After the single migration-identity TRUNCATE, all seven catalog_order tables
-            // are empty (this method is the only committed catalog writer; sibling methods
-            // roll back), and every method-local V002/V003 parent UUID is gone.
-            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.catalog_product"))
-                    .as("catalog_product empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.catalog_version"))
-                    .as("catalog_version empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.catalog_offer"))
-                    .as("catalog_offer empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection,
-                    "SELECT count(*) FROM catalog_order.catalog_benefit_line"))
-                    .as("catalog_benefit_line empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.customer_order"))
-                    .as("customer_order empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.payment_order"))
-                    .as("payment_order empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM catalog_order.payment_event"))
-                    .as("payment_event empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection,
+        try (Connection verify = openConnection()) {
+            for (UUID id : productIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM catalog_order.catalog_product WHERE id = ?", id))
+                        .as("method-local catalog_product %s deleted", id).isZero();
+            }
+            for (UUID id : versionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM catalog_order.catalog_version WHERE id = ?", id))
+                        .as("method-local catalog_version %s deleted", id).isZero();
+            }
+            for (UUID id : offerIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM catalog_order.catalog_offer WHERE id = ?", id))
+                        .as("method-local catalog_offer %s deleted", id).isZero();
+            }
+            for (UUID id : orderIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM catalog_order.customer_order WHERE id = ?", id))
+                        .as("method-local customer_order %s deleted", id).isZero();
+            }
+            for (UUID id : paymentOrderIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM catalog_order.payment_order WHERE id = ?", id))
+                        .as("method-local payment_order %s deleted", id).isZero();
+            }
+            for (UUID id : paymentEventIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM catalog_order.payment_event WHERE id = ?", id))
+                        .as("method-local payment_event %s deleted", id).isZero();
+            }
+            assertThat(queryLong(verify,
                     "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
                     accountId)).isZero();
-            assertThat(queryLong(connection,
+            assertThat(queryLong(verify,
                     "SELECT count(*) FROM organization_access.organization WHERE id = ?",
                     organizationId)).isZero();
-            assertThat(queryLong(connection,
+            assertThat(queryLong(verify,
                     "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
                     subjectId)).isZero();
-            assertThat(queryLong(connection,
+            assertThat(queryLong(verify,
                     "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?",
                     employeeId)).isZero();
         }
@@ -19800,25 +20049,85 @@ class PostgresContainerIT {
     private static void cleanupV005ConcurrentFixtures(
             UUID accountId, UUID organizationId, UUID subjectId, UUID bindingId)
             throws SQLException {
+        // Scoped, FK-safe cleanup rooted only at this method's parent ids: no TRUNCATE,
+        // no CASCADE, no unscoped DELETE, no session_replication_role and no global
+        // trigger disable. Collect the exact method-local child ids first (V005 races
+        // commit only ivr rows rooted at subjectId/bindingId; losers roll back, so no
+        // entitlement_metering deletes are required). The outbound_call_task.claimed_call_id
+        // <-> call_record.task_id pair is a cyclic FK; per plan §7.3 the method-local
+        // nullable claimed_call_id link is cleared (with trg_outbound_call_task_guard
+        // temporarily disabled in this transaction) before deleting both parents.
+        // Delete in dependency order and restore every disabled named trigger in the
+        // same transaction. Any error rolls back deletes and trigger state and fails
+        // the test.
+        List<UUID> decisionIds = new ArrayList<>();
+        List<UUID> eventIds = new ArrayList<>();
+        List<UUID> legIds = new ArrayList<>();
+        List<UUID> callRecordIds = new ArrayList<>();
+        List<UUID> sessionIds = new ArrayList<>();
+        List<UUID> taskIds = new ArrayList<>();
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
-                // One TRUNCATE covering all six ivr tables plus the V006
-                // entitlement_metering tables that FK-reference call_record (added by the
-                // late fk_ivr_decision_reservation / fk_usage_*_call constraints), so the
-                // statement remains legal after V006. Test-fixture hygiene only. Runtime
-                // TRUNCATE denial remains asserted by the S1 ACL matrix.
+                collectUuids(connection, decisionIds,
+                        "SELECT id FROM ivr.ivr_decision WHERE call_id IN "
+                                + "(SELECT call_id FROM ivr.call_record WHERE subject_id = ?)",
+                        subjectId);
+                collectUuids(connection, eventIds,
+                        "SELECT id FROM ivr.call_event WHERE call_id IN "
+                                + "(SELECT call_id FROM ivr.call_record WHERE subject_id = ?)",
+                        subjectId);
+                collectUuids(connection, legIds,
+                        "SELECT id FROM ivr.call_leg WHERE call_id IN "
+                                + "(SELECT call_id FROM ivr.call_record WHERE subject_id = ?)",
+                        subjectId);
+                collectUuids(connection, callRecordIds,
+                        "SELECT id FROM ivr.call_record WHERE subject_id = ?", subjectId);
+                collectUuids(connection, sessionIds,
+                        "SELECT id FROM ivr.inbound_session WHERE subject_id = ?", subjectId);
+                collectUuids(connection, taskIds,
+                        "SELECT id FROM ivr.outbound_call_task WHERE caller_binding_id = ?",
+                        bindingId);
                 execute(connection,
-                        "TRUNCATE TABLE ivr.ivr_decision, ivr.call_event, ivr.call_leg, "
-                                + "ivr.call_record, ivr.inbound_session, ivr.outbound_call_task, "
-                                + "entitlement_metering.usage_fact, "
-                                + "entitlement_metering.usage_reservation, "
-                                + "entitlement_metering.entitlement_balance, "
-                                + "entitlement_metering.entitlement_issuance, "
-                                + "entitlement_metering.trial_grant, "
-                                + "entitlement_metering.entitlement_grant, "
-                                + "entitlement_metering.trial_policy_version");
-                // FK-safe parent deletes (no CASCADE, no runtime grants).
+                        "ALTER TABLE ivr.ivr_decision DISABLE TRIGGER trg_ivr_decision_immutable");
+                // Clear the cyclic outbound_call_task.claimed_call_id -> call_record link
+                // (plan §7.3: method-local nullable link cleared before deleting both
+                // parents). The claim is set-once under trg_outbound_call_task_guard, so
+                // disable that named UPDATE guard in the same transaction and restore it
+                // below. Only method-local tasks with a live claimed_call_id are touched.
+                execute(connection,
+                        "ALTER TABLE ivr.outbound_call_task "
+                                + "DISABLE TRIGGER trg_outbound_call_task_guard");
+                for (UUID id : taskIds) {
+                    executeUpdate(connection,
+                            "UPDATE ivr.outbound_call_task "
+                                    + "SET claimed_call_id = NULL, claimed_at = NULL "
+                                    + "WHERE id = ? AND claimed_call_id IS NOT NULL", id);
+                }
+                for (UUID id : decisionIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.ivr_decision WHERE id = ?", id);
+                }
+                for (UUID id : eventIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.call_event WHERE id = ?", id);
+                }
+                for (UUID id : legIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.call_leg WHERE id = ?", id);
+                }
+                for (UUID id : callRecordIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.call_record WHERE id = ?", id);
+                }
+                for (UUID id : sessionIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.inbound_session WHERE id = ?", id);
+                }
+                for (UUID id : taskIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.outbound_call_task WHERE id = ?", id);
+                }
                 executeUpdate(connection,
                         "DELETE FROM subject_number.caller_number_binding WHERE id = ?", bindingId);
                 executeUpdate(connection,
@@ -19828,38 +20137,78 @@ class PostgresContainerIT {
                         organizationId);
                 executeUpdate(connection,
                         "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                execute(connection,
+                        "ALTER TABLE ivr.ivr_decision ENABLE TRIGGER trg_ivr_decision_immutable");
+                execute(connection,
+                        "ALTER TABLE ivr.outbound_call_task "
+                                + "ENABLE TRIGGER trg_outbound_call_task_guard");
+                for (String[] qualified : new String[][] {
+                        {"ivr", "ivr_decision", "trg_ivr_decision_immutable"},
+                        {"ivr", "outbound_call_task", "trg_outbound_call_task_guard"}}) {
+                    assertThat(queryString(connection,
+                            "SELECT tgenabled FROM pg_trigger t "
+                                    + "JOIN pg_class c ON c.oid = t.tgrelid "
+                                    + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                    + "WHERE n.nspname = ? AND c.relname = ? AND t.tgname = ?",
+                            qualified[0], qualified[1], qualified[2]))
+                            .as("trigger %s.%s restored to enabled/origin",
+                                    qualified[0], qualified[2])
+                            .isEqualTo("O");
+                }
                 connection.commit();
             } catch (SQLException | RuntimeException exception) {
-                connection.rollback();
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    exception.addSuppressed(rollbackFailure);
+                }
                 throw exception;
             }
         }
 
-        try (Connection connection = openConnection()) {
-            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.ivr_decision"))
-                    .as("ivr_decision empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_event"))
-                    .as("call_event empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_leg"))
-                    .as("call_leg empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_record"))
-                    .as("call_record empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.inbound_session"))
-                    .as("inbound_session empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection, "SELECT count(*) FROM ivr.outbound_call_task"))
-                    .as("outbound_call_task empty after TRUNCATE").isZero();
-            assertThat(queryLong(connection,
-                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
-                    .isZero();
-            assertThat(queryLong(connection,
-                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
-                    organizationId)).isZero();
-            assertThat(queryLong(connection,
-                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
-                    .isZero();
-            assertThat(queryLong(connection,
+        try (Connection verify = openConnection()) {
+            for (UUID id : decisionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.ivr_decision WHERE id = ?", id))
+                        .as("method-local ivr_decision %s deleted", id).isZero();
+            }
+            for (UUID id : eventIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.call_event WHERE id = ?", id))
+                        .as("method-local call_event %s deleted", id).isZero();
+            }
+            for (UUID id : legIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.call_leg WHERE id = ?", id))
+                        .as("method-local call_leg %s deleted", id).isZero();
+            }
+            for (UUID id : callRecordIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.call_record WHERE id = ?", id))
+                        .as("method-local call_record %s deleted", id).isZero();
+            }
+            for (UUID id : sessionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.inbound_session WHERE id = ?", id))
+                        .as("method-local inbound_session %s deleted", id).isZero();
+            }
+            for (UUID id : taskIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.outbound_call_task WHERE id = ?", id))
+                        .as("method-local outbound_call_task %s deleted", id).isZero();
+            }
+            assertThat(queryLong(verify,
                     "SELECT count(*) FROM subject_number.caller_number_binding WHERE id = ?",
                     bindingId)).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
+                    accountId)).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                    organizationId)).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
+                    subjectId)).isZero();
         }
     }
 }
