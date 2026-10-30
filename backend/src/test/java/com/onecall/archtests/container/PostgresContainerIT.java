@@ -2630,6 +2630,387 @@ class PostgresContainerIT {
         assertV008RestrictParentDeleteAndDeferredParentDelete();
     }
 
+    @Test
+    void v008MediaRecordingShapeDefaultsAppendOnlyAndRollbackBackstops() throws Exception {
+        V008S2Fixture fixture = v008S2Fixture();
+        try {
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                switchLocalRole(connection, "evidence_owner");
+                assertThat(queryString(connection,
+                        "SELECT worm_status FROM evidence.media_object WHERE id = ?", fixture.mediaId))
+                        .isEqualTo("PENDING");
+                assertThat(queryString(connection,
+                        "SELECT status FROM evidence.recording WHERE id = ?", fixture.recordingId))
+                        .isEqualTo("DECLARED");
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM evidence.recording WHERE id = ?", fixture.recordingId))
+                        .isEqualTo(1);
+                for (String table : List.of("media_object", "recording")) {
+                    UUID id = table.equals("media_object") ? fixture.mediaId : fixture.recordingId;
+                    assertThat(queryLong(connection, "SELECT count(*) FROM evidence." + table
+                            + " WHERE id = ? AND created_at <= now() AND created_at > now() - interval '5 minutes'",
+                            id)).isEqualTo(1);
+                }
+                for (String[] probe : List.of(
+                        new String[]{"provider", "storage_provider", "'OTHER'"},
+                        new String[]{"bucket", "bucket", "' '"},
+                        new String[]{"key", "object_key", "''"},
+                        new String[]{"version", "object_version_id", "''"},
+                        new String[]{"sha256", "sha256", "'bad'"},
+                        new String[]{"size", "size_bytes", "0"},
+                        new String[]{"mime", "mime_type", "''"},
+                        new String[]{"key_ref", "crypto_key_ref", "''"},
+                        new String[]{"worm_status", "worm_status", "'OTHER'"})) {
+                    v008S2Check(connection, "media_object", fixture.mediaId,
+                            "ck_media_object_" + probe[0], Map.of(probe[1], probe[2]));
+                }
+                for (String[] probe : List.of(
+                        new String[]{"protocol_id", "recording_id", "''"},
+                        new String[]{"declared_format", "declared_format", "''"},
+                        new String[]{"declared_size", "declared_size", "0"},
+                        new String[]{"declared_duration", "declared_duration", "0"},
+                        new String[]{"declared_sha256", "declared_sha256", "'bad'"},
+                        new String[]{"upload_expiry", "upload_expires_at", "created_at"},
+                        new String[]{"revision", "revision", "0"})) {
+                    v008S2Check(connection, "recording", fixture.recordingId,
+                            "ck_recording_" + probe[0], Map.of(probe[1], probe[2]));
+                }
+                for (String[] probe : List.of(
+                        new String[]{"validated_duration", "0"},
+                        new String[]{"validated_sha256", "'bad'"})) {
+                    v008S2Check(connection, "recording", fixture.recordingId,
+                            "ck_recording_" + probe[0], Map.of("status", "'QUARANTINED'",
+                                    "validated_at", "now()", probe[0], probe[1]));
+                }
+                v008S2IsolatedStatusCheck(connection, "recording", fixture.recordingId,
+                        "ck_recording_status", "ck_recording_state_shape");
+                for (Map<String, String> shape : List.of(
+                        Map.of("media_object_id", v008S2Literal(fixture.mediaId)),
+                        Map.of("status", "'UPLOADED'", "media_object_id", v008S2Literal(fixture.mediaId),
+                                "validated_duration", "1"),
+                        Map.of("status", "'VALIDATED'", "media_object_id", v008S2Literal(fixture.mediaId),
+                                "validated_duration", "1", "validated_sha256", "declared_sha256"),
+                        Map.of("status", "'QUARANTINED'"))) {
+                    v008S2Check(connection, "recording", fixture.recordingId,
+                            "ck_recording_state_shape", shape);
+                }
+                for (String action : List.of("UPDATE evidence.media_object SET size_bytes = 2",
+                        "DELETE FROM evidence.media_object")) {
+                    expectSqlFailure(connection, "P0001", "EVIDENCE_APPEND_ONLY",
+                            action + " WHERE id = ?", fixture.mediaId);
+                }
+                for (String assignment : List.of("id = '" + UUID.randomUUID() + "'::uuid",
+                        "call_id = 'other'", "recording_id = 'other'", "declared_format = 'mp3'",
+                        "declared_size = 2", "declared_duration = 2", "declared_sha256 = 'bad'",
+                        "upload_expires_at = upload_expires_at + interval '1 second'",
+                        "created_at = created_at + interval '1 second'")) {
+                    expectSqlFailure(connection, "P0001", "RECORDING_HEAD_IMMUTABLE",
+                            "UPDATE evidence.recording SET " + assignment + " WHERE id = ?", fixture.recordingId);
+                }
+                expectSqlFailure(connection, "P0001", "RECORDING_STATUS_TRANSITION",
+                        "UPDATE evidence.recording SET status = 'VALIDATED', revision = 2 WHERE id = ?",
+                        fixture.recordingId);
+                expectSqlFailure(connection, "P0001", "RECORDING_REVISION_INVALID",
+                        "UPDATE evidence.recording SET status = 'UPLOADED', media_object_id = ? WHERE id = ?",
+                        fixture.mediaId, fixture.recordingId);
+                Savepoint declared = connection.setSavepoint();
+                assertThat(executeUpdate(connection, "UPDATE evidence.recording SET status = 'QUARANTINED', "
+                        + "validated_at = now(), revision = 2 WHERE id = ?", fixture.recordingId)).isEqualTo(1);
+                expectSqlFailure(connection, "P0001", "RECORDING_STATUS_TERMINAL",
+                        "UPDATE evidence.recording SET status = 'DECLARED', revision = 3 WHERE id = ?",
+                        fixture.recordingId);
+                connection.rollback(declared);
+                switchLocalRole(connection, "evidence_role");
+                assertThat(executeUpdate(connection, "UPDATE evidence.recording SET status = 'UPLOADED', "
+                        + "media_object_id = ?, revision = 2 WHERE id = ?", fixture.mediaId, fixture.recordingId))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "evidence_owner");
+                expectSqlFailure(connection, "P0001", "RECORDING_MEDIA_OBJECT_LOCKED",
+                        "UPDATE evidence.recording SET media_object_id = NULL WHERE id = ?", fixture.recordingId);
+                expectSqlFailure(connection, "P0001", "RECORDING_STATUS_TRANSITION",
+                        "UPDATE evidence.recording SET status = 'DECLARED', revision = 3 WHERE id = ?",
+                        fixture.recordingId);
+                Savepoint uploaded = connection.setSavepoint();
+                assertThat(executeUpdate(connection, "UPDATE evidence.recording SET status = 'QUARANTINED', "
+                        + "validated_at = now(), revision = 3 WHERE id = ?", fixture.recordingId)).isEqualTo(1);
+                connection.rollback(uploaded);
+                assertThat(executeUpdate(connection, "UPDATE evidence.recording SET status = 'VALIDATED', "
+                        + "validated_duration = 1, validated_sha256 = declared_sha256, validated_at = now(), "
+                        + "revision = 3 WHERE id = ?", fixture.recordingId)).isEqualTo(1);
+                for (String assignment : List.of("validated_duration = 2", "validated_sha256 = 'bad'",
+                        "validated_at = validated_at + interval '1 second'")) {
+                    expectSqlFailure(connection, "P0001", "RECORDING_VALIDATION_LOCKED",
+                            "UPDATE evidence.recording SET " + assignment + " WHERE id = ?", fixture.recordingId);
+                }
+                expectSqlFailure(connection, "P0001", "RECORDING_STATUS_TERMINAL",
+                        "UPDATE evidence.recording SET status = 'UPLOADED', revision = 4 WHERE id = ?",
+                        fixture.recordingId);
+                assertThat(executeUpdate(connection, "UPDATE evidence.recording SET revision = 7 WHERE id = ?",
+                        fixture.recordingId)).isEqualTo(1);
+                assertThat(queryLong(connection, "SELECT revision FROM evidence.recording WHERE id = ?",
+                        fixture.recordingId)).isEqualTo(7);
+                connection.rollback();
+            }
+            v008S2RecordingRollback();
+        } finally {
+            v008S2Cleanup(fixture);
+        }
+    }
+
+    @Test
+    void v008CreationCycleBothOrdersAndTerminalLifecycleBackstops() throws Exception {
+        V008S2Fixture fixture = v008S2Fixture();
+        try {
+            for (boolean eventFirst : List.of(false, true)) {
+                UUID recordId = UUID.randomUUID();
+                String eventId = "s2-order-" + recordId;
+                UUID artifactId = UUID.randomUUID();
+                fixture.recordIds.add(recordId);
+                fixture.eventIds.add(eventId);
+                fixture.artifactIds.add(artifactId);
+                try (Connection connection = openConnection()) {
+                    connection.setAutoCommit(false);
+                    switchLocalRole(connection, "evidence_role");
+                    v008S2Pair(connection, fixture, recordId, eventId, eventFirst);
+                    v008S2Artifact(connection, artifactId, recordId, fixture.mediaId, "ORIGINAL");
+                    connection.commit();
+                }
+                try (Connection verify = openConnection()) {
+                    assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_record "
+                            + "WHERE id = ? AND status = 'PENDING' AND revision = 1 "
+                            + "AND source_ref_id IS NOT NULL AND created_at <= now()", recordId)).isEqualTo(1);
+                    assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_event "
+                            + "WHERE evidence_id = ? AND event_type = 'EVIDENCE_CREATED' "
+                            + "AND occurred_at <= now() AND occurred_at > now() - interval '5 minutes'", recordId))
+                            .isEqualTo(1);
+                    assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_artifact "
+                            + "WHERE evidence_id = ? AND artifact_role = 'ORIGINAL' AND created_at <= now()", recordId))
+                            .isEqualTo(1);
+                }
+            }
+            v008S2CycleFailures(fixture);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                switchLocalRole(connection, "evidence_owner");
+                for (String[] probe : List.of(
+                        new String[]{"source_type", "source_type", "'OTHER'"},
+                        new String[]{"source_domain", "source_event_domain", "'OTHER'"},
+                        new String[]{"source_event_id", "source_event_id", "''"},
+                        new String[]{"capture_shape", "identity_at_capture", "'[]'::jsonb"},
+                        new String[]{"capture_subject", "identity_at_capture",
+                                "jsonb_set(identity_at_capture, '{subjectId}', '\"other\"'::jsonb)"},
+                        new String[]{"consent_version", "consent_version", "''"},
+                        new String[]{"revision", "revision", "0"},
+                        new String[]{"snapshot_shape", "snapshot", "'[]'::jsonb"},
+                        new String[]{"snapshot_sha256", "snapshot_sha256", "'bad'"})) {
+                    Map<String, String> changes = new java.util.LinkedHashMap<>();
+                    changes.put(probe[1], probe[2]);
+                    if (probe[0].equals("source_event_id")) {
+                        changes.put("snapshot", "jsonb_set(snapshot, '{sourceEventId}', '\"\"'::jsonb)");
+                    }
+                    v008S2Check(connection, "evidence_record", fixture.recordId,
+                            "ck_evidence_" + probe[0], changes);
+                }
+                expectSqlFailure(connection, "23502", "source_ref_id",
+                        v008S2CloneSql(connection, "evidence_record", Map.of("source_ref_id", "NULL")),
+                        fixture.recordId);
+                assertV008CheckPredicateInventory(connection);
+                for (String expression : List.of("identity_at_capture - 'capturedAt'",
+                        "identity_at_capture - 'sourceChannel'", "identity_at_capture - 'subjectId'")) {
+                    v008S2Check(connection, "evidence_record", fixture.recordId, "ck_evidence_capture_shape",
+                            Map.of("identity_at_capture", expression));
+                }
+                for (String expression : List.of("snapshot - 'capture'", "snapshot - 'content'",
+                        "jsonb_set(snapshot, '{source,callId}', '\"other\"'::jsonb)",
+                        "jsonb_set(snapshot, '{sourceEventId}', '\"other\"'::jsonb)")) {
+                    v008S2Check(connection, "evidence_record", fixture.recordId, "ck_evidence_snapshot_shape",
+                            Map.of("snapshot", expression));
+                }
+                v008S2Check(connection, "evidence_record", fixture.recordId, "ck_evidence_link_shape",
+                        Map.of("call_id", "NULL", "snapshot", "jsonb_set(snapshot, '{source,callId}', 'null'::jsonb)"));
+                v008S2IsolatedStatusCheck(connection, "evidence_record", fixture.recordId,
+                        "ck_evidence_status", "ck_evidence_state_shape");
+                for (Map<String, String> shape : List.of(Map.of("solidified_at", "now()"),
+                        Map.of("status", "'SOLIDIFIED'"),
+                        Map.of("status", "'QUARANTINED'", "solidified_at", "now()"),
+                        Map.of("status", "'FAILED'", "solidified_at", "now()"))) {
+                    v008S2Check(connection, "evidence_record", fixture.recordId,
+                            "ck_evidence_state_shape", shape);
+                }
+                for (String[] probe : List.of(
+                        new String[]{"domain", "event_domain", "'OTHER'"},
+                        new String[]{"id", "event_id", "''"},
+                        new String[]{"type", "event_type", "'OTHER'"},
+                        new String[]{"payload", "payload_redacted", "'[]'::jsonb"},
+                        new String[]{"payload_sha256", "payload_sha256", "'bad'"})) {
+                    v008S2Check(connection, "evidence_event", fixture.eventRowId,
+                            "ck_evidence_event_" + probe[0], Map.of(probe[1], probe[2]));
+                }
+                v008S2Check(connection, "evidence_artifact", fixture.artifactIds.getFirst(),
+                        "ck_evidence_artifact_role", Map.of("artifact_role", "'OTHER'"));
+                expectSqlFailure(connection, "23505", "uq_evidence_created_event",
+                        v008S2EventSql(), UUID.randomUUID(), fixture.recordId,
+                        "s2-duplicate-" + UUID.randomUUID(), "EVIDENCE_CREATED", randomSha256());
+                UUID secondMedia = v008InsertMediaSameTx(connection);
+                expectSqlFailure(connection, "23505", "uq_evidence_original_artifact",
+                        "INSERT INTO evidence.evidence_artifact (id, evidence_id, media_object_id, artifact_role) "
+                                + "VALUES (?, ?, ?, 'ORIGINAL')", UUID.randomUUID(), fixture.recordId, secondMedia);
+                v008S2Artifact(connection, UUID.randomUUID(), fixture.recordId, secondMedia, "DERIVED");
+                expectSqlFailure(connection, "23505", "uq_evidence_artifact",
+                        "INSERT INTO evidence.evidence_artifact (id, evidence_id, media_object_id, artifact_role) "
+                                + "VALUES (?, ?, ?, 'DERIVED')", UUID.randomUUID(), fixture.recordId, secondMedia);
+                for (String table : List.of("evidence_event", "evidence_artifact")) {
+                    UUID id = table.equals("evidence_event") ? fixture.eventRowId : fixture.artifactIds.getFirst();
+                    expectSqlFailure(connection, "P0001", "EVIDENCE_APPEND_ONLY",
+                            "UPDATE evidence." + table + " SET id = ? WHERE id = ?", UUID.randomUUID(), id);
+                    expectSqlFailure(connection, "P0001", "EVIDENCE_APPEND_ONLY",
+                            "DELETE FROM evidence." + table + " WHERE id = ?", id);
+                }
+                for (String assignment : List.of("id = '" + UUID.randomUUID() + "'::uuid",
+                        "subject_id = '" + UUID.randomUUID() + "'::uuid", "source_type = 'OTHER'",
+                        "source_ref_id = '" + UUID.randomUUID() + "'::uuid", "source_event_domain = 'OTHER'",
+                        "source_event_id = 'other'", "call_id = NULL", "session_id = NULL",
+                        "reservation_id = NULL", "identity_at_capture = '{}'::jsonb", "consent_version = 'v2'",
+                        "snapshot = '{}'::jsonb", "snapshot_sha256 = 'bad'",
+                        "created_at = created_at + interval '1 second'")) {
+                    expectSqlFailure(connection, "P0001", "EVIDENCE_RECORD_HEAD_IMMUTABLE",
+                            "UPDATE evidence.evidence_record SET " + assignment + " WHERE id = ?", fixture.recordId);
+                }
+                for (String terminal : List.of("SOLIDIFIED", "QUARANTINED", "FAILED")) {
+                    Savepoint pending = connection.setSavepoint();
+                    String transition = "UPDATE evidence.evidence_record SET status = '" + terminal
+                            + "', solidified_at = " + (terminal.equals("SOLIDIFIED") ? "now()" : "NULL");
+                    expectSqlFailure(connection, "P0001", "EVIDENCE_RECORD_REVISION_INVALID",
+                            transition + " WHERE id = ?", fixture.recordId);
+                    switchLocalRole(connection, "evidence_role");
+                    assertThat(executeUpdate(connection, transition + ", revision = 2 WHERE id = ?",
+                            fixture.recordId)).isEqualTo(1);
+                    v008S2Event(connection, fixture.recordId, "s2-lifecycle-" + UUID.randomUUID(),
+                            "EVIDENCE_" + terminal);
+                    execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
+                    switchLocalRole(connection, "evidence_owner");
+                    assertThat(queryLong(connection, "SELECT revision FROM evidence.evidence_record WHERE id = ?",
+                            fixture.recordId)).isEqualTo(2);
+                    for (String next : List.of("PENDING", "SOLIDIFIED", "QUARANTINED", "FAILED")) {
+                        if (!next.equals(terminal)) {
+                            expectSqlFailure(connection, "P0001", "EVIDENCE_RECORD_STATUS_TERMINAL",
+                                    "UPDATE evidence.evidence_record SET status = ?, revision = 3 WHERE id = ?",
+                                    next, fixture.recordId);
+                        }
+                    }
+                    assertThat(executeUpdate(connection, "UPDATE evidence.evidence_record SET revision = 9 WHERE id = ?",
+                            fixture.recordId)).isEqualTo(1);
+                    assertThat(queryLong(connection, "SELECT revision FROM evidence.evidence_record WHERE id = ?",
+                            fixture.recordId)).isEqualTo(9);
+                    connection.rollback(pending);
+                }
+                connection.rollback();
+            }
+            v008S2FullRollback(fixture);
+        } finally {
+            v008S2Cleanup(fixture);
+        }
+    }
+
+    @Test
+    void concurrentV008EvidenceCreationAndRecordingIdentityHasOneWinner() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            for (String constraint : List.of("uq_evidence_source_event", "uq_recording_protocol_id",
+                    "uq_media_object_version", "uq_evidence_created_event", "same_source_pair")) {
+                V008S2Fixture fixture = v008S2Fixture();
+                UUID winnerId = UUID.randomUUID();
+                UUID loserId = UUID.randomUUID();
+                UUID rolledBackPair = UUID.randomUUID();
+                String source = "s2-race-" + winnerId;
+                String loserSource = "s2-loser-" + loserId;
+                fixture.recordIds.add(winnerId);
+                fixture.recordIds.add(loserId);
+                fixture.recordIds.add(rolledBackPair);
+                fixture.eventIds.add(source);
+                fixture.eventIds.add(loserSource);
+                fixture.recordingIds.add(winnerId);
+                fixture.recordingIds.add(loserId);
+                fixture.mediaIds.add(winnerId);
+                fixture.mediaIds.add(loserId);
+                String app = "pa8-s2-" + constraint;
+                try {
+                    try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                        winner.setAutoCommit(false);
+                        loser.setAutoCommit(false);
+                        configureBlockedWriter(winner, "evidence_owner", app + "-w");
+                        configureBlockedWriter(loser, "evidence_owner", app + "-l");
+                        v008S2Pair(loser, fixture, rolledBackPair, loserSource, true);
+                        if (constraint.equals("uq_recording_protocol_id")) {
+                            assertThat(executeUpdate(winner, v008S2CloneSql(winner, "recording",
+                                    Map.of("id", v008S2Literal(winnerId), "recording_id", v008S2Literal(source))),
+                                    fixture.recordingId)).isEqualTo(1);
+                        } else if (constraint.equals("uq_media_object_version")) {
+                            assertThat(executeUpdate(winner, v008S2CloneSql(winner, "media_object",
+                                    Map.of("id", v008S2Literal(winnerId), "object_key", v008S2Literal(source))),
+                                    fixture.mediaId)).isEqualTo(1);
+                        } else {
+                            v008S2Pair(winner, fixture, winnerId, source, false);
+                        }
+                        Future<?> future = executor.submit(() -> {
+                            if (constraint.equals("uq_recording_protocol_id")) {
+                                executeUpdate(loser, v008S2CloneSql(loser, "recording", Map.of(
+                                        "id", v008S2Literal(loserId), "recording_id", v008S2Literal(source))),
+                                        fixture.recordingId);
+                            } else if (constraint.equals("uq_media_object_version")) {
+                                executeUpdate(loser, v008S2CloneSql(loser, "media_object", Map.of(
+                                        "id", v008S2Literal(loserId), "object_key", v008S2Literal(source))), fixture.mediaId);
+                            } else if (constraint.equals("uq_evidence_created_event")) {
+                                v008S2Event(loser, winnerId, "s2-other-" + loserId, "EVIDENCE_CREATED");
+                            } else {
+                                v008S2Pair(loser, fixture, loserId, source, false);
+                            }
+                            loser.commit();
+                            return null;
+                        });
+                        try {
+                            awaitBlockedBackend(app + "-l");
+                            winner.commit();
+                            try {
+                                awaitFuture(future, FUTURE_TIMEOUT_SECONDS);
+                                fail("unique loser must fail for " + constraint);
+                            } catch (SQLException exception) {
+                                assertThat(exception.getSQLState()).isEqualTo("23505");
+                                assertThat(exception.getMessage()).contains(constraint.equals("same_source_pair")
+                                        ? "uq_evidence_source_event" : constraint);
+                            }
+                        } finally {
+                            winner.rollback();
+                            loser.rollback();
+                        }
+                    }
+                    try (Connection verify = openConnection()) {
+                        String table = constraint.equals("uq_recording_protocol_id") ? "recording"
+                                : constraint.equals("uq_media_object_version") ? "media_object" : "evidence_record";
+                        assertThat(queryLong(verify, "SELECT count(*) FROM evidence." + table + " WHERE id = ?",
+                                winnerId)).isEqualTo(1);
+                        assertThat(queryLong(verify, "SELECT count(*) FROM evidence." + table + " WHERE id = ?",
+                                loserId)).isZero();
+                        assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_record WHERE id = ?",
+                                rolledBackPair)).isZero();
+                        assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_event WHERE event_id = ?",
+                                loserSource)).isZero();
+                        if (table.equals("evidence_record")) {
+                            assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_event "
+                                    + "WHERE evidence_id = ? AND event_type = 'EVIDENCE_CREATED'", winnerId)).isEqualTo(1);
+                        }
+                    }
+                } finally {
+                    v008S2Cleanup(fixture);
+                }
+            }
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     /**
      * S3 T-S1-09 last-enabled-admin protocol as exact transient SQL (no database function):
      * advisory lock, target row FOR UPDATE, enabled-admin count, then either a conditional
@@ -24777,6 +25158,300 @@ class PostgresContainerIT {
         assertThat(label).as("probe label").isNotBlank();
     }
 
+    private static final class V008S2Fixture {
+        UUID subjectId;
+        String callId;
+        UUID sessionId;
+        V008ReservationFixture reservation;
+        UUID mediaId;
+        UUID recordingId;
+        UUID recordId;
+        UUID eventRowId;
+        final List<UUID> recordIds = new ArrayList<>();
+        final List<String> eventIds = new ArrayList<>();
+        final List<UUID> artifactIds = new ArrayList<>();
+        final List<UUID> recordingIds = new ArrayList<>();
+        final List<UUID> mediaIds = new ArrayList<>();
+    }
+
+    private static V008S2Fixture v008S2Fixture() throws Exception {
+        V008S2Fixture fixture = new V008S2Fixture();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                fixture.subjectId = v008InsertSubjectSameTx(connection);
+                fixture.callId = v008InsertCallAndSessionSameTx(connection, fixture.subjectId);
+                fixture.sessionId = UUID.fromString(queryString(connection,
+                        "SELECT id::text FROM ivr.inbound_session WHERE call_id = ?", fixture.callId));
+                fixture.reservation = v008InsertReservationFixtureSameTx(connection, fixture.callId, fixture.subjectId);
+                switchLocalRole(connection, "evidence_owner");
+                fixture.mediaId = v008InsertMediaSameTx(connection);
+                fixture.mediaIds.add(fixture.mediaId);
+                connection.commit();
+                switchLocalRole(connection, "evidence_owner");
+                fixture.recordingId = UUID.randomUUID();
+                fixture.recordingIds.add(fixture.recordingId);
+                assertThat(executeUpdate(connection, v008S2RecordingSql(), fixture.recordingId, fixture.callId,
+                        "s2-recording-" + fixture.recordingId, randomSha256())).isEqualTo(1);
+                String eventId = "s2-base-" + UUID.randomUUID();
+                fixture.recordId = v008InsertRecordOnlySameTx(connection, fixture.subjectId, fixture.callId,
+                        fixture.sessionId, fixture.reservation.reservationId(), eventId);
+                fixture.recordIds.add(fixture.recordId);
+                fixture.eventIds.add(eventId);
+                fixture.eventRowId = v008S2Event(connection, fixture.recordId, eventId, "EVIDENCE_CREATED");
+                UUID artifactId = UUID.randomUUID();
+                fixture.artifactIds.add(artifactId);
+                v008S2Artifact(connection, artifactId, fixture.recordId, fixture.mediaId, "ORIGINAL");
+                connection.commit();
+            } catch (Exception exception) {
+                connection.rollback();
+                if (fixture.reservation != null && fixture.mediaId != null) {
+                    v008S2Cleanup(fixture);
+                }
+                throw exception;
+            }
+        }
+        return fixture;
+    }
+
+    private static String v008S2RecordingSql() {
+        return "INSERT INTO evidence.recording (id, call_id, recording_id, declared_format, declared_size, "
+                + "declared_duration, declared_sha256, upload_expires_at) "
+                + "VALUES (?, ?, ?, 'wav', 1, 1, ?, now() + interval '1 hour')";
+    }
+
+    private static String v008S2Literal(Object value) {
+        return "'" + value.toString().replace("'", "''") + "'" + (value instanceof UUID ? "::uuid" : "");
+    }
+
+    private static String v008S2CloneSql(Connection connection, String table, Map<String, String> changes)
+            throws SQLException {
+        List<String> columns = queryStrings(connection,
+                "SELECT attname FROM pg_attribute WHERE attrelid = ?::regclass AND attnum > 0 "
+                        + "AND NOT attisdropped ORDER BY attnum", "evidence." + table);
+        assertThat(columns).containsAll(changes.keySet());
+        List<String> expressions = new ArrayList<>();
+        for (String column : columns) {
+            expressions.add(changes.getOrDefault(column, column));
+        }
+        return "INSERT INTO evidence." + table + " (" + String.join(",", columns) + ") SELECT "
+                + String.join(",", expressions) + " FROM evidence." + table + " WHERE id = ?";
+    }
+
+    private static void v008S2Check(Connection connection, String table, UUID positiveId,
+            String check, Map<String, String> changes) throws SQLException {
+        assertThat(queryLong(connection, "SELECT count(*) FROM evidence." + table + " WHERE id = ?", positiveId))
+                .as("positive control for %s", check).isEqualTo(1);
+        expectSqlFailure(connection, "23514", check, v008S2CloneSql(connection, table, changes), positiveId);
+    }
+
+    private static void v008S2IsolatedStatusCheck(Connection connection, String table, UUID positiveId,
+            String check, String preemptor) throws SQLException {
+        List<String> before = v008S2ConstraintCatalog(connection);
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            execute(connection, "ALTER TABLE evidence." + table + " DROP CONSTRAINT " + preemptor);
+            v008S2Check(connection, table, positiveId, check, Map.of("status", "'OTHER'"));
+        } finally {
+            connection.rollback(savepoint);
+        }
+        assertThat(v008S2ConstraintCatalog(connection)).containsExactlyElementsOf(before);
+        assertV008CheckPredicateInventory(connection);
+    }
+
+    private static List<String> v008S2ConstraintCatalog(Connection connection) throws SQLException {
+        return queryStrings(connection, "SELECT c.conrelid::regclass::text || ':' || c.conname || ':' "
+                + "|| pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_namespace n "
+                + "ON n.oid = c.connamespace WHERE n.nspname = 'evidence' ORDER BY 1");
+    }
+
+    private static void v008S2Record(Connection connection, V008S2Fixture fixture, UUID recordId,
+            String eventId) throws SQLException {
+        assertThat(executeUpdate(connection, v008S2CloneSql(connection, "evidence_record", Map.of(
+                "id", v008S2Literal(recordId), "source_event_id", v008S2Literal(eventId),
+                "snapshot", "jsonb_set(snapshot, '{sourceEventId}', to_jsonb(" + v008S2Literal(eventId) + "::text))")),
+                fixture.recordId)).isEqualTo(1);
+    }
+
+    private static String v008S2EventSql() {
+        return "INSERT INTO evidence.evidence_event (id, evidence_id, event_domain, event_id, event_type, "
+                + "payload_redacted, payload_sha256) VALUES (?, ?, 'EVIDENCE', ?, ?, '{}'::jsonb, ?)";
+    }
+
+    private static UUID v008S2Event(Connection connection, UUID recordId, String eventId, String type)
+            throws SQLException {
+        UUID id = UUID.randomUUID();
+        assertThat(executeUpdate(connection, v008S2EventSql(), id, recordId, eventId, type, randomSha256()))
+                .isEqualTo(1);
+        return id;
+    }
+
+    private static void v008S2Pair(Connection connection, V008S2Fixture fixture, UUID recordId,
+            String eventId, boolean eventFirst) throws SQLException {
+        if (eventFirst) {
+            v008S2Event(connection, recordId, eventId, "EVIDENCE_CREATED");
+        }
+        v008S2Record(connection, fixture, recordId, eventId);
+        if (!eventFirst) {
+            v008S2Event(connection, recordId, eventId, "EVIDENCE_CREATED");
+        }
+    }
+
+    private static void v008S2Artifact(Connection connection, UUID artifactId, UUID recordId,
+            UUID mediaId, String role) throws SQLException {
+        assertThat(executeUpdate(connection, "INSERT INTO evidence.evidence_artifact "
+                        + "(id, evidence_id, media_object_id, artifact_role) VALUES (?, ?, ?, ?)",
+                artifactId, recordId, mediaId, role)).isEqualTo(1);
+    }
+
+    private static void v008S2CycleFailures(V008S2Fixture fixture) throws Exception {
+        for (String kind : List.of("missing_event", "missing_record", "noncreation_decoy", "crosslink", "source_mismatch")) {
+            UUID recordId = UUID.randomUUID();
+            UUID otherRecord = UUID.randomUUID();
+            String eventId = "s2-cycle-" + recordId;
+            String otherEvent = "s2-cycle-" + otherRecord;
+            String sqlState = kind.startsWith("missing_") ? "23503" : "P0001";
+            String marker = kind.equals("missing_event") ? "fk_evidence_source_event"
+                    : kind.equals("missing_record") ? "fk_evidence_event_record"
+                    : "EVIDENCE_CREATION_CYCLE_VIOLATION";
+            expectCommitFailure(sqlState, marker, connection -> {
+                switchLocalRole(connection, "evidence_owner");
+                switch (kind) {
+                    case "missing_event" -> v008S2Record(connection, fixture, recordId, eventId);
+                    case "missing_record" -> v008S2Event(connection, recordId, eventId, "EVIDENCE_FAILED");
+                    case "noncreation_decoy" -> {
+                        v008S2Record(connection, fixture, recordId, eventId);
+                        v008S2Event(connection, recordId, eventId, "EVIDENCE_FAILED");
+                    }
+                    case "crosslink" -> {
+                        v008S2Event(connection, otherRecord, eventId, "EVIDENCE_CREATED");
+                        v008S2Event(connection, recordId, otherEvent, "EVIDENCE_CREATED");
+                        v008S2Record(connection, fixture, recordId, eventId);
+                        v008S2Record(connection, fixture, otherRecord, otherEvent);
+                    }
+                    case "source_mismatch" -> {
+                        v008S2Event(connection, recordId, eventId, "EVIDENCE_FAILED");
+                        v008S2Event(connection, recordId, otherEvent, "EVIDENCE_CREATED");
+                        v008S2Record(connection, fixture, recordId, eventId);
+                    }
+                    default -> throw new IllegalArgumentException(kind);
+                }
+            });
+            try (Connection verify = openConnection()) {
+                for (UUID id : List.of(recordId, otherRecord)) {
+                    assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", id))
+                            .as("%s record rollback", kind).isZero();
+                    assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?", id))
+                            .as("%s event rollback", kind).isZero();
+                }
+                for (String id : List.of(eventId, otherEvent)) {
+                    assertThat(queryLong(verify, "SELECT count(*) FROM evidence.evidence_event WHERE event_id = ?", id))
+                            .isZero();
+                }
+            }
+        }
+    }
+
+    private static void v008S2RecordingRollback() throws Exception {
+        UUID mediaId;
+        UUID recordingId = UUID.randomUUID();
+        UUID subjectId;
+        UUID sessionId;
+        String callId;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                subjectId = v008InsertSubjectSameTx(connection);
+                callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+                sessionId = UUID.fromString(queryString(connection,
+                        "SELECT id::text FROM ivr.inbound_session WHERE call_id = ?", callId));
+                switchLocalRole(connection, "evidence_owner");
+                mediaId = v008InsertMediaSameTx(connection);
+                assertThat(executeUpdate(connection, v008S2RecordingSql(), recordingId, callId,
+                        "s2-rollback-" + recordingId, randomSha256())).isEqualTo(1);
+                assertThat(executeUpdate(connection, "UPDATE evidence.recording SET media_object_id = ?, "
+                        + "status = 'UPLOADED', revision = 2 WHERE id = ?", mediaId, recordingId)).isEqualTo(1);
+                switchLocalRole(connection, "ivr_owner");
+                assertThat(queryLong(connection, "SELECT count(*) FROM ivr.call_record WHERE call_id = ?", callId))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "evidence_owner");
+                for (Map.Entry<String, UUID> row : Map.of("media_object", mediaId, "recording", recordingId).entrySet()) {
+                    assertThat(queryLong(connection, "SELECT count(*) FROM evidence." + row.getKey() + " WHERE id = ?",
+                            row.getValue())).isEqualTo(1);
+                }
+                v008S2SentinelFailure(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify, "SELECT count(*) FROM evidence.media_object WHERE id = ?", mediaId)).isZero();
+            assertThat(queryLong(verify, "SELECT count(*) FROM evidence.recording WHERE id = ?", recordingId)).isZero();
+            assertThat(queryLong(verify, "SELECT count(*) FROM ivr.call_record WHERE call_id = ?", callId)).isZero();
+            assertThat(queryLong(verify, "SELECT count(*) FROM ivr.inbound_session WHERE id = ?", sessionId)).isZero();
+            assertThat(queryLong(verify, "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId)).isZero();
+        }
+    }
+
+    private static void v008S2FullRollback(V008S2Fixture fixture) throws Exception {
+        UUID recordId = UUID.randomUUID();
+        UUID artifactId = UUID.randomUUID();
+        UUID outboxId = UUID.randomUUID();
+        String eventId = "s2-full-rollback-" + recordId;
+        UUID eventRowId;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "evidence_owner");
+                v008S2Record(connection, fixture, recordId, eventId);
+                eventRowId = v008S2Event(connection, recordId, eventId, "EVIDENCE_CREATED");
+                v008S2Artifact(connection, artifactId, recordId, fixture.mediaId, "ORIGINAL");
+                switchLocalRole(connection, "platform_reliability_owner");
+                assertThat(executeUpdate(connection, "INSERT INTO platform.outbox_event "
+                                + "(id, event_domain, dedupe_key, aggregate_type, aggregate_id, event_type, "
+                                + "payload_redacted, payload_sha256) VALUES (?, 'EVIDENCE', ?, 'EVIDENCE', ?, "
+                                + "'EVIDENCE_CREATED', '{}'::jsonb, ?)", outboxId, eventId, recordId, randomSha256()))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "evidence_owner");
+                execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
+                for (Map.Entry<String, UUID> row : Map.of("evidence_record", recordId,
+                        "evidence_event", eventRowId, "evidence_artifact", artifactId).entrySet()) {
+                    assertThat(queryLong(connection, "SELECT count(*) FROM evidence." + row.getKey() + " WHERE id = ?",
+                            row.getValue())).isEqualTo(1);
+                }
+                switchLocalRole(connection, "platform_reliability_owner");
+                assertThat(queryLong(connection, "SELECT count(*) FROM platform.outbox_event WHERE id = ?", outboxId))
+                        .isEqualTo(1);
+                v008S2SentinelFailure(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection verify = openConnection()) {
+            for (Map.Entry<String, UUID> row : Map.of("evidence_record", recordId,
+                    "evidence_event", eventRowId, "evidence_artifact", artifactId).entrySet()) {
+                assertThat(queryLong(verify, "SELECT count(*) FROM evidence." + row.getKey() + " WHERE id = ?",
+                        row.getValue())).isZero();
+            }
+            assertThat(queryLong(verify, "SELECT count(*) FROM platform.outbox_event WHERE id = ?", outboxId)).isZero();
+        }
+    }
+
+    private static void v008S2SentinelFailure(Connection connection) throws SQLException {
+        try {
+            execute(connection, "SELECT 1 / 0");
+            fail("distinct rollback sentinel must fail after successful writes");
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState()).isEqualTo("22012");
+        }
+    }
+
+    private static void v008S2Cleanup(V008S2Fixture fixture) throws Exception {
+        cleanupV008LocalRows(fixture.recordIds, fixture.eventIds, fixture.artifactIds,
+                fixture.recordingIds, fixture.mediaIds, List.of(fixture.subjectId), List.of(fixture.callId),
+                List.of(fixture.sessionId), fixture.reservation);
+    }
+
     private static UUID v008InsertSubjectSameTx(Connection connection) throws SQLException {
         UUID id = UUID.randomUUID();
         switchLocalRole(connection, "subject_number_role");
@@ -24977,6 +25652,20 @@ class PostgresContainerIT {
             List<String> callIds,
             List<UUID> sessionIds,
             V008ReservationFixture reservationFixture) throws Exception {
+        cleanupV008LocalRows(List.of(recordId), eventIds, artifactIds, recordingIds, mediaIds,
+                subjectIds, callIds, sessionIds, reservationFixture);
+    }
+
+    private static void cleanupV008LocalRows(
+            List<UUID> recordIds,
+            List<String> eventIds,
+            List<UUID> artifactIds,
+            List<UUID> recordingIds,
+            List<UUID> mediaIds,
+            List<UUID> subjectIds,
+            List<String> callIds,
+            List<UUID> sessionIds,
+            V008ReservationFixture reservationFixture) throws Exception {
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
@@ -24990,14 +25679,22 @@ class PostgresContainerIT {
                     executeUpdate(connection,
                             "DELETE FROM evidence.evidence_artifact WHERE id = ?", artifactId);
                 }
-                executeUpdate(connection,
-                        "DELETE FROM evidence.evidence_artifact WHERE evidence_id = ?", recordId);
+                for (UUID recordId : recordIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM evidence.evidence_artifact WHERE evidence_id = ?", recordId);
+                }
                 for (String eventId : eventIds) {
                     executeUpdate(connection,
                             "DELETE FROM evidence.evidence_event WHERE event_id = ?", eventId);
                 }
-                executeUpdate(connection,
-                        "DELETE FROM evidence.evidence_event WHERE evidence_id = ?", recordId);
+                for (UUID recordId : recordIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM evidence.evidence_event WHERE evidence_id = ?", recordId);
+                }
+                for (UUID recordId : recordIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM evidence.evidence_record WHERE id = ?", recordId);
+                }
                 for (UUID id : recordingIds) {
                     executeUpdate(connection, "DELETE FROM evidence.recording WHERE id = ?", id);
                 }
@@ -25006,8 +25703,6 @@ class PostgresContainerIT {
                             + String.join(",", Collections.nCopies(callIds.size(), "?"))
                             + ")", callIds.toArray());
                 }
-                executeUpdate(connection,
-                        "DELETE FROM evidence.evidence_record WHERE id = ?", recordId);
                 for (UUID mediaId : mediaIds) {
                     executeUpdate(connection,
                             "DELETE FROM evidence.media_object WHERE id = ?", mediaId);
@@ -25085,16 +25780,24 @@ class PostgresContainerIT {
         }
         try (Connection verify = openConnection()) {
             assertThat(queryLong(verify,
-                    "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", recordId))
-                    .isZero();
+                    "SELECT count(*) FROM pg_trigger WHERE tgrelid IN ('evidence.media_object'::regclass, "
+                            + "'evidence.evidence_artifact'::regclass, 'evidence.evidence_event'::regclass) "
+                            + "AND tgname IN ('trg_media_object_immutable', 'trg_evidence_artifact_immutable', "
+                            + "'trg_evidence_event_immutable') AND tgenabled = 'O'"))
+                    .as("all three immutable V008 triggers restored after local cleanup").isEqualTo(3);
+            for (UUID recordId : recordIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", recordId)).isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?", recordId)).isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.evidence_artifact WHERE evidence_id = ?", recordId)).isZero();
+            }
             for (UUID artifactId : artifactIds) {
                 assertThat(queryLong(verify,
                         "SELECT count(*) FROM evidence.evidence_artifact WHERE id = ?", artifactId))
                         .as("no artifact residue for %s", artifactId).isZero();
             }
-            assertThat(queryLong(verify,
-                    "SELECT count(*) FROM evidence.evidence_artifact WHERE evidence_id = ?", recordId))
-                    .as("no artifact residue for evidence %s", recordId).isZero();
             for (UUID recordingId : recordingIds) {
                 assertThat(queryLong(verify,
                         "SELECT count(*) FROM evidence.recording WHERE id = ?", recordingId))
@@ -25105,10 +25808,9 @@ class PostgresContainerIT {
                         "SELECT count(*) FROM evidence.media_object WHERE id = ?", mediaId))
                         .as("no media residue for %s", mediaId).isZero();
             }
-            if (!eventIds.isEmpty()) {
+            for (String eventId : eventIds) {
                 assertThat(queryLong(verify,
-                        "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?",
-                        recordId)).isZero();
+                        "SELECT count(*) FROM evidence.evidence_event WHERE event_id = ?", eventId)).isZero();
             }
             assertThat(queryLong(verify,
                     "SELECT count(*) FROM entitlement_metering.usage_reservation WHERE id = ?",
