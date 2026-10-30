@@ -29,9 +29,9 @@ Before production implementation, section 18 of the design source requires code-
 
 - ID: `PA7-v007-activation-consent-foundation`
 - Type: architecture-sensitive migration and persistence feature work unit.
-- Status: active.
+- Status: completed (`final closeout pass`).
 - Base: merged PR #14 / `main` commit `6b7edcd37961d14eacba68d5a38d9773fa9bcff9`; the merged tree contains the accepted V001-V006 persistence foundation and PA6 final closeout.
-- Current gate / next entry point: `accepted PR review commit`, followed by final `push` and `draft-PR-pass`. Draft PR #15 `https://github.com/zh94695424/one-call/pull/15`, reviewhead `fe8a47e575c2c0e08c0f91aabe8bcf7e3245bf60`, base main6b7edcd, Open/Draft/MERGEABLE/CLEAN. A/B independentPRreviews report no materialfinding; controllerexactheadCI run41013426767 completedSUCCESS forjava-runtime/contract-regressions. NoacceptedPRfinding/fixrequired; residuals classified. Create3pathPRreviewcheckpoint/push, verifyremotePRhead+CI beforefinalcloseout. No merge/approve/markready/reviewerrequest/comment authority.
+- Current gate: `final closeout pass`. PA7 complete; Draft PR #15 `https://github.com/zh94695424/one-call/pull/15` remains Open/Draft/MERGEABLE/CLEAN. Accepted PRreviewcheckpoint `431edba2239cdff1abd52629e358c771ae259a3b` pushed; local/remote/PRhead equal and exactheadCI41014884344bothjobsSUCCESS. `draft-PR-pass` satisfied after finalpush. Closeout `docs/gateflow/pa7-v007-activation-consent-foundation-final-closeout.md` reconciles allfindings/residualowners/docs/validation/noissueassociation. Next entry after user mergesPR15: update main fromorigin/main, freshworktree/branch, goalconfirmation for tentative `PA8-v008-evidence-foundation` boundedtoV008persistence. Do not startfromunmergedPA7 or expandtoapplicationservices. Closeoutdelivery changesonlycontroller+closeoutdoc, thenpush; no merge/approval/markready/reviewerrequest/comment performed.
 - Design source: `docs/12-technology-stack-and-system-architecture.md` sections 5, 6, 14 and 15 Phase B; `docs/14-production-data-model-and-flyway-schema-spec.md` sections 4.36-4.38, 5, 9, 10.12, 10.16-10.20, 11.1 and 11.4 are binding. Accepted V001-V006 migrations and executable evidence are immutable prerequisites.
 
 ### PA7 binding goal contract
