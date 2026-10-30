@@ -3,6 +3,9 @@ package com.onecall.archtests.container;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -14,6 +17,8 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -155,6 +160,17 @@ class PostgresContainerIT {
             "entitlement_metering_role",
             "activation_consent_owner",
             "activation_consent_role");
+
+    private static final List<String> V008_ROLES = List.of(
+            "evidence_owner",
+            "evidence_role");
+
+    private static final List<String> V008_TABLES = List.of(
+            "evidence_artifact",
+            "evidence_event",
+            "evidence_record",
+            "media_object",
+            "recording");
 
     private static final List<String> V004_TABLES = List.of(
             "catalog_order.catalog_benefit_line",
@@ -885,6 +901,13 @@ class PostgresContainerIT {
     private static boolean stagedV006SubjectUsageAbsent;
     private static boolean stagedV006CustomerIamUsageAbsent;
     private static boolean stagedV006OrganizationAccessUsageAbsent;
+    private static MigrateResult stagedV007Migration;
+    private static boolean stagedV007EvidenceSchemaAbsent;
+    private static boolean stagedV007EvidenceRolesAbsent;
+    private static boolean stagedV007EvidenceTablesAbsent;
+    private static boolean stagedV007SharingSchemaAbsent;
+    private static boolean stagedV007SharingRolesAbsent;
+    private static boolean stagedV007FunctionWaveStillFive;
 
     /**
      * Immutable evidence from the dedicated staged-V004 orphan-consent order probe.
@@ -1029,6 +1052,42 @@ class PostgresContainerIT {
         flyway = Flyway.configure()
                 .dataSource(url, DB_USER, PASSWORD)
                 .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("007"))
+                .load();
+        stagedV007Migration = flyway.migrate();
+
+        try (Connection connection = openConnection()) {
+            stagedV007EvidenceSchemaAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_namespace WHERE nspname = 'evidence'")
+                    == 0;
+            stagedV007EvidenceRolesAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_roles WHERE rolname IN ('evidence_owner','evidence_role')")
+                    == 0;
+            stagedV007EvidenceTablesAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'evidence' AND c.relkind = 'r'")
+                    == 0;
+            stagedV007SharingSchemaAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'")
+                    == 0;
+            stagedV007SharingRolesAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')")
+                    == 0;
+            stagedV007FunctionWaveStillFive = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE p.prosecdef AND n.nspname IN ('platform','audit','entitlement_metering')")
+                    == 5;
+        }
+
+        flyway = Flyway.configure()
+                .dataSource(url, DB_USER, PASSWORD)
+                .locations("classpath:db/migration")
                 .load();
         initialMigration = flyway.migrate();
     }
@@ -1143,10 +1202,11 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThroughV007MigrateCleanPostgres16WithoutSkipping() throws Exception {
+    void v001ThroughV008MigrateCleanPostgres16WithoutSkipping() throws Exception {
         assertThat(stagedV004Migration.migrationsExecuted).isEqualTo(4);
         assertThat(stagedV005Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV006Migration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV007Migration.migrationsExecuted).isEqualTo(1);
         assertThat(initialMigration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV004OrphanConsentEvidence)
                 .as("assigned-once V004 orphan-consent probe evidence is present").isNotNull();
@@ -1179,6 +1239,19 @@ class PostgresContainerIT {
                 .as("staged V006 activation_consent_role lacks customer_iam USAGE").isTrue();
         assertThat(stagedV006OrganizationAccessUsageAbsent)
                 .as("staged V006 activation_consent_role lacks organization_access USAGE")
+                .isTrue();
+        assertThat(stagedV007EvidenceSchemaAbsent)
+                .as("staged V007 prefix has no evidence schema").isTrue();
+        assertThat(stagedV007EvidenceRolesAbsent)
+                .as("staged V007 prefix has no evidence roles").isTrue();
+        assertThat(stagedV007EvidenceTablesAbsent)
+                .as("staged V007 prefix has zero evidence tables").isTrue();
+        assertThat(stagedV007SharingSchemaAbsent)
+                .as("staged V007 prefix has no sharing schema").isTrue();
+        assertThat(stagedV007SharingRolesAbsent)
+                .as("staged V007 prefix has no sharing roles").isTrue();
+        assertThat(stagedV007FunctionWaveStillFive)
+                .as("staged V007 function wave remains the five SECURITY DEFINER services")
                 .isTrue();
 
         try (Connection connection = openConnection();
@@ -1247,6 +1320,15 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V007__activation_and_consent.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("008");
+            assertThat(resultSet.getString("description"))
+                    .isEqualTo("evidence media");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script"))
+                    .isEqualTo("V008__evidence_media.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -2375,6 +2457,7 @@ class PostgresContainerIT {
             assertV006FunctionsAndTriggersExact(connection);
             assertV006NoIdDefaultsOrSequences(connection);
             assertNoV008PlusObjects(connection);
+            assertV008StagedPrefixBooleansStillTrue();
         }
     }
 
@@ -2427,6 +2510,7 @@ class PostgresContainerIT {
             assertV007FunctionsAndTriggersExact(connection);
             assertV007NoIdDefaultsOrSequences(connection);
             assertNoV008PlusObjects(connection);
+            assertV008StagedPrefixBooleansStillTrue();
         }
     }
 
@@ -2494,6 +2578,56 @@ class PostgresContainerIT {
     @Test
     void concurrentV007ActivationAndTransitionIdentityHasOneWinner() throws Exception {
         runConcurrentV007ActivationAndTransitionIdentityHasOneWinner();
+    }
+
+    /**
+     * PA8 V008 S1: exact evidence inventory (5 tables/56 columns/39 checks/5 PK/5 ordinary
+     * unique + 2 partial unique/8 secondary indexes/10 defaults/5 functions/7 triggers),
+     * guard shapes, function-wave fence, sharing-absent fence and V001–V007 digest witness.
+     */
+    @Test
+    void v008EvidenceInventoryAndGuardShapesAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV008TablesColumnsChecksIndexesFks(connection);
+            assertV008CheckPredicateInventory(connection);
+            assertV008FunctionsAndTriggersExact(connection);
+            assertV008DefaultsAndNoServiceFunctions(connection);
+            assertNoV009PlusObjects(connection);
+            assertV008StagedPrefixBooleansStillTrue();
+        }
+        assertV001ThroughV007MigrationDigestsUnchanged();
+    }
+
+    /**
+     * PA8 V008 S1: owner/runtime/PUBLIC/cross-module ACL exactness including PUBLIC
+     * aclexplode-zero, foreign row-lock 42501 negatives, evidence_role schema/function
+     * fences and every S1/S2 role denied evidence usage.
+     */
+    @Test
+    void v008OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV008RoleAttributes(connection);
+            assertV008PublicAclIsZero(connection);
+            assertV008OwnedTableGrants(connection);
+            assertV008SchemaAndFunctionFences(connection);
+            assertV008CrossModuleGrants(connection);
+        }
+        assertV008ForeignRowLockAndRuntimeDenials();
+    }
+
+    /**
+     * PA8 V008 S1: 10-FK catalog pin (8 ordinary RESTRICT r/r + 2 deferred a/a), statement-time
+     * 23503 missing-parent probes, RESTRICT parent-delete with pinned fixtures, savepoint-scoped
+     * media trigger disable, deferred parent-delete via expectCommitFailure, and method-local
+     * cleanup of every committed prerequisite.
+     */
+    @Test
+    void v008ForeignKeyAndDeferredCreationCycleFkBackstops() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV008ForeignKeyInventory(connection);
+        }
+        assertV008MissingParentFkProbes();
+        assertV008RestrictParentDeleteAndDeferredParentDelete();
     }
 
     /**
@@ -3648,6 +3782,49 @@ class PostgresContainerIT {
         } finally {
             connection.rollback(savepoint);
         }
+    }
+
+    /**
+     * S1-introduced commit-time failure witness (PA8; reused by S2). Runs setup on a
+     * dedicated auto-commit-off connection, then attempts COMMIT and asserts the thrown
+     * SQLException SQLSTATE/message. Does not use a savepoint and cannot observe
+     * statement-time failures. First use: deferred parent-delete on
+     * {@code fk_evidence_event_record}.
+     */
+    private static void expectCommitFailure(
+            String expectedSqlState,
+            String messageFragment,
+            JdbcThrowingRunnable setup) throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            setup.run(connection);
+            try {
+                connection.commit();
+                fail("expected commit failure " + expectedSqlState + " but COMMIT succeeded");
+            } catch (SQLException exception) {
+                assertThat(exception.getSQLState())
+                        .as("SQLSTATE for expected commit failure %s", expectedSqlState)
+                        .isEqualTo(expectedSqlState);
+                if (messageFragment != null) {
+                    assertThat(exception.getMessage())
+                            .as("commit error/constraint marker for %s", messageFragment)
+                            .contains(messageFragment);
+                }
+            } finally {
+                try {
+                    if (!connection.getAutoCommit()) {
+                        connection.rollback();
+                    }
+                } catch (SQLException ignored) {
+                    connection.rollback();
+                }
+            }
+        }
+    }
+
+    @FunctionalInterface
+    private interface JdbcThrowingRunnable {
+        void run(Connection connection) throws Exception;
     }
 
     private static void switchLocalRole(Connection connection, String role) throws SQLException {
@@ -5529,7 +5706,7 @@ class PostgresContainerIT {
                 connection,
                 "SELECT n.nspname || '=' || pg_get_userbyid(n.nspowner) FROM pg_namespace n "
                         + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam','subject_number',"
-                        + "'catalog_order','ivr','entitlement_metering','activation_consent') "
+                        + "'catalog_order','ivr','entitlement_metering','activation_consent','evidence') "
                         + "ORDER BY n.nspname"))
                 .containsExactly(
                         "activation_consent=activation_consent_owner",
@@ -5537,6 +5714,7 @@ class PostgresContainerIT {
                         "catalog_order=catalog_order_owner",
                         "customer_iam=customer_iam_owner",
                         "entitlement_metering=entitlement_metering_owner",
+                        "evidence=evidence_owner",
                         "ivr=ivr_owner",
                         "operations_iam=operations_iam_owner",
                         "organization_access=organization_access_owner",
@@ -5545,7 +5723,7 @@ class PostgresContainerIT {
 
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
                 .isZero();
 
         assertThat(queryStrings(
@@ -5558,6 +5736,7 @@ class PostgresContainerIT {
                         "catalog_order",
                         "customer_iam",
                         "entitlement_metering",
+                        "evidence",
                         "ivr",
                         "operations_iam",
                         "organization_access",
@@ -5571,6 +5750,9 @@ class PostgresContainerIT {
         for (String role : V004_ROLES) {
             expectedRoles.add(role + ":false:false:false:false");
         }
+        for (String role : V008_ROLES) {
+            expectedRoles.add(role + ":false:false:false:false");
+        }
         expectedRoles.sort(String::compareTo);
 
         assertThat(queryStrings(
@@ -5581,8 +5763,7 @@ class PostgresContainerIT {
 
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN "
-                        + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
                 .isZero();
     }
 
@@ -6316,6 +6497,11 @@ class PostgresContainerIT {
                         "entitlement_metering.guard_usage_reservation",
                         "entitlement_metering.issue_first_trial",
                         "entitlement_metering.reject_row_mutation",
+                        "evidence.guard_evidence_event_creation_cycle",
+                        "evidence.guard_evidence_record",
+                        "evidence.guard_evidence_record_creation_cycle",
+                        "evidence.guard_recording",
+                        "evidence.reject_row_mutation",
                         "ivr.guard_call_leg",
                         "ivr.guard_call_record_parties",
                         "ivr.guard_inbound_session",
@@ -6449,6 +6635,13 @@ class PostgresContainerIT {
                         "entitlement_metering.trial_policy_version.trg_trial_policy_version_guard",
                         "entitlement_metering.usage_fact.trg_usage_fact_immutable",
                         "entitlement_metering.usage_reservation.trg_usage_reservation_guard",
+                        "evidence.evidence_artifact.trg_evidence_artifact_immutable",
+                        "evidence.evidence_event.trg_evidence_event_creation_cycle",
+                        "evidence.evidence_event.trg_evidence_event_immutable",
+                        "evidence.evidence_record.trg_evidence_record_creation_cycle",
+                        "evidence.evidence_record.trg_evidence_record_guard",
+                        "evidence.media_object.trg_media_object_immutable",
+                        "evidence.recording.trg_recording_guard",
                         "ivr.call_leg.trg_call_leg_guard",
                         "ivr.call_record.trg_call_record_guard",
                         "ivr.inbound_session.trg_inbound_session_guard",
@@ -7705,15 +7898,24 @@ class PostgresContainerIT {
                         + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' ORDER BY 1"))
                 .as("exactly the three V007 activation_consent tables")
                 .containsExactlyElementsOf(V007_TABLES);
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the five V008 evidence tables")
+                .containsExactlyElementsOf(V008_TABLES);
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
                 .isZero();
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN "
-                        + "('evidence_owner','evidence_role','sharing_owner','sharing_role')"))
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
                 .isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('evidence_owner','evidence_role')"))
+                .isEqualTo(2);
         assertThat(queryStrings(
                 connection,
                 "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
@@ -7721,6 +7923,13 @@ class PostgresContainerIT {
                         + "AND p.prosecdef ORDER BY 1"))
                 .as("issue_first_trial is the only SECURITY DEFINER service function")
                 .containsExactly("issue_first_trial");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema'"))
+                .as("function wave remains the five SECURITY DEFINER services")
+                .isEqualTo(5);
         assertThat(queryStrings(
                 connection,
                 "SELECT proname FROM pg_proc WHERE proname IN "
@@ -7738,8 +7947,7 @@ class PostgresContainerIT {
                         + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
                 .as("V007 consent FK is present").isEqualTo(1);
         for (String v008PlusName : List.of(
-                "media_object", "recording", "evidence_record", "evidence_artifact",
-                "evidence_event", "evidence_share_grant", "share_admission", "share_access_event")) {
+                "evidence_share_grant", "share_admission", "share_access_event")) {
             assertThat(toRegclass(connection, "activation_consent." + v008PlusName)).isNull();
             assertThat(toRegclass(connection, "entitlement_metering." + v008PlusName)).isNull();
             assertThat(toRegclass(connection, "evidence." + v008PlusName)).isNull();
@@ -17534,8 +17742,8 @@ class PostgresContainerIT {
                         .as("V005 ivr tables exist")
                         .isEqualTo(6);
                 assertThat(queryLong(connection,
-                        "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
-                        .as("no evidence/sharing schema")
+                        "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
+                        .as("no sharing schema")
                         .isZero();
                 assertThat(toRegclass(connection, "ivr.call_task")).isNull();
                 assertThat(toRegclass(connection, "ivr.call_session")).isNull();
@@ -23295,6 +23503,1646 @@ class PostgresContainerIT {
             assertThat(queryLong(verify,
                     "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
                     subjectId)).isZero();
+        }
+    }
+
+    private static void assertV008StagedPrefixBooleansStillTrue() {
+        assertThat(stagedV007EvidenceSchemaAbsent)
+                .as("staged V007 prefix has no evidence schema").isTrue();
+        assertThat(stagedV007EvidenceRolesAbsent)
+                .as("staged V007 prefix has no evidence roles").isTrue();
+        assertThat(stagedV007EvidenceTablesAbsent)
+                .as("staged V007 prefix has zero evidence tables").isTrue();
+        assertThat(stagedV007SharingSchemaAbsent)
+                .as("staged V007 prefix has no sharing schema").isTrue();
+        assertThat(stagedV007SharingRolesAbsent)
+                .as("staged V007 prefix has no sharing roles").isTrue();
+        assertThat(stagedV007FunctionWaveStillFive)
+                .as("staged V007 function wave remains five SECURITY DEFINER services").isTrue();
+    }
+
+    private static void assertV001ThroughV007MigrationDigestsUnchanged() throws Exception {
+        // Pinned canonical LF (Git blob) digests; CRLF bytes are normalized to LF before hashing.
+        Map<String, String> expected = Map.of(
+                "db/migration/V001__platform_schemas_roles_idempotency_outbox_audit.sql",
+                "946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045",
+                "db/migration/V002__identity_organization_and_employee.sql",
+                "534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5",
+                "db/migration/V003__subject_number_and_claim.sql",
+                "1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1",
+                "db/migration/V004__catalog_order_and_payment.sql",
+                "a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc",
+                "db/migration/V005__ivr_task_session_call.sql",
+                "2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310",
+                "db/migration/V006__trial_entitlement_issuance_reservation_usage.sql",
+                "830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475",
+                "db/migration/V007__activation_and_consent.sql",
+                "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659");
+        for (Map.Entry<String, String> entry : expected.entrySet()) {
+            byte[] raw = readClasspathBytes(entry.getKey());
+            byte[] lf = toLfBytes(raw);
+            assertThat(sha256Hex(lf))
+                    .as("frozen canonical LF digest for %s", entry.getKey())
+                    .isEqualTo(entry.getValue());
+        }
+    }
+
+    private static byte[] readClasspathBytes(String resource) throws Exception {
+        try (InputStream input = PostgresContainerIT.class.getClassLoader()
+                .getResourceAsStream(resource)) {
+            assertThat(input).as("classpath resource %s exists", resource).isNotNull();
+            return input.readAllBytes();
+        }
+    }
+
+    private static byte[] toLfBytes(byte[] raw) {
+        byte[] lf = new byte[raw.length];
+        int out = 0;
+        for (int i = 0; i < raw.length; i++) {
+            if (raw[i] == '\r') {
+                if (i + 1 < raw.length && raw[i + 1] == '\n') {
+                    continue;
+                }
+                lf[out++] = '\n';
+            } else {
+                lf[out++] = raw[i];
+            }
+        }
+        byte[] trimmed = new byte[out];
+        System.arraycopy(lf, 0, trimmed, 0, out);
+        return trimmed;
+    }
+
+    private static String sha256Hex(byte[] data) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return HexFormat.of().formatHex(digest.digest(data));
+    }
+
+    private static void assertNoV009PlusObjects(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
+                .as("no sharing schema (V009)").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
+                .as("no sharing roles (V009)").isZero();
+        for (String name : List.of(
+                "evidence_share_grant", "share_admission", "share_access_event")) {
+            assertThat(toRegclass(connection, "sharing." + name)).isNull();
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema'"))
+                .as("function wave remains the five SECURITY DEFINER services")
+                .isEqualTo(5);
+    }
+
+    private static void assertV008TablesColumnsChecksIndexesFks(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the five V008 evidence tables")
+                .containsExactlyElementsOf(V008_TABLES);
+
+        Map<String, List<String>> columnsByTable = new java.util.LinkedHashMap<>();
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT c.relname, a.attname FROM pg_class c "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped "
+                        + "ORDER BY c.relname, a.attnum")) {
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                while (resultSet.next()) {
+                    columnsByTable
+                            .computeIfAbsent(resultSet.getString(1), k -> new ArrayList<>())
+                            .add(resultSet.getString(2));
+                }
+            }
+        }
+        assertThat(columnsByTable.get("media_object")).containsExactly(
+                "id", "storage_provider", "bucket", "object_key", "object_version_id",
+                "sha256", "size_bytes", "mime_type", "crypto_key_ref", "worm_status", "created_at");
+        assertThat(columnsByTable.get("recording")).containsExactly(
+                "id", "call_id", "recording_id", "media_object_id", "declared_format",
+                "declared_size", "declared_duration", "declared_sha256", "validated_duration",
+                "validated_sha256", "status", "upload_expires_at", "created_at",
+                "validated_at", "revision");
+        assertThat(columnsByTable.get("evidence_record")).containsExactly(
+                "id", "subject_id", "source_type", "source_ref_id", "source_event_domain",
+                "source_event_id", "call_id", "session_id", "reservation_id",
+                "identity_at_capture", "consent_version", "status", "revision", "snapshot",
+                "snapshot_sha256", "created_at", "solidified_at");
+        assertThat(columnsByTable.get("evidence_artifact")).containsExactly(
+                "id", "evidence_id", "media_object_id", "artifact_role", "created_at");
+        assertThat(columnsByTable.get("evidence_event")).containsExactly(
+                "id", "evidence_id", "event_domain", "event_id", "event_type",
+                "occurred_at", "payload_redacted", "payload_sha256");
+
+        int totalColumns = columnsByTable.values().stream().mapToInt(List::size).sum();
+        assertThat(totalColumns).as("56 evidence columns").isEqualTo(56);
+
+        Map<String, List<String>> columnDetails = new java.util.LinkedHashMap<>();
+        columnDetails.put("media_object", List.of(
+                "id|uuid|NO|<none>|<none>",
+                "storage_provider|text|NO|<none>|<none>",
+                "bucket|text|NO|<none>|<none>",
+                "object_key|text|NO|<none>|<none>",
+                "object_version_id|text|NO|<none>|<none>",
+                "sha256|text|NO|<none>|<none>",
+                "size_bytes|bigint|NO|<none>|<none>",
+                "mime_type|text|NO|<none>|<none>",
+                "crypto_key_ref|text|NO|<none>|<none>",
+                "worm_status|text|NO|'PENDING'::text|<none>",
+                "created_at|timestamp with time zone|NO|now()|<none>"));
+        columnDetails.put("recording", List.of(
+                "id|uuid|NO|<none>|<none>",
+                "call_id|text|NO|<none>|<none>",
+                "recording_id|text|NO|<none>|<none>",
+                "media_object_id|uuid|YES|<none>|<none>",
+                "declared_format|text|NO|<none>|<none>",
+                "declared_size|bigint|NO|<none>|<none>",
+                "declared_duration|integer|NO|<none>|<none>",
+                "declared_sha256|text|NO|<none>|<none>",
+                "validated_duration|integer|YES|<none>|<none>",
+                "validated_sha256|text|YES|<none>|<none>",
+                "status|text|NO|'DECLARED'::text|<none>",
+                "upload_expires_at|timestamp with time zone|NO|<none>|<none>",
+                "created_at|timestamp with time zone|NO|now()|<none>",
+                "validated_at|timestamp with time zone|YES|<none>|<none>",
+                "revision|integer|NO|1|<none>"));
+        columnDetails.put("evidence_record", List.of(
+                "id|uuid|NO|<none>|<none>",
+                "subject_id|uuid|NO|<none>|<none>",
+                "source_type|text|NO|<none>|<none>",
+                "source_ref_id|uuid|NO|<none>|<none>",
+                "source_event_domain|text|NO|<none>|<none>",
+                "source_event_id|text|NO|<none>|<none>",
+                "call_id|text|YES|<none>|<none>",
+                "session_id|uuid|YES|<none>|<none>",
+                "reservation_id|uuid|YES|<none>|<none>",
+                "identity_at_capture|jsonb|NO|<none>|<none>",
+                "consent_version|text|NO|<none>|<none>",
+                "status|text|NO|'PENDING'::text|<none>",
+                "revision|integer|NO|1|<none>",
+                "snapshot|jsonb|NO|<none>|<none>",
+                "snapshot_sha256|text|NO|<none>|<none>",
+                "created_at|timestamp with time zone|NO|now()|<none>",
+                "solidified_at|timestamp with time zone|YES|<none>|<none>"));
+        columnDetails.put("evidence_artifact", List.of(
+                "id|uuid|NO|<none>|<none>",
+                "evidence_id|uuid|NO|<none>|<none>",
+                "media_object_id|uuid|NO|<none>|<none>",
+                "artifact_role|text|NO|<none>|<none>",
+                "created_at|timestamp with time zone|NO|now()|<none>"));
+        columnDetails.put("evidence_event", List.of(
+                "id|uuid|NO|<none>|<none>",
+                "evidence_id|uuid|NO|<none>|<none>",
+                "event_domain|text|NO|<none>|<none>",
+                "event_id|text|NO|<none>|<none>",
+                "event_type|text|NO|<none>|<none>",
+                "occurred_at|timestamp with time zone|NO|now()|<none>",
+                "payload_redacted|jsonb|NO|<none>|<none>",
+                "payload_sha256|text|NO|<none>|<none>"));
+        for (Map.Entry<String, List<String>> entry : columnDetails.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT column_name || '|' || data_type || '|' || is_nullable || '|' "
+                            + "|| coalesce(column_default, '<none>') || '|' "
+                            + "|| coalesce(character_maximum_length::text, '<none>') "
+                            + "FROM information_schema.columns "
+                            + "WHERE table_schema = 'evidence' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    entry.getKey()))
+                    .as("exact column definitions and character lengths of evidence.%s", entry.getKey())
+                    .containsExactlyElementsOf(entry.getValue());
+        }
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || t.relname || '.' || c.conname FROM pg_constraint c "
+                        + "JOIN pg_class t ON t.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.contype = 'p' ORDER BY 1"))
+                .containsExactly(
+                        "evidence.evidence_artifact.pk_evidence_artifact",
+                        "evidence.evidence_event.pk_evidence_event",
+                        "evidence.evidence_record.pk_evidence_record",
+                        "evidence.media_object.pk_media_object",
+                        "evidence.recording.pk_recording");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.conname FROM pg_constraint c "
+                        + "JOIN pg_class t ON t.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.contype = 'u' "
+                        + "AND c.conkey IS NOT NULL AND NOT c.conname LIKE 'uq_evidence_original%' "
+                        + "AND NOT c.conname LIKE 'uq_evidence_created%' ORDER BY 1"))
+                .containsExactly(
+                        "uq_evidence_artifact",
+                        "uq_evidence_event_domain_id",
+                        "uq_evidence_source_event",
+                        "uq_media_object_version",
+                        "uq_recording_protocol_id");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT t.relname || '.' || c.conname || '|' || pg_get_constraintdef(c.oid) "
+                        + "FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.contype IN ('p', 'u') ORDER BY 1"))
+                .as("all five primary and five ordinary unique key definitions")
+                .containsExactly(
+                        "evidence_artifact.pk_evidence_artifact|PRIMARY KEY (id)",
+                        "evidence_artifact.uq_evidence_artifact|UNIQUE (evidence_id, artifact_role, media_object_id)",
+                        "evidence_event.pk_evidence_event|PRIMARY KEY (id)",
+                        "evidence_event.uq_evidence_event_domain_id|UNIQUE (event_domain, event_id)",
+                        "evidence_record.pk_evidence_record|PRIMARY KEY (id)",
+                        "evidence_record.uq_evidence_source_event|UNIQUE (source_event_domain, source_event_id)",
+                        "media_object.pk_media_object|PRIMARY KEY (id)",
+                        "media_object.uq_media_object_version|UNIQUE (bucket, object_key, object_version_id)",
+                        "recording.pk_recording|PRIMARY KEY (id)",
+                        "recording.uq_recording_protocol_id|UNIQUE (recording_id)");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname || '.' || index_alias.relname FROM pg_index i "
+                        + "JOIN pg_class c ON c.oid = i.indrelid "
+                        + "JOIN pg_class index_alias ON index_alias.oid = i.indexrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND i.indisunique "
+                        + "AND (i.indpred IS NOT NULL) ORDER BY 1"))
+                .containsExactly(
+                        "evidence_artifact.uq_evidence_original_artifact",
+                        "evidence_event.uq_evidence_created_event");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname || '.' || index_alias.relname FROM pg_index i "
+                        + "JOIN pg_class c ON c.oid = i.indrelid "
+                        + "JOIN pg_class index_alias ON index_alias.oid = i.indexrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND NOT i.indisunique "
+                        + "ORDER BY 1"))
+                .containsExactly(
+                        "evidence_artifact.ix_evidence_artifact_media",
+                        "evidence_event.ix_evidence_event_record",
+                        "evidence_record.ix_evidence_call",
+                        "evidence_record.ix_evidence_status",
+                        "evidence_record.ix_evidence_subject",
+                        "media_object.ix_media_object_sha256",
+                        "recording.ix_recording_call",
+                        "recording.ix_recording_pending");
+
+        Map<String, String> indexDefs = new java.util.LinkedHashMap<>();
+        indexDefs.put("evidence_artifact.uq_evidence_original_artifact",
+                "CREATE UNIQUE INDEX uq_evidence_original_artifact ON evidence.evidence_artifact "
+                        + "USING btree (evidence_id) WHERE (artifact_role = 'ORIGINAL'::text)");
+        indexDefs.put("evidence_event.uq_evidence_created_event",
+                "CREATE UNIQUE INDEX uq_evidence_created_event ON evidence.evidence_event "
+                        + "USING btree (evidence_id) WHERE (event_type = 'EVIDENCE_CREATED'::text)");
+        indexDefs.put("evidence_artifact.ix_evidence_artifact_media",
+                "CREATE INDEX ix_evidence_artifact_media ON evidence.evidence_artifact "
+                        + "USING btree (media_object_id)");
+        indexDefs.put("evidence_event.ix_evidence_event_record",
+                "CREATE INDEX ix_evidence_event_record ON evidence.evidence_event "
+                        + "USING btree (evidence_id, occurred_at)");
+        indexDefs.put("evidence_record.ix_evidence_call",
+                "CREATE INDEX ix_evidence_call ON evidence.evidence_record USING btree (call_id)");
+        indexDefs.put("evidence_record.ix_evidence_status",
+                "CREATE INDEX ix_evidence_status ON evidence.evidence_record "
+                        + "USING btree (status, created_at)");
+        indexDefs.put("evidence_record.ix_evidence_subject",
+                "CREATE INDEX ix_evidence_subject ON evidence.evidence_record "
+                        + "USING btree (subject_id, created_at DESC)");
+        indexDefs.put("media_object.ix_media_object_sha256",
+                "CREATE INDEX ix_media_object_sha256 ON evidence.media_object USING btree (sha256)");
+        indexDefs.put("recording.ix_recording_call",
+                "CREATE INDEX ix_recording_call ON evidence.recording "
+                        + "USING btree (call_id, created_at DESC)");
+        indexDefs.put("recording.ix_recording_pending",
+                "CREATE INDEX ix_recording_pending ON evidence.recording "
+                        + "USING btree (status, upload_expires_at)");
+        for (Map.Entry<String, String> entry : indexDefs.entrySet()) {
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'evidence' "
+                            + "AND tablename || '.' || indexname = ?",
+                    entry.getKey()))
+                    .as("whole index definition of evidence.%s", entry.getKey())
+                    .containsExactly(entry.getValue());
+        }
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attribute a "
+                        + "JOIN pg_class c ON c.oid = a.attrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND a.atthasdef"))
+                .as("10 default columns").isEqualTo(10);
+    }
+
+    /**
+     * PA8 V008: frozen mapping of bare table name -&gt; (check name -&gt; expected PostgreSQL 16
+     * canonical {@code pg_get_constraintdef} output) for all 39 V008 named checks. Each literal
+     * derives from the accepted plan / docs/14 frozen dictionaries and is compared by
+     * whole-definition equality after whitespace-only normalizeCheckDef on both sides.
+     */
+    private static final Map<String, Map<String, String>> V008_CHECK_DEF_MAP;
+
+    static {
+        Map<String, Map<String, String>> map = new java.util.LinkedHashMap<>();
+        map.put("media_object", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_media_object_provider",
+                        "CHECK ((storage_provider = 'COS'::text))"),
+                java.util.Map.entry("ck_media_object_bucket",
+                        "CHECK ((((length(bucket) >= 1) AND (length(bucket) <= 255)) AND (btrim(bucket) <> ''::text)))"),
+                java.util.Map.entry("ck_media_object_key",
+                        "CHECK ((((length(object_key) >= 1) AND (length(object_key) <= 1024)) AND (btrim(object_key) <> ''::text)))"),
+                java.util.Map.entry("ck_media_object_version",
+                        "CHECK ((((length(object_version_id) >= 1) AND (length(object_version_id) <= 1024)) AND (btrim(object_version_id) <> ''::text)))"),
+                java.util.Map.entry("ck_media_object_sha256",
+                        "CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_media_object_size",
+                        "CHECK ((size_bytes > 0))"),
+                java.util.Map.entry("ck_media_object_mime",
+                        "CHECK ((((length(mime_type) >= 1) AND (length(mime_type) <= 255)) AND (btrim(mime_type) <> ''::text)))"),
+                java.util.Map.entry("ck_media_object_key_ref",
+                        "CHECK ((((length(crypto_key_ref) >= 1) AND (length(crypto_key_ref) <= 128)) AND (btrim(crypto_key_ref) <> ''::text)))"),
+                java.util.Map.entry("ck_media_object_worm_status",
+                        "CHECK ((worm_status = ANY (ARRAY['PENDING'::text, 'CONFIRMED'::text, 'UNSUPPORTED'::text, 'FAILED'::text])))"))));
+        map.put("recording", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_recording_protocol_id",
+                        "CHECK ((((length(recording_id) >= 1) AND (length(recording_id) <= 128)) AND (btrim(recording_id) <> ''::text)))"),
+                java.util.Map.entry("ck_recording_declared_format",
+                        "CHECK ((((length(declared_format) >= 1) AND (length(declared_format) <= 64)) AND (btrim(declared_format) <> ''::text)))"),
+                java.util.Map.entry("ck_recording_declared_size",
+                        "CHECK ((declared_size > 0))"),
+                java.util.Map.entry("ck_recording_declared_duration",
+                        "CHECK ((declared_duration > 0))"),
+                java.util.Map.entry("ck_recording_declared_sha256",
+                        "CHECK ((declared_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_recording_validated_duration",
+                        "CHECK (((validated_duration IS NULL) OR (validated_duration > 0)))"),
+                java.util.Map.entry("ck_recording_validated_sha256",
+                        "CHECK (((validated_sha256 IS NULL) OR (validated_sha256 ~ '^[0-9a-f]{64}$'::text)))"),
+                java.util.Map.entry("ck_recording_status",
+                        "CHECK ((status = ANY (ARRAY['DECLARED'::text, 'UPLOADED'::text, 'VALIDATED'::text, 'QUARANTINED'::text])))"),
+                java.util.Map.entry("ck_recording_state_shape",
+                        "CHECK ((((status = 'DECLARED'::text) AND (media_object_id IS NULL) AND (validated_duration IS NULL) AND (validated_sha256 IS NULL) AND (validated_at IS NULL)) OR ((status = 'UPLOADED'::text) AND (media_object_id IS NOT NULL) AND (validated_duration IS NULL) AND (validated_sha256 IS NULL) AND (validated_at IS NULL)) OR ((status = 'VALIDATED'::text) AND (media_object_id IS NOT NULL) AND (validated_duration IS NOT NULL) AND (validated_sha256 IS NOT NULL) AND (validated_at IS NOT NULL)) OR ((status = 'QUARANTINED'::text) AND (validated_at IS NOT NULL))))"),
+                java.util.Map.entry("ck_recording_upload_expiry",
+                        "CHECK ((upload_expires_at > created_at))"),
+                java.util.Map.entry("ck_recording_revision",
+                        "CHECK ((revision >= 1))"))));
+        map.put("evidence_record", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_evidence_source_type",
+                        "CHECK ((source_type = 'CALL_RECORDING'::text))"),
+                java.util.Map.entry("ck_evidence_source_ref",
+                        "CHECK ((source_ref_id IS NOT NULL))"),
+                java.util.Map.entry("ck_evidence_source_domain",
+                        "CHECK ((source_event_domain = 'EVIDENCE'::text))"),
+                java.util.Map.entry("ck_evidence_source_event_id",
+                        "CHECK ((((length(source_event_id) >= 1) AND (length(source_event_id) <= 128)) AND (btrim(source_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_evidence_capture_shape",
+                        "CHECK (((jsonb_typeof(identity_at_capture) = 'object'::text) AND (identity_at_capture ? 'subjectId'::text) AND (identity_at_capture ? 'capturedAt'::text) AND (identity_at_capture ? 'sourceChannel'::text)))"),
+                java.util.Map.entry("ck_evidence_capture_subject",
+                        "CHECK (((identity_at_capture ->> 'subjectId'::text) = (subject_id)::text))"),
+                java.util.Map.entry("ck_evidence_consent_version",
+                        "CHECK ((((length(consent_version) >= 1) AND (length(consent_version) <= 64)) AND (btrim(consent_version) <> ''::text)))"),
+                java.util.Map.entry("ck_evidence_status",
+                        "CHECK ((status = ANY (ARRAY['PENDING'::text, 'SOLIDIFIED'::text, 'QUARANTINED'::text, 'FAILED'::text])))"),
+                java.util.Map.entry("ck_evidence_state_shape",
+                        "CHECK ((((status = 'PENDING'::text) AND (solidified_at IS NULL)) OR ((status = 'SOLIDIFIED'::text) AND (solidified_at IS NOT NULL)) OR ((status = ANY (ARRAY['QUARANTINED'::text, 'FAILED'::text])) AND (solidified_at IS NULL))))"),
+                java.util.Map.entry("ck_evidence_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_evidence_snapshot_shape",
+                        "CHECK (((jsonb_typeof(snapshot) = 'object'::text) AND (snapshot ? 'capture'::text) AND (snapshot ? 'content'::text) AND (jsonb_typeof((snapshot -> 'source'::text)) = 'object'::text) AND ((snapshot ->> 'sourceEventDomain'::text) = 'EVIDENCE'::text) AND ((snapshot ->> 'sourceEventId'::text) = source_event_id) AND (NOT (((snapshot -> 'source'::text) ->> 'callId'::text) IS DISTINCT FROM call_id)) AND (NOT (((snapshot -> 'source'::text) ->> 'sessionId'::text) IS DISTINCT FROM (session_id)::text)) AND (NOT (((snapshot -> 'source'::text) ->> 'subjectId'::text) IS DISTINCT FROM (subject_id)::text)) AND (NOT (((snapshot -> 'source'::text) ->> 'reservationId'::text) IS DISTINCT FROM (reservation_id)::text)) AND (NOT (((snapshot -> 'source'::text) ->> 'recordingId'::text) IS DISTINCT FROM (source_ref_id)::text))))"),
+                java.util.Map.entry("ck_evidence_snapshot_sha256",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_evidence_link_shape",
+                        "CHECK (((session_id IS NULL) OR (call_id IS NOT NULL)))"))));
+        map.put("evidence_artifact", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_evidence_artifact_role",
+                        "CHECK ((artifact_role = ANY (ARRAY['ORIGINAL'::text, 'DERIVED'::text])))"))));
+        map.put("evidence_event", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_evidence_event_domain",
+                        "CHECK ((event_domain = 'EVIDENCE'::text))"),
+                java.util.Map.entry("ck_evidence_event_id",
+                        "CHECK ((((length(event_id) >= 1) AND (length(event_id) <= 128)) AND (btrim(event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_evidence_event_type",
+                        "CHECK ((event_type = ANY (ARRAY['EVIDENCE_CREATED'::text, 'EVIDENCE_SOLIDIFIED'::text, 'EVIDENCE_QUARANTINED'::text, 'EVIDENCE_FAILED'::text])))"),
+                java.util.Map.entry("ck_evidence_event_payload",
+                        "CHECK ((jsonb_typeof(payload_redacted) = 'object'::text))"),
+                java.util.Map.entry("ck_evidence_event_payload_sha256",
+                        "CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))"))));
+        V008_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
+    }
+
+    private static void assertV008CheckPredicateInventory(Connection connection)
+            throws SQLException {
+        assertThat(V008_CHECK_DEF_MAP).as("expected V008 check map tables").hasSize(5);
+        int total = 0;
+        for (Map.Entry<String, Map<String, String>> tableEntry : V008_CHECK_DEF_MAP.entrySet()) {
+            String table = tableEntry.getKey();
+            List<String> actualNames = queryStrings(
+                    connection,
+                    "SELECT c.conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'evidence' AND r.relname = ? "
+                            + "AND c.contype = 'c' ORDER BY 1",
+                    table);
+            assertThat(actualNames).as("check names for %s", table)
+                    .containsExactlyInAnyOrderElementsOf(tableEntry.getValue().keySet());
+            for (Map.Entry<String, String> check : tableEntry.getValue().entrySet()) {
+                assertThat(normalizeCheckDef(queryString(
+                        connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'evidence' AND r.relname = ? "
+                                + "AND c.conname = ?",
+                        table, check.getKey())))
+                        .as("whole check def %s.%s", table, check.getKey())
+                        .isEqualTo(normalizeCheckDef(check.getValue()));
+            }
+            total += tableEntry.getValue().size();
+        }
+        assertThat(total).as("total V008 checks").isEqualTo(39);
+        Map<String, Integer> expectedCounts = Map.of(
+                "media_object", 9, "recording", 11,
+                "evidence_record", 13, "evidence_artifact", 1,
+                "evidence_event", 5);
+        for (Map.Entry<String, Integer> entry : expectedCounts.entrySet()) {
+            assertThat(V008_CHECK_DEF_MAP.get(entry.getKey()).size())
+                    .as("check count for %s", entry.getKey()).isEqualTo(entry.getValue());
+        }
+    }
+
+    private static void assertV008FunctionsAndTriggersExact(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '|' || p.prosecdef || '|' "
+                        + "|| pg_get_userbyid(p.proowner) || '|' "
+                        + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'evidence' ORDER BY 1"))
+                .containsExactly(
+                        "evidence.guard_evidence_event_creation_cycle|false|evidence_owner|search_path=evidence, pg_temp",
+                        "evidence.guard_evidence_record_creation_cycle|false|evidence_owner|search_path=evidence, pg_temp",
+                        "evidence.guard_evidence_record|false|evidence_owner|search_path=evidence, pg_temp",
+                        "evidence.guard_recording|false|evidence_owner|search_path=evidence, pg_temp",
+                        "evidence.reject_row_mutation|false|evidence_owner|search_path=evidence, pg_temp");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT t.tgname || '|' || CASE WHEN t.tgtype & 2 = 2 THEN 'BEFORE' ELSE 'AFTER' END "
+                        + "|| CASE WHEN t.tgconstraint <> 0 THEN '|CONSTRAINT' ELSE '' END "
+                        + "|| CASE WHEN t.tgtype & 1 = 1 THEN '|ROW' ELSE '|STATEMENT' END "
+                        + "|| CASE WHEN t.tgtype & 4 = 4 THEN '|INSERT' ELSE '' END "
+                        + "|| CASE WHEN t.tgtype & 8 = 8 THEN '|DELETE' ELSE '' END "
+                        + "|| CASE WHEN t.tgtype & 16 = 16 THEN '|UPDATE' ELSE '' END "
+                        + "|| '|' || t.tgdeferrable || '|' || t.tginitdeferred "
+                        + "|| '|' || t.tgenabled::text "
+                        + "FROM pg_trigger t "
+                        + "JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND NOT t.tgisinternal "
+                        + "ORDER BY t.tgname"))
+                .containsExactly(
+                        "trg_evidence_artifact_immutable|BEFORE|ROW|DELETE|UPDATE|false|false|O",
+                        "trg_evidence_event_creation_cycle|AFTER|CONSTRAINT|ROW|INSERT|UPDATE|true|true|O",
+                        "trg_evidence_event_immutable|BEFORE|ROW|DELETE|UPDATE|false|false|O",
+                        "trg_evidence_record_creation_cycle|AFTER|CONSTRAINT|ROW|INSERT|UPDATE|true|true|O",
+                        "trg_evidence_record_guard|BEFORE|ROW|UPDATE|false|false|O",
+                        "trg_media_object_immutable|BEFORE|ROW|DELETE|UPDATE|false|false|O",
+                        "trg_recording_guard|BEFORE|ROW|UPDATE|false|false|O");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || c.relname || '.' || t.tgname || '|' || p.proname "
+                        + "FROM pg_trigger t "
+                        + "JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_proc p ON p.oid = t.tgfoid "
+                        + "WHERE n.nspname = 'evidence' AND NOT t.tgisinternal ORDER BY 1"))
+                .containsExactly(
+                        "evidence.evidence_artifact.trg_evidence_artifact_immutable|reject_row_mutation",
+                        "evidence.evidence_event.trg_evidence_event_creation_cycle|guard_evidence_event_creation_cycle",
+                        "evidence.evidence_event.trg_evidence_event_immutable|reject_row_mutation",
+                        "evidence.evidence_record.trg_evidence_record_creation_cycle|guard_evidence_record_creation_cycle",
+                        "evidence.evidence_record.trg_evidence_record_guard|guard_evidence_record",
+                        "evidence.media_object.trg_media_object_immutable|reject_row_mutation",
+                        "evidence.recording.trg_recording_guard|guard_recording");
+
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema'"))
+                .as("function wave remains five SECURITY DEFINER services")
+                .isEqualTo(5);
+    }
+
+    private static void assertV008DefaultsAndNoServiceFunctions(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname || '.' || a.attname FROM pg_attribute a "
+                        + "JOIN pg_class c ON c.oid = a.attrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND a.atthasdef "
+                        + "ORDER BY 1"))
+                .containsExactly(
+                        "evidence_artifact.created_at",
+                        "evidence_event.occurred_at",
+                        "evidence_record.created_at",
+                        "evidence_record.revision",
+                        "evidence_record.status",
+                        "media_object.created_at",
+                        "media_object.worm_status",
+                        "recording.created_at",
+                        "recording.revision",
+                        "recording.status");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT proname FROM pg_proc WHERE proname IN "
+                        + "('open_recording_upload','record_upload_observed','complete_recording',"
+                        + "'create_and_solidify','read_shareable_projection')"))
+                .as("no V008 SQL service functions")
+                .isEmpty();
+    }
+
+    private static void assertV008RoleAttributes(Connection connection) throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT rolname || ':' || rolcanlogin || ':' || rolsuper || ':' || rolcreatedb "
+                        + "|| ':' || rolcreaterole FROM pg_roles "
+                        + "WHERE rolname IN ('evidence_owner','evidence_role') ORDER BY rolname"))
+                .containsExactly(
+                        "evidence_owner:false:false:false:false",
+                        "evidence_role:false:false:false:false");
+    }
+
+    private static void assertV008PublicAclIsZero(Connection connection) throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace n "
+                        + "WHERE n.nspname = 'evidence' "
+                        + "AND EXISTS (SELECT 1 FROM aclexplode(coalesce(n.nspacl, "
+                        + "acldefault('n', n.nspowner))) a WHERE a.grantee = 0)"))
+                .as("no PUBLIC schema grant on evidence").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' "
+                        + "AND EXISTS (SELECT 1 FROM aclexplode(coalesce(c.relacl, "
+                        + "acldefault('r', c.relowner))) a WHERE a.grantee = 0)"))
+                .as("no PUBLIC table grant on evidence tables").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_attribute a "
+                        + "JOIN pg_class c ON c.oid = a.attrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND a.attnum > 0 AND NOT a.attisdropped "
+                        + "AND EXISTS (SELECT 1 FROM aclexplode(coalesce(a.attacl, "
+                        + "acldefault('c', c.relowner))) x WHERE x.grantee = 0)"))
+                .as("no PUBLIC column grant on evidence tables").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'evidence' "
+                        + "AND EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, "
+                        + "acldefault('f', p.proowner))) a WHERE a.grantee = 0)"))
+                .as("no PUBLIC function grant on evidence functions").isZero();
+    }
+
+    private static void assertV008OwnedTableGrants(Connection connection) throws SQLException {
+        Map<String, List<String>> updateColumns = Map.of(
+                "recording", List.of(
+                        "media_object_id", "validated_duration", "validated_sha256", "status",
+                        "validated_at", "revision"),
+                "evidence_record", List.of("status", "solidified_at", "revision"));
+        List<String> allRuntimeRoles = new ArrayList<>(S1_ROLES);
+        allRuntimeRoles.addAll(V004_ROLES);
+        for (String table : List.of(
+                "media_object", "recording", "evidence_record", "evidence_artifact", "evidence_event")) {
+            String relation = "evidence." + table;
+            for (String privilege : List.of(
+                    "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "evidence_role", relation, privilege))
+                        .as("evidence_role %s on %s", privilege, relation)
+                        .isEqualTo(List.of("SELECT", "INSERT").contains(privilege));
+                for (String role : allRuntimeRoles) {
+                    assertThat(hasTable(connection, role, relation, privilege))
+                            .as("%s denied %s on %s", role, privilege, relation).isFalse();
+                }
+            }
+            for (String column : queryStrings(connection,
+                    "SELECT attname FROM pg_attribute WHERE attrelid = '" + relation
+                            + "'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum")) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    boolean allowed = privilege.equals("SELECT") || privilege.equals("INSERT")
+                            || (privilege.equals("UPDATE")
+                            && updateColumns.getOrDefault(table, List.of()).contains(column));
+                    assertThat(hasColumn(connection, "evidence_role", relation, column, privilege))
+                            .as("evidence_role %s on %s.%s", privilege, relation, column)
+                            .isEqualTo(allowed);
+                    for (String role : allRuntimeRoles) {
+                        assertThat(hasColumn(connection, role, relation, column, privilege))
+                                .as("%s denied %s on %s.%s", role, privilege, relation, column)
+                                .isFalse();
+                    }
+                }
+            }
+        }
+    }
+
+    private static void assertV008SchemaAndFunctionFences(Connection connection)
+            throws SQLException {
+        assertThat(hasSchema(connection, "evidence_role", "evidence", "USAGE"))
+                .as("evidence_role has USAGE on evidence").isTrue();
+        assertThat(hasSchema(connection, "evidence_role", "evidence", "CREATE"))
+                .as("evidence_role denied CREATE on evidence").isFalse();
+        List<String> allRuntimeRoles = new ArrayList<>(S1_ROLES);
+        allRuntimeRoles.addAll(V004_ROLES);
+        for (String role : allRuntimeRoles) {
+            assertThat(hasSchema(connection, role, "evidence", "USAGE"))
+                    .as("%s denied USAGE on evidence", role).isFalse();
+            assertThat(hasSchema(connection, role, "evidence", "CREATE"))
+                    .as("%s denied CREATE on evidence", role).isFalse();
+        }
+        for (String role : allRuntimeRoles) {
+            for (String function : List.of(
+                    "evidence.reject_row_mutation()",
+                    "evidence.guard_recording()",
+                    "evidence.guard_evidence_record()",
+                    "evidence.guard_evidence_record_creation_cycle()",
+                    "evidence.guard_evidence_event_creation_cycle()")) {
+                assertThat(hasFunction(connection, role, function, "EXECUTE"))
+                        .as("%s denied EXECUTE on %s", role, function).isFalse();
+            }
+        }
+        for (String function : List.of(
+                "evidence.reject_row_mutation()",
+                "evidence.guard_recording()",
+                "evidence.guard_evidence_record()",
+                "evidence.guard_evidence_record_creation_cycle()",
+                "evidence.guard_evidence_event_creation_cycle()")) {
+            assertThat(hasFunction(connection, "evidence_role", function, "EXECUTE"))
+                    .as("evidence_role EXECUTE on %s", function).isTrue();
+        }
+        assertThat(hasFunction(connection, "evidence_role", "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)", "EXECUTE"))
+                .as("evidence_role EXECUTE on platform.outbox_append").isTrue();
+        assertThat(hasFunction(connection, "evidence_role", AUDIT_FUNCTION, "EXECUTE"))
+                .as("evidence_role EXECUTE on audit.append_fact").isTrue();
+        assertThat(hasFunction(connection, "evidence_role", "platform.idempotency_begin(text,text,text)", "EXECUTE"))
+                .as("evidence_role denied EXECUTE on platform.idempotency_begin").isFalse();
+        assertThat(hasFunction(connection, "evidence_role", "platform.idempotency_complete(uuid,integer,text,uuid,jsonb,text)", "EXECUTE"))
+                .as("evidence_role denied EXECUTE on platform.idempotency_complete").isFalse();
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg%' "
+                        + "AND NOT EXISTS (SELECT 1 FROM pg_depend d "
+                        + "WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid "
+                        + "AND d.refclassid = 'pg_extension'::regclass AND d.deptype = 'e') "
+                        + "AND has_function_privilege('evidence_role', p.oid, 'EXECUTE') ORDER BY 1"))
+                .as("evidence_role effective EXECUTE is exactly the seven approved app signatures")
+                .containsExactly(
+                        "audit.append_fact(p_occurred_at timestamp with time zone, p_actor_type text, "
+                                + "p_actor_id uuid, p_action_code text, p_object_type text, p_object_id uuid, "
+                                + "p_reason_code text, p_before_snapshot jsonb, p_after_snapshot jsonb, "
+                                + "p_request_id text, p_trace_id text)",
+                        "evidence.guard_evidence_event_creation_cycle()",
+                        "evidence.guard_evidence_record()",
+                        "evidence.guard_evidence_record_creation_cycle()",
+                        "evidence.guard_recording()",
+                        "evidence.reject_row_mutation()",
+                        "platform.outbox_append(p_event_domain text, p_dedupe_key text, "
+                                + "p_aggregate_type text, p_aggregate_id uuid, p_event_type text, "
+                                + "p_payload_redacted jsonb, p_payload_ciphertext text, "
+                                + "p_payload_sha256 text)");
+    }
+
+    private static void assertV008CrossModuleGrants(Connection connection) throws SQLException {
+        for (String schema : List.of(
+                "platform", "audit", "subject_number", "ivr", "entitlement_metering")) {
+            assertThat(hasSchema(connection, "evidence_role", schema, "USAGE"))
+                    .as("evidence_role USAGE on %s", schema).isTrue();
+            assertThat(hasSchema(connection, "evidence_role", schema, "CREATE"))
+                    .as("evidence_role denied CREATE on %s", schema).isFalse();
+        }
+        Map<String, List<String>> selectColumns = new java.util.TreeMap<>(Map.of(
+                "platform.outbox_event", List.of(),
+                "platform.idempotency_record", List.of(),
+                "audit.audit_fact", List.of(),
+                "subject_number.business_subject", List.of("id"),
+                "ivr.call_record", List.of("call_id", "session_id", "subject_id"),
+                "ivr.inbound_session", List.of("id", "call_id", "subject_id"),
+                "entitlement_metering.usage_reservation", List.of("id", "call_id", "subject_id")));
+        for (Map.Entry<String, List<String>> parent : selectColumns.entrySet()) {
+            String relation = parent.getKey();
+            for (String privilege : List.of(
+                    "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "evidence_role", relation, privilege))
+                        .as("evidence_role denied table-level %s on %s", privilege, relation)
+                        .isFalse();
+            }
+            for (String column : queryStrings(connection,
+                    "SELECT attname FROM pg_attribute WHERE attrelid = '" + relation
+                            + "'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum")) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    assertThat(hasColumn(connection, "evidence_role", relation, column, privilege))
+                            .as("evidence_role %s on %s.%s", privilege, relation, column)
+                            .isEqualTo(privilege.equals("SELECT")
+                                    && parent.getValue().contains(column));
+                }
+            }
+        }
+    }
+
+    private static void assertV008ForeignRowLockAndRuntimeDenials() throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "evidence_role");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT id FROM subject_number.business_subject FOR SHARE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT id FROM subject_number.business_subject FOR UPDATE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT call_id FROM ivr.call_record FOR SHARE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT call_id FROM ivr.call_record FOR UPDATE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT id FROM ivr.inbound_session FOR SHARE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT id FROM ivr.inbound_session FOR UPDATE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT id FROM entitlement_metering.usage_reservation FOR SHARE");
+                expectSqlFailure(connection, "42501", null,
+                        "SELECT id FROM entitlement_metering.usage_reservation FOR UPDATE");
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static void assertV008ForeignKeyInventory(Connection connection) throws SQLException {
+        Map<String, String> ordinary = new java.util.TreeMap<>();
+        Map<String, String> deferred = new java.util.TreeMap<>();
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT c.conname || '|' || n.nspname || '.' || t.relname || '(' "
+                        + "|| (SELECT string_agg(a.attname, ',' ORDER BY key.ordinality) "
+                        + "FROM unnest(c.conkey) WITH ORDINALITY AS key(attnum, ordinality) "
+                        + "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key.attnum) "
+                        + "|| ')|' || pn.nspname || '.' || pt.relname || '(' "
+                        + "|| (SELECT string_agg(a.attname, ',' ORDER BY key.ordinality) "
+                        + "FROM unnest(c.confkey) WITH ORDINALITY AS key(attnum, ordinality) "
+                        + "JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = key.attnum) "
+                        + "|| ')|' || c.confupdtype::text || '|' || c.confdeltype::text "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred "
+                        + "FROM pg_constraint c "
+                        + "JOIN pg_class t ON t.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = t.relnamespace "
+                        + "JOIN pg_class pt ON pt.oid = c.confrelid "
+                        + "JOIN pg_namespace pn ON pn.oid = pt.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.contype = 'f' ORDER BY 1")) {
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                while (resultSet.next()) {
+                    String row = resultSet.getString(1);
+                    String name = row.substring(0, row.indexOf('|'));
+                    if (name.equals("fk_evidence_source_event")
+                            || name.equals("fk_evidence_event_record")) {
+                        deferred.put(name, row);
+                    } else {
+                        ordinary.put(name, row);
+                    }
+                }
+            }
+        }
+        assertThat(ordinary).containsOnlyKeys(
+                "fk_evidence_artifact_evidence",
+                "fk_evidence_artifact_media",
+                "fk_evidence_call",
+                "fk_evidence_reservation",
+                "fk_evidence_session",
+                "fk_evidence_subject",
+                "fk_recording_call",
+                "fk_recording_media_object");
+        assertThat(ordinary.values()).containsExactly(
+                "fk_evidence_artifact_evidence|evidence.evidence_artifact(evidence_id)"
+                        + "|evidence.evidence_record(id)|r|r|false|false",
+                "fk_evidence_artifact_media|evidence.evidence_artifact(media_object_id)"
+                        + "|evidence.media_object(id)|r|r|false|false",
+                "fk_evidence_call|evidence.evidence_record(call_id)"
+                        + "|ivr.call_record(call_id)|r|r|false|false",
+                "fk_evidence_reservation|evidence.evidence_record(reservation_id)"
+                        + "|entitlement_metering.usage_reservation(id)|r|r|false|false",
+                "fk_evidence_session|evidence.evidence_record(session_id)"
+                        + "|ivr.inbound_session(id)|r|r|false|false",
+                "fk_evidence_subject|evidence.evidence_record(subject_id)"
+                        + "|subject_number.business_subject(id)|r|r|false|false",
+                "fk_recording_call|evidence.recording(call_id)"
+                        + "|ivr.call_record(call_id)|r|r|false|false",
+                "fk_recording_media_object|evidence.recording(media_object_id)"
+                        + "|evidence.media_object(id)|r|r|false|false");
+        for (String row : ordinary.values()) {
+            assertThat(row).as("ordinary FK catalog pin %s", row)
+                    .endsWith("|r|r|false|false");
+        }
+        assertThat(deferred).containsOnlyKeys(
+                "fk_evidence_event_record",
+                "fk_evidence_source_event");
+        assertThat(deferred.values()).containsExactly(
+                "fk_evidence_event_record|evidence.evidence_event(evidence_id)"
+                        + "|evidence.evidence_record(id)|a|a|true|true",
+                "fk_evidence_source_event|evidence.evidence_record(source_event_domain,source_event_id)"
+                        + "|evidence.evidence_event(event_domain,event_id)|a|a|true|true");
+        for (String row : deferred.values()) {
+            assertThat(row).as("deferred FK catalog pin %s", row)
+                    .endsWith("|a|a|true|true");
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c "
+                        + "JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
+                .as("V007 consent FK is present").isEqualTo(1);
+        assertThat(stagedV007EvidenceSchemaAbsent).isTrue();
+        assertThat(stagedV007SharingSchemaAbsent).isTrue();
+    }
+
+    private static void assertV008MissingParentFkProbes() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        UUID recordingId = UUID.randomUUID();
+        String callId = v008CallId();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                setLocalRole(connection, "evidence_owner");
+                expectSqlFailure(connection, "23503", "fk_recording_call",
+                        "INSERT INTO evidence.recording "
+                                + "(id, call_id, recording_id, declared_format, declared_size, "
+                                + "declared_duration, declared_sha256, upload_expires_at) "
+                                + "VALUES (?, ?, ?, 'wav', 1, 1, ?, now() + interval '1 hour')",
+                        recordingId, callId, "rec-" + recordingId,
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                UUID missingSubject = UUID.randomUUID();
+                UUID missingSubjectSource = UUID.randomUUID();
+                String missingSubjectEvent = "evt-missing-subject-" + recordingId;
+                expectSqlFailure(connection, "23503", "fk_evidence_subject",
+                        "INSERT INTO evidence.evidence_record "
+                                + "(id, subject_id, source_type, source_ref_id, source_event_domain, "
+                                + "source_event_id, identity_at_capture, consent_version, snapshot, "
+                                + "snapshot_sha256) VALUES (?, ?, 'CALL_RECORDING', ?, 'EVIDENCE', ?, "
+                                + "jsonb_build_object('subjectId', ?::text, 'capturedAt', "
+                                + "'2026-01-01T00:00:00Z', 'sourceChannel', 'IVR'), 'v1', "
+                                + "jsonb_build_object('capture', '{}'::jsonb, 'content', '{}'::jsonb, "
+                                + "'sourceEventDomain', 'EVIDENCE', 'sourceEventId', ?, "
+                                + "'source', jsonb_build_object('subjectId', ?::text, "
+                                + "'recordingId', ?::text)), ?)",
+                        UUID.randomUUID(), missingSubject, missingSubjectSource,
+                        missingSubjectEvent, missingSubject, missingSubjectEvent,
+                        missingSubject, missingSubjectSource,
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+        // Isolated ordinary FK missing-parent probes using savepoints on a shared tx.
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                UUID subjectId = v008InsertSubjectSameTx(connection);
+                String validCallId = v008InsertCallAndSessionSameTx(connection, subjectId);
+                setLocalRole(connection, "evidence_owner");
+                UUID mId = UUID.randomUUID();
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO evidence.media_object "
+                                + "(id, storage_provider, bucket, object_key, object_version_id, "
+                                + "sha256, size_bytes, mime_type, crypto_key_ref) "
+                                + "VALUES (?, 'COS', 'b', 'k', 'v', ?, 1, 'audio/wav', 'key')",
+                        mId, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                        .isEqualTo(1);
+                UUID recId = UUID.randomUUID();
+                expectSqlFailure(connection, "23503", "fk_recording_media_object",
+                        "INSERT INTO evidence.recording "
+                                + "(id, call_id, recording_id, media_object_id, declared_format, "
+                                + "declared_size, declared_duration, declared_sha256, status, "
+                                + "upload_expires_at) VALUES (?, ?, ?, ?, 'wav', 1, 1, ?, 'UPLOADED', "
+                                + "now() + interval '1 hour')",
+                        recId, validCallId, "rec-" + recId, UUID.randomUUID(),
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+                UUID sourceRefId = UUID.randomUUID();
+                UUID missingSessionId = UUID.randomUUID();
+                UUID missingReservationId = UUID.randomUUID();
+                expectSqlFailure(connection, "23503", "fk_evidence_call",
+                        "INSERT INTO evidence.evidence_record "
+                                + "(id, subject_id, source_type, source_ref_id, source_event_domain, "
+                                + "source_event_id, call_id, identity_at_capture, consent_version, "
+                                + "snapshot, snapshot_sha256) "
+                                + "VALUES (?, ?, 'CALL_RECORDING', ?, 'EVIDENCE', ?, ?, "
+                                + "jsonb_build_object('subjectId', ?::text, 'capturedAt', "
+                                + "'2026-01-01T00:00:00Z', 'sourceChannel', 'IVR'), 'v1', "
+                                + "jsonb_build_object('capture', '{}'::jsonb, 'content', '{}'::jsonb, "
+                                + "'sourceEventDomain', 'EVIDENCE', 'sourceEventId', ?, "
+                                + "'source', jsonb_build_object('callId', ?, 'subjectId', ?::text, "
+                                + "'recordingId', ?::text)), ?)",
+                        UUID.randomUUID(), subjectId, sourceRefId, "evt-call-" + recId, callId,
+                        subjectId, "evt-call-" + recId, callId, subjectId, sourceRefId,
+                        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+                expectSqlFailure(connection, "23503", "fk_evidence_session",
+                        "INSERT INTO evidence.evidence_record "
+                                + "(id, subject_id, source_type, source_ref_id, source_event_domain, "
+                                + "source_event_id, call_id, session_id, identity_at_capture, "
+                                + "consent_version, snapshot, snapshot_sha256) "
+                                + "VALUES (?, ?, 'CALL_RECORDING', ?, 'EVIDENCE', ?, ?, ?, "
+                                + "jsonb_build_object('subjectId', ?::text, 'capturedAt', "
+                                + "'2026-01-01T00:00:00Z', 'sourceChannel', 'IVR'), 'v1', "
+                                + "jsonb_build_object('capture', '{}'::jsonb, 'content', '{}'::jsonb, "
+                                + "'sourceEventDomain', 'EVIDENCE', 'sourceEventId', ?, "
+                                + "'source', jsonb_build_object('callId', ?, 'sessionId', ?::text, "
+                                + "'subjectId', ?::text, 'recordingId', ?::text)), ?)",
+                        UUID.randomUUID(), subjectId, sourceRefId,
+                        "evt-session-" + recId, validCallId, missingSessionId,
+                        subjectId, "evt-session-" + recId, validCallId, missingSessionId,
+                        subjectId, sourceRefId,
+                        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+                expectSqlFailure(connection, "23503", "fk_evidence_reservation",
+                        "INSERT INTO evidence.evidence_record "
+                                + "(id, subject_id, source_type, source_ref_id, source_event_domain, "
+                                + "source_event_id, call_id, reservation_id, identity_at_capture, consent_version, "
+                                + "snapshot, snapshot_sha256) "
+                                + "VALUES (?, ?, 'CALL_RECORDING', ?, 'EVIDENCE', ?, ?, ?, "
+                                + "jsonb_build_object('subjectId', ?::text, 'capturedAt', "
+                                + "'2026-01-01T00:00:00Z', 'sourceChannel', 'IVR'), 'v1', "
+                                + "jsonb_build_object('capture', '{}'::jsonb, 'content', '{}'::jsonb, "
+                                + "'sourceEventDomain', 'EVIDENCE', 'sourceEventId', ?, "
+                                + "'source', jsonb_build_object('callId', ?, 'reservationId', ?::text, "
+                                + "'subjectId', ?::text, 'recordingId', ?::text)), ?)",
+                        UUID.randomUUID(), subjectId, sourceRefId,
+                        "evt-res-" + recId, validCallId, missingReservationId, subjectId,
+                        "evt-res-" + recId, validCallId, missingReservationId, subjectId, sourceRefId,
+                        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd");
+                // artifact missing parents
+                expectSqlFailure(connection, "23503", "fk_evidence_artifact_evidence",
+                        "INSERT INTO evidence.evidence_artifact "
+                                + "(id, evidence_id, media_object_id, artifact_role) "
+                                + "VALUES (?, ?, ?, 'ORIGINAL')",
+                        UUID.randomUUID(), UUID.randomUUID(), mId);
+                UUID validRecordId = v008InsertRecordOnlySameTx(connection, subjectId,
+                        validCallId, null, null, "evt-artifact-parent-" + recId);
+                expectSqlFailure(connection, "23503", "fk_evidence_artifact_media",
+                        "INSERT INTO evidence.evidence_artifact "
+                                + "(id, evidence_id, media_object_id, artifact_role) "
+                                + "VALUES (?, ?, ?, 'ORIGINAL')",
+                        UUID.randomUUID(), validRecordId, UUID.randomUUID());
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static void assertV008RestrictParentDeleteAndDeferredParentDelete() throws Exception {
+        // RESTRICT parent-delete probes: one named child per FK, same transaction,
+        // no committed residue (probe transaction rolls back after 23503).
+        v008ProbeRestrictParentDelete("fk_evidence_subject", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            v008InsertRecordOnlySameTx(connection, subjectId, null, null, null,
+                    "evt-rd-subj-" + subjectId);
+            switchLocalRole(connection, "subject_number_owner");
+            expectSqlFailure(connection, "23503", "fk_evidence_subject",
+                    "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
+        });
+
+        v008ProbeRestrictParentDelete("fk_recording_call", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            setLocalRole(connection, "evidence_owner");
+            UUID recId = UUID.randomUUID();
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO evidence.recording "
+                            + "(id, call_id, recording_id, declared_format, declared_size, "
+                            + "declared_duration, declared_sha256, upload_expires_at) "
+                            + "VALUES (?, ?, ?, 'wav', 1, 1, ?, now() + interval '1 hour')",
+                    recId, callId, "rec-rd-" + recId,
+                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"))
+                    .isEqualTo(1);
+            switchLocalRole(connection, "ivr_owner");
+            expectSqlFailure(connection, "23503", "fk_recording_call",
+                    "DELETE FROM ivr.call_record WHERE call_id = ?", callId);
+        });
+
+        v008ProbeRestrictParentDelete("fk_evidence_call", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            setLocalRole(connection, "evidence_owner");
+            v008InsertRecordOnlySameTx(connection, subjectId, callId, null, null,
+                    "evt-rd-call-" + callId);
+            switchLocalRole(connection, "ivr_owner");
+            expectSqlFailure(connection, "23503", "fk_evidence_call",
+                    "DELETE FROM ivr.call_record WHERE call_id = ?", callId);
+        });
+
+        v008ProbeRestrictParentDelete("fk_evidence_session", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            UUID sessionId = UUID.randomUUID();
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            // The helper already inserted the session; reuse its id via call_id lookup is
+            // unnecessary — insert a dedicated session for this record.
+            UUID sessionOnly = UUID.randomUUID();
+            switchLocalRole(connection, "ivr_role");
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO ivr.inbound_session (id, call_id, subject_id, trusted_caller, "
+                            + "access_number_masked, node_id, protocol_version, prompt_version) "
+                            + "VALUES (?, ?, ?, false, 'synthetic-access', 'synthetic-node', "
+                            + "'synthetic-protocol-v1', 'synthetic-prompt-v1')",
+                    sessionOnly, "synthetic-session-only-" + sessionOnly, subjectId)).isEqualTo(1);
+            setLocalRole(connection, "evidence_owner");
+            v008InsertRecordOnlySameTx(connection, subjectId, callId, sessionOnly, null,
+                    "evt-rd-sess-" + sessionId);
+            switchLocalRole(connection, "ivr_owner");
+            expectSqlFailure(connection, "23503", "fk_evidence_session",
+                    "DELETE FROM ivr.inbound_session WHERE id = ?", sessionOnly);
+        });
+
+        v008ProbeRestrictParentDelete("fk_evidence_reservation", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            UUID reservationId = v008InsertReservationSameTx(connection, callId, subjectId);
+            setLocalRole(connection, "evidence_owner");
+            v008InsertRecordOnlySameTx(connection, subjectId, callId, null, reservationId,
+                    "evt-rd-res-" + reservationId);
+            switchLocalRole(connection, "entitlement_metering_owner");
+            expectSqlFailure(connection, "23503", "fk_evidence_reservation",
+                    "DELETE FROM entitlement_metering.usage_reservation WHERE id = ?",
+                    reservationId);
+        });
+
+        // Protected media parents: savepoint-scoped DISABLE TRIGGER solely to reach named FK.
+        v008ProbeRestrictParentDelete("fk_recording_media_object", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            setLocalRole(connection, "evidence_owner");
+            UUID mediaId = v008InsertMediaSameTx(connection);
+            UUID recId = UUID.randomUUID();
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO evidence.recording "
+                            + "(id, call_id, recording_id, media_object_id, declared_format, "
+                            + "declared_size, declared_duration, declared_sha256, status, "
+                            + "upload_expires_at) VALUES (?, ?, ?, ?, 'wav', 1, 1, ?, 'UPLOADED', "
+                            + "now() + interval '1 hour')",
+                    recId, callId, "rec-media-" + recId, mediaId,
+                    "1111111111111111111111111111111111111111111111111111111111111111"))
+                    .isEqualTo(1);
+            Savepoint sp = connection.setSavepoint("media-disable-rec");
+            try {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("ALTER TABLE evidence.media_object DISABLE TRIGGER trg_media_object_immutable");
+                }
+                expectSqlFailure(connection, "23503", "fk_recording_media_object",
+                        "DELETE FROM evidence.media_object WHERE id = ?", mediaId);
+            } finally {
+                connection.rollback(sp);
+            }
+            assertThat(queryString(connection,
+                    "SELECT t.tgenabled FROM pg_trigger t "
+                            + "JOIN pg_class c ON c.oid = t.tgrelid "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'evidence' AND c.relname = 'media_object' "
+                            + "AND t.tgname = 'trg_media_object_immutable'"))
+                    .as("trg_media_object_immutable restored to enabled").isEqualTo("O");
+        });
+
+        v008ProbeRestrictParentDelete("fk_evidence_artifact_media", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            UUID sessionId = queryUuid(connection,
+                    "SELECT id FROM ivr.inbound_session WHERE call_id = ?", callId);
+            UUID reservationId = v008InsertReservationSameTx(connection, callId, subjectId);
+            setLocalRole(connection, "evidence_owner");
+            UUID mediaId = v008InsertMediaSameTx(connection);
+            UUID recordId = v008InsertRecordOnlySameTx(connection, subjectId, callId,
+                    sessionId, reservationId, "evt-am-" + mediaId);
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO evidence.evidence_artifact "
+                            + "(id, evidence_id, media_object_id, artifact_role) "
+                            + "VALUES (?, ?, ?, 'DERIVED')",
+                    UUID.randomUUID(), recordId, mediaId))
+                    .isEqualTo(1);
+            Savepoint sp = connection.setSavepoint("media-disable-art");
+            try {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("ALTER TABLE evidence.media_object DISABLE TRIGGER trg_media_object_immutable");
+                }
+                expectSqlFailure(connection, "23503", "fk_evidence_artifact_media",
+                        "DELETE FROM evidence.media_object WHERE id = ?", mediaId);
+            } finally {
+                connection.rollback(sp);
+            }
+            assertThat(queryString(connection,
+                    "SELECT t.tgenabled FROM pg_trigger t "
+                            + "JOIN pg_class c ON c.oid = t.tgrelid "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'evidence' AND c.relname = 'media_object' "
+                            + "AND t.tgname = 'trg_media_object_immutable'"))
+                    .as("trg_media_object_immutable restored after artifact probe")
+                    .isEqualTo("O");
+        });
+
+        v008ProbeRestrictParentDelete("fk_evidence_artifact_evidence", connection -> {
+            UUID subjectId = v008InsertSubjectSameTx(connection);
+            String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+            UUID sessionId = queryUuid(connection,
+                    "SELECT id FROM ivr.inbound_session WHERE call_id = ?", callId);
+            UUID reservationId = v008InsertReservationSameTx(connection, callId, subjectId);
+            setLocalRole(connection, "evidence_owner");
+            UUID mediaId = v008InsertMediaSameTx(connection);
+            UUID recordId = v008InsertRecordOnlySameTx(connection, subjectId, callId,
+                    sessionId, reservationId, "evt-ad-" + mediaId);
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO evidence.evidence_artifact "
+                            + "(id, evidence_id, media_object_id, artifact_role) "
+                            + "VALUES (?, ?, ?, 'DERIVED')",
+                    UUID.randomUUID(), recordId, mediaId))
+                    .isEqualTo(1);
+            expectSqlFailure(connection, "23503", "fk_evidence_artifact_evidence",
+                    "DELETE FROM evidence.evidence_record WHERE id = ?", recordId);
+        });
+
+        // Deferred parent-delete on fk_evidence_event_record via expectCommitFailure.
+        UUID cleanupSubject;
+        String cleanupCall;
+        UUID cleanupSession;
+        V008ReservationFixture cleanupReservation;
+        UUID pairRecordId;
+        String pairEventId;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                cleanupSubject = v008InsertSubjectSameTx(connection);
+                cleanupCall = v008InsertCallAndSessionSameTx(connection, cleanupSubject);
+                cleanupSession = queryUuid(connection,
+                        "SELECT id FROM ivr.inbound_session WHERE call_id = ?", cleanupCall);
+                cleanupReservation = v008InsertReservationFixtureSameTx(
+                        connection, cleanupCall, cleanupSubject);
+                setLocalRole(connection, "evidence_owner");
+                pairEventId = "evt-deferred-" + UUID.randomUUID();
+                pairRecordId = v008InsertValidRecordAndCreationEvent(
+                        connection, cleanupSubject, cleanupCall, cleanupSession,
+                        cleanupReservation.reservationId(), pairEventId, false);
+                connection.commit();
+            } finally {
+                try {
+                    connection.rollback();
+                } catch (SQLException ignored) {
+                    // committed
+                }
+            }
+        }
+        try {
+            long recordBefore;
+            long eventBefore;
+            try (Connection connection = openConnection()) {
+                recordBefore = queryLong(connection,
+                        "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", pairRecordId);
+                eventBefore = queryLong(connection,
+                        "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?",
+                        pairRecordId);
+            }
+            assertThat(recordBefore).isEqualTo(1);
+            assertThat(eventBefore).isEqualTo(1);
+            expectCommitFailure("23503", "fk_evidence_event_record", connection -> {
+                setLocalRole(connection, "evidence_owner");
+                assertThat(executeUpdate(connection,
+                        "DELETE FROM evidence.evidence_record WHERE id = ?", pairRecordId))
+                        .isEqualTo(1);
+            });
+            try (Connection connection = openConnection()) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", pairRecordId))
+                        .as("failed deferred parent-delete restores the pair record").isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?",
+                        pairRecordId))
+                        .as("failed deferred parent-delete restores the pair event").isEqualTo(1);
+            }
+        } finally {
+            cleanupV008LocalRows(pairRecordId, List.of(pairEventId), List.of(), List.of(),
+                    List.of(), List.of(cleanupSubject), List.of(cleanupCall), List.of(cleanupSession),
+                    cleanupReservation);
+        }
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", pairRecordId))
+                    .as("cleaned pair record").isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?",
+                    pairRecordId))
+                    .as("cleaned pair event").isZero();
+        }
+    }
+
+    private static void v008ProbeRestrictParentDelete(
+            String label, JdbcThrowingRunnable probe) throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                probe.run(connection);
+            } catch (SQLException | RuntimeException exception) {
+                throw exception;
+            } finally {
+                try {
+                    connection.rollback();
+                } catch (SQLException ignored) {
+                    // probe transaction always rolled back
+                }
+            }
+        }
+        assertThat(label).as("probe label").isNotBlank();
+    }
+
+    private static UUID v008InsertSubjectSameTx(Connection connection) throws SQLException {
+        UUID id = UUID.randomUUID();
+        switchLocalRole(connection, "subject_number_role");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO subject_number.business_subject (id, source) VALUES (?, 'IVR')",
+                id)).isEqualTo(1);
+        return id;
+    }
+
+    private static String v008InsertCallAndSessionSameTx(Connection connection, UUID subjectId)
+            throws SQLException {
+        String callId = v008CallId();
+        UUID sessionId = UUID.randomUUID();
+        switchLocalRole(connection, "ivr_role");
+        assertThat(executeUpdate(connection,
+                    "INSERT INTO ivr.inbound_session (id, call_id, subject_id, trusted_caller, "
+                            + "access_number_masked, node_id, protocol_version, prompt_version) "
+                            + "VALUES (?, ?, ?, false, 'synthetic-access', 'synthetic-node', "
+                            + "'synthetic-protocol-v1', 'synthetic-prompt-v1')",
+                    sessionId, callId, subjectId)).isEqualTo(1);
+        assertThat(executeUpdate(connection, v005CallProbeSql(),
+                v005ValidCallParams(UUID.randomUUID(), callId, sessionId, subjectId,
+                        randomSha256()))).isEqualTo(1);
+        return callId;
+    }
+
+    private static UUID v008InsertMediaSameTx(Connection connection) throws SQLException {
+        UUID mediaId = UUID.randomUUID();
+        assertThat(executeUpdate(connection,
+                "INSERT INTO evidence.media_object "
+                        + "(id, storage_provider, bucket, object_key, object_version_id, "
+                        + "sha256, size_bytes, mime_type, crypto_key_ref) "
+                        + "VALUES (?, 'COS', ?, ?, 'v', ?, 1, 'audio/wav', 'key')",
+                mediaId, "b-" + mediaId, "k-" + mediaId,
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
+                .isEqualTo(1);
+        return mediaId;
+    }
+
+    private static UUID v008InsertReservationSameTx(
+            Connection connection, String callId, UUID subjectId) throws SQLException {
+        return v008InsertReservationFixtureSameTx(connection, callId, subjectId).reservationId();
+    }
+
+    private static V008ReservationFixture v008InsertReservationFixtureSameTx(
+            Connection connection, String callId, UUID subjectId) throws SQLException {
+        UUID reservationId = UUID.randomUUID();
+        UUID policyId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID balanceId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        switchLocalRole(connection, "operations_iam_role");
+        assertThat(executeUpdate(connection, employeeInsertSql(),
+                employeeId, randomSha256(), "masked-" + employeeId, "synthetic-issuer",
+                randomSha256(), "synthetic-employee", "OPS")).isEqualTo(1);
+        switchLocalRole(connection, "entitlement_metering_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.trial_policy_version "
+                        + "(id, campaign_key, version_no, granted_seconds, valid_days, "
+                        + "enabled, snapshot, snapshot_sha256, published_by_employee_id, published_at) "
+                        + "VALUES (?, 'FIRST-TRIAL', ?, 100, 30, false, '{}'::jsonb, ?, ?, now())",
+                policyId, Math.toIntExact(queryLong(connection,
+                        "SELECT coalesce(max(version_no), 0) + 1 "
+                                + "FROM entitlement_metering.trial_policy_version")),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                employeeId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_grant (id, subject_id, "
+                        + "source_type, source_ref_id, entitlement_type, granted_units, "
+                        + "valid_from, expires_at, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'TRIAL', ?, 'RECORDING_SECONDS', 100, "
+                        + "now(), now() + interval '30 days', '{}'::jsonb, ?)",
+                grantId, subjectId, policyId,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.entitlement_balance (id, grant_id, "
+                        + "granted_units) VALUES (?, ?, 100)",
+                balanceId, grantId)).isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO entitlement_metering.usage_reservation (id, call_id, "
+                        + "balance_id, subject_id, authorized_units, "
+                        + "authorization_expires_at) VALUES (?, ?, ?, ?, 1, "
+                        + "now() + interval '30 seconds')",
+                reservationId, callId, balanceId, subjectId)).isEqualTo(1);
+        return new V008ReservationFixture(reservationId, policyId, grantId, balanceId, employeeId);
+    }
+
+    private static UUID v008InsertRecordOnlySameTx(
+            Connection connection,
+            UUID subjectId,
+            String callId,
+            UUID sessionId,
+            UUID reservationId,
+            String eventId) throws SQLException {
+        UUID recordId = UUID.randomUUID();
+        UUID sourceRefId = UUID.randomUUID();
+        setLocalRole(connection, "evidence_owner");
+        assertThat(executeUpdate(connection,
+                "INSERT INTO evidence.evidence_record "
+                        + "(id, subject_id, source_type, source_ref_id, source_event_domain, "
+                        + "source_event_id, call_id, session_id, reservation_id, "
+                        + "identity_at_capture, consent_version, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'CALL_RECORDING', ?, 'EVIDENCE', ?, ?, ?, ?, "
+                        + "jsonb_build_object('subjectId', ?::text, 'capturedAt', "
+                        + "'2026-01-01T00:00:00Z', 'sourceChannel', 'IVR'), 'v1', "
+                        + "jsonb_build_object('capture', '{}'::jsonb, 'content', '{}'::jsonb, "
+                        + "'sourceEventDomain', 'EVIDENCE', 'sourceEventId', ?, "
+                        + "'source', jsonb_build_object('callId', ?::text, 'sessionId', ?::text, "
+                        + "'subjectId', ?::text, 'reservationId', ?::text, 'recordingId', ?::text)), ?)",
+                recordId, subjectId, sourceRefId, eventId, callId, sessionId, reservationId,
+                subjectId, eventId, callId, sessionId, subjectId, reservationId, sourceRefId,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .isEqualTo(1);
+        return recordId;
+    }
+
+    private static String v008CallId() {
+        return "call-" + UUID.randomUUID();
+    }
+
+    private record V008ReservationFixture(
+            UUID reservationId, UUID policyId, UUID grantId, UUID balanceId, UUID employeeId) {
+    }
+
+    /**
+     * Inserts a committed-valid-parents evidence_record plus matching EVIDENCE_CREATED pair.
+     * When {@code withArtifact} is true, also inserts one media_object + DERIVED artifact.
+     * Returns the record id. Caller must already hold a transactional evidence_owner connection.
+     */
+    private static UUID v008InsertValidRecordAndCreationEvent(
+            Connection connection,
+            UUID subjectId,
+            String callId,
+            UUID sessionId,
+            UUID reservationId,
+            String eventId,
+            boolean withArtifact) throws SQLException {
+        UUID recordId = UUID.randomUUID();
+        UUID sourceRefId = UUID.randomUUID();
+        assertThat(executeUpdate(connection,
+                "INSERT INTO evidence.evidence_record "
+                        + "(id, subject_id, source_type, source_ref_id, source_event_domain, "
+                        + "source_event_id, call_id, session_id, reservation_id, "
+                        + "identity_at_capture, consent_version, snapshot, snapshot_sha256) "
+                        + "VALUES (?, ?, 'CALL_RECORDING', ?, 'EVIDENCE', ?, ?, ?, ?, "
+                        + "jsonb_build_object('subjectId', ?::text, 'capturedAt', "
+                        + "'2026-01-01T00:00:00Z', 'sourceChannel', 'IVR'), 'v1', "
+                        + "jsonb_build_object('capture', '{}'::jsonb, 'content', '{}'::jsonb, "
+                        + "'sourceEventDomain', 'EVIDENCE', 'sourceEventId', ?, "
+                        + "'source', jsonb_build_object('callId', ?::text, 'sessionId', ?::text, "
+                        + "'subjectId', ?::text, 'reservationId', ?::text, 'recordingId', ?::text)), ?)",
+                recordId, subjectId, sourceRefId, eventId, callId, sessionId, reservationId,
+                subjectId, eventId, callId, sessionId, subjectId, reservationId, sourceRefId,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .isEqualTo(1);
+        assertThat(executeUpdate(connection,
+                "INSERT INTO evidence.evidence_event "
+                        + "(id, evidence_id, event_domain, event_id, event_type, "
+                        + "payload_redacted, payload_sha256) "
+                        + "VALUES (?, ?, 'EVIDENCE', ?, 'EVIDENCE_CREATED', '{}'::jsonb, ?)",
+                UUID.randomUUID(), recordId, eventId,
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+                .isEqualTo(1);
+        if (withArtifact) {
+            UUID mediaId = UUID.randomUUID();
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO evidence.media_object "
+                            + "(id, storage_provider, bucket, object_key, object_version_id, "
+                            + "sha256, size_bytes, mime_type, crypto_key_ref) "
+                            + "VALUES (?, 'COS', ?, ?, 'v', ?, 1, 'audio/wav', 'key')",
+                    mediaId, "b-" + mediaId, "k-" + mediaId,
+                    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"))
+                    .isEqualTo(1);
+            assertThat(executeUpdate(connection,
+                    "INSERT INTO evidence.evidence_artifact "
+                            + "(id, evidence_id, media_object_id, artifact_role) "
+                            + "VALUES (?, ?, ?, 'DERIVED')",
+                    UUID.randomUUID(), recordId, mediaId))
+                    .isEqualTo(1);
+        }
+        return recordId;
+    }
+
+    /**
+     * Shared method-local cleanup helper (V007 {@code cleanupV007S2LocalRows} shape): one
+     * transaction disables the three named immutable V008 triggers, deletes in FK-safe order
+     * (artifacts → events → records → recording → media → reservation → balance → grant → policy
+     * → employee → call/session → subject), re-enables, asserts {@code tgenabled='O'}, commits,
+     * then proves per-id zero residue on a fresh connection. Never deletes shared fixtures.
+     */
+    private static void cleanupV008LocalRows(
+            UUID recordId,
+            List<String> eventIds,
+            List<UUID> artifactIds,
+            List<UUID> recordingIds,
+            List<UUID> mediaIds,
+            List<UUID> subjectIds,
+            List<String> callIds,
+            List<UUID> sessionIds,
+            V008ReservationFixture reservationFixture) throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "evidence_owner");
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("ALTER TABLE evidence.media_object DISABLE TRIGGER trg_media_object_immutable");
+                    statement.execute("ALTER TABLE evidence.evidence_artifact DISABLE TRIGGER trg_evidence_artifact_immutable");
+                    statement.execute("ALTER TABLE evidence.evidence_event DISABLE TRIGGER trg_evidence_event_immutable");
+                }
+                for (UUID artifactId : artifactIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM evidence.evidence_artifact WHERE id = ?", artifactId);
+                }
+                executeUpdate(connection,
+                        "DELETE FROM evidence.evidence_artifact WHERE evidence_id = ?", recordId);
+                for (String eventId : eventIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM evidence.evidence_event WHERE event_id = ?", eventId);
+                }
+                executeUpdate(connection,
+                        "DELETE FROM evidence.evidence_event WHERE evidence_id = ?", recordId);
+                for (UUID id : recordingIds) {
+                    executeUpdate(connection, "DELETE FROM evidence.recording WHERE id = ?", id);
+                }
+                if (!callIds.isEmpty()) {
+                    executeUpdate(connection, "DELETE FROM evidence.recording WHERE call_id IN ("
+                            + String.join(",", Collections.nCopies(callIds.size(), "?"))
+                            + ")", callIds.toArray());
+                }
+                executeUpdate(connection,
+                        "DELETE FROM evidence.evidence_record WHERE id = ?", recordId);
+                for (UUID mediaId : mediaIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM evidence.media_object WHERE id = ?", mediaId);
+                }
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("SET CONSTRAINTS ALL IMMEDIATE");
+                    statement.execute("ALTER TABLE evidence.evidence_artifact ENABLE TRIGGER trg_evidence_artifact_immutable");
+                    statement.execute("ALTER TABLE evidence.evidence_event ENABLE TRIGGER trg_evidence_event_immutable");
+                    statement.execute("ALTER TABLE evidence.media_object ENABLE TRIGGER trg_media_object_immutable");
+                }
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM pg_trigger t "
+                                + "JOIN pg_class c ON c.oid = t.tgrelid "
+                                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                + "WHERE n.nspname = 'evidence' AND t.tgname IN "
+                                + "('trg_media_object_immutable','trg_evidence_artifact_immutable',"
+                                + "'trg_evidence_event_immutable') AND t.tgenabled <> 'O'"))
+                        .as("all three named immutable triggers restored to enabled").isZero();
+                switchLocalRole(connection, "entitlement_metering_owner");
+                executeUpdate(connection,
+                        "DELETE FROM entitlement_metering.usage_reservation WHERE id = ?",
+                        reservationFixture.reservationId());
+                executeUpdate(connection,
+                        "DELETE FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                        reservationFixture.balanceId());
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("ALTER TABLE entitlement_metering.entitlement_grant "
+                            + "DISABLE TRIGGER trg_entitlement_grant_immutable");
+                }
+                try {
+                    executeUpdate(connection,
+                            "DELETE FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                            reservationFixture.grantId());
+                } finally {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute("ALTER TABLE entitlement_metering.entitlement_grant "
+                                + "ENABLE TRIGGER trg_entitlement_grant_immutable");
+                    }
+                }
+                assertThat(queryString(connection,
+                        "SELECT t.tgenabled FROM pg_trigger t "
+                                + "WHERE t.tgrelid = 'entitlement_metering.entitlement_grant'::regclass "
+                                + "AND t.tgname = 'trg_entitlement_grant_immutable'"))
+                        .as("entitlement grant immutable trigger restored").isEqualTo("O");
+                executeUpdate(connection,
+                        "DELETE FROM entitlement_metering.trial_policy_version WHERE id = ?",
+                        reservationFixture.policyId());
+                switchLocalRole(connection, "operations_iam_owner");
+                executeUpdate(connection,
+                        "DELETE FROM operations_iam.employee_account WHERE id = ?",
+                        reservationFixture.employeeId());
+                switchLocalRole(connection, "ivr_owner");
+                for (String callId : callIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.call_record WHERE call_id = ?", callId);
+                }
+                for (UUID sessionId : sessionIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.call_record WHERE session_id = ?", sessionId);
+                    executeUpdate(connection,
+                            "DELETE FROM ivr.inbound_session WHERE id = ?", sessionId);
+                }
+                switchLocalRole(connection, "subject_number_owner");
+                for (UUID subjectId : subjectIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM subject_number.business_subject WHERE id = ?", subjectId);
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM evidence.evidence_record WHERE id = ?", recordId))
+                    .isZero();
+            for (UUID artifactId : artifactIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.evidence_artifact WHERE id = ?", artifactId))
+                        .as("no artifact residue for %s", artifactId).isZero();
+            }
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM evidence.evidence_artifact WHERE evidence_id = ?", recordId))
+                    .as("no artifact residue for evidence %s", recordId).isZero();
+            for (UUID recordingId : recordingIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.recording WHERE id = ?", recordingId))
+                        .as("no recording residue for %s", recordingId).isZero();
+            }
+            for (UUID mediaId : mediaIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.media_object WHERE id = ?", mediaId))
+                        .as("no media residue for %s", mediaId).isZero();
+            }
+            if (!eventIds.isEmpty()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM evidence.evidence_event WHERE evidence_id = ?",
+                        recordId)).isZero();
+            }
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.usage_reservation WHERE id = ?",
+                    reservationFixture.reservationId())).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.entitlement_balance WHERE id = ?",
+                    reservationFixture.balanceId())).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.entitlement_grant WHERE id = ?",
+                    reservationFixture.grantId())).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM entitlement_metering.trial_policy_version WHERE id = ?",
+                    reservationFixture.policyId())).isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?",
+                    reservationFixture.employeeId())).isZero();
+            for (UUID subjectId : subjectIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ?",
+                        subjectId)).isZero();
+            }
+            for (UUID sessionId : sessionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.call_record WHERE session_id = ?", sessionId))
+                        .isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.inbound_session WHERE id = ?", sessionId))
+                        .isZero();
+            }
+            for (String callId : callIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM ivr.call_record WHERE call_id = ?", callId))
+                        .isZero();
+            }
         }
     }
 }
