@@ -38,7 +38,7 @@ No application activation/consent service, API/controller/JPA, V008+ object, sch
 ### 3.2 `v007ActivationHeadTransitionRevisionMatrixAndImmutabilityBackstops`
 
 - All subjects inserted via `insertSubject` before any head (no synthetic orphan heads).
-- Positive controls (savepoint-rolled-back): IVR INACTIVE→ACTIVE, OPERATIONS ACTIVE→SUSPENDED, OPERATIONS SUSPENDED→ACTIVE (resume uses from/to revision 1/2 and `actor_employee_id`, null consent).
+- Positive controls (savepoint-rolled-back): IVR INACTIVE→ACTIVE, OPERATIONS ACTIVE→SUSPENDED, OPERATIONS SUSPENDED→ACTIVE (resume uses from/to revision 2/3 and `actor_employee_id`, null consent).
 - All 3 activation-head checks (`ck_service_activation_status`, `_revision`, `_time_order`) exact `23514`.
 - Head immutability: owner UPDATE of `id`/`subject_id`/`created_at` exact P0001 `SERVICE_ACTIVATION_HEAD_IMMUTABLE` via `trg_service_activation_guard`; runtime UPDATE limited to `(status, revision, updated_at)` with `42501` on other columns.
 - All 13 transition checks exact `23514`. Overlaps isolated: status↔matrix, from_revision↔to_revision, channel↔channel_shape, action_domain↔channel_shape.

@@ -8428,6 +8428,45 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "activation_consent_owner", "activation_consent", "CREATE"))
                 .as("owner CREATE on own schema").isTrue();
 
+        // Plan §4.7 operations_iam denial must also hold at table/column level: schema
+        // USAGE only hides name resolution, so pin zero on every live table and column.
+        List<String> operationsTables = queryStrings(
+                connection,
+                "SELECT table_name FROM information_schema.tables "
+                        + "WHERE table_schema = 'operations_iam' AND table_type = 'BASE TABLE' "
+                        + "ORDER BY table_name");
+        assertThat(operationsTables)
+                .as("operations_iam base tables must exist for negative pins")
+                .isNotEmpty();
+        for (String table : operationsTables) {
+            String qualifiedTable = "operations_iam." + table;
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "activation_consent_role", qualifiedTable, privilege))
+                        .as("activation_consent_role must not hold table %s on %s",
+                                privilege, qualifiedTable)
+                        .isFalse();
+            }
+            List<String> actualColumns = queryStrings(
+                    connection,
+                    "SELECT column_name FROM information_schema.columns "
+                            + "WHERE table_schema = 'operations_iam' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    table);
+            assertThat(actualColumns)
+                    .as("operations_iam %s must have enumerated columns", qualifiedTable)
+                    .isNotEmpty();
+            for (String column : actualColumns) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    assertThat(hasColumn(connection, "activation_consent_role", qualifiedTable,
+                            column, privilege))
+                            .as("activation_consent_role must not hold column %s on %s.%s",
+                                    privilege, qualifiedTable, column)
+                            .isFalse();
+                }
+            }
+        }
+
         // Exact four foreign column-read sets with exhaustive live-column negatives and
         // no foreign table-level write/row-lock privilege for activation_consent_role.
         Map<String, List<String>> crossSelect = new java.util.LinkedHashMap<>();
@@ -8952,9 +8991,9 @@ class PostgresContainerIT {
                         defaultAcceptedAtConsent))
                         .as("accepted_at default is PostgreSQL-populated").isEqualTo(1);
 
-                // All 15 named checks. Non-overlapping probes run as runtime role;
-                // overlapping probes drop only logically preempting checks inside a
-                // savepoint and restore the catalog before continuing.
+                // All 15 named checks. Consent check probes may run under the migration
+                // identity after check isolation (role-independent); overlapping probes
+                // drop only preempting checks in a savepoint and restore the catalog.
                 List<String> probed = new ArrayList<>();
                 String validEventBase = "pa7-s2-evt-" + UUID.randomUUID();
 
