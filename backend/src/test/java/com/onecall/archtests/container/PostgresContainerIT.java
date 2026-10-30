@@ -46,7 +46,9 @@ import org.testcontainers.utility.DockerImageName;
  * entitlement_metering inventory/ACL plus issue_first_trial GRANTED/REPLAY/
  * ALREADY_GRANTED/TRIAL_* database semantics; and PA7 V007 S1 exact
  * activation_consent inventory/ACL and all 11 FK decisions including the late
- * order-consent FK. Exactly 48 container methods. There is no skip path: an
+ * order-consent FK, plus PA7 V007 S2 consent/head/transition lifecycle,
+ * named-check, append-only, rollback and bounded concurrency backstops.
+ * Exactly 51 container methods. There is no skip path: an
  * unavailable Docker daemon, failed image pull, failed container start, JDBC
  * failure, Flyway failure or assertion failure fails the Maven build. The
  * password is generated per JVM run and never persisted.
@@ -2446,6 +2448,52 @@ class PostgresContainerIT {
             assertV007ForeignKeyInventoryAndLateFk(connection);
         }
         assertV007MissingParentFkProbesAndParentDeleteRestrict();
+    }
+
+    /**
+     * PA7 V007 S2 plan §8.2: executable consent lifecycle — valid IVR/session,
+     * account and employee source/channel shapes, all 15 named checks with exact
+     * 23514 + constraint name and valid positive controls, PostgreSQL-populated
+     * accepted_at default, domain-scoped unique event winner (same text in another
+     * domain allowed), owner P0001 and runtime 42501 append-only denials, and a
+     * forced later failure that rolls back the consent insert. Service
+     * replay/currentness/policy validation stays deferred and unclaimed.
+     */
+    @Test
+    void v007ConsentShapeDefaultsAppendOnlyAndRollbackBackstops() throws Exception {
+        assertV007ConsentShapeDefaultsAppendOnlyAndRollbackBackstops();
+    }
+
+    /**
+     * PA7 V007 S2 plan §8.2: executable activation-head and transition lifecycle —
+     * head defaults INACTIVE/revision 1/database timestamps and time-order check,
+     * one activation per subject, legal runtime update of only
+     * status/revision/updated_at, immutable-column owner P0001 and runtime 42501,
+     * all 3 head + 13 transition checks with exact names and positive controls,
+     * the exact broad matrix including rolled-back shape-valid/service-invalid
+     * controls (no narrower DB claim), transition revision progression, three
+     * unique identities, actor/channel shapes, append-only denial, and a whole
+     * transaction that inserts consent/head/transition, updates the head, then
+     * forces failure leaving no partial fact/head change.
+     */
+    @Test
+    void v007ActivationHeadTransitionRevisionMatrixAndImmutabilityBackstops() throws Exception {
+        assertV007ActivationHeadTransitionRevisionMatrixAndImmutabilityBackstops();
+    }
+
+    /**
+     * PA7 V007 S2 plan §8.2: bounded two-connection concurrency — distinct
+     * application_name, statement_timeout, future timeout and observed lock wait
+     * (no sleep-only assertion); one winner each for uq_consent_event,
+     * uq_service_activation_subject and the three transition identities with loser
+     * 23505 + exact constraint; conditional expected-revision head update where
+     * the loser affects zero rows after serialization and rereads the winner
+     * state; whole-transaction forced failure leaves no partial consent/head/
+     * transition; method-local FK-safe cleanup with named trigger restoration.
+     */
+    @Test
+    void concurrentV007ActivationAndTransitionIdentityHasOneWinner() throws Exception {
+        runConcurrentV007ActivationAndTransitionIdentityHasOneWinner();
     }
 
     /**
@@ -8750,6 +8798,1333 @@ class PostgresContainerIT {
                 connection.rollback();
             } finally {
                 connection.rollback();
+            }
+        }
+    }
+
+    /** Full-column consent probe SQL so every named check can be isolated. */
+    private static String v007ConsentFullSql() {
+        return "INSERT INTO activation_consent.consent_record "
+                + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                + "policy_version, prompt_version, action, source_type, source_ref, "
+                + "ivr_session_id, account_id, employee_id, snapshot, snapshot_sha256, "
+                + "event_id, request_fingerprint) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)";
+    }
+
+    /** Full-column transition probe SQL so every named check can be isolated. */
+    private static String v007TransitionFullSql() {
+        return "INSERT INTO activation_consent.service_activation_transition "
+                + "(id, activation_id, subject_id, from_status, to_status, from_revision, "
+                + "to_revision, source_channel, source_action_domain, source_action_event_id, "
+                + "status_event_domain, status_event_id, request_fingerprint, "
+                + "actor_account_id, actor_employee_id, reason_code, consent_record_id) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    }
+
+    private static Object[] v007ValidAccountConsentParams(
+            UUID id, UUID subjectId, UUID accountId, String eventId) {
+        return new Object[] {
+                id, subjectId, "PURCHASE", "WEB", "PURCHASE", "pa7-s2-policy",
+                "v1", "v1", "ACCEPT", "ACCOUNT", "pa7-s2-acc-ref",
+                null, accountId, null, "{}", randomSha256(), eventId, randomSha256()};
+    }
+
+    /** Returns a shallow copy of {@code params} with {@code parameters[index]} replaced. */
+    private static Object[] v007WithParam(Object[] parameters, int index, Object value) {
+        Object[] copy = parameters.clone();
+        copy[index] = value;
+        return copy;
+    }
+
+    private static Object[] v007ValidIvrTransitionParams(
+            UUID id, UUID activationId, UUID subjectId, UUID consentId,
+            String actionEventId, String statusEventId) {
+        return new Object[] {
+                id, activationId, subjectId, "INACTIVE", "ACTIVE", 0, 1,
+                "IVR", "IVR_CONFIRM", actionEventId,
+                "ACTIVATION_STATUS", statusEventId, randomSha256(),
+                null, null, "ACTIVATE", consentId};
+    }
+
+    private static void expectV007CheckWithIsolatedPreempting(
+            Connection connection,
+            CheckProbe probe,
+            String table,
+            List<String> preemptingChecks) throws SQLException {
+        Savepoint savepoint = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "activation_consent_owner");
+            for (String check : preemptingChecks) {
+                execute(connection,
+                        "ALTER TABLE activation_consent." + table + " DROP CONSTRAINT " + check);
+            }
+            try (PreparedStatement prepared = connection.prepareStatement(probe.sql())) {
+                bind(prepared, probe.parameters());
+                prepared.executeUpdate();
+            }
+            fail("expected SQL failure 23514 for " + probe.constraint());
+        } catch (SQLException exception) {
+            assertThat(exception.getSQLState())
+                    .as("SQLSTATE for isolated check %s", probe.constraint()).isEqualTo("23514");
+            assertThat(exception.getMessage())
+                    .as("exact constraint marker for %s", probe.constraint())
+                    .contains(probe.constraint());
+        } finally {
+            connection.rollback(savepoint);
+        }
+        for (String check : preemptingChecks) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'activation_consent' AND r.relname = ? "
+                            + "AND c.conname = ?",
+                    table, check))
+                    .as("preempting check %s restored after savepoint", check)
+                    .isEqualTo(1);
+        }
+        resetToMigrationIdentity(connection);
+    }
+
+    /**
+     * PA7 V007 S2 §8.2: executable consent lifecycle — valid IVR/session, account and
+     * employee source/channel shapes, all 15 named checks with exact 23514 + constraint
+     * name and valid positive controls (savepoint-isolating only logically preempting
+     * checks), PostgreSQL-populated accepted_at default, domain-scoped unique event winner
+     * with same text allowed in another domain, owner P0001 and runtime 42501 append-only
+     * denials, and a forced later failure that rolls back the consent insert. Service
+     * replay/currentness/policy validation stays deferred and unclaimed.
+     */
+    private static void assertV007ConsentShapeDefaultsAppendOnlyAndRollbackBackstops()
+            throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID positiveAccountConsent = UUID.randomUUID();
+        UUID positiveSessionConsent = UUID.randomUUID();
+        UUID positiveEmployeeConsent = UUID.randomUUID();
+        UUID defaultAcceptedAtConsent = UUID.randomUUID();
+        UUID uniqueWinnerConsent = UUID.randomUUID();
+        UUID uniqueOtherDomainConsent = UUID.randomUUID();
+        UUID uniqueLoserConsent = UUID.randomUUID();
+        UUID rollbackConsent = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "PA7 S2 Consent Account"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "pa7***s2c",
+                        "onecall-ops", randomSha256(), "PA7 S2 Consent Employee", "ADMIN"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, sessionId, v005CallId(), subjectId,
+                        randomSha256())).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+
+                // Valid positive controls for all three source/channel shapes.
+                switchLocalRole(connection, "activation_consent_role");
+                insertV007ConsentAccount(connection, positiveAccountConsent, subjectId, accountId);
+                insertV007ConsentSession(connection, positiveSessionConsent, subjectId, sessionId);
+                insertV007ConsentEmployee(connection, positiveEmployeeConsent, subjectId,
+                        employeeId);
+
+                // Default accepted_at is populated by PostgreSQL when the column is omitted.
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.consent_record "
+                                + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                                + "policy_version, prompt_version, action, source_type, source_ref, "
+                                + "account_id, snapshot, snapshot_sha256, event_id, request_fingerprint) "
+                                + "VALUES (?, ?, 'PURCHASE', 'WEB', 'PURCHASE', 'pa7-s2-policy', "
+                                + "'v1', 'v1', 'ACCEPT', 'ACCOUNT', ?, ?, ?::jsonb, ?, ?, ?)",
+                        defaultAcceptedAtConsent, subjectId, "pa7-s2-default-ref", accountId,
+                        "{}", randomSha256(), "pa7-s2-default-evt-" + UUID.randomUUID(),
+                        randomSha256())).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM activation_consent.consent_record "
+                                + "WHERE id = ? AND accepted_at IS NOT NULL "
+                                + "AND accepted_at >= now() - interval '10 minutes'",
+                        defaultAcceptedAtConsent))
+                        .as("accepted_at default is PostgreSQL-populated").isEqualTo(1);
+
+                // All 15 named checks. Non-overlapping probes run as runtime role;
+                // overlapping probes drop only logically preempting checks inside a
+                // savepoint and restore the catalog before continuing.
+                List<String> probed = new ArrayList<>();
+                String validEventBase = "pa7-s2-evt-" + UUID.randomUUID();
+
+                expectSqlFailure(connection, "23514", "ck_consent_purpose",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-purpose"), 2, "TAX"));
+                probed.add("ck_consent_purpose");
+
+                expectV007CheckWithIsolatedPreempting(connection,
+                        checkProbe("ck_consent_channel", v007ConsentFullSql(),
+                                v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(),
+                                        subjectId, accountId, validEventBase + "-chan"),
+                                        3, "PAGER")),
+                        "consent_record", List.of("ck_consent_channel_shape"));
+                probed.add("ck_consent_channel");
+
+                expectSqlFailure(connection, "23514", "ck_consent_event_domain",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-dom"), 4, "TELEGRAM"));
+                probed.add("ck_consent_event_domain");
+
+                expectSqlFailure(connection, "23514", "ck_consent_policy_code",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-pc"), 5, " "));
+                probed.add("ck_consent_policy_code");
+
+                expectSqlFailure(connection, "23514", "ck_consent_policy_version",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-pv"), 6, " "));
+                probed.add("ck_consent_policy_version");
+
+                expectSqlFailure(connection, "23514", "ck_consent_prompt_version",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-prv"), 7, " "));
+                probed.add("ck_consent_prompt_version");
+
+                expectSqlFailure(connection, "23514", "ck_consent_action",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-act"), 8, "MAYBE"));
+                probed.add("ck_consent_action");
+
+                expectV007CheckWithIsolatedPreempting(connection,
+                        checkProbe("ck_consent_source_type", v007ConsentFullSql(),
+                                v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(),
+                                        subjectId, accountId, validEventBase + "-st"),
+                                        9, "PAGER")),
+                        "consent_record",
+                        List.of("ck_consent_source_shape", "ck_consent_channel_shape"));
+                probed.add("ck_consent_source_type");
+
+                expectSqlFailure(connection, "23514", "ck_consent_source_ref",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-sr"), 10, " "));
+                probed.add("ck_consent_source_ref");
+
+                // source_shape: ACCOUNT with null account_id fails only source_shape
+                // (channel WEB + source_type ACCOUNT keeps channel_shape true).
+                expectSqlFailure(connection, "23514", "ck_consent_source_shape",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-sshape"), 12, null));
+                probed.add("ck_consent_source_shape");
+
+                // channel_shape: channel IVR with ACCOUNT source fails only channel_shape.
+                expectSqlFailure(connection, "23514", "ck_consent_channel_shape",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-cshape"), 3, "IVR"));
+                probed.add("ck_consent_channel_shape");
+
+                expectSqlFailure(connection, "23514", "ck_consent_snapshot_type",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-snap"), 14, "[]"));
+                probed.add("ck_consent_snapshot_type");
+
+                expectSqlFailure(connection, "23514", "ck_consent_snapshot_sha",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-sha"), 15, "not-a-sha"));
+                probed.add("ck_consent_snapshot_sha");
+
+                expectSqlFailure(connection, "23514", "ck_consent_event_id",
+                        v007ConsentFullSql(),
+                        v007ValidAccountConsentParams(UUID.randomUUID(), subjectId, accountId,
+                                " "));
+                probed.add("ck_consent_event_id");
+
+                expectSqlFailure(connection, "23514", "ck_consent_fingerprint",
+                        v007ConsentFullSql(),
+                        v007WithParam(v007ValidAccountConsentParams(UUID.randomUUID(), subjectId,
+                                accountId, validEventBase + "-fp"), 17, "not-a-sha"));
+                probed.add("ck_consent_fingerprint");
+
+                assertThat(probed)
+                        .as("all 15 V007 consent named checks have an exact 23514 probe")
+                        .hasSize(15)
+                        .containsExactlyInAnyOrderElementsOf(
+                                V007_CHECK_DEF_MAP.get("consent_record").keySet());
+
+                // Domain-scoped unique event winner; same event_id in another domain allowed.
+                String sharedEventId = "pa7-s2-shared-" + UUID.randomUUID();
+                assertThat(executeUpdate(connection, v007ConsentFullSql(),
+                        v007ValidAccountConsentParams(uniqueWinnerConsent, subjectId, accountId,
+                                sharedEventId))).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.consent_record "
+                                + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                                + "policy_version, prompt_version, action, source_type, source_ref, "
+                                + "employee_id, snapshot, snapshot_sha256, event_id, request_fingerprint) "
+                                + "VALUES (?, ?, 'SERVICE_ACTIVATION', 'OPERATIONS', 'OPERATIONS', "
+                                + "'pa7-s2-policy', 'v1', 'v1', 'ACCEPT', 'EMPLOYEE', ?, ?, "
+                                + "'{}', ?, ?, ?)",
+                        uniqueOtherDomainConsent, subjectId, "pa7-s2-other-ref", employeeId,
+                        randomSha256(), sharedEventId, randomSha256()))
+                        .as("same event_id in another event_domain is allowed").isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_consent_event",
+                        v007ConsentFullSql(),
+                        v007ValidAccountConsentParams(uniqueLoserConsent, subjectId, accountId,
+                                sharedEventId));
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM activation_consent.consent_record "
+                                + "WHERE event_domain = 'PURCHASE' AND event_id = ?",
+                        sharedEventId))
+                        .as("exactly one PURCHASE winner for the shared event_id").isEqualTo(1);
+
+                // Owner append-only: P0001 on update and delete.
+                switchLocalRole(connection, "activation_consent_owner");
+                expectSqlFailure(connection, "P0001", "CONSENT_TRANSITION_APPEND_ONLY",
+                        "UPDATE activation_consent.consent_record SET policy_code = 'x' "
+                                + "WHERE id = ?",
+                        positiveAccountConsent);
+                expectSqlFailure(connection, "P0001", "CONSENT_TRANSITION_APPEND_ONLY",
+                        "DELETE FROM activation_consent.consent_record WHERE id = ?",
+                        positiveSessionConsent);
+
+                // Runtime append-only: 42501 on update/delete/truncate.
+                switchLocalRole(connection, "activation_consent_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE activation_consent.consent_record SET policy_code = 'x' "
+                                + "WHERE id = ?",
+                        positiveAccountConsent);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM activation_consent.consent_record WHERE id = ?",
+                        positiveEmployeeConsent);
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE activation_consent.consent_record");
+
+                // Forced later failure rolls back the consent insert (whole transaction).
+                assertThat(executeUpdate(connection, v007ConsentFullSql(),
+                        v007ValidAccountConsentParams(rollbackConsent, subjectId, accountId,
+                                "pa7-s2-rollback-evt-" + UUID.randomUUID()))).isEqualTo(1);
+                expectSqlFailure(connection, "23503", "fk_consent_subject",
+                        v007ConsentFullSql(),
+                        v007ValidAccountConsentParams(UUID.randomUUID(), UUID.randomUUID(),
+                                accountId, "pa7-s2-rollback-fail-" + UUID.randomUUID()));
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                    rollbackConsent))
+                    .as("forced later failure leaves no consent residue").isZero();
+            for (UUID id : List.of(positiveAccountConsent, positiveSessionConsent,
+                    positiveEmployeeConsent, defaultAcceptedAtConsent, uniqueWinnerConsent,
+                    uniqueOtherDomainConsent)) {
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?", id))
+                        .isZero();
+            }
+        }
+    }
+
+    /**
+     * PA7 V007 S2 §8.2: executable activation-head and transition lifecycle — head defaults
+     * INACTIVE/revision 1/database timestamps and time-order check, one activation per
+     * subject, legal runtime update of only status/revision/updated_at, immutable-column
+     * owner P0001 and runtime 42501, all 3 head + 13 transition checks with exact names and
+     * positive controls, the exact broad matrix including rolled-back shape-valid/service-
+     * invalid controls, transition revision progression, three unique identities, actor/
+     * channel shapes, append-only denial, and a whole transaction that inserts consent/head/
+     * transition, updates the head, then forces failure leaving no partial fact/head change.
+     */
+    private static void assertV007ActivationHeadTransitionRevisionMatrixAndImmutabilityBackstops()
+            throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        UUID consentId = UUID.randomUUID();
+        UUID activationId = UUID.randomUUID();
+        UUID progressSubjectId = UUID.randomUUID();
+        UUID progressConsentId = UUID.randomUUID();
+        UUID progressActivationId = UUID.randomUUID();
+        UUID uniqueActionSubjectId = UUID.randomUUID();
+        UUID uniqueActionActivationId = UUID.randomUUID();
+        UUID uniqueStatusSubjectId = UUID.randomUUID();
+        UUID uniqueStatusActivationId = UUID.randomUUID();
+        UUID txSubjectId = UUID.randomUUID();
+        UUID txConsentId = UUID.randomUUID();
+        UUID txActivationId = UUID.randomUUID();
+        UUID txTransitionId = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "PA7 S2 Head Account"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                assertThat(insertSubject(connection, progressSubjectId, "IVR")).isEqualTo(1);
+                assertThat(insertSubject(connection, uniqueActionSubjectId, "IVR")).isEqualTo(1);
+                assertThat(insertSubject(connection, uniqueStatusSubjectId, "IVR")).isEqualTo(1);
+                assertThat(insertSubject(connection, txSubjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "pa7***s2h",
+                        "onecall-ops", randomSha256(), "PA7 S2 Head Employee", "ADMIN"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "activation_consent_role");
+                insertV007ConsentAccount(connection, consentId, subjectId, accountId);
+                insertV007ConsentAccount(connection, progressConsentId, progressSubjectId,
+                        accountId);
+
+                // Head defaults: INACTIVE, revision 1, database timestamps.
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        activationId, subjectId)).isEqualTo(1);
+                try (PreparedStatement prepared = connection.prepareStatement(
+                        "SELECT status, revision, created_at, updated_at "
+                                + "FROM activation_consent.service_activation WHERE id = ?")) {
+                    prepared.setObject(1, activationId);
+                    try (ResultSet resultSet = prepared.executeQuery()) {
+                        assertThat(resultSet.next()).isTrue();
+                        assertThat(resultSet.getString(1)).isEqualTo("INACTIVE");
+                        assertThat(resultSet.getInt(2)).isEqualTo(1);
+                        assertThat(resultSet.getTimestamp(3)).isNotNull();
+                        assertThat(resultSet.getTimestamp(4)).isNotNull();
+                    }
+                }
+
+                // One activation per subject.
+                expectSqlFailure(connection, "23505", "uq_service_activation_subject",
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        UUID.randomUUID(), subjectId);
+
+                // Head named checks: status, revision, time-order (real subject parent).
+                expectSqlFailure(connection, "23514", "ck_service_activation_status",
+                        "INSERT INTO activation_consent.service_activation "
+                                + "(id, subject_id, status) VALUES (?, ?, 'BOGUS')",
+                        UUID.randomUUID(), subjectId);
+                expectSqlFailure(connection, "23514", "ck_service_activation_revision",
+                        "INSERT INTO activation_consent.service_activation "
+                                + "(id, subject_id, revision) VALUES (?, ?, 0)",
+                        UUID.randomUUID(), subjectId);
+                expectSqlFailure(connection, "23514", "ck_service_activation_time_order",
+                        "UPDATE activation_consent.service_activation "
+                                + "SET updated_at = created_at - interval '1 second' WHERE id = ?",
+                        activationId);
+                assertThat(V007_CHECK_DEF_MAP.get("service_activation")).hasSize(3);
+
+                // Legal runtime update of only status/revision/updated_at.
+                switchLocalRole(connection, "activation_consent_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE activation_consent.service_activation "
+                                + "SET status = 'ACTIVE', revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ? AND revision = 1",
+                        activationId)).isEqualTo(1);
+                assertThat(queryLong(connection,
+                        "SELECT revision FROM activation_consent.service_activation WHERE id = ?",
+                        activationId)).isEqualTo(2);
+
+                // Immutable columns: owner P0001, runtime 42501.
+                switchLocalRole(connection, "activation_consent_owner");
+                expectSqlFailure(connection, "P0001", "SERVICE_ACTIVATION_HEAD_IMMUTABLE",
+                        "UPDATE activation_consent.service_activation SET subject_id = ? "
+                                + "WHERE id = ?",
+                        UUID.randomUUID(), activationId);
+                expectSqlFailure(connection, "P0001", "SERVICE_ACTIVATION_HEAD_IMMUTABLE",
+                        "UPDATE activation_consent.service_activation SET created_at = now() "
+                                + "- interval '1 day' WHERE id = ?",
+                        activationId);
+                expectSqlFailure(connection, "P0001", "SERVICE_ACTIVATION_HEAD_IMMUTABLE",
+                        "UPDATE activation_consent.service_activation SET id = ? WHERE id = ?",
+                        UUID.randomUUID(), activationId);
+                switchLocalRole(connection, "activation_consent_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE activation_consent.service_activation SET created_at = now() "
+                                + "WHERE id = ?",
+                        activationId);
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE activation_consent.service_activation SET id = ? WHERE id = ?",
+                        UUID.randomUUID(), activationId);
+
+                // Heads for unique-identity and progression isolation (real subjects).
+                switchLocalRole(connection, "activation_consent_owner");
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        progressActivationId, progressSubjectId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        uniqueActionActivationId, uniqueActionSubjectId)).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        uniqueStatusActivationId, uniqueStatusSubjectId)).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                switchLocalRole(connection, "activation_consent_role");
+
+                // Positive transition controls, each savepoint-rolled back so the
+                // (activation_id, to_revision) identities stay free for negative probes.
+                Savepoint positiveIvr = connection.setSavepoint("pa7-s2-positive-ivr");
+                assertThat(v007InsertIvrTransition(connection, UUID.randomUUID(), activationId,
+                        subjectId, consentId, null)).isEqualTo(1);
+                connection.rollback(positiveIvr);
+                Savepoint positiveOps = connection.setSavepoint("pa7-s2-positive-ops");
+                assertThat(executeUpdate(connection, v007TransitionOperationsSql(),
+                        UUID.randomUUID(), activationId, subjectId,
+                        "pa7-s2-pos-op-" + UUID.randomUUID(),
+                        "pa7-s2-pos-st-" + UUID.randomUUID(), randomSha256(), employeeId))
+                        .isEqualTo(1);
+                connection.rollback(positiveOps);
+                Savepoint positiveResume = connection.setSavepoint("pa7-s2-positive-resume");
+                Object[] resumeParams = v007ValidIvrTransitionParams(UUID.randomUUID(),
+                        activationId, subjectId, consentId,
+                        "pa7-s2-pos-res-" + UUID.randomUUID(),
+                        "pa7-s2-pos-ress-" + UUID.randomUUID());
+                resumeParams[3] = "SUSPENDED";
+                resumeParams[4] = "ACTIVE";
+                resumeParams[5] = 2;
+                resumeParams[6] = 3;
+                resumeParams[7] = "OPERATIONS";
+                resumeParams[8] = "OPERATIONS";
+                resumeParams[14] = employeeId;
+                resumeParams[16] = null;
+                assertThat(executeUpdate(connection, v007TransitionFullSql(), resumeParams))
+                        .isEqualTo(1);
+                connection.rollback(positiveResume);
+
+                // All 13 transition named checks with exact 23514 + constraint name.
+                List<String> probed = new ArrayList<>();
+                String validEventBase = "pa7-s2-tr-evt-" + UUID.randomUUID();
+                expectV007CheckWithIsolatedPreempting(connection,
+                        checkProbe("ck_activation_transition_status", v007TransitionFullSql(),
+                                v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                        activationId, subjectId, consentId,
+                                        validEventBase + "-st", validEventBase + "-sts"),
+                                        3, "BOGUS")),
+                        "service_activation_transition",
+                        List.of("ck_activation_transition_matrix"));
+                probed.add("ck_activation_transition_status");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_matrix",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-mx", validEventBase + "-mxs"),
+                                4, "SUSPENDED"));
+                probed.add("ck_activation_transition_matrix");
+                expectV007CheckWithIsolatedPreempting(connection,
+                        checkProbe("ck_activation_transition_from_revision",
+                                v007TransitionFullSql(),
+                                v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                        activationId, subjectId, consentId,
+                                        validEventBase + "-fr", validEventBase + "-frs"),
+                                        5, -1)),
+                        "service_activation_transition",
+                        List.of("ck_activation_transition_to_revision"));
+                probed.add("ck_activation_transition_from_revision");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_to_revision",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-tr", validEventBase + "-trs"),
+                                6, 2));
+                probed.add("ck_activation_transition_to_revision");
+                expectV007CheckWithIsolatedPreempting(connection,
+                        checkProbe("ck_activation_transition_channel", v007TransitionFullSql(),
+                                v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                        activationId, subjectId, consentId,
+                                        validEventBase + "-ch", validEventBase + "-chs"),
+                                        7, "PAGER")),
+                        "service_activation_transition",
+                        List.of("ck_activation_transition_channel_shape"));
+                probed.add("ck_activation_transition_channel");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_channel_shape",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-cs", validEventBase + "-css"),
+                                8, "ACTIVATION"));
+                probed.add("ck_activation_transition_channel_shape");
+                expectV007CheckWithIsolatedPreempting(connection,
+                        checkProbe("ck_activation_transition_action_domain",
+                                v007TransitionFullSql(),
+                                v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                        activationId, subjectId, consentId,
+                                        validEventBase + "-ad", validEventBase + "-ads"),
+                                        8, "TELEGRAM")),
+                        "service_activation_transition",
+                        List.of("ck_activation_transition_channel_shape"));
+                probed.add("ck_activation_transition_action_domain");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_action_event",
+                        v007TransitionFullSql(),
+                        v007ValidIvrTransitionParams(UUID.randomUUID(), activationId, subjectId,
+                                consentId, " ", validEventBase + "-aes"));
+                probed.add("ck_activation_transition_action_event");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_status_domain",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-sd", validEventBase + "-sds"),
+                                10, "IVR"));
+                probed.add("ck_activation_transition_status_domain");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_status_event_id",
+                        v007TransitionFullSql(),
+                        v007ValidIvrTransitionParams(UUID.randomUUID(), activationId, subjectId,
+                                consentId, validEventBase + "-se", " "));
+                probed.add("ck_activation_transition_status_event_id");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_fingerprint",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-fp", validEventBase + "-fps"),
+                                12, "not-a-sha"));
+                probed.add("ck_activation_transition_fingerprint");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_actor_shape",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-as", validEventBase + "-ass"),
+                                16, null));
+                probed.add("ck_activation_transition_actor_shape");
+                expectSqlFailure(connection, "23514", "ck_activation_transition_reason",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                activationId, subjectId, consentId,
+                                validEventBase + "-rs", validEventBase + "-rss"),
+                                15, " "));
+                probed.add("ck_activation_transition_reason");
+                assertThat(probed)
+                        .as("all 13 V007 transition named checks have an exact 23514 probe")
+                        .hasSize(13)
+                        .containsExactlyInAnyOrderElementsOf(
+                                V007_CHECK_DEF_MAP.get("service_activation_transition")
+                                        .keySet());
+
+                // Exact matrix negatives: valid statuses outside the three pairs.
+                for (String[] pair : List.of(
+                        new String[] {"INACTIVE", "SUSPENDED"},
+                        new String[] {"ACTIVE", "INACTIVE"},
+                        new String[] {"SUSPENDED", "INACTIVE"},
+                        new String[] {"INACTIVE", "INACTIVE"},
+                        new String[] {"ACTIVE", "ACTIVE"},
+                        new String[] {"SUSPENDED", "SUSPENDED"})) {
+                    expectSqlFailure(connection, "23514", "ck_activation_transition_matrix",
+                            v007TransitionFullSql(),
+                            v007WithParam(v007WithParam(v007ValidIvrTransitionParams(
+                                    UUID.randomUUID(), activationId, subjectId, consentId,
+                                    validEventBase + "-mx-" + pair[0] + "-" + pair[1],
+                                    validEventBase + "-mxs-" + pair[0] + "-" + pair[1]),
+                                    3, pair[0]), 4, pair[1]));
+                }
+                expectSqlFailure(connection, "23514", "ck_activation_transition_matrix",
+                        v007TransitionFullSql(),
+                        v007WithParam(v007WithParam(v007ValidIvrTransitionParams(
+                                UUID.randomUUID(), activationId, subjectId, consentId,
+                                validEventBase + "-mx-so", validEventBase + "-mxs-so"),
+                                3, "SUSPENDED"), 4, "ACTIVE"));
+
+                // Shape-valid service-questioned suspend via IVR is DB-accepted then
+                // rolled back: the DB matrix is exact, not narrower than the DB claim.
+                Savepoint serviceInvalid = connection.setSavepoint("pa7-s2-service-invalid");
+                assertThat(executeUpdate(connection, v007TransitionFullSql(),
+                        v007WithParam(v007WithParam(v007ValidIvrTransitionParams(
+                                UUID.randomUUID(), activationId, subjectId, consentId,
+                                validEventBase + "-svc", validEventBase + "-svcs"),
+                                3, "ACTIVE"), 4, "SUSPENDED")))
+                        .as("shape-valid service-questioned suspend is DB-accepted")
+                        .isEqualTo(1);
+                connection.rollback(serviceInvalid);
+
+                // Revision progression on the dedicated activation: IVR 0->1 committed,
+                // OPERATIONS ACTIVE->SUSPENDED 1->2 committed.
+                assertThat(v007InsertIvrTransition(connection, UUID.randomUUID(),
+                        progressActivationId, progressSubjectId, progressConsentId, null))
+                        .isEqualTo(1);
+                assertThat(executeUpdate(connection, v007TransitionOperationsSql(),
+                        UUID.randomUUID(), progressActivationId, progressSubjectId,
+                        "pa7-s2-prog-op-" + UUID.randomUUID(),
+                        "pa7-s2-prog-st-" + UUID.randomUUID(), randomSha256(), employeeId))
+                        .isEqualTo(1);
+                expectSqlFailure(connection, "23505", "uq_activation_transition_revision",
+                        v007TransitionFullSql(),
+                        v007ValidIvrTransitionParams(UUID.randomUUID(), progressActivationId,
+                                progressSubjectId, progressConsentId,
+                                "pa7-s2-rev-lose-" + UUID.randomUUID(),
+                                "pa7-s2-rev-st-" + UUID.randomUUID()));
+
+                // Action unique: shared (domain, action_event_id) across activations.
+                String sharedActionEvent = "pa7-s2-act-share-" + UUID.randomUUID();
+                UUID actionWinner = UUID.randomUUID();
+                assertThat(executeUpdate(connection, v007TransitionFullSql(),
+                        v007ValidIvrTransitionParams(actionWinner, uniqueActionActivationId,
+                                uniqueActionSubjectId, consentId, sharedActionEvent,
+                                "pa7-s2-actw-st-" + UUID.randomUUID()))).isEqualTo(1);
+                Object[] actionLoser = v007ValidIvrTransitionParams(UUID.randomUUID(),
+                        uniqueActionActivationId, uniqueActionSubjectId, consentId,
+                        sharedActionEvent, "pa7-s2-actl-st-" + UUID.randomUUID());
+                actionLoser[5] = 1;
+                actionLoser[6] = 2;
+                expectSqlFailure(connection, "23505", "uq_activation_transition_action",
+                        v007TransitionFullSql(), actionLoser);
+
+                // Status-event unique: shared (status_domain, status_event_id).
+                String sharedStatusEvent = "pa7-s2-st-share-" + UUID.randomUUID();
+                assertThat(executeUpdate(connection, v007TransitionFullSql(),
+                        v007ValidIvrTransitionParams(UUID.randomUUID(),
+                                uniqueStatusActivationId, uniqueStatusSubjectId, consentId,
+                                "pa7-s2-stw-act-" + UUID.randomUUID(), sharedStatusEvent)))
+                        .isEqualTo(1);
+                Object[] statusLoser = v007ValidIvrTransitionParams(UUID.randomUUID(),
+                        uniqueStatusActivationId, uniqueStatusSubjectId, consentId,
+                        "pa7-s2-stl-act-" + UUID.randomUUID(), sharedStatusEvent);
+                statusLoser[5] = 1;
+                statusLoser[6] = 2;
+                expectSqlFailure(connection, "23505",
+                        "uq_activation_transition_status_event",
+                        v007TransitionFullSql(), statusLoser);
+
+                // Append-only: owner P0001, runtime 42501.
+                switchLocalRole(connection, "activation_consent_owner");
+                expectSqlFailure(connection, "P0001", "CONSENT_TRANSITION_APPEND_ONLY",
+                        "UPDATE activation_consent.service_activation_transition "
+                                + "SET reason_code = 'x' WHERE id = ?",
+                        actionWinner);
+                expectSqlFailure(connection, "P0001", "CONSENT_TRANSITION_APPEND_ONLY",
+                        "DELETE FROM activation_consent.service_activation_transition "
+                                + "WHERE id = ?",
+                        actionWinner);
+                switchLocalRole(connection, "activation_consent_role");
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE activation_consent.service_activation_transition "
+                                + "SET reason_code = 'x' WHERE id = ?",
+                        actionWinner);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM activation_consent.service_activation_transition "
+                                + "WHERE id = ?",
+                        actionWinner);
+
+                // Whole-transaction: insert consent + head + transition, update the head,
+                // then a forced later failure aborts the transaction (no savepoint) so
+                // the outer rollback leaves no partial fact/head/transition.
+                assertThat(executeUpdate(connection, v007ConsentFullSql(),
+                        v007ValidAccountConsentParams(txConsentId, txSubjectId, accountId,
+                                "pa7-s2-tx-evt-" + UUID.randomUUID()))).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        txActivationId, txSubjectId)).isEqualTo(1);
+                assertThat(executeUpdate(connection, v007TransitionFullSql(),
+                        v007ValidIvrTransitionParams(txTransitionId, txActivationId,
+                                txSubjectId, txConsentId,
+                                "pa7-s2-tx-tr-" + UUID.randomUUID(),
+                                "pa7-s2-tx-st-" + UUID.randomUUID()))).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE activation_consent.service_activation "
+                                + "SET status = 'ACTIVE', revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ? AND revision = 1",
+                        txActivationId)).isEqualTo(1);
+                try {
+                    executeUpdate(connection, v007ConsentFullSql(),
+                            v007ValidAccountConsentParams(UUID.randomUUID(),
+                                    UUID.randomUUID(), accountId,
+                                    "pa7-s2-tx-fail-" + UUID.randomUUID()));
+                    fail("expected whole-transaction forced failure via fk_consent_subject");
+                } catch (SQLException exception) {
+                    assertThat(exception.getSQLState()).isEqualTo("23503");
+                    assertThat(exception.getMessage()).contains("fk_consent_subject");
+                }
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+
+        try (Connection verify = openConnection()) {
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                    txConsentId))
+                    .as("whole-transaction failure leaves no consent").isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM activation_consent.service_activation WHERE id = ?",
+                    txActivationId))
+                    .as("whole-transaction failure leaves no head").isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM activation_consent.service_activation_transition "
+                            + "WHERE id = ?",
+                    txTransitionId))
+                    .as("whole-transaction failure leaves no transition").isZero();
+            assertThat(queryLong(verify,
+                    "SELECT count(*) FROM activation_consent.service_activation "
+                            + "WHERE status = 'ACTIVE' AND revision = 2 AND id = ?",
+                    txActivationId))
+                    .as("whole-transaction failure leaves no head update").isZero();
+        }
+    }
+
+    @FunctionalInterface
+    private interface V007S2RaceAction {
+        void run(Connection connection, UUID rowId) throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface V007S2RaceExpectation {
+        void accept(SQLException exception) throws Exception;
+    }
+
+    private static final class V007S2LocalRows {
+        final List<UUID> transitionIds = new ArrayList<>();
+        final List<UUID> consentIds = new ArrayList<>();
+        final List<UUID> activationIds = new ArrayList<>();
+        final List<UUID> subjectIds = new ArrayList<>();
+        final List<UUID> employeeIds = new ArrayList<>();
+        final List<UUID> accountIds = new ArrayList<>();
+    }
+
+    private static final List<String> V007_S2_CLEANUP_TRIGGERS = List.of(
+            "trg_consent_record_immutable", "trg_activation_transition_immutable");
+
+    private static String v007S2TriggerTable(String trigger) {
+        return switch (trigger) {
+            case "trg_consent_record_immutable" -> "consent_record";
+            case "trg_activation_transition_immutable" -> "service_activation_transition";
+            default -> throw new IllegalArgumentException("unknown V007 S2 trigger " + trigger);
+        };
+    }
+
+    /**
+     * PA7 V007 S2 §8.2: bounded two-connection concurrency — distinct application_name,
+     * statement_timeout, future timeout and observed lock wait; one winner each for
+     * uq_consent_event, uq_service_activation_subject and the three transition identities
+     * with loser 23505 + exact constraint; conditional expected-revision head update where
+     * the loser affects zero rows after serialization and rereads the winner state; whole-
+     * transaction forced failure leaves no partial consent/head/transition; method-local
+     * FK-safe cleanup with named trigger restoration.
+     */
+    private static void runConcurrentV007ActivationAndTransitionIdentityHasOneWinner()
+            throws Exception {
+        V007S2LocalRows rows = new V007S2LocalRows();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            UUID accountId = UUID.randomUUID();
+            UUID employeeId = UUID.randomUUID();
+            UUID subjectId = UUID.randomUUID();
+            UUID consentId = UUID.randomUUID();
+            UUID headRaceSubjectId = UUID.randomUUID();
+            UUID headRaceActivationId = UUID.randomUUID();
+            UUID txSubjectId = UUID.randomUUID();
+            rows.accountIds.add(accountId);
+            rows.employeeIds.add(employeeId);
+            rows.subjectIds.add(subjectId);
+            rows.subjectIds.add(headRaceSubjectId);
+            rows.subjectIds.add(txSubjectId);
+            rows.consentIds.add(consentId);
+            rows.activationIds.add(headRaceActivationId);
+
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    switchLocalRole(connection, "customer_iam_role");
+                    assertThat(insertCustomerAccount(connection, accountId,
+                            "PA7 S2 Race Account")).isEqualTo(1);
+                    switchLocalRole(connection, "subject_number_role");
+                    assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                    assertThat(insertSubject(connection, headRaceSubjectId, "IVR")).isEqualTo(1);
+                    assertThat(insertSubject(connection, txSubjectId, "IVR")).isEqualTo(1);
+                    resetToMigrationIdentity(connection);
+                    assertThat(insertEmployee(connection, employeeId, randomSha256(),
+                            "pa7***s2r", "onecall-ops", randomSha256(),
+                            "PA7 S2 Race Employee", "ADMIN")).isEqualTo(1);
+                    switchLocalRole(connection, "activation_consent_role");
+                    insertV007ConsentAccount(connection, consentId, subjectId, accountId);
+                    assertThat(executeUpdate(connection,
+                            "INSERT INTO activation_consent.service_activation "
+                                    + "(id, subject_id) VALUES (?, ?)",
+                            headRaceActivationId, headRaceSubjectId)).isEqualTo(1);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+
+            // Race A: uq_consent_event.
+            String raceEventId = "pa7-s2-race-evt-" + UUID.randomUUID();
+            UUID winnerConsent = UUID.randomUUID();
+            UUID loserConsent = UUID.randomUUID();
+            rows.consentIds.add(winnerConsent);
+            rows.consentIds.add(loserConsent);
+            raceV007UniqueInsert(executor,
+                    "pa7-s2-race-consent-w", "pa7-s2-race-consent-l",
+                    winnerConsent, loserConsent,
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007ConsentFullSql(),
+                            v007ValidAccountConsentParams(rowId, subjectId, accountId,
+                                    raceEventId))).isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007ConsentFullSql(),
+                            v007ValidAccountConsentParams(rowId, subjectId, accountId,
+                                    raceEventId))).isEqualTo(1),
+                    exception -> {
+                        assertThat(exception.getSQLState()).isEqualTo("23505");
+                        assertThat(exception.getMessage()).contains("uq_consent_event");
+                    });
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.consent_record "
+                                + "WHERE event_domain = 'PURCHASE' AND event_id = ?",
+                        raceEventId))
+                        .as("exactly one consent wins the event race").isEqualTo(1);
+            }
+
+            // Race B: uq_service_activation_subject.
+            UUID raceSubject = UUID.randomUUID();
+            UUID winnerActivation = UUID.randomUUID();
+            UUID loserActivation = UUID.randomUUID();
+            rows.subjectIds.add(raceSubject);
+            rows.activationIds.add(winnerActivation);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    switchLocalRole(connection, "subject_number_role");
+                    assertThat(insertSubject(connection, raceSubject, "IVR")).isEqualTo(1);
+                    connection.commit();
+                } catch (SQLException | RuntimeException exception) {
+                    connection.rollback();
+                    throw exception;
+                }
+            }
+            raceV007UniqueInsert(executor,
+                    "pa7-s2-race-act-w", "pa7-s2-race-act-l",
+                    winnerActivation, loserActivation,
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO activation_consent.service_activation "
+                                    + "(id, subject_id) VALUES (?, ?)",
+                            rowId, raceSubject)).isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            "INSERT INTO activation_consent.service_activation "
+                                    + "(id, subject_id) VALUES (?, ?)",
+                            rowId, raceSubject)).isEqualTo(1),
+                    exception -> {
+                        assertThat(exception.getSQLState()).isEqualTo("23505");
+                        assertThat(exception.getMessage())
+                                .contains("uq_service_activation_subject");
+                    });
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation "
+                                + "WHERE subject_id = ?", raceSubject))
+                        .as("exactly one activation wins the subject race").isEqualTo(1);
+            }
+
+            // Race C: uq_activation_transition_revision — shared activation, to_revision=1.
+            UUID revSubject = UUID.randomUUID();
+            UUID revActivation = UUID.randomUUID();
+            UUID revConsent = UUID.randomUUID();
+            rows.subjectIds.add(revSubject);
+            rows.activationIds.add(revActivation);
+            rows.consentIds.add(revConsent);
+            commitV007RaceTransitionParents(accountId, revSubject, revConsent, revActivation);
+            UUID revWinnerTransition = UUID.randomUUID();
+            rows.transitionIds.add(revWinnerTransition);
+            raceV007UniqueInsert(executor,
+                    "pa7-s2-race-rev-w", "pa7-s2-race-rev-l",
+                    revWinnerTransition, UUID.randomUUID(),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(rowId, revActivation, revSubject,
+                                    revConsent, "pa7-s2-rev-w-a-" + UUID.randomUUID(),
+                                    "pa7-s2-rev-w-st-" + UUID.randomUUID()))).isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(rowId, revActivation, revSubject,
+                                    revConsent, "pa7-s2-rev-l-a-" + UUID.randomUUID(),
+                                    "pa7-s2-rev-l-st-" + UUID.randomUUID()))).isEqualTo(1),
+                    exception -> {
+                        assertThat(exception.getSQLState()).isEqualTo("23505");
+                        assertThat(exception.getMessage())
+                                .contains("uq_activation_transition_revision");
+                    });
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation_transition "
+                                + "WHERE activation_id = ? AND to_revision = 1", revActivation))
+                        .as("exactly one transition wins the revision race").isEqualTo(1);
+            }
+
+            // Race D: uq_activation_transition_action — shared (domain, action_event_id).
+            UUID actSubject1 = UUID.randomUUID();
+            UUID actActivation1 = UUID.randomUUID();
+            UUID actConsent1 = UUID.randomUUID();
+            UUID actSubject2 = UUID.randomUUID();
+            UUID actActivation2 = UUID.randomUUID();
+            UUID actConsent2 = UUID.randomUUID();
+            rows.subjectIds.add(actSubject1);
+            rows.subjectIds.add(actSubject2);
+            rows.activationIds.add(actActivation1);
+            rows.activationIds.add(actActivation2);
+            rows.consentIds.add(actConsent1);
+            rows.consentIds.add(actConsent2);
+            commitV007RaceTransitionParents(accountId, actSubject1, actConsent1, actActivation1);
+            commitV007RaceTransitionParents(accountId, actSubject2, actConsent2, actActivation2);
+            String raceActionEvent = "pa7-s2-race-act-ev-" + UUID.randomUUID();
+            UUID actWinnerTransition = UUID.randomUUID();
+            rows.transitionIds.add(actWinnerTransition);
+            raceV007UniqueInsert(executor,
+                    "pa7-s2-race-actev-w", "pa7-s2-race-actev-l",
+                    actWinnerTransition, UUID.randomUUID(),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(rowId, actActivation1, actSubject1,
+                                    actConsent1, raceActionEvent,
+                                    "pa7-s2-actev-w-st-" + UUID.randomUUID()))).isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(rowId, actActivation2, actSubject2,
+                                    actConsent2, raceActionEvent,
+                                    "pa7-s2-actev-l-st-" + UUID.randomUUID()))).isEqualTo(1),
+                    exception -> {
+                        assertThat(exception.getSQLState()).isEqualTo("23505");
+                        assertThat(exception.getMessage())
+                                .contains("uq_activation_transition_action");
+                    });
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation_transition "
+                                + "WHERE source_action_domain = 'IVR_CONFIRM' "
+                                + "AND source_action_event_id = ?", raceActionEvent))
+                        .as("exactly one transition wins the action-identity race")
+                        .isEqualTo(1);
+            }
+
+            // Race E: uq_activation_transition_status_event — shared status event id.
+            // Fresh activations: Race D already committed to_revision=1 on actActivation1/2,
+            // so the status-identity race must not reuse those (activation_id, to_revision) keys.
+            UUID stSubject1 = UUID.randomUUID();
+            UUID stActivation1 = UUID.randomUUID();
+            UUID stConsent1 = UUID.randomUUID();
+            UUID stSubject2 = UUID.randomUUID();
+            UUID stActivation2 = UUID.randomUUID();
+            UUID stConsent2 = UUID.randomUUID();
+            rows.subjectIds.add(stSubject1);
+            rows.subjectIds.add(stSubject2);
+            rows.activationIds.add(stActivation1);
+            rows.activationIds.add(stActivation2);
+            rows.consentIds.add(stConsent1);
+            rows.consentIds.add(stConsent2);
+            commitV007RaceTransitionParents(accountId, stSubject1, stConsent1, stActivation1);
+            commitV007RaceTransitionParents(accountId, stSubject2, stConsent2, stActivation2);
+            String raceStatusEvent = "pa7-s2-race-st-ev-" + UUID.randomUUID();
+            UUID stWinnerTransition = UUID.randomUUID();
+            rows.transitionIds.add(stWinnerTransition);
+            raceV007UniqueInsert(executor,
+                    "pa7-s2-race-stev-w", "pa7-s2-race-stev-l",
+                    stWinnerTransition, UUID.randomUUID(),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(rowId, stActivation1, stSubject1,
+                                    stConsent1, "pa7-s2-stev-w-a-" + UUID.randomUUID(),
+                                    raceStatusEvent))).isEqualTo(1),
+                    (connection, rowId) -> assertThat(executeUpdate(connection,
+                            v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(rowId, stActivation2, stSubject2,
+                                    stConsent2, "pa7-s2-stev-l-a-" + UUID.randomUUID(),
+                                    raceStatusEvent))).isEqualTo(1),
+                    exception -> {
+                        assertThat(exception.getSQLState()).isEqualTo("23505");
+                        assertThat(exception.getMessage())
+                                .contains("uq_activation_transition_status_event");
+                    });
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation_transition "
+                                + "WHERE status_event_domain = 'ACTIVATION_STATUS' "
+                                + "AND status_event_id = ?", raceStatusEvent))
+                        .as("exactly one transition wins the status-identity race")
+                        .isEqualTo(1);
+            }
+
+            // Race F: conditional expected-revision head update, one winner.
+            try (Connection winner = openConnection(); Connection loser = openConnection()) {
+                winner.setAutoCommit(false);
+                setLocalRole(winner, "activation_consent_role");
+                try (Statement statement = winner.createStatement()) {
+                    statement.execute("SET application_name = 'pa7-s2-race-head-w'");
+                }
+                assertThat(executeUpdate(winner,
+                        "UPDATE activation_consent.service_activation "
+                                + "SET status = 'ACTIVE', revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ? AND revision = 1",
+                        headRaceActivationId)).isEqualTo(1);
+                loser.setAutoCommit(false);
+                configureBlockedWriter(loser, "activation_consent_role",
+                        "pa7-s2-race-head-l");
+                Future<Integer> loserFuture = executor.submit(() -> executeUpdate(loser,
+                        "UPDATE activation_consent.service_activation "
+                                + "SET status = 'ACTIVE', revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ? AND revision = 1",
+                        headRaceActivationId));
+                awaitBlockedBackend("pa7-s2-race-head-l");
+                winner.commit();
+                assertThat(awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS))
+                        .as("stale expected-revision loser affects zero rows").isZero();
+                assertThat(queryLong(loser,
+                        "SELECT revision FROM activation_consent.service_activation "
+                                + "WHERE id = ?", headRaceActivationId))
+                        .as("loser rereads winner revision").isEqualTo(2);
+                assertThat(queryString(loser,
+                        "SELECT status FROM activation_consent.service_activation "
+                                + "WHERE id = ?", headRaceActivationId))
+                        .as("loser rereads winner status").isEqualTo("ACTIVE");
+                loser.rollback();
+            }
+
+            // Race G: whole-transaction forced failure leaves no partial rows.
+            UUID txConsent = UUID.randomUUID();
+            UUID txActivation = UUID.randomUUID();
+            UUID txTransition = UUID.randomUUID();
+            rows.consentIds.add(txConsent);
+            rows.activationIds.add(txActivation);
+            rows.transitionIds.add(txTransition);
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    switchLocalRole(connection, "activation_consent_role");
+                    assertThat(executeUpdate(connection, v007ConsentFullSql(),
+                            v007ValidAccountConsentParams(txConsent, txSubjectId, accountId,
+                                    "pa7-s2-tx-evt-" + UUID.randomUUID()))).isEqualTo(1);
+                    assertThat(executeUpdate(connection,
+                            "INSERT INTO activation_consent.service_activation "
+                                    + "(id, subject_id) VALUES (?, ?)",
+                            txActivation, txSubjectId)).isEqualTo(1);
+                    assertThat(executeUpdate(connection, v007TransitionFullSql(),
+                            v007ValidIvrTransitionParams(txTransition, txActivation,
+                                    txSubjectId, txConsent,
+                                    "pa7-s2-tx-tr-" + UUID.randomUUID(),
+                                    "pa7-s2-tx-st-" + UUID.randomUUID()))).isEqualTo(1);
+                    assertThat(executeUpdate(connection,
+                            "UPDATE activation_consent.service_activation "
+                                    + "SET status = 'ACTIVE', revision = revision + 1, "
+                                    + "updated_at = now() WHERE id = ? AND revision = 1",
+                            txActivation)).isEqualTo(1);
+                    try {
+                        executeUpdate(connection, v007ConsentFullSql(),
+                                v007ValidAccountConsentParams(UUID.randomUUID(),
+                                        UUID.randomUUID(), accountId,
+                                        "pa7-s2-tx-fail-" + UUID.randomUUID()));
+                        fail("expected whole-transaction forced failure via fk_consent_subject");
+                    } catch (SQLException exception) {
+                        assertThat(exception.getSQLState()).isEqualTo("23503");
+                        assertThat(exception.getMessage()).contains("fk_consent_subject");
+                    }
+                    connection.rollback();
+                } catch (SQLException | RuntimeException exception) {
+                    try {
+                        connection.rollback();
+                    } catch (SQLException rollbackFailure) {
+                        exception.addSuppressed(rollbackFailure);
+                    }
+                    throw exception;
+                }
+            }
+            try (Connection verify = openConnection()) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                        txConsent))
+                        .as("forced whole-transaction failure leaves no consent").isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation "
+                                + "WHERE id = ?", txActivation))
+                        .as("forced whole-transaction failure leaves no head").isZero();
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation_transition "
+                                + "WHERE id = ?", txTransition))
+                        .as("forced whole-transaction failure leaves no transition").isZero();
+            }
+        } finally {
+            executor.shutdownNow();
+            cleanupV007S2LocalRows(rows);
+        }
+    }
+
+    private static void raceV007UniqueInsert(
+            ExecutorService executor,
+            String winnerApplication,
+            String loserApplication,
+            UUID winnerId,
+            UUID loserId,
+            V007S2RaceAction winnerAction,
+            V007S2RaceAction loserAction,
+            V007S2RaceExpectation loserExpectation) throws Exception {
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            winner.setAutoCommit(false);
+            setLocalRole(winner, "activation_consent_role");
+            try (Statement statement = winner.createStatement()) {
+                statement.execute("SET application_name = '" + winnerApplication + "'");
+            }
+            winnerAction.run(winner, winnerId);
+            loser.setAutoCommit(false);
+            configureBlockedWriter(loser, "activation_consent_role", loserApplication);
+            Future<?> loserFuture = executor.submit(() -> {
+                try {
+                    loserAction.run(loser, loserId);
+                    return null;
+                } catch (Exception exception) {
+                    throw exception;
+                }
+            });
+            awaitBlockedBackend(loserApplication);
+            winner.commit();
+            try {
+                awaitFuture(loserFuture, FUTURE_TIMEOUT_SECONDS);
+                fail("the unique loser must not commit a second row");
+            } catch (SQLException exception) {
+                loserExpectation.accept(exception);
+            }
+            loser.rollback();
+        }
+    }
+
+    private static void commitV007RaceTransitionParents(
+            UUID accountId, UUID subjectId, UUID consentId, UUID activationId)
+            throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                switchLocalRole(connection, "activation_consent_role");
+                insertV007ConsentAccount(connection, consentId, subjectId, accountId);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        activationId, subjectId)).isEqualTo(1);
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        }
+    }
+
+    /**
+     * Deletes only recorded method-local rows in dependency order after transactionally
+     * disabling exactly the two named V007 append-only triggers, restores them to
+     * tgenabled='O', and verifies per-id zero residue.
+     */
+    private static void cleanupV007S2LocalRows(V007S2LocalRows rows) throws SQLException {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "activation_consent_owner");
+                for (String trigger : V007_S2_CLEANUP_TRIGGERS) {
+                    execute(connection,
+                            "ALTER TABLE activation_consent." + v007S2TriggerTable(trigger)
+                                    + " DISABLE TRIGGER " + trigger);
+                }
+                for (UUID id : rows.transitionIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM activation_consent.service_activation_transition "
+                                    + "WHERE id = ?", id);
+                }
+                for (UUID id : rows.consentIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM activation_consent.consent_record WHERE id = ?", id);
+                }
+                for (UUID id : rows.activationIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM activation_consent.service_activation WHERE id = ?",
+                            id);
+                }
+                switchLocalRole(connection, "subject_number_owner");
+                for (UUID id : rows.subjectIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM subject_number.business_subject WHERE id = ?", id);
+                }
+                switchLocalRole(connection, "operations_iam_owner");
+                for (UUID id : rows.employeeIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM operations_iam.employee_account WHERE id = ?", id);
+                }
+                switchLocalRole(connection, "customer_iam_owner");
+                for (UUID id : rows.accountIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM customer_iam.customer_account WHERE id = ?", id);
+                }
+                switchLocalRole(connection, "activation_consent_owner");
+                for (String trigger : V007_S2_CLEANUP_TRIGGERS) {
+                    execute(connection,
+                            "ALTER TABLE activation_consent." + v007S2TriggerTable(trigger)
+                                    + " ENABLE TRIGGER " + trigger);
+                }
+                for (String trigger : V007_S2_CLEANUP_TRIGGERS) {
+                    assertThat(queryString(connection,
+                            "SELECT t.tgenabled FROM pg_trigger t "
+                                    + "JOIN pg_class c ON c.oid = t.tgrelid "
+                                    + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                    + "WHERE n.nspname = 'activation_consent' AND c.relname = ? "
+                                    + "AND t.tgname = ?",
+                            v007S2TriggerTable(trigger), trigger))
+                            .as("trigger %s restored to enabled/origin", trigger)
+                            .isEqualTo("O");
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException exception) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    exception.addSuppressed(rollbackFailure);
+                }
+                throw exception;
+            }
+        }
+
+        try (Connection verify = openConnection()) {
+            for (UUID id : rows.transitionIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation_transition "
+                                + "WHERE id = ?", id))
+                        .as("cleaned transition %s is absent", id).isZero();
+            }
+            for (UUID id : rows.consentIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?", id))
+                        .as("cleaned consent %s is absent", id).isZero();
+            }
+            for (UUID id : rows.activationIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.service_activation "
+                                + "WHERE id = ?", id))
+                        .as("cleaned activation %s is absent", id).isZero();
+            }
+            for (UUID id : rows.subjectIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", id))
+                        .as("cleaned subject %s is absent", id).isZero();
+            }
+            for (UUID id : rows.employeeIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", id))
+                        .as("cleaned employee %s is absent", id).isZero();
+            }
+            for (UUID id : rows.accountIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", id))
+                        .as("cleaned account %s is absent", id).isZero();
             }
         }
     }
