@@ -35,18 +35,21 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * PA0/PA1/PA2/PA3/PA4/PA5/PA6 PostgreSQL 16 proof for the frozen V001-V006 contracts:
- * V001-then-...-then-V006 migration, exact V001+V002+V003+V004+V005+V006 inventory
- * (including the normalized pg_get_constraintdef maps) and failure-visibility;
- * idempotency/Outbox first-result and transaction atomicity; audit append-only,
- * reason/denylist, fixed-search-path and privilege boundaries; runtime/cross-module
- * privilege matrices and last-enabled-admin serialization protocol (transient SQL);
- * V003-V005 catalog/ACL and database backstop evidence; and PA6 V006 S1 exact
+ * PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7 PostgreSQL 16 proof for the frozen V001-V007
+ * contracts: V001-then-...-then-V007 migration, exact
+ * V001+V002+V003+V004+V005+V006+V007 inventory (including the normalized
+ * pg_get_constraintdef maps) and failure-visibility; idempotency/Outbox
+ * first-result and transaction atomicity; audit append-only, reason/denylist,
+ * fixed-search-path and privilege boundaries; runtime/cross-module privilege
+ * matrices and last-enabled-admin serialization protocol (transient SQL);
+ * V003-V005 catalog/ACL and database backstop evidence; PA6 V006 S1 exact
  * entitlement_metering inventory/ACL plus issue_first_trial GRANTED/REPLAY/
- * ALREADY_GRANTED/TRIAL_* database semantics. Exactly 45 container methods. There is
- * no skip path: an unavailable Docker daemon, failed image pull, failed container
- * start, JDBC failure, Flyway failure or assertion failure fails the Maven build.
- * The password is generated per JVM run and never persisted.
+ * ALREADY_GRANTED/TRIAL_* database semantics; and PA7 V007 S1 exact
+ * activation_consent inventory/ACL and all 11 FK decisions including the late
+ * order-consent FK. Exactly 48 container methods. There is no skip path: an
+ * unavailable Docker daemon, failed image pull, failed container start, JDBC
+ * failure, Flyway failure or assertion failure fails the Maven build. The
+ * password is generated per JVM run and never persisted.
  */
 class PostgresContainerIT {
 
@@ -863,12 +866,42 @@ class PostgresContainerIT {
 
     private static String url;
     private static Flyway flyway;
+    private static MigrateResult stagedV004Migration;
+    private static V004OrphanConsentProbeEvidence stagedV004OrphanConsentEvidence;
     private static MigrateResult stagedV005Migration;
+    private static MigrateResult stagedV006Migration;
     private static MigrateResult initialMigration;
+    private static boolean stagedV004ActivationConsentTablesAbsent;
+    private static boolean stagedV004OrderConsentFkAbsent;
     private static boolean stagedV005IssueFirstTrialAbsent;
     private static boolean stagedV005LateFkAbsent;
     private static boolean stagedV005EntitlementTablesAbsent;
     private static boolean stagedV005ReservationIdNullable;
+    private static boolean stagedV006EntitlementTablesExact;
+    private static boolean stagedV006ActivationConsentTablesAbsent;
+    private static boolean stagedV006NoV007Objects;
+    private static boolean stagedV006SubjectUsageAbsent;
+    private static boolean stagedV006CustomerIamUsageAbsent;
+    private static boolean stagedV006OrganizationAccessUsageAbsent;
+
+    /**
+     * Immutable evidence from the dedicated staged-V004 orphan-consent order probe.
+     * Assigned exactly once by {@code @BeforeAll} after a successful whole-transaction
+     * rollback; never mutated afterwards and read only by later tests.
+     */
+    private record V004OrphanConsentProbeEvidence(
+            UUID employeeId,
+            UUID accountId,
+            UUID organizationId,
+            UUID subjectId,
+            UUID productId,
+            UUID catalogVersionId,
+            UUID offerId,
+            UUID orderId,
+            UUID orphanPurchaseConsentId,
+            boolean insertSucceeded,
+            boolean rollbackVerified) {
+    }
 
     @BeforeAll
     static void startContainerAndMigrate() throws Exception {
@@ -878,6 +911,33 @@ class PostgresContainerIT {
                 POSTGRES.getHost(), POSTGRES.getMappedPort(5432));
 
         assertCleanBeforeMigration();
+
+        flyway = Flyway.configure()
+                .dataSource(url, DB_USER, PASSWORD)
+                .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("004"))
+                .load();
+        stagedV004Migration = flyway.migrate();
+
+        try (Connection connection = openConnection()) {
+            stagedV004ActivationConsentTablesAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'")
+                    == 0;
+            stagedV004OrderConsentFkAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'catalog_order' "
+                            + "AND c.conname = 'fk_customer_order_consent'")
+                    == 0;
+        }
+
+        // Immediately after target 004 and before target 005: dedicated transactional
+        // orphan-consent order probe with immutable assigned-once evidence. Any failure
+        // is rethrown and fails @BeforeAll; migration must not advance without evidence.
+        stagedV004OrphanConsentEvidence = probeV004OrphanConsentOrderAndRollback();
 
         flyway = Flyway.configure()
                 .dataSource(url, DB_USER, PASSWORD)
@@ -915,8 +975,164 @@ class PostgresContainerIT {
         flyway = Flyway.configure()
                 .dataSource(url, DB_USER, PASSWORD)
                 .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("006"))
+                .load();
+        stagedV006Migration = flyway.migrate();
+
+        try (Connection connection = openConnection()) {
+            List<String> entitlementTables = queryStrings(
+                    connection,
+                    "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1");
+            stagedV006EntitlementTablesExact =
+                    entitlementTables.equals(List.of(
+                            "entitlement_balance", "entitlement_grant", "entitlement_issuance",
+                            "trial_grant", "trial_policy_version", "usage_fact", "usage_reservation"));
+            stagedV006ActivationConsentTablesAbsent = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'")
+                    == 0;
+            stagedV006NoV007Objects = queryLong(
+                    connection,
+                    "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                            + "WHERE n.nspname = 'activation_consent'")
+                    == 0
+                    && queryLong(
+                            connection,
+                            "SELECT count(*) FROM pg_trigger t "
+                                    + "JOIN pg_class c ON c.oid = t.tgrelid "
+                                    + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                    + "WHERE n.nspname = 'activation_consent' AND NOT t.tgisinternal")
+                    == 0
+                    && queryLong(
+                            connection,
+                            "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                                    + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                    + "WHERE n.nspname = 'catalog_order' "
+                                    + "AND c.conname = 'fk_customer_order_consent'")
+                    == 0
+                    && queryLong(
+                            connection,
+                            "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')")
+                    == 0;
+            stagedV006SubjectUsageAbsent = !hasSchema(
+                    connection, "activation_consent_role", "subject_number", "USAGE");
+            stagedV006CustomerIamUsageAbsent = !hasSchema(
+                    connection, "activation_consent_role", "customer_iam", "USAGE");
+            stagedV006OrganizationAccessUsageAbsent = !hasSchema(
+                    connection, "activation_consent_role", "organization_access", "USAGE");
+        }
+
+        flyway = Flyway.configure()
+                .dataSource(url, DB_USER, PASSWORD)
+                .locations("classpath:db/migration")
                 .load();
         initialMigration = flyway.migrate();
+    }
+
+    /**
+     * Staged-V004 dedicated transactional probe: create the minimum valid parents for a
+     * fully valid {@code customer_order}, insert the order with a random non-null
+     * orphan {@code purchase_consent_id} for which no consent_record exists, assert the
+     * insert succeeds at V004, roll the whole transaction back, and verify the probe
+     * order and every probe parent are absent. Rethrows every failure; returns
+     * immutable evidence on success only.
+     */
+    private static V004OrphanConsentProbeEvidence probeV004OrphanConsentOrderAndRollback()
+            throws Exception {
+        UUID employeeId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID catalogVersionId = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        UUID orphanPurchaseConsentId = UUID.randomUUID();
+        OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+        boolean insertSucceeded = false;
+        boolean rollbackVerified = false;
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "s1***probe",
+                        "onecall-ops", randomSha256(), "PA7 S1 V004 Probe Employee", "ADMIN"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "PA7 S1 V004 Probe Customer"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "organization_access_role");
+                assertThat(insertOrganization(connection, organizationId, "PA7 S1 V004 Probe Org"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                switchLocalRole(connection, "catalog_order_role");
+                assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
+                        .isEqualTo(1);
+                assertThat(insertCatalogVersion(connection, catalogVersionId, productId, 1, "DRAFT",
+                        "SUBSCRIPTION", "PERSONAL", 9900L, "CNY", "MONTHLY", 1, 1,
+                        "{\"probe\":\"v004-orphan-consent\"}", randomSha256(), employeeId, null, 1))
+                        .isEqualTo(1);
+                assertThat(insertCatalogOffer(connection, offerId, catalogVersionId, "WEB",
+                        "s1-probe-token")).isEqualTo(1);
+                assertThat(insertCustomerOrder(connection, orderId,
+                        "S1PROBE" + UUID.randomUUID().toString().replace("-", ""),
+                        accountId, organizationId, subjectId, catalogVersionId, offerId,
+                        orphanPurchaseConsentId, 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                        randomSha256(), "s1-probe-token", "s1-probe-idem-" + UUID.randomUUID(),
+                        randomSha256(), createdAt, null, null, 1)).isEqualTo(1);
+                insertSucceeded = true;
+                connection.rollback();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.customer_order WHERE id = ?", orderId))
+                        .as("probe order absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.catalog_product WHERE id = ?", productId))
+                        .as("probe product absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.catalog_version WHERE id = ?",
+                        catalogVersionId)).as("probe version absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM catalog_order.catalog_offer WHERE id = ?", offerId))
+                        .as("probe offer absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId))
+                        .as("probe account absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM organization_access.organization WHERE id = ?",
+                        organizationId)).as("probe organization absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM subject_number.business_subject WHERE id = ?", subjectId))
+                        .as("probe subject absent after rollback").isZero();
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM operations_iam.employee_account WHERE id = ?", employeeId))
+                        .as("probe employee absent after rollback").isZero();
+                rollbackVerified = true;
+            } catch (Exception failure) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    failure.addSuppressed(rollbackFailure);
+                }
+                throw failure;
+            } finally {
+                try {
+                    connection.rollback();
+                } catch (SQLException ignored) {
+                    // Failure path already rolled back or is rethrowing the primary error.
+                }
+            }
+        }
+
+        assertThat(insertSucceeded)
+                .as("V004 orphan-consent order insert must succeed").isTrue();
+        assertThat(rollbackVerified)
+                .as("V004 orphan-consent probe rollback must be verified").isTrue();
+        return new V004OrphanConsentProbeEvidence(
+                employeeId, accountId, organizationId, subjectId, productId, catalogVersionId,
+                offerId, orderId, orphanPurchaseConsentId, insertSucceeded, rollbackVerified);
     }
 
     @AfterAll
@@ -925,9 +1141,21 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThroughV006MigrateCleanPostgres16WithoutSkipping() throws Exception {
-        assertThat(stagedV005Migration.migrationsExecuted).isEqualTo(5);
+    void v001ThroughV007MigrateCleanPostgres16WithoutSkipping() throws Exception {
+        assertThat(stagedV004Migration.migrationsExecuted).isEqualTo(4);
+        assertThat(stagedV005Migration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV006Migration.migrationsExecuted).isEqualTo(1);
         assertThat(initialMigration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV004OrphanConsentEvidence)
+                .as("assigned-once V004 orphan-consent probe evidence is present").isNotNull();
+        assertThat(stagedV004OrphanConsentEvidence.insertSucceeded())
+                .as("V004 orphan-consent order insert succeeded").isTrue();
+        assertThat(stagedV004OrphanConsentEvidence.rollbackVerified())
+                .as("V004 orphan-consent probe rollback verified").isTrue();
+        assertThat(stagedV004ActivationConsentTablesAbsent)
+                .as("staged V004 prefix has zero activation_consent tables").isTrue();
+        assertThat(stagedV004OrderConsentFkAbsent)
+                .as("staged V004 prefix has no fk_customer_order_consent").isTrue();
         assertThat(stagedV005IssueFirstTrialAbsent)
                 .as("staged V005 prefix has no issue_first_trial").isTrue();
         assertThat(stagedV005LateFkAbsent)
@@ -936,6 +1164,20 @@ class PostgresContainerIT {
                 .as("staged V005 prefix has zero entitlement/consent tables").isTrue();
         assertThat(stagedV005ReservationIdNullable)
                 .as("staged V005 ivr_decision.reservation_id remains nullable").isTrue();
+        assertThat(stagedV006EntitlementTablesExact)
+                .as("staged V006 prefix has exactly seven entitlement tables").isTrue();
+        assertThat(stagedV006ActivationConsentTablesAbsent)
+                .as("staged V006 prefix has zero activation_consent tables").isTrue();
+        assertThat(stagedV006NoV007Objects)
+                .as("staged V006 prefix has no V007 function/trigger/FK/evidence object")
+                .isTrue();
+        assertThat(stagedV006SubjectUsageAbsent)
+                .as("staged V006 activation_consent_role lacks subject_number USAGE").isTrue();
+        assertThat(stagedV006CustomerIamUsageAbsent)
+                .as("staged V006 activation_consent_role lacks customer_iam USAGE").isTrue();
+        assertThat(stagedV006OrganizationAccessUsageAbsent)
+                .as("staged V006 activation_consent_role lacks organization_access USAGE")
+                .isTrue();
 
         try (Connection connection = openConnection();
                 Statement statement = connection.createStatement();
@@ -994,6 +1236,15 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V006__trial_entitlement_issuance_reservation_usage.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("007");
+            assertThat(resultSet.getString("description"))
+                    .isEqualTo("activation and consent");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script"))
+                    .isEqualTo("V007__activation_and_consent.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -2043,8 +2294,8 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v004ForeignKeyAndAbsentConsentFkBackstops() throws Exception {
-        assertV004ForeignKeyAndAbsentConsentFkBackstops();
+    void v004ForeignKeyAndStagedConsentFkBackstops() throws Exception {
+        assertV004ForeignKeyAndStagedConsentFkBackstops();
     }
 
     @Test
@@ -2121,7 +2372,7 @@ class PostgresContainerIT {
             assertV006CheckPredicateInventory(connection);
             assertV006FunctionsAndTriggersExact(connection);
             assertV006NoIdDefaultsOrSequences(connection);
-            assertNoV007PlusObjects(connection);
+            assertNoV008PlusObjects(connection);
         }
     }
 
@@ -2159,6 +2410,42 @@ class PostgresContainerIT {
     @Test
     void concurrentV006FirstTrialAndReservationIdentityHasOneWinner() throws Exception {
         runConcurrentV006FirstTrialAndReservationIdentityHasOneWinner();
+    }
+
+    /**
+     * PA7 V007 S1: exact activation_consent inventory (3/43/31/3 PK/5 unique/12 index/2
+     * function/3 trigger/6 default), owners, function flags/search paths, trigger shapes
+     * and no V008+ object.
+     */
+    @Test
+    void v007ActivationConsentInventoryAndGuardShapesAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV007TablesColumnsChecksIndexesFks(connection);
+            assertV007CheckPredicateInventory(connection);
+            assertV007FunctionsAndTriggersExact(connection);
+            assertV007NoIdDefaultsOrSequences(connection);
+            assertNoV008PlusObjects(connection);
+        }
+    }
+
+    @Test
+    void v007OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV007SchemaUsageMatrix(connection);
+            assertV007OwnedAndCrossModuleGrants(connection);
+            assertV007PublicAclIsZero(connection);
+            assertV007GuardFunctionExecuteBoundaries(connection);
+        }
+        assertV007RuntimeDenialsAndLegalUpdateControl();
+    }
+
+    @Test
+    void v007ForeignKeyAndLateOrderConsentFkBackstops() throws Exception {
+        assertV004ForeignKeyAndStagedConsentFkBackstops();
+        try (Connection connection = openConnection()) {
+            assertV007ForeignKeyInventoryAndLateFk(connection);
+        }
+        assertV007MissingParentFkProbesAndParentDeleteRestrict();
     }
 
     /**
@@ -5961,6 +6248,8 @@ class PostgresContainerIT {
                         + "JOIN pg_namespace n ON n.oid = p.pronamespace "
                         + "WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg%' ORDER BY 1"))
                 .containsExactly(
+                        "activation_consent.guard_service_activation",
+                        "activation_consent.reject_row_mutation",
                         "audit.append_fact",
                         "audit.reject_row_mutation",
                         "catalog_order.guard_catalog_offer",
@@ -6091,6 +6380,9 @@ class PostgresContainerIT {
                         + "WHERE NOT t.tgisinternal AND n.nspname <> 'information_schema' "
                         + "AND n.nspname NOT LIKE 'pg%' ORDER BY 1"))
                 .containsExactly(
+                        "activation_consent.consent_record.trg_consent_record_immutable",
+                        "activation_consent.service_activation.trg_service_activation_guard",
+                        "activation_consent.service_activation_transition.trg_activation_transition_immutable",
                         "audit.audit_fact.trg_audit_fact_immutable",
                         "catalog_order.catalog_benefit_line.trg_catalog_benefit_line_immutable",
                         "catalog_order.catalog_offer.trg_catalog_offer_guard",
@@ -7164,8 +7456,188 @@ class PostgresContainerIT {
             "grantedAt", "grantedUnits", "subjectId", "trialGrantId",
             "trialPolicyVersionId", "validFrom");
 
+    /** Exactly the three PA7 V007 activation_consent tables in alphabetical order. */
+    private static final List<String> V007_TABLES = List.of(
+            "consent_record", "service_activation", "service_activation_transition");
 
-    private static void assertNoV007PlusObjects(Connection connection) throws SQLException {
+    /**
+     * PA7 V007: frozen mapping of bare table name -&gt; (check name -&gt; expected PostgreSQL 16
+     * canonical {@code pg_get_constraintdef} output) for all 31 V007 named checks. Each literal
+     * derives from the accepted plan / docs/14 frozen dictionaries and is compared by
+     * whole-definition equality after ASCII-whitespace-only normalization. Substring/contains/
+     * prefix/regex/semantic equivalence is forbidden.
+     */
+    private static final Map<String, Map<String, String>> V007_CHECK_DEF_MAP;
+
+    static {
+        Map<String, Map<String, String>> map = new java.util.LinkedHashMap<>();
+        map.put("consent_record", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_consent_purpose",
+                        "CHECK ((purpose = ANY (ARRAY['SERVICE_ACTIVATION'::text, 'EVIDENCE_RECORDING'::text, 'PURCHASE'::text])))"),
+                java.util.Map.entry("ck_consent_channel",
+                        "CHECK ((channel = ANY (ARRAY['IVR'::text, 'MINIAPP'::text, 'WEB'::text, 'OPERATIONS'::text])))"),
+                java.util.Map.entry("ck_consent_event_domain",
+                        "CHECK ((event_domain = ANY (ARRAY['IVR_CONFIRM'::text, 'ACTIVATION'::text, 'PURCHASE'::text, 'OPERATIONS'::text])))"),
+                java.util.Map.entry("ck_consent_policy_code",
+                        "CHECK ((((length(policy_code) >= 1) AND (length(policy_code) <= 64)) AND (btrim(policy_code) <> ''::text)))"),
+                java.util.Map.entry("ck_consent_policy_version",
+                        "CHECK ((((length(policy_version) >= 1) AND (length(policy_version) <= 64)) AND (btrim(policy_version) <> ''::text)))"),
+                java.util.Map.entry("ck_consent_prompt_version",
+                        "CHECK ((((length(prompt_version) >= 1) AND (length(prompt_version) <= 64)) AND (btrim(prompt_version) <> ''::text)))"),
+                java.util.Map.entry("ck_consent_action",
+                        "CHECK ((action = ANY (ARRAY['ACCEPT'::text, 'DECLINE'::text])))"),
+                java.util.Map.entry("ck_consent_source_type",
+                        "CHECK ((source_type = ANY (ARRAY['IVR_SESSION'::text, 'ACCOUNT'::text, 'EMPLOYEE'::text])))"),
+                java.util.Map.entry("ck_consent_source_ref",
+                        "CHECK ((((length(source_ref) >= 1) AND (length(source_ref) <= 128)) AND (btrim(source_ref) <> ''::text)))"),
+                java.util.Map.entry("ck_consent_source_shape",
+                        "CHECK ((((source_type = 'IVR_SESSION'::text) AND (ivr_session_id IS NOT NULL) AND (account_id IS NULL) AND (employee_id IS NULL)) OR ((source_type = 'ACCOUNT'::text) AND (account_id IS NOT NULL) AND (ivr_session_id IS NULL) AND (employee_id IS NULL)) OR ((source_type = 'EMPLOYEE'::text) AND (employee_id IS NOT NULL) AND (ivr_session_id IS NULL) AND (account_id IS NULL))))"),
+                java.util.Map.entry("ck_consent_channel_shape",
+                        "CHECK ((((channel = 'IVR'::text) AND (source_type = 'IVR_SESSION'::text)) OR ((channel = ANY (ARRAY['MINIAPP'::text, 'WEB'::text])) AND (source_type = 'ACCOUNT'::text)) OR ((channel = 'OPERATIONS'::text) AND (source_type = 'EMPLOYEE'::text))))"),
+                java.util.Map.entry("ck_consent_snapshot_type",
+                        "CHECK ((jsonb_typeof(snapshot) = 'object'::text))"),
+                java.util.Map.entry("ck_consent_snapshot_sha",
+                        "CHECK ((snapshot_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_consent_event_id",
+                        "CHECK ((((length(event_id) >= 1) AND (length(event_id) <= 128)) AND (btrim(event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_consent_fingerprint",
+                        "CHECK ((request_fingerprint ~ '^[0-9a-f]{64}$'::text))"))));
+        map.put("service_activation", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_service_activation_status",
+                        "CHECK ((status = ANY (ARRAY['INACTIVE'::text, 'ACTIVE'::text, 'SUSPENDED'::text])))"),
+                java.util.Map.entry("ck_service_activation_revision",
+                        "CHECK ((revision >= 1))"),
+                java.util.Map.entry("ck_service_activation_time_order",
+                        "CHECK ((updated_at >= created_at))"))));
+        map.put("service_activation_transition", new java.util.LinkedHashMap<>(Map.ofEntries(
+                java.util.Map.entry("ck_activation_transition_status",
+                        "CHECK (((from_status = ANY (ARRAY['INACTIVE'::text, 'ACTIVE'::text, 'SUSPENDED'::text])) AND (to_status = ANY (ARRAY['INACTIVE'::text, 'ACTIVE'::text, 'SUSPENDED'::text]))))"),
+                java.util.Map.entry("ck_activation_transition_matrix",
+                        "CHECK ((((from_status = 'INACTIVE'::text) AND (to_status = 'ACTIVE'::text)) OR ((from_status = 'ACTIVE'::text) AND (to_status = 'SUSPENDED'::text)) OR ((from_status = 'SUSPENDED'::text) AND (to_status = 'ACTIVE'::text) AND (source_action_domain = 'OPERATIONS'::text))))"),
+                java.util.Map.entry("ck_activation_transition_from_revision",
+                        "CHECK ((from_revision >= 0))"),
+                java.util.Map.entry("ck_activation_transition_to_revision",
+                        "CHECK (((to_revision = (from_revision + 1)) AND (to_revision >= 1)))"),
+                java.util.Map.entry("ck_activation_transition_channel",
+                        "CHECK ((source_channel = ANY (ARRAY['IVR'::text, 'MINIAPP'::text, 'WEB'::text, 'OPERATIONS'::text])))"),
+                java.util.Map.entry("ck_activation_transition_channel_shape",
+                        "CHECK ((((source_channel = 'OPERATIONS'::text) AND (source_action_domain = 'OPERATIONS'::text)) OR ((source_channel = 'IVR'::text) AND (source_action_domain = 'IVR_CONFIRM'::text)) OR ((source_channel = ANY (ARRAY['MINIAPP'::text, 'WEB'::text])) AND (source_action_domain = 'ACTIVATION'::text))))"),
+                java.util.Map.entry("ck_activation_transition_action_domain",
+                        "CHECK ((source_action_domain = ANY (ARRAY['ACTIVATION'::text, 'IVR_CONFIRM'::text, 'OPERATIONS'::text])))"),
+                java.util.Map.entry("ck_activation_transition_action_event",
+                        "CHECK ((((length(source_action_event_id) >= 1) AND (length(source_action_event_id) <= 128)) AND (btrim(source_action_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_activation_transition_status_domain",
+                        "CHECK ((status_event_domain = 'ACTIVATION_STATUS'::text))"),
+                java.util.Map.entry("ck_activation_transition_status_event_id",
+                        "CHECK ((((length(status_event_id) >= 1) AND (length(status_event_id) <= 128)) AND (btrim(status_event_id) <> ''::text)))"),
+                java.util.Map.entry("ck_activation_transition_fingerprint",
+                        "CHECK ((request_fingerprint ~ '^[0-9a-f]{64}$'::text))"),
+                java.util.Map.entry("ck_activation_transition_actor_shape",
+                        "CHECK ((((source_action_domain = 'OPERATIONS'::text) AND (actor_employee_id IS NOT NULL) AND (consent_record_id IS NULL)) OR ((source_action_domain <> 'OPERATIONS'::text) AND (consent_record_id IS NOT NULL))))"),
+                java.util.Map.entry("ck_activation_transition_reason",
+                        "CHECK ((((length(reason_code) >= 1) AND (length(reason_code) <= 64)) AND (btrim(reason_code) <> ''::text)))"))));
+        V007_CHECK_DEF_MAP = java.util.Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Frozen PK/ordinary-unique constraint inventory for V007: table|name|contype|definition|
+     * columns. Exactly 3 PKs and 5 ordinary unique constraints.
+     */
+    private static final List<String> V007_PK_UNIQUE_DEFS = List.of(
+            "consent_record|pk_consent_record|p|PRIMARY KEY (id)|id",
+            "consent_record|uq_consent_event|u|UNIQUE (event_domain, event_id)|event_domain,event_id",
+            "service_activation|pk_service_activation|p|PRIMARY KEY (id)|id",
+            "service_activation|uq_service_activation_subject|u|UNIQUE (subject_id)|subject_id",
+            "service_activation_transition|pk_service_activation_transition|p|PRIMARY KEY (id)|id",
+            "service_activation_transition|uq_activation_transition_action|u|UNIQUE (source_action_domain, source_action_event_id)|source_action_domain,source_action_event_id",
+            "service_activation_transition|uq_activation_transition_revision|u|UNIQUE (activation_id, to_revision)|activation_id,to_revision",
+            "service_activation_transition|uq_activation_transition_status_event|u|UNIQUE (status_event_domain, status_event_id)|status_event_domain,status_event_id");
+
+    /**
+     * Frozen FK inventory for the 10 V007 table-local ordinary immediate FKs:
+     * name|definition|rrs|false|false|true. The late fk_customer_order_consent lives on
+     * catalog_order.customer_order and is asserted separately.
+     */
+    private static final List<String> V007_FK_DEFS = List.of(
+            "fk_activation_transition_activation|FOREIGN KEY (activation_id) REFERENCES activation_consent.service_activation(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_activation_transition_actor_account|FOREIGN KEY (actor_account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_activation_transition_actor_employee|FOREIGN KEY (actor_employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_activation_transition_consent|FOREIGN KEY (consent_record_id) REFERENCES activation_consent.consent_record(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_activation_transition_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_consent_account|FOREIGN KEY (account_id) REFERENCES customer_iam.customer_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_consent_employee|FOREIGN KEY (employee_id) REFERENCES operations_iam.employee_account(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_consent_session|FOREIGN KEY (ivr_session_id) REFERENCES ivr.inbound_session(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_consent_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true",
+            "fk_service_activation_subject|FOREIGN KEY (subject_id) REFERENCES subject_number.business_subject(id) ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true");
+
+    /** Frozen pg_indexes.indexdef values for V007 (12 = 3 PK-backed + 5 unique-backed + 4 secondary). */
+    private static final List<String> V007_INDEX_DEFS = List.of(
+            "CREATE UNIQUE INDEX pk_consent_record ON activation_consent.consent_record USING btree (id)",
+            "CREATE INDEX ix_consent_subject_purpose ON activation_consent.consent_record USING btree (subject_id, purpose, accepted_at DESC)",
+            "CREATE INDEX ix_consent_session ON activation_consent.consent_record USING btree (ivr_session_id)",
+            "CREATE UNIQUE INDEX uq_consent_event ON activation_consent.consent_record USING btree (event_domain, event_id)",
+            "CREATE UNIQUE INDEX pk_service_activation ON activation_consent.service_activation USING btree (id)",
+            "CREATE UNIQUE INDEX uq_service_activation_subject ON activation_consent.service_activation USING btree (subject_id)",
+            "CREATE INDEX ix_service_activation_status ON activation_consent.service_activation USING btree (status)",
+            "CREATE UNIQUE INDEX pk_service_activation_transition ON activation_consent.service_activation_transition USING btree (id)",
+            "CREATE UNIQUE INDEX uq_activation_transition_revision ON activation_consent.service_activation_transition USING btree (activation_id, to_revision)",
+            "CREATE UNIQUE INDEX uq_activation_transition_action ON activation_consent.service_activation_transition USING btree (source_action_domain, source_action_event_id)",
+            "CREATE UNIQUE INDEX uq_activation_transition_status_event ON activation_consent.service_activation_transition USING btree (status_event_domain, status_event_id)",
+            "CREATE INDEX ix_activation_transition_occurred ON activation_consent.service_activation_transition USING btree (subject_id, occurred_at DESC)");
+
+    /** Exact V007 column details in ordinal order for the three frozen tables (43). */
+    private static final Map<String, List<String>> V007_COLUMN_DETAILS = new java.util.LinkedHashMap<>();
+
+    static {
+        V007_COLUMN_DETAILS.put("consent_record", List.of(
+                "id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "purpose|text|NO|<none>",
+                "channel|text|NO|<none>",
+                "event_domain|text|NO|<none>",
+                "policy_code|text|NO|<none>",
+                "policy_version|text|NO|<none>",
+                "prompt_version|text|NO|<none>",
+                "action|text|NO|<none>",
+                "source_type|text|NO|<none>",
+                "source_ref|text|NO|<none>",
+                "ivr_session_id|uuid|YES|<none>",
+                "account_id|uuid|YES|<none>",
+                "employee_id|uuid|YES|<none>",
+                "snapshot|jsonb|NO|<none>",
+                "snapshot_sha256|text|NO|<none>",
+                "event_id|text|NO|<none>",
+                "request_fingerprint|text|NO|<none>",
+                "accepted_at|timestamp with time zone|NO|now()"));
+        V007_COLUMN_DETAILS.put("service_activation", List.of(
+                "id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "status|text|NO|'INACTIVE'::text",
+                "revision|integer|NO|1",
+                "created_at|timestamp with time zone|NO|now()",
+                "updated_at|timestamp with time zone|NO|now()"));
+        V007_COLUMN_DETAILS.put("service_activation_transition", List.of(
+                "id|uuid|NO|<none>",
+                "activation_id|uuid|NO|<none>",
+                "subject_id|uuid|NO|<none>",
+                "from_status|text|NO|<none>",
+                "to_status|text|NO|<none>",
+                "from_revision|integer|NO|<none>",
+                "to_revision|integer|NO|<none>",
+                "source_channel|text|NO|<none>",
+                "source_action_domain|text|NO|<none>",
+                "source_action_event_id|text|NO|<none>",
+                "status_event_domain|text|NO|<none>",
+                "status_event_id|text|NO|<none>",
+                "request_fingerprint|text|NO|<none>",
+                "actor_account_id|uuid|YES|<none>",
+                "actor_employee_id|uuid|YES|<none>",
+                "reason_code|text|NO|<none>",
+                "consent_record_id|uuid|YES|<none>",
+                "occurred_at|timestamp with time zone|NO|now()"));
+    }
+
+    private static void assertNoV008PlusObjects(Connection connection) throws SQLException {
         assertThat(queryStrings(
                 connection,
                 "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -7179,11 +7651,12 @@ class PostgresContainerIT {
                         + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1"))
                 .as("exactly the seven V006 entitlement_metering tables")
                 .containsExactlyElementsOf(V006_TABLES);
-        assertThat(queryLong(
+        assertThat(queryStrings(
                 connection,
-                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
-                .as("activation_consent has zero tables").isZero();
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the three V007 activation_consent tables")
+                .containsExactlyElementsOf(V007_TABLES);
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_namespace WHERE nspname IN ('evidence','sharing')"))
@@ -7214,31 +7687,34 @@ class PostgresContainerIT {
                 "SELECT count(*) FROM pg_constraint c "
                         + "JOIN pg_class r ON r.oid = c.conrelid "
                         + "JOIN pg_namespace n ON n.oid = r.relnamespace "
-                        + "WHERE n.nspname = 'catalog' AND c.conname = 'fk_customer_order_consent'"))
-                .as("no V007 consent FK").isZero();
-        for (String v007Name : List.of(
-                "consent_record", "service_activation", "service_activation_transition",
+                        + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
+                .as("V007 consent FK is present").isEqualTo(1);
+        for (String v008PlusName : List.of(
                 "media_object", "recording", "evidence_record", "evidence_artifact",
                 "evidence_event", "evidence_share_grant", "share_admission", "share_access_event")) {
-            assertThat(toRegclass(connection, "activation_consent." + v007Name)).isNull();
-            assertThat(toRegclass(connection, "entitlement_metering." + v007Name)).isNull();
-            assertThat(toRegclass(connection, "evidence." + v007Name)).isNull();
-            assertThat(toRegclass(connection, "sharing." + v007Name)).isNull();
+            assertThat(toRegclass(connection, "activation_consent." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "entitlement_metering." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "evidence." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "sharing." + v008PlusName)).isNull();
         }
     }
 
-    /** Exact late-FK presence and nullable-child evidence after V006. */
+    /**
+     * Exact late-FK presence and nullable-child evidence after V006, plus final V007
+     * activation_consent presence and the late order-consent FK once V007 has applied.
+     */
     private static void assertV006PresenceAndLateFk(Connection connection) throws SQLException {
         assertThat(queryStrings(
                 connection,
                 "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                         + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1"))
                 .containsExactlyElementsOf(V006_TABLES);
-        assertThat(queryLong(
+        assertThat(queryStrings(
                 connection,
-                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
-                .isZero();
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the three V007 activation_consent tables")
+                .containsExactlyElementsOf(V007_TABLES);
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
@@ -7251,8 +7727,14 @@ class PostgresContainerIT {
                         + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
                         + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
                         + "JOIN pg_namespace n ON n.oid = r.relnamespace "
-                        + "WHERE n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation'");
+                        + "WHERE (n.nspname = 'ivr' AND c.conname = 'fk_ivr_decision_reservation')"
+                        + "OR (n.nspname = 'catalog_order' "
+                        + "AND c.conname = 'fk_customer_order_consent') "
+                        + "ORDER BY c.conname");
         assertThat(lateFkRows).containsExactly(
+                "fk_customer_order_consent|FOREIGN KEY (purchase_consent_id) REFERENCES "
+                        + "activation_consent.consent_record(id) ON UPDATE RESTRICT ON DELETE "
+                        + "RESTRICT|rrs|false|false|true",
                 "fk_ivr_decision_reservation|FOREIGN KEY (reservation_id) REFERENCES "
                         + "entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT ON DELETE "
                         + "RESTRICT|rrs|false|false|true");
@@ -7263,6 +7745,1013 @@ class PostgresContainerIT {
                         + "WHERE n.nspname = 'ivr' AND c.relname = 'ivr_decision' "
                         + "AND a.attname = 'reservation_id' AND a.attnotnull"))
                 .as("reservation_id remains nullable").isZero();
+    }
+
+    private static void assertV007TablesColumnsChecksIndexesFks(Connection connection)
+            throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly three activation_consent tables")
+                .containsExactlyElementsOf(V007_TABLES);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'activation_consent'"))
+                .as("total V007 columns").isEqualTo(43);
+        for (Map.Entry<String, List<String>> entry : V007_COLUMN_DETAILS.entrySet()) {
+            List<String> actual = queryStrings(
+                    connection,
+                    "SELECT column_name || '|' || data_type || '|' || is_nullable || '|' "
+                            + "|| coalesce(column_default, '<none>') "
+                            + "FROM information_schema.columns "
+                            + "WHERE table_schema = 'activation_consent' AND table_name = ? "
+                            + "ORDER BY ordinal_position",
+                    entry.getKey());
+            assertThat(actual).as("column details %s", entry.getKey())
+                    .containsExactlyElementsOf(entry.getValue());
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.contype = 'p'"))
+                .as("exactly three V007 PKs").isEqualTo(3);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.contype = 'u'"))
+                .as("exactly five ordinary unique constraints").isEqualTo(5);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.contype = 'c'"))
+                .as("exactly 31 named checks").isEqualTo(31);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'i'"))
+                .as("exactly 12 total index objects").isEqualTo(12);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'S'"))
+                .as("zero sequences").isZero();
+        assertThat(queryStrings(
+                connection,
+                "SELECT schemaname || '.' || tablename || '.' || indexname FROM pg_indexes "
+                        + "WHERE schemaname = 'activation_consent' ORDER BY 1"))
+                .containsExactly(
+                        "activation_consent.consent_record.ix_consent_session",
+                        "activation_consent.consent_record.ix_consent_subject_purpose",
+                        "activation_consent.consent_record.pk_consent_record",
+                        "activation_consent.consent_record.uq_consent_event",
+                        "activation_consent.service_activation.ix_service_activation_status",
+                        "activation_consent.service_activation.pk_service_activation",
+                        "activation_consent.service_activation.uq_service_activation_subject",
+                        "activation_consent.service_activation_transition"
+                                + ".ix_activation_transition_occurred",
+                        "activation_consent.service_activation_transition"
+                                + ".pk_service_activation_transition",
+                        "activation_consent.service_activation_transition"
+                                + ".uq_activation_transition_action",
+                        "activation_consent.service_activation_transition"
+                                + ".uq_activation_transition_revision",
+                        "activation_consent.service_activation_transition"
+                                + ".uq_activation_transition_status_event");
+        List<String> expectedIndexDefs = new ArrayList<>(V007_INDEX_DEFS);
+        expectedIndexDefs.sort(String::compareTo);
+        assertThat(queryStrings(
+                connection,
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'activation_consent' "
+                        + "ORDER BY indexdef"))
+                .containsExactlyElementsOf(expectedIndexDefs);
+
+        Map<String, String> pkUniqueRows = new java.util.LinkedHashMap<>();
+        try (PreparedStatement prepared = connection.prepareStatement(
+                "SELECT r.relname || '|' || c.conname || '|' || c.contype::text || '|' "
+                        + "|| pg_get_constraintdef(c.oid) || '|' "
+                        + "|| (SELECT string_agg(a.attname, ',' ORDER BY k.ord) "
+                        + "    FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) "
+                        + "    JOIN pg_attribute a ON a.attrelid = c.conrelid "
+                        + "    AND a.attnum = k.attnum) "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.contype IN ('p','u') "
+                        + "ORDER BY 1")) {
+            try (ResultSet resultSet = prepared.executeQuery()) {
+                while (resultSet.next()) {
+                    pkUniqueRows.put(resultSet.getString(1), resultSet.getString(1));
+                }
+            }
+        }
+        assertThat(pkUniqueRows.values()).containsExactlyInAnyOrderElementsOf(V007_PK_UNIQUE_DEFS);
+        assertThat(V007_PK_UNIQUE_DEFS).hasSize(8);
+
+        List<String> secondaryIndexNames = queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'i' "
+                        + "AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = c.oid) "
+                        + "ORDER BY 1");
+        assertThat(secondaryIndexNames).containsExactly(
+                "ix_activation_transition_occurred", "ix_consent_session",
+                "ix_consent_subject_purpose", "ix_service_activation_status");
+
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || r.relname || '=' || pg_get_userbyid(r.relowner) "
+                        + "FROM pg_class r JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND r.relkind = 'r' ORDER BY 1"))
+                .containsExactly(
+                        "activation_consent.consent_record=activation_consent_owner",
+                        "activation_consent.service_activation=activation_consent_owner",
+                        "activation_consent.service_activation_transition"
+                                + "=activation_consent_owner");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' "
+                        + "AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND a.atthasdef "
+                        + "AND a.attname = 'id')"))
+                .as("zero id defaults").isZero();
+    }
+
+    private static void assertV007CheckPredicateInventory(Connection connection)
+            throws SQLException {
+        assertThat(V007_CHECK_DEF_MAP).as("expected V007 check map tables").hasSize(3);
+        int total = 0;
+        for (Map.Entry<String, Map<String, String>> tableEntry : V007_CHECK_DEF_MAP.entrySet()) {
+            String table = tableEntry.getKey();
+            List<String> actualNames = queryStrings(
+                    connection,
+                    "SELECT c.conname FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'activation_consent' AND r.relname = ? "
+                            + "AND c.contype = 'c' ORDER BY 1",
+                    table);
+            assertThat(actualNames).as("check names for %s", table)
+                    .containsExactlyInAnyOrderElementsOf(tableEntry.getValue().keySet());
+            for (Map.Entry<String, String> check : tableEntry.getValue().entrySet()) {
+                assertThat(normalizeCheckDef(queryString(
+                        connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                                + "JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'activation_consent' AND r.relname = ? "
+                                + "AND c.conname = ?",
+                        table, check.getKey())))
+                        .as("whole check def %s.%s", table, check.getKey())
+                        .isEqualTo(normalizeCheckDef(check.getValue()));
+            }
+            total += tableEntry.getValue().size();
+        }
+        assertThat(total).as("total V007 checks").isEqualTo(31);
+        Map<String, Integer> expectedCounts = Map.of(
+                "consent_record", 15, "service_activation", 3,
+                "service_activation_transition", 13);
+        for (Map.Entry<String, Integer> entry : expectedCounts.entrySet()) {
+            assertThat(V007_CHECK_DEF_MAP.get(entry.getKey()).size())
+                    .as("check count for %s", entry.getKey()).isEqualTo(entry.getValue());
+        }
+    }
+
+    private static void assertV007FunctionsAndTriggersExact(Connection connection)
+            throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'activation_consent'"))
+                .as("exactly two activation_consent functions").isEqualTo(2);
+        assertThat(queryStrings(
+                connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' "
+                        + "|| '|' || p.prosecdef || '|' || pg_get_userbyid(p.proowner) || '|' "
+                        + "|| coalesce(array_to_string(p.proconfig, ','), '') "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'activation_consent' ORDER BY 1"))
+                .containsExactly(
+                        "activation_consent.guard_service_activation()|false"
+                                + "|activation_consent_owner|search_path=activation_consent, pg_temp",
+                        "activation_consent.reject_row_mutation()|false"
+                                + "|activation_consent_owner|search_path=activation_consent, pg_temp");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'activation_consent' "
+                        + "AND p.prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction)\\M'"))
+                .as("no transaction control in V007 functions").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'activation_consent' "
+                        + "AND p.prosrc LIKE '%gen_random_uuid%'"))
+                .as("no generated IDs in V007 functions").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE NOT t.tgisinternal AND n.nspname = 'activation_consent'"))
+                .as("exactly three V007 triggers").isEqualTo(3);
+        Map<String, String[]> triggers = new java.util.LinkedHashMap<>();
+        // expected: [0]=table, [1]=function, [2]=before, [3]=row, [4]=update, [5]=delete,
+        // [6]=exact tgtype event bitmask (BEFORE ROW UPDATE OR DELETE = 1+2+8+16 = 27;
+        // BEFORE ROW UPDATE = 1+2+16 = 19; rejects added INSERT/TRUNCATE/INSTEAD bits)
+        triggers.put("trg_consent_record_immutable", new String[] {
+                "consent_record", "activation_consent.reject_row_mutation()", "1", "1", "1", "1",
+                "27"});
+        triggers.put("trg_service_activation_guard", new String[] {
+                "service_activation", "activation_consent.guard_service_activation()", "1", "1",
+                "1", "0", "19"});
+        triggers.put("trg_activation_transition_immutable", new String[] {
+                "service_activation_transition", "activation_consent.reject_row_mutation()", "1",
+                "1", "1", "1", "27"});
+        for (Map.Entry<String, String[]> entry : triggers.entrySet()) {
+            String[] expected = entry.getValue();
+            try (PreparedStatement prepared = connection.prepareStatement(
+                    "SELECT t.tgrelid = ?::regclass AS on_table, "
+                            + "t.tgfoid = ?::regprocedure AS calls_function, "
+                            + "(t.tgtype & 2) <> 0 AS is_before, "
+                            + "(t.tgtype & 1) <> 0 AS is_row, "
+                            + "(t.tgtype & 16) <> 0 AS has_update, "
+                            + "(t.tgtype & 8) <> 0 AS has_delete, "
+                            + "t.tgtype AS tgtype "
+                            + "FROM pg_trigger t WHERE t.tgname = ? AND NOT t.tgisinternal")) {
+                prepared.setString(1, "activation_consent." + expected[0]);
+                prepared.setString(2, expected[1]);
+                prepared.setString(3, entry.getKey());
+                try (ResultSet resultSet = prepared.executeQuery()) {
+                    assertThat(resultSet.next()).as("trigger %s exists", entry.getKey()).isTrue();
+                    assertThat(resultSet.getBoolean(1)).isTrue();
+                    assertThat(resultSet.getBoolean(2)).isTrue();
+                    assertThat(resultSet.getBoolean(3)).isTrue();
+                    assertThat(resultSet.getBoolean(4)).isTrue();
+                    assertThat(resultSet.getBoolean(5)).isEqualTo("1".equals(expected[4]));
+                    assertThat(resultSet.getBoolean(6)).isEqualTo("1".equals(expected[5]));
+                    assertThat(resultSet.getInt(7))
+                            .as("trigger %s exact tgtype event set", entry.getKey())
+                            .isEqualTo(Integer.parseInt(expected[6]));
+                    assertThat(resultSet.next()).isFalse();
+                }
+            }
+        }
+    }
+
+    private static void assertV007NoIdDefaultsOrSequences(Connection connection)
+            throws SQLException {
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'activation_consent' "
+                        + "AND column_name = 'id' AND column_default IS NOT NULL"))
+                .as("zero id defaults").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = 'activation_consent' AND column_default IS NOT NULL"))
+                .as("exactly six defaulted columns").isEqualTo(6);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'S'"))
+                .as("zero sequences").isZero();
+    }
+
+    private static void assertV007ForeignKeyInventoryAndLateFk(Connection connection)
+            throws SQLException {
+        assertThat(V007_FK_DEFS).as("expected V007 local FK map size").hasSize(10);
+        for (String row : V007_FK_DEFS) {
+            String[] expected = row.split("\\|", -1);
+            assertThat(queryString(
+                    connection,
+                    "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
+                            + "JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'activation_consent' AND c.conname = ?",
+                    expected[0])).as("FK def %s", expected[0]).isEqualTo(expected[1]);
+            assertThat(queryStrings(
+                    connection,
+                    "SELECT c.confupdtype::text || c.confdeltype::text || c.confmatchtype::text "
+                            + "|| '|' || c.condeferrable::text || '|' || c.condeferred::text "
+                            + "|| '|' || c.convalidated::text "
+                            + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                            + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                            + "WHERE n.nspname = 'activation_consent' AND c.conname = ?",
+                    expected[0]))
+                    .as("FK properties %s", expected[0])
+                    .containsExactly("rrs|false|false|true");
+        }
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.contype = 'f'"))
+                .as("exactly 10 table-local FKs").isEqualTo(10);
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.conname || '|' || pg_get_constraintdef(c.oid) || '|' "
+                        + "|| c.confupdtype::text || c.confdeltype::text || c.confmatchtype::text "
+                        + "|| '|' || c.condeferrable::text || '|' || c.condeferred::text "
+                        + "|| '|' || c.convalidated::text "
+                        + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' "
+                        + "AND c.conname = 'fk_customer_order_consent'"))
+                .containsExactly(
+                        "fk_customer_order_consent|FOREIGN KEY (purchase_consent_id) REFERENCES "
+                                + "activation_consent.consent_record(id) "
+                                + "ON UPDATE RESTRICT ON DELETE RESTRICT|rrs|false|false|true");
+        assertThat(stagedV004OrderConsentFkAbsent)
+                .as("staged V004 prefix lacked the late consent FK").isTrue();
+        assertThat(stagedV006ActivationConsentTablesAbsent)
+                .as("staged V006 prefix still lacked activation_consent tables").isTrue();
+        assertThat(stagedV004OrphanConsentEvidence).isNotNull();
+        assertThat(stagedV004OrphanConsentEvidence.insertSucceeded()).isTrue();
+        assertThat(stagedV004OrphanConsentEvidence.rollbackVerified()).isTrue();
+    }
+
+    /**
+     * PA7 V007 plan §8.1: isolated missing-parent 23503 + exact constraint probes for all
+     * ten table-local FKs, valid method-local positive controls, and one representative
+     * parent-delete RESTRICT on a mutable parent (customer_account). Runs in one
+     * transaction and rolls back; no CASCADE, global delete, or permanent trigger change.
+     */
+    private static void assertV007MissingParentFkProbesAndParentDeleteRestrict()
+            throws Exception {
+        UUID accountId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID employeeId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID consentId = UUID.randomUUID();
+        UUID activationId = UUID.randomUUID();
+        UUID transitionId = UUID.randomUUID();
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, accountId, "PA7 S1 FK Customer"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                assertThat(insertEmployee(connection, employeeId, randomSha256(), "pa7***fk",
+                        "onecall-ops", randomSha256(), "PA7 S1 FK Employee", "ADMIN"))
+                        .isEqualTo(1);
+                switchLocalRole(connection, "ivr_role");
+                assertThat(v005InsertSession(connection, sessionId, v005CallId(), subjectId,
+                        randomSha256())).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+
+                // Positive controls: fully valid consent / activation parents. The
+                // positive transition is savepoint-isolated so
+                // uq_activation_transition_revision (activation_id, to_revision=1)
+                // is free for every negative probe that reuses activationId.
+                insertV007ConsentAccount(connection, consentId, subjectId, accountId);
+                insertV007ConsentSession(connection, UUID.randomUUID(), subjectId, sessionId);
+                insertV007ConsentEmployee(connection, UUID.randomUUID(), subjectId, employeeId);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        activationId, subjectId)).isEqualTo(1);
+                java.sql.Savepoint positiveTransition =
+                        connection.setSavepoint("pa7-v007-positive-transition");
+                assertThat(v007InsertIvrTransition(connection, transitionId, activationId,
+                        subjectId, consentId, null)).isEqualTo(1);
+                connection.rollback(positiveTransition);
+
+                List<String> fkProbed = new ArrayList<>();
+
+                // consent_record: each probe isolates one FK with all other parents valid.
+                // Params: id, subject_id, source_ref, parent, sha, event_id, fingerprint.
+                expectSqlFailure(connection, "23503", "fk_consent_subject",
+                        v007ConsentAccountSql(), UUID.randomUUID(), UUID.randomUUID(),
+                        "acc-ref-sub-" + UUID.randomUUID(), accountId, randomSha256(),
+                        "acc-evt-sub-" + UUID.randomUUID(), randomSha256());
+                fkProbed.add("fk_consent_subject");
+
+                expectSqlFailure(connection, "23503", "fk_consent_session",
+                        v007ConsentSessionSql(), UUID.randomUUID(), subjectId,
+                        "sess-ref-" + UUID.randomUUID(), UUID.randomUUID(), randomSha256(),
+                        "sess-evt-" + UUID.randomUUID(), randomSha256());
+                fkProbed.add("fk_consent_session");
+
+                expectSqlFailure(connection, "23503", "fk_consent_account",
+                        v007ConsentAccountSql(), UUID.randomUUID(), subjectId,
+                        "acc-ref-miss-" + UUID.randomUUID(), UUID.randomUUID(), randomSha256(),
+                        "acc-evt-miss-" + UUID.randomUUID(), randomSha256());
+                fkProbed.add("fk_consent_account");
+
+                expectSqlFailure(connection, "23503", "fk_consent_employee",
+                        v007ConsentEmployeeSql(), UUID.randomUUID(), subjectId,
+                        "emp-ref-" + UUID.randomUUID(), UUID.randomUUID(), randomSha256(),
+                        "emp-evt-" + UUID.randomUUID(), randomSha256());
+                fkProbed.add("fk_consent_employee");
+
+                expectSqlFailure(connection, "23503", "fk_service_activation_subject",
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        UUID.randomUUID(), UUID.randomUUID());
+                fkProbed.add("fk_service_activation_subject");
+
+                // Transition probes reuse the one activationId (unique subject_id) and
+                // each expectSqlFailure rolls back its own savepoint, so
+                // uq_activation_transition_revision (activation_id, to_revision=1)
+                // remains free. IVR SQL params: id, activation_id, subject_id,
+                // action_event_id, status_event_id, fingerprint, actor_account_id,
+                // consent_id.
+                expectSqlFailure(connection, "23503", "fk_activation_transition_activation",
+                        v007TransitionIvrSql(), UUID.randomUUID(), UUID.randomUUID(),
+                        subjectId, "tr-act-" + UUID.randomUUID(),
+                        "tr-act-st-" + UUID.randomUUID(), randomSha256(), null, consentId);
+                fkProbed.add("fk_activation_transition_activation");
+
+                expectSqlFailure(connection, "23503", "fk_activation_transition_subject",
+                        v007TransitionIvrSql(), UUID.randomUUID(), activationId,
+                        UUID.randomUUID(), "tr-sub-" + UUID.randomUUID(),
+                        "tr-sub-st-" + UUID.randomUUID(), randomSha256(), null, consentId);
+                fkProbed.add("fk_activation_transition_subject");
+
+                expectSqlFailure(connection, "23503", "fk_activation_transition_actor_account",
+                        v007TransitionIvrSql(), UUID.randomUUID(), activationId,
+                        subjectId, "tr-acc-" + UUID.randomUUID(),
+                        "tr-acc-st-" + UUID.randomUUID(), randomSha256(),
+                        UUID.randomUUID(), consentId);
+                fkProbed.add("fk_activation_transition_actor_account");
+
+                expectSqlFailure(connection, "23503", "fk_activation_transition_consent",
+                        v007TransitionIvrSql(), UUID.randomUUID(), activationId,
+                        subjectId, "tr-con-" + UUID.randomUUID(),
+                        "tr-con-st-" + UUID.randomUUID(), randomSha256(), null,
+                        UUID.randomUUID());
+                fkProbed.add("fk_activation_transition_consent");
+
+                // OPERATIONS path: ACTIVE->SUSPENDED requires actor_employee_id, null consent.
+                expectSqlFailure(connection, "23503", "fk_activation_transition_actor_employee",
+                        v007TransitionOperationsSql(), UUID.randomUUID(), activationId,
+                        subjectId, "tr-emp-" + UUID.randomUUID(),
+                        "tr-emp-st-" + UUID.randomUUID(), randomSha256(), UUID.randomUUID());
+                fkProbed.add("fk_activation_transition_actor_employee");
+
+                assertThat(fkProbed)
+                        .as("all 10 V007 local FKs have an isolated missing-parent probe")
+                        .containsExactlyInAnyOrderElementsOf(v007LocalFkNames());
+                assertThat(fkProbed).hasSize(10);
+
+                // Representative parent-delete RESTRICT on a mutable parent (no delete
+                // trigger): customer_account referenced only by consent_record.account_id
+                // (fk_consent_account); the valid consent row keeps the parent busy. No
+                // transition row here, so the RESTRICT name pin is not coupled to the
+                // fk_activation_transition_actor_account RI trigger order.
+                UUID restrictAccountId = UUID.randomUUID();
+                UUID restrictSubjectId = UUID.randomUUID();
+                UUID restrictConsentId = UUID.randomUUID();
+                UUID restrictActivationId = UUID.randomUUID();
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, restrictAccountId,
+                        "PA7 S1 FK Restrict")).isEqualTo(1);
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, restrictSubjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                insertV007ConsentAccount(connection, restrictConsentId, restrictSubjectId,
+                        restrictAccountId);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        restrictActivationId, restrictSubjectId)).isEqualTo(1);
+                switchLocalRole(connection, "customer_iam_owner");
+                expectSqlFailure(connection, "23503", "fk_consent_account",
+                        "DELETE FROM customer_iam.customer_account WHERE id = ?",
+                        restrictAccountId);
+
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                    consentId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM activation_consent.service_activation WHERE id = ?",
+                    activationId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM activation_consent.service_activation_transition "
+                            + "WHERE id = ?",
+                    transitionId)).isZero();
+        }
+    }
+
+    private static List<String> v007LocalFkNames() {
+        List<String> names = new ArrayList<>();
+        for (String row : V007_FK_DEFS) {
+            names.add(row.split("\\|", -1)[0]);
+        }
+        return names;
+    }
+
+    private static String v007ConsentAccountSql() {
+        return "INSERT INTO activation_consent.consent_record "
+                + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                + "policy_version, prompt_version, action, source_type, source_ref, "
+                + "account_id, snapshot, snapshot_sha256, event_id, request_fingerprint) "
+                + "VALUES (?, ?, 'PURCHASE', 'WEB', 'PURCHASE', 'pa7-s1-policy', "
+                + "'v1', 'v1', 'ACCEPT', 'ACCOUNT', ?, ?, "
+                + "'{\"fixture\":\"pa7-s1\"}', ?, ?, ?)";
+    }
+
+    private static String v007ConsentSessionSql() {
+        return "INSERT INTO activation_consent.consent_record "
+                + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                + "policy_version, prompt_version, action, source_type, source_ref, "
+                + "ivr_session_id, snapshot, snapshot_sha256, event_id, request_fingerprint) "
+                + "VALUES (?, ?, 'SERVICE_ACTIVATION', 'IVR', 'IVR_CONFIRM', 'pa7-s1-policy', "
+                + "'v1', 'v1', 'ACCEPT', 'IVR_SESSION', ?, ?, "
+                + "'{\"fixture\":\"pa7-s1\"}', ?, ?, ?)";
+    }
+
+    private static String v007ConsentEmployeeSql() {
+        return "INSERT INTO activation_consent.consent_record "
+                + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                + "policy_version, prompt_version, action, source_type, source_ref, "
+                + "employee_id, snapshot, snapshot_sha256, event_id, request_fingerprint) "
+                + "VALUES (?, ?, 'SERVICE_ACTIVATION', 'OPERATIONS', 'OPERATIONS', "
+                + "'pa7-s1-policy', 'v1', 'v1', 'ACCEPT', 'EMPLOYEE', ?, ?, "
+                + "'{\"fixture\":\"pa7-s1\"}', ?, ?, ?)";
+    }
+
+    private static void insertV007ConsentAccount(
+            Connection connection, UUID consentId, UUID subjectId, UUID accountId)
+            throws SQLException {
+        assertThat(executeUpdate(connection, v007ConsentAccountSql(),
+                consentId, subjectId, "s1-consent-ref-" + UUID.randomUUID(), accountId,
+                randomSha256(), "s1-consent-evt-" + UUID.randomUUID(), randomSha256()))
+                .isEqualTo(1);
+    }
+
+    private static void insertV007ConsentSession(
+            Connection connection, UUID consentId, UUID subjectId, UUID sessionId)
+            throws SQLException {
+        assertThat(executeUpdate(connection, v007ConsentSessionSql(),
+                consentId, subjectId, "s1-sess-ref-" + UUID.randomUUID(), sessionId,
+                randomSha256(), "s1-sess-evt-" + UUID.randomUUID(), randomSha256()))
+                .isEqualTo(1);
+    }
+
+    private static void insertV007ConsentEmployee(
+            Connection connection, UUID consentId, UUID subjectId, UUID employeeId)
+            throws SQLException {
+        assertThat(executeUpdate(connection, v007ConsentEmployeeSql(),
+                consentId, subjectId, "s1-emp-ref-" + UUID.randomUUID(), employeeId,
+                randomSha256(), "s1-emp-evt-" + UUID.randomUUID(), randomSha256()))
+                .isEqualTo(1);
+    }
+
+    /** IVR_CONFIRM / IVR path: consent required; actor_account optional (no employee). */
+    private static String v007TransitionIvrSql() {
+        return "INSERT INTO activation_consent.service_activation_transition "
+                + "(id, activation_id, subject_id, from_status, to_status, from_revision, "
+                + "to_revision, source_channel, source_action_domain, source_action_event_id, "
+                + "status_event_domain, status_event_id, request_fingerprint, "
+                + "actor_account_id, actor_employee_id, reason_code, consent_record_id) "
+                + "VALUES (?, ?, ?, 'INACTIVE', 'ACTIVE', 0, 1, 'IVR', 'IVR_CONFIRM', ?, "
+                + "'ACTIVATION_STATUS', ?, ?, ?, NULL, 'ACTIVATION', ?)";
+    }
+
+    /** OPERATIONS path: ACTIVE->SUSPENDED requires actor_employee_id and null consent. */
+    private static String v007TransitionOperationsSql() {
+        return "INSERT INTO activation_consent.service_activation_transition "
+                + "(id, activation_id, subject_id, from_status, to_status, from_revision, "
+                + "to_revision, source_channel, source_action_domain, source_action_event_id, "
+                + "status_event_domain, status_event_id, request_fingerprint, "
+                + "actor_account_id, actor_employee_id, reason_code, consent_record_id) "
+                + "VALUES (?, ?, ?, 'ACTIVE', 'SUSPENDED', 1, 2, 'OPERATIONS', 'OPERATIONS', ?, "
+                + "'ACTIVATION_STATUS', ?, ?, NULL, ?, 'SUSPEND', NULL)";
+    }
+
+    private static int v007InsertIvrTransition(
+            Connection connection,
+            UUID id,
+            UUID activationId,
+            UUID subjectId,
+            UUID consentId,
+            UUID actorAccountId) throws SQLException {
+        return executeUpdate(connection, v007TransitionIvrSql(),
+                id, activationId, subjectId,
+                "tr-evt-" + UUID.randomUUID(), "tr-st-" + UUID.randomUUID(),
+                randomSha256(), actorAccountId, consentId);
+    }
+
+    private static void assertV007SchemaUsageMatrix(Connection connection) throws SQLException {
+        // Exhaustive schema USAGE/CREATE matrix across owner, runtime and every
+        // relevant foreign role (plan §4.7 / §8.1). No spot-only grants.
+        List<String> grantees = new ArrayList<>(S1_ROLES);
+        grantees.addAll(V004_ROLES);
+        grantees.add("public");
+        // V004 granted schema USAGE on activation_consent to owner, runtime, ivr and
+        // catalog (plan §4.7); V007 does not recreate or extend that schema wave.
+        List<String> activationConsentUsage = List.of(
+                "activation_consent_owner", "activation_consent_role", "ivr_role",
+                "catalog_order_role");
+        for (String grantee : grantees) {
+            assertThat(hasSchema(connection, grantee, "activation_consent", "USAGE"))
+                    .as("%s activation_consent USAGE", grantee)
+                    .isEqualTo(activationConsentUsage.contains(grantee));
+            assertThat(hasSchema(connection, grantee, "activation_consent", "CREATE"))
+                    .as("%s activation_consent CREATE", grantee)
+                    .isEqualTo("activation_consent_owner".equals(grantee));
+        }
+        for (String schema : List.of("activation_consent", "subject_number", "customer_iam",
+                "organization_access")) {
+            assertThat(hasSchema(connection, "activation_consent_role", schema, "USAGE"))
+                    .as("activation_consent_role USAGE %s", schema).isTrue();
+            assertThat(hasSchema(connection, "activation_consent_role", schema, "CREATE"))
+                    .as("activation_consent_role CREATE %s", schema).isFalse();
+        }
+        assertThat(hasSchema(connection, "activation_consent_role", "operations_iam", "USAGE"))
+                .as("activation_consent_role has no operations_iam USAGE").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_role", "operations_iam", "CREATE"))
+                .as("activation_consent_role has no operations_iam CREATE").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_owner", "activation_consent", "CREATE"))
+                .as("owner CREATE on own schema").isTrue();
+
+        // Exact four foreign column-read sets with exhaustive live-column negatives and
+        // no foreign table-level write/row-lock privilege for activation_consent_role.
+        Map<String, List<String>> crossSelect = new java.util.LinkedHashMap<>();
+        crossSelect.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "revision"));
+        crossSelect.put("customer_iam.customer_account", List.of("id", "status"));
+        crossSelect.put("organization_access.organization", List.of("id", "status"));
+        crossSelect.put("organization_access.organization_membership",
+                List.of("organization_id", "account_id", "role", "status"));
+        for (Map.Entry<String, List<String>> entry : crossSelect.entrySet()) {
+            String table = entry.getKey();
+            List<String> actualColumns = queryStrings(
+                    connection,
+                    "SELECT a.attname FROM pg_class c "
+                            + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                            + "JOIN pg_attribute a ON a.attrelid = c.oid "
+                            + "WHERE n.nspname || '.' || c.relname = ? "
+                            + "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+                    table);
+            assertThat(actualColumns)
+                    .as("foreign table %s must exist with enumerated columns", table)
+                    .isNotEmpty();
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                    "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "activation_consent_role", table, privilege))
+                        .as("activation_consent_role must not hold table %s on %s",
+                                privilege, table)
+                        .isFalse();
+            }
+            for (String column : actualColumns) {
+                assertThat(hasColumn(connection, "activation_consent_role", table, column,
+                        "SELECT"))
+                        .as("activation_consent_role SELECT %s.%s", table, column)
+                        .isEqualTo(entry.getValue().contains(column));
+                assertThat(hasColumn(connection, "activation_consent_role", table, column,
+                        "INSERT"))
+                        .as("activation_consent_role must not INSERT %s.%s", table, column)
+                        .isFalse();
+                assertThat(hasColumn(connection, "activation_consent_role", table, column,
+                        "UPDATE"))
+                        .as("activation_consent_role must not UPDATE %s.%s", table, column)
+                        .isFalse();
+            }
+        }
+    }
+
+    private static void assertV007OwnedAndCrossModuleGrants(Connection connection)
+            throws SQLException {
+        // Exhaustive table/full-column matrix across owner, runtime and every relevant
+        // foreign role (plan §4.7 / §8.1). Undeclared table or column rights fail closed.
+        Map<String, List<String>> allColumnsByTable = new java.util.LinkedHashMap<>();
+        allColumnsByTable.put("activation_consent.consent_record", List.of(
+                "id", "subject_id", "purpose", "channel", "event_domain", "policy_code",
+                "policy_version", "prompt_version", "action", "source_type", "source_ref",
+                "ivr_session_id", "account_id", "employee_id", "snapshot", "snapshot_sha256",
+                "event_id", "request_fingerprint", "accepted_at"));
+        allColumnsByTable.put("activation_consent.service_activation", List.of(
+                "id", "subject_id", "status", "revision", "created_at", "updated_at"));
+        allColumnsByTable.put("activation_consent.service_activation_transition", List.of(
+                "id", "activation_id", "subject_id", "from_status", "to_status", "from_revision",
+                "to_revision", "source_channel", "source_action_domain", "source_action_event_id",
+                "status_event_domain", "status_event_id", "request_fingerprint",
+                "actor_account_id", "actor_employee_id", "reason_code", "consent_record_id",
+                "occurred_at"));
+
+        Map<String, List<String>> runtimeUpdateColumns = new java.util.LinkedHashMap<>();
+        runtimeUpdateColumns.put("activation_consent.consent_record", List.of());
+        runtimeUpdateColumns.put("activation_consent.service_activation",
+                List.of("status", "revision", "updated_at"));
+        runtimeUpdateColumns.put("activation_consent.service_activation_transition", List.of());
+
+        Map<String, List<String>> ivrCrossSelect = new java.util.LinkedHashMap<>();
+        ivrCrossSelect.put("activation_consent.service_activation",
+                List.of("id", "subject_id", "status", "revision"));
+        ivrCrossSelect.put("activation_consent.consent_record",
+                List.of("subject_id", "purpose", "channel", "policy_code", "policy_version",
+                        "prompt_version", "action", "event_domain", "event_id", "accepted_at"));
+        Map<String, List<String>> catalogCrossSelect = new java.util.LinkedHashMap<>();
+        catalogCrossSelect.put("activation_consent.service_activation",
+                List.of("id", "subject_id", "status", "revision"));
+        catalogCrossSelect.put("activation_consent.consent_record",
+                List.of("id", "subject_id", "purpose", "channel", "event_domain", "event_id",
+                        "policy_code", "policy_version", "prompt_version", "action",
+                        "source_type", "source_ref", "account_id", "request_fingerprint",
+                        "accepted_at"));
+
+        List<String> matrixRoles = new ArrayList<>(S1_ROLES);
+        matrixRoles.addAll(V004_ROLES);
+        for (Map.Entry<String, List<String>> entry : allColumnsByTable.entrySet()) {
+            String qualifiedTable = entry.getKey();
+            for (String role : matrixRoles) {
+                boolean ownerRow = role.equals("activation_consent_owner");
+                boolean runtimeRow = role.equals("activation_consent_role");
+                assertThat(hasTable(connection, role, qualifiedTable, "SELECT"))
+                        .as("matrix %s table SELECT %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow || runtimeRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "INSERT"))
+                        .as("matrix %s table INSERT %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow || runtimeRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "UPDATE"))
+                        .as("matrix %s table UPDATE %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "DELETE"))
+                        .as("matrix %s table DELETE %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "TRUNCATE"))
+                        .as("matrix %s table TRUNCATE %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "REFERENCES"))
+                        .as("matrix %s table REFERENCES %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                assertThat(hasTable(connection, role, qualifiedTable, "TRIGGER"))
+                        .as("matrix %s table TRIGGER %s", role, qualifiedTable)
+                        .isEqualTo(ownerRow);
+                for (String column : entry.getValue()) {
+                    boolean expectColumnSelect;
+                    boolean expectColumnInsert;
+                    boolean expectColumnUpdate;
+                    if (ownerRow || runtimeRow) {
+                        expectColumnSelect = true;
+                        expectColumnInsert = true;
+                        expectColumnUpdate = ownerRow
+                                || runtimeUpdateColumns.get(qualifiedTable).contains(column);
+                    } else if (role.equals("ivr_role")) {
+                        expectColumnSelect = ivrCrossSelect
+                                .getOrDefault(qualifiedTable, List.of()).contains(column);
+                        expectColumnInsert = false;
+                        expectColumnUpdate = false;
+                    } else if (role.equals("catalog_order_role")) {
+                        expectColumnSelect = catalogCrossSelect
+                                .getOrDefault(qualifiedTable, List.of()).contains(column);
+                        expectColumnInsert = false;
+                        expectColumnUpdate = false;
+                    } else {
+                        expectColumnSelect = false;
+                        expectColumnInsert = false;
+                        expectColumnUpdate = false;
+                    }
+                    assertThat(hasColumn(connection, role, qualifiedTable, column, "SELECT"))
+                            .as("matrix %s column SELECT %s.%s", role, qualifiedTable, column)
+                            .isEqualTo(expectColumnSelect);
+                    assertThat(hasColumn(connection, role, qualifiedTable, column, "INSERT"))
+                            .as("matrix %s column INSERT %s.%s", role, qualifiedTable, column)
+                            .isEqualTo(expectColumnInsert);
+                    assertThat(hasColumn(connection, role, qualifiedTable, column, "UPDATE"))
+                            .as("matrix %s column UPDATE %s.%s", role, qualifiedTable, column)
+                            .isEqualTo(expectColumnUpdate);
+                }
+            }
+        }
+
+        // Positive legal runtime activation update of only the three mutable columns.
+        for (String column : List.of("status", "revision", "updated_at")) {
+            assertThat(hasColumn(connection, "activation_consent_role",
+                    "activation_consent.service_activation", column, "UPDATE")).isTrue();
+        }
+        for (String column : List.of("id", "subject_id", "created_at")) {
+            assertThat(hasColumn(connection, "activation_consent_role",
+                    "activation_consent.service_activation", column, "UPDATE")).isFalse();
+        }
+        // Foreign roles: no table-level SELECT/INSERT/write or row-lock path on V007.
+        for (String role : List.of("ivr_role", "catalog_order_role", "entitlement_metering_role",
+                "operations_iam_role", "subject_number_role", "customer_iam_role",
+                "organization_access_role", "platform_reliability_role")) {
+            for (String table : V007_TABLES) {
+                String qualifiedTable = "activation_consent." + table;
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
+                        "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                    assertThat(hasTable(connection, role, qualifiedTable, privilege))
+                            .as("%s must not hold table %s on %s", role, privilege, qualifiedTable)
+                            .isFalse();
+                }
+            }
+        }
+    }
+
+    private static void assertV007PublicAclIsZero(Connection connection) throws SQLException {
+        // PUBLIC is the ACL pseudo-grantee OID 0, not a pg_roles login name; expand
+        // default-inclusive ACLs exactly like the V006 zero-PUBLIC helper.
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace n, "
+                        + "aclexplode(coalesce(n.nspacl, acldefault('n', n.nspowner))) a "
+                        + "WHERE n.nspname = 'activation_consent' AND a.grantee = 0"))
+                .as("PUBLIC has no activation_consent schema privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind IN ('r','p') "
+                        + "AND a.grantee = 0"))
+                .as("PUBLIC has no activation_consent table privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "JOIN pg_attribute a ON a.attrelid = c.oid, "
+                        + "aclexplode(coalesce(a.attacl, acldefault('c', c.relowner))) x "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind IN ('r','p') "
+                        + "AND a.attnum > 0 AND NOT a.attisdropped AND x.grantee = 0"))
+                .as("PUBLIC has no activation_consent column privilege").isZero();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a "
+                        + "WHERE n.nspname = 'activation_consent' AND a.grantee = 0"))
+                .as("PUBLIC has no activation_consent function privilege").isZero();
+    }
+
+    private static void assertV007GuardFunctionExecuteBoundaries(Connection connection)
+            throws SQLException {
+        // Exact two-function owner/runtime EXECUTE boundary across the full role matrix.
+        List<String> functionMatrixRoles = new ArrayList<>(S1_ROLES);
+        functionMatrixRoles.addAll(V004_ROLES);
+        assertThat(hasFunction(connection, "activation_consent_owner",
+                "activation_consent.guard_service_activation()", "EXECUTE"))
+                .as("owner EXECUTE guard_service_activation").isTrue();
+        assertThat(hasFunction(connection, "activation_consent_role",
+                "activation_consent.guard_service_activation()", "EXECUTE"))
+                .as("runtime EXECUTE guard_service_activation").isTrue();
+        for (String role : functionMatrixRoles) {
+            if (role.equals("activation_consent_owner")
+                    || role.equals("activation_consent_role")) {
+                continue;
+            }
+            assertThat(hasFunction(connection, role,
+                    "activation_consent.guard_service_activation()", "EXECUTE"))
+                    .as("%s must not EXECUTE guard_service_activation", role).isFalse();
+        }
+        assertThat(hasFunction(connection, "public",
+                "activation_consent.guard_service_activation()", "EXECUTE"))
+                .as("PUBLIC must not EXECUTE guard_service_activation").isFalse();
+
+        assertThat(hasFunction(connection, "activation_consent_owner",
+                "activation_consent.reject_row_mutation()", "EXECUTE"))
+                .as("owner EXECUTE reject_row_mutation").isTrue();
+        for (String role : functionMatrixRoles) {
+            // Exclude only the owner (already asserted true above); runtime and all
+            // foreign roles remain denied (plan §4.7 / §8.1).
+            if (role.equals("activation_consent_owner")) {
+                continue;
+            }
+            assertThat(hasFunction(connection, role,
+                    "activation_consent.reject_row_mutation()", "EXECUTE"))
+                    .as("%s must not EXECUTE reject_row_mutation", role).isFalse();
+        }
+        assertThat(hasFunction(connection, "public",
+                "activation_consent.reject_row_mutation()", "EXECUTE"))
+                .as("PUBLIC must not EXECUTE reject_row_mutation").isFalse();
+    }
+
+    private static void assertV007RuntimeDenialsAndLegalUpdateControl() throws Exception {
+        UUID subjectId = UUID.randomUUID();
+        UUID activationId = UUID.randomUUID();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "subject_number_role");
+                assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                assertThat(executeUpdate(connection,
+                        "INSERT INTO activation_consent.service_activation "
+                                + "(id, subject_id) VALUES (?, ?)",
+                        activationId, subjectId)).isEqualTo(1);
+                // Positive legal runtime activation update of only mutable columns.
+                switchLocalRole(connection, "activation_consent_role");
+                assertThat(executeUpdate(connection,
+                        "UPDATE activation_consent.service_activation "
+                                + "SET status = 'ACTIVE', revision = revision + 1, "
+                                + "updated_at = now() WHERE id = ? AND revision = 1",
+                        activationId)).isEqualTo(1);
+                // Runtime denials: unauthorized table writes.
+                expectSqlFailure(connection, "42501", null,
+                        "UPDATE activation_consent.service_activation "
+                                + "SET created_at = now() WHERE id = ?",
+                        activationId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM activation_consent.service_activation WHERE id = ?",
+                        activationId);
+                expectSqlFailure(connection, "42501", null,
+                        "DELETE FROM activation_consent.consent_record WHERE id = ?",
+                        UUID.randomUUID());
+                expectSqlFailure(connection, "42501", null,
+                        "TRUNCATE activation_consent.service_activation");
+                // Foreign row-lock denials (plan §8.1 zero foreign row-lock path):
+                // activation_consent_role holds column SELECT only on the four foreign
+                // read tables, so FOR UPDATE/FOR SHARE (which require UPDATE privilege)
+                // must fail 42501 even when no row matches.
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM subject_number.business_subject WHERE id = ? FOR UPDATE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM subject_number.business_subject WHERE id = ? FOR SHARE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM customer_iam.customer_account WHERE id = ? FOR UPDATE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM customer_iam.customer_account WHERE id = ? FOR SHARE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM organization_access.organization WHERE id = ? FOR UPDATE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM organization_access.organization WHERE id = ? FOR SHARE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT organization_id FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? FOR UPDATE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT organization_id FROM organization_access.organization_membership "
+                                + "WHERE organization_id = ? FOR SHARE",
+                        UUID.randomUUID());
+                // Owner path: immutable column change hits the trigger P0001.
+                switchLocalRole(connection, "activation_consent_owner");
+                expectSqlFailure(connection, "P0001", "SERVICE_ACTIVATION_HEAD_IMMUTABLE",
+                        "UPDATE activation_consent.service_activation SET subject_id = ? "
+                                + "WHERE id = ?",
+                        UUID.randomUUID(), activationId);
+                // Foreign runtime roles have no V007 write or row-lock path.
+                switchLocalRole(connection, "ivr_role");
+                expectSqlFailure(connection, "42501", null,
+                        "INSERT INTO activation_consent.consent_record (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        UUID.randomUUID(), UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM activation_consent.service_activation WHERE id = ? "
+                                + "FOR UPDATE",
+                        activationId);
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM activation_consent.service_activation WHERE id = ? "
+                                + "FOR SHARE",
+                        activationId);
+                // ivr_role has no SELECT on consent_record.id; probe via granted subject_id.
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT subject_id FROM activation_consent.consent_record "
+                                + "WHERE subject_id = ? FOR UPDATE",
+                        subjectId);
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT subject_id FROM activation_consent.consent_record "
+                                + "WHERE subject_id = ? FOR SHARE",
+                        subjectId);
+                switchLocalRole(connection, "catalog_order_role");
+                expectSqlFailure(connection, "42501", null,
+                        "INSERT INTO activation_consent.service_activation (id, subject_id) "
+                                + "VALUES (?, ?)",
+                        UUID.randomUUID(), UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM activation_consent.service_activation WHERE id = ? "
+                                + "FOR UPDATE",
+                        activationId);
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM activation_consent.service_activation WHERE id = ? "
+                                + "FOR SHARE",
+                        activationId);
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM activation_consent.consent_record WHERE id = ? "
+                                + "FOR UPDATE",
+                        UUID.randomUUID());
+                expectSqlQueryFailure(connection, "42501",
+                        "SELECT id FROM activation_consent.consent_record WHERE id = ? "
+                                + "FOR SHARE",
+                        UUID.randomUUID());
+                // No CREATE for runtime roles.
+                switchLocalRole(connection, "activation_consent_role");
+                expectSqlFailure(connection, "42501", null,
+                        "CREATE TABLE activation_consent.s1_probe (id uuid)");
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
     }
 
     private static void assertV005TablesColumnsChecksIndexesFks(Connection connection)
@@ -7636,14 +9125,15 @@ class PostgresContainerIT {
         usageRolesBySchema.put("ivr", List.of("ivr_owner", "ivr_role"));
         usageRolesBySchema.put("customer_iam", List.of(
                 "customer_iam_owner", "customer_iam_role", "subject_number_role",
-                "catalog_order_role", "ivr_role"));
+                "catalog_order_role", "ivr_role", "activation_consent_role"));
         usageRolesBySchema.put("organization_access", List.of(
                 "organization_access_owner", "organization_access_role", "customer_iam_role",
-                "subject_number_role", "catalog_order_role", "ivr_role"));
+                "subject_number_role", "catalog_order_role", "ivr_role",
+                "activation_consent_role"));
         usageRolesBySchema.put("subject_number", List.of(
                 "subject_number_owner", "subject_number_role",
                 "subject_identity_verification_role", "catalog_order_role", "ivr_role",
-                "entitlement_metering_role"));
+                "entitlement_metering_role", "activation_consent_role"));
         Map<String, String> ownerBySchema = new java.util.LinkedHashMap<>();
         ownerBySchema.put("ivr", "ivr_owner");
         ownerBySchema.put("customer_iam", "customer_iam_owner");
@@ -7668,7 +9158,12 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "ivr_role", "catalog_order", "USAGE"))
                 .as("ivr_role catalog_order USAGE is not granted in V005 (§10.12)").isFalse();
         assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
-                .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
+                .as("activation_consent_role subject USAGE is granted by V007").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "customer_iam", "USAGE"))
+                .as("activation_consent_role customer_iam USAGE is granted by V007").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "organization_access", "USAGE"))
+                .as("activation_consent_role organization_access USAGE is granted by V007")
+                .isTrue();
         assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
                 .as("entitlement_metering_role subject USAGE is granted by V006").isTrue();
     }
@@ -8193,7 +9688,7 @@ class PostgresContainerIT {
         List<String> subjectNumberUsage = List.of(
                 "subject_number_owner", "subject_number_role",
                 "subject_identity_verification_role", "catalog_order_role", "ivr_role",
-                "entitlement_metering_role");
+                "entitlement_metering_role", "activation_consent_role");
         List<String> catalogOrderUsage = List.of(
                 "catalog_order_owner", "catalog_order_role", "entitlement_metering_role");
         List<String> platformUsage = List.of(
@@ -8224,7 +9719,20 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
                 .as("entitlement_metering_role subject USAGE is granted by V006").isTrue();
         assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
-                .as("activation_consent_role subject USAGE is deferred to V007").isFalse();
+                .as("activation_consent_role subject USAGE is granted by V007").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "customer_iam", "USAGE"))
+                .as("activation_consent_role customer_iam USAGE is granted by V007").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "organization_access", "USAGE"))
+                .as("activation_consent_role organization_access USAGE is granted by V007")
+                .isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "CREATE"))
+                .as("activation_consent_role has no subject_number CREATE").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_role", "customer_iam", "CREATE"))
+                .as("activation_consent_role has no customer_iam CREATE").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_role", "organization_access", "CREATE"))
+                .as("activation_consent_role has no organization_access CREATE").isFalse();
+        assertThat(hasSchema(connection, "activation_consent_role", "operations_iam", "USAGE"))
+                .as("activation_consent_role has no operations_iam USAGE").isFalse();
     }
 
     private static void assertV006OwnedAndCrossModuleGrants(Connection connection)
@@ -9551,6 +11059,7 @@ class PostgresContainerIT {
         UUID versionId = UUID.randomUUID();
         UUID offerId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
+        UUID consentId = UUID.randomUUID();
         switchLocalRole(connection, "customer_iam_role");
         assertThat(insertCustomerAccount(connection, accountId, "PA6 Fix1 Purchase Customer"))
                 .isEqualTo(1);
@@ -9559,6 +11068,8 @@ class PostgresContainerIT {
                 .isEqualTo(1);
         switchLocalRole(connection, "subject_number_role");
         assertThat(insertSubject(connection, orderSubjectId, "IVR")).isEqualTo(1);
+        resetToMigrationIdentity(connection);
+        insertPurchaseConsent(connection, consentId, orderSubjectId, accountId);
         switchLocalRole(connection, "catalog_order_role");
         assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
                 .isEqualTo(1);
@@ -9571,7 +11082,7 @@ class PostgresContainerIT {
         assertThat(insertCustomerOrder(connection, orderId,
                 "PA6FIX1" + UUID.randomUUID().toString().replace("-", ""),
                 accountId, organizationId, orderSubjectId, versionId, offerId,
-                UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}", randomSha256(),
+                consentId, 9900L, "CNY", "UNPAID", "{\"line\":1}", randomSha256(),
                 "pa6-fix1-token", "pa6-fix1-idem-" + UUID.randomUUID(), randomSha256(),
                 OffsetDateTime.now(ZoneOffset.UTC), null, null, 1))
                 .isEqualTo(1);
@@ -12766,6 +14277,7 @@ class PostgresContainerIT {
                         "fk_catalog_version_employee",
                         "fk_catalog_version_product",
                         "fk_customer_order_account",
+                        "fk_customer_order_consent",
                         "fk_customer_order_offer",
                         "fk_customer_order_organization",
                         "fk_customer_order_subject",
@@ -12802,8 +14314,8 @@ class PostgresContainerIT {
                 "SELECT count(*) FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
                         + "JOIN pg_namespace n ON n.oid = r.relnamespace "
                         + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
-                .as("fk_customer_order_consent is deferred to V007")
-                .isZero();
+                .as("fk_customer_order_consent is present after V007")
+                .isEqualTo(1);
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM information_schema.columns "
@@ -12821,8 +14333,8 @@ class PostgresContainerIT {
                         + "WHERE k.table_schema = 'catalog_order' AND k.table_name = 'customer_order' "
                         + "AND k.column_name = 'purchase_consent_id' "
                         + "AND t.constraint_type = 'FOREIGN KEY'"))
-                .as("purchase_consent_id has no FK at V004")
-                .isZero();
+                .as("purchase_consent_id has FK after V007")
+                .isEqualTo(1);
 
         assertThat(queryStrings(
                 connection,
@@ -13127,14 +14639,15 @@ class PostgresContainerIT {
                 "catalog_order_role"));
         usageRolesBySchema.put("customer_iam", List.of(
                 "customer_iam_owner", "customer_iam_role", "subject_number_role",
-                "catalog_order_role", "ivr_role"));
+                "catalog_order_role", "ivr_role", "activation_consent_role"));
         usageRolesBySchema.put("organization_access", List.of(
                 "organization_access_owner", "organization_access_role", "customer_iam_role",
-                "subject_number_role", "catalog_order_role", "ivr_role"));
+                "subject_number_role", "catalog_order_role", "ivr_role",
+                "activation_consent_role"));
         usageRolesBySchema.put("subject_number", List.of(
                 "subject_number_owner", "subject_number_role",
                 "subject_identity_verification_role", "catalog_order_role", "ivr_role",
-                "entitlement_metering_role"));
+                "entitlement_metering_role", "activation_consent_role"));
         usageRolesBySchema.put("platform", List.of(
                 "platform_reliability_owner", "platform_reliability_role",
                 "platform_dispatcher_role", "customer_iam_role", "organization_access_role",
@@ -13175,7 +14688,12 @@ class PostgresContainerIT {
         assertThat(hasSchema(connection, "ivr_role", "catalog_order", "USAGE"))
                 .as("ivr_role catalog_order USAGE is not granted in V005 (§10.12)").isFalse();
         assertThat(hasSchema(connection, "activation_consent_role", "subject_number", "USAGE"))
-                .as("activation_consent_role S1 USAGE is deferred to V007").isFalse();
+                .as("activation_consent_role S1 subject USAGE is granted by V007").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "customer_iam", "USAGE"))
+                .as("activation_consent_role S1 customer_iam USAGE is granted by V007").isTrue();
+        assertThat(hasSchema(connection, "activation_consent_role", "organization_access", "USAGE"))
+                .as("activation_consent_role S1 organization_access USAGE is granted by V007")
+                .isTrue();
         assertThat(hasSchema(connection, "entitlement_metering_role", "subject_number", "USAGE"))
                 .as("entitlement_metering_role subject USAGE is granted by V006").isTrue();
     }
@@ -13270,6 +14788,19 @@ class PostgresContainerIT {
         meteringS1UniverseCrossSelect.put("subject_number.business_subject",
                 List.of("id", "owner_account_id", "owner_organization_id", "revision"));
 
+        // V007 evolution: activation_consent_role holds exactly the four foreign column-read
+        // sets from plan §4.7 on the S1 universe tables; never a spot check.
+        Map<String, List<String>> activationConsentS1UniverseCrossSelect =
+                new java.util.LinkedHashMap<>();
+        activationConsentS1UniverseCrossSelect.put("customer_iam.customer_account",
+                List.of("id", "status"));
+        activationConsentS1UniverseCrossSelect.put("organization_access.organization",
+                List.of("id", "status"));
+        activationConsentS1UniverseCrossSelect.put("organization_access.organization_membership",
+                List.of("organization_id", "account_id", "role", "status"));
+        activationConsentS1UniverseCrossSelect.put("subject_number.business_subject",
+                List.of("id", "owner_account_id", "owner_organization_id", "revision"));
+
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_version")).hasSize(12);
         assertThat(runtimeUpdateColumns.get("catalog_order.catalog_offer")).hasSize(3);
         assertThat(runtimeUpdateColumns.get("catalog_order.customer_order")).hasSize(4);
@@ -13361,6 +14892,8 @@ class PostgresContainerIT {
             List<String> ivrGrantedColumns = ivrCrossSelect.getOrDefault(table, List.of());
             List<String> meteringGrantedColumns =
                     meteringS1UniverseCrossSelect.getOrDefault(table, List.of());
+            List<String> activationConsentGrantedColumns =
+                    activationConsentS1UniverseCrossSelect.getOrDefault(table, List.of());
             for (String role : V004_ROLES) {
                 for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE",
                         "TRUNCATE", "REFERENCES", "TRIGGER")) {
@@ -13379,7 +14912,10 @@ class PostgresContainerIT {
                                         && ivrGrantedColumns.contains(column))
                                 || (role.equals("entitlement_metering_role")
                                         && privilege.equals("SELECT")
-                                        && meteringGrantedColumns.contains(column));
+                                        && meteringGrantedColumns.contains(column))
+                                || (role.equals("activation_consent_role")
+                                        && privilege.equals("SELECT")
+                                        && activationConsentGrantedColumns.contains(column));
                         assertThat(hasColumn(connection, role, table, column, privilege))
                                 .as("%s %s %s.%s", role, privilege, table, column)
                                 .isEqualTo(expectGrant);
@@ -13387,8 +14923,8 @@ class PostgresContainerIT {
                 }
             }
         }
-        // activation_consent/entitlement_metering tables do not exist at V004; the schema
-        // USAGE matrix asserts the catalog_order_role wave boundary for those schemas.
+        // activation_consent/entitlement_metering owned tables are absent from this
+        // S1-universe loop; V007 foreign reads above are the exact plan §4.7 sets.
     }
 
     private static void assertV004PublicAclIsZero(Connection connection) throws SQLException {
@@ -14576,8 +16112,8 @@ class PostgresContainerIT {
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                 + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
-                        .as("activation_consent tables remain absent")
-                        .isZero();
+                        .as("exactly three activation_consent tables after V007")
+                        .isEqualTo(3);
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                 + "WHERE n.nspname = 'ivr' AND c.relkind = 'r'"))
@@ -15349,6 +16885,29 @@ class PostgresContainerIT {
                 id, catalogVersionId, entitlementType, quantity, validityDays, grantIntervalMonths);
     }
 
+    /**
+     * Bounded fixture helper: one valid PURCHASE/WEB/ACCOUNT consent row for a method-local
+     * subject/account parent. Runs as migration identity (or the caller-chosen activation role);
+     * never as catalog_order_role. Snapshot is an object; both hashes are lowercase 64-hex;
+     * (PURCHASE, event_id) is unique per fixture call.
+     */
+    private static UUID insertPurchaseConsent(
+            Connection connection, UUID consentId, UUID subjectId, UUID accountId)
+            throws SQLException {
+        assertThat(executeUpdate(connection,
+                "INSERT INTO activation_consent.consent_record "
+                        + "(id, subject_id, purpose, channel, event_domain, policy_code, "
+                        + "policy_version, prompt_version, action, source_type, source_ref, "
+                        + "account_id, snapshot, snapshot_sha256, event_id, request_fingerprint) "
+                        + "VALUES (?, ?, 'PURCHASE', 'WEB', 'PURCHASE', 'pa7-s1-policy', "
+                        + "'v1', 'v1', 'ACCEPT', 'ACCOUNT', ?, ?, "
+                        + "'{\"fixture\":\"pa7-s1\"}', ?, ?, ?)",
+                consentId, subjectId, "s1-consent-ref-" + UUID.randomUUID(), accountId,
+                randomSha256(), "s1-consent-evt-" + UUID.randomUUID(), randomSha256()))
+                .isEqualTo(1);
+        return consentId;
+    }
+
     private static int insertCustomerOrder(
             Connection connection,
             UUID id,
@@ -15747,6 +17306,9 @@ class PostgresContainerIT {
         UUID closedPaymentOrderId = UUID.randomUUID();
         UUID verifiedEventId = UUID.randomUUID();
         UUID unverifiedEventId = UUID.randomUUID();
+        UUID orderIdConsentId = UUID.randomUUID();
+        UUID closedOrderConsentId = UUID.randomUUID();
+        UUID closedPaymentOrderConsentId = UUID.randomUUID();
         String orderNo = "S2ORD" + UUID.randomUUID().toString().replace("-", "");
         String idempotencyKey = "s2-idem-" + UUID.randomUUID();
         String fingerprint = randomSha256();
@@ -15777,6 +17339,10 @@ class PostgresContainerIT {
                         .isEqualTo(1);
                 switchLocalRole(connection, "subject_number_role");
                 assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                insertPurchaseConsent(connection, orderIdConsentId, subjectId, accountId);
+                insertPurchaseConsent(connection, closedOrderConsentId, subjectId, accountId);
+                insertPurchaseConsent(connection, closedPaymentOrderConsentId, subjectId, accountId);
                 switchLocalRole(connection, "catalog_order_role");
                 assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
                         .isEqualTo(1);
@@ -15787,9 +17353,9 @@ class PostgresContainerIT {
                 assertThat(insertCatalogOffer(connection, offerId, versionId, "WEB", "s2-order-token"))
                         .isEqualTo(1);
 
-                // Valid order insert with a random purchase_consent_id (no parent) succeeds.
+                // Valid order insert with a real method-local consent parent succeeds.
                 assertThat(insertCustomerOrder(connection, orderId, orderNo, accountId,
-                        organizationId, subjectId, versionId, offerId, UUID.randomUUID(), 9900L,
+                        organizationId, subjectId, versionId, offerId, orderIdConsentId, 9900L,
                         "CNY", "UNPAID", "{\"line\":1}", orderSnapshotSha, "s2-order-token",
                         idempotencyKey, fingerprint, createdAt, null, null, 1)).isEqualTo(1);
 
@@ -15850,7 +17416,7 @@ class PostgresContainerIT {
                         + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
                 assertThat(insertCustomerOrder(connection, closedOrderId, closedOrderNo,
                         accountId, organizationId, subjectId, versionId, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":2}",
+                        closedOrderConsentId, 9900L, "CNY", "UNPAID", "{\"line\":2}",
                         orderSnapshotSha, "s2-order-token",
                         "s2-idem-cls-" + UUID.randomUUID(), randomSha256(), createdAt,
                         null, null, 1)).isEqualTo(1);
@@ -15909,7 +17475,7 @@ class PostgresContainerIT {
                         "S2ORDPCL" + UUID.randomUUID().toString().replace("-", "")
                                 .substring(0, 8),
                         accountId, organizationId, subjectId, versionId, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":3}",
+                        closedPaymentOrderConsentId, 9900L, "CNY", "UNPAID", "{\"line\":3}",
                         orderSnapshotSha, "s2-order-token",
                         "s2-idem-pcls-" + UUID.randomUUID(), randomSha256(), createdAt,
                         null, null, 1)).isEqualTo(1);
@@ -16272,7 +17838,25 @@ class PostgresContainerIT {
                 + "VALUES (?, ?, ?, ?, ?, false, ?, ?, ?, ?, ?)";
     }
 
-    private static void assertV004ForeignKeyAndAbsentConsentFkBackstops() throws Exception {
+    private static void assertV004ForeignKeyAndStagedConsentFkBackstops() throws Exception {
+        // Staged V004 evidence: the @BeforeAll orphan-consent probe succeeded and rolled back.
+        assertThat(stagedV004OrphanConsentEvidence).as("immutable V004 orphan-consent evidence")
+                .isNotNull();
+        assertThat(stagedV004OrphanConsentEvidence.insertSucceeded())
+                .as("V004 orphan purchase_consent_id insert succeeded before the late FK")
+                .isTrue();
+        assertThat(stagedV004OrphanConsentEvidence.rollbackVerified())
+                .as("V004 orphan-consent probe rows were absent after rollback")
+                .isTrue();
+        assertThat(stagedV004OrderConsentFkAbsent)
+                .as("staged V004 prefix has no fk_customer_order_consent").isTrue();
+        assertThat(stagedV004ActivationConsentTablesAbsent)
+                .as("staged V004 prefix has no activation_consent tables").isTrue();
+        assertThat(stagedV006ActivationConsentTablesAbsent)
+                .as("staged V006 prefix still has no activation_consent tables").isTrue();
+        assertThat(stagedV006NoV007Objects)
+                .as("staged V006 prefix has no V007 functions/triggers/order-consent FK").isTrue();
+
         UUID employeeId = UUID.randomUUID();
         UUID accountId = UUID.randomUUID();
         UUID organizationId = UUID.randomUUID();
@@ -16286,9 +17870,19 @@ class PostgresContainerIT {
         UUID benefitId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         UUID paymentOrderId = UUID.randomUUID();
+        UUID realConsentId = UUID.randomUUID();
         OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
 
         try (Connection connection = openConnection()) {
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM catalog_order.customer_order WHERE id = ?",
+                    stagedV004OrphanConsentEvidence.orderId()))
+                    .as("staged V004 probe order left no committed row").isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                    stagedV004OrphanConsentEvidence.orphanPurchaseConsentId()))
+                    .as("staged V004 orphan consent id left no committed consent row").isZero();
+
             connection.setAutoCommit(false);
             try {
                 assertThat(insertEmployee(connection, employeeId, randomSha256(), "s2***fk",
@@ -16302,6 +17896,8 @@ class PostgresContainerIT {
                         .isEqualTo(1);
                 switchLocalRole(connection, "subject_number_role");
                 assertThat(insertSubject(connection, subjectId, "IVR")).isEqualTo(1);
+                resetToMigrationIdentity(connection);
+                insertPurchaseConsent(connection, realConsentId, subjectId, accountId);
                 switchLocalRole(connection, "catalog_order_role");
                 assertThat(insertCatalogProduct(connection, productId, randomProductCode()))
                         .isEqualTo(1);
@@ -16324,7 +17920,7 @@ class PostgresContainerIT {
                 assertThat(insertCustomerOrder(connection, orderId,
                         "S2ORDFK" + UUID.randomUUID().toString().replace("-", ""),
                         accountId, organizationId, subjectId, versionForOrder, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"line\":1}",
+                        realConsentId, 9900L, "CNY", "UNPAID", "{\"line\":1}",
                         randomSha256(), "s2-fk-token", "s2-idem-fk-" + UUID.randomUUID(),
                         randomSha256(), createdAt, null, null, 1)).isEqualTo(1);
                 assertThat(insertPaymentOrder(connection, paymentOrderId, orderId,
@@ -16366,36 +17962,44 @@ class PostgresContainerIT {
                         UUID.randomUUID(),
                         "S2ORDPACC" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
                         UUID.randomUUID(), organizationId, subjectId, versionForOrder, offerId,
-                        UUID.randomUUID(), randomSha256(),
+                        realConsentId, randomSha256(),
                         "s2-idem-pacc-" + UUID.randomUUID(), randomSha256());
                 expectSqlFailure(connection, "23503", "fk_customer_order_organization",
                         customerOrderMissingParentSql("fk_customer_order_organization"),
                         UUID.randomUUID(),
                         "S2ORDPORG" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
                         accountId, UUID.randomUUID(), subjectId, versionForOrder, offerId,
-                        UUID.randomUUID(), randomSha256(),
+                        realConsentId, randomSha256(),
                         "s2-idem-porg-" + UUID.randomUUID(), randomSha256());
                 expectSqlFailure(connection, "23503", "fk_customer_order_subject",
                         customerOrderMissingParentSql("fk_customer_order_subject"),
                         UUID.randomUUID(),
                         "S2ORDPSUB" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
                         accountId, organizationId, UUID.randomUUID(), versionForOrder, offerId,
-                        UUID.randomUUID(), randomSha256(),
+                        realConsentId, randomSha256(),
                         "s2-idem-psub-" + UUID.randomUUID(), randomSha256());
                 expectSqlFailure(connection, "23503", "fk_customer_order_version",
                         customerOrderMissingParentSql("fk_customer_order_version"),
                         UUID.randomUUID(),
                         "S2ORDPVER" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
                         accountId, organizationId, subjectId, UUID.randomUUID(), offerId,
-                        UUID.randomUUID(), randomSha256(),
+                        realConsentId, randomSha256(),
                         "s2-idem-pver-" + UUID.randomUUID(), randomSha256());
                 expectSqlFailure(connection, "23503", "fk_customer_order_offer",
                         customerOrderMissingParentSql("fk_customer_order_offer"),
                         UUID.randomUUID(),
                         "S2ORDPOFF" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
                         accountId, organizationId, subjectId, versionForOrder, UUID.randomUUID(),
-                        UUID.randomUUID(), randomSha256(),
+                        realConsentId, randomSha256(),
                         "s2-idem-poff-" + UUID.randomUUID(), randomSha256());
+                // Late order-consent FK: all other parents valid, only consent missing.
+                expectSqlFailure(connection, "23503", "fk_customer_order_consent",
+                        customerOrderMissingParentSql("fk_customer_order_consent"),
+                        UUID.randomUUID(),
+                        "S2ORDPCON" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                        accountId, organizationId, subjectId, versionForOrder, offerId,
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-pcon-" + UUID.randomUUID(), randomSha256());
                 expectSqlFailure(connection, "23503", "fk_payment_order_order",
                         "INSERT INTO catalog_order.payment_order "
                                 + "(id, order_id, provider, merchant_order_no, status, "
@@ -16457,7 +18061,7 @@ class PostgresContainerIT {
                                 + "AND c.conname = 'fk_catalog_version_product'"))
                         .isEqualTo("rrs|false|false|true");
 
-                // Exact 11-row FK map; consent FK absent; purchase_consent_id properties.
+                // Exact 11-row original V004 FK map; late consent FK asserted separately.
                 assertThat(V004_FK_DEFS).as("expected V004 FK map size").hasSize(11);
                 for (String row : V004_FK_DEFS) {
                     String[] expected = row.split("\\|", -1);
@@ -16478,13 +18082,27 @@ class PostgresContainerIT {
                             .as("FK properties %s", expected[0])
                             .containsExactly("rrs|false|false|true");
                 }
-                assertThat(queryLong(connection,
-                        "SELECT count(*) FROM pg_constraint c "
+                // Final late FK: exact definition, immediate, non-deferrable, validated.
+                assertThat(queryString(connection,
+                        "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c "
                                 + "JOIN pg_class r ON r.oid = c.conrelid "
                                 + "JOIN pg_namespace n ON n.oid = r.relnamespace "
                                 + "WHERE n.nspname = 'catalog_order' "
                                 + "AND c.conname = 'fk_customer_order_consent'"))
-                        .as("fk_customer_order_consent is deferred to V007").isZero();
+                        .as("late fk_customer_order_consent definition")
+                        .isEqualTo("FOREIGN KEY (purchase_consent_id) REFERENCES "
+                                + "activation_consent.consent_record(id) "
+                                + "ON UPDATE RESTRICT ON DELETE RESTRICT");
+                assertThat(queryStrings(connection,
+                        "SELECT c.confupdtype::text || c.confdeltype::text || "
+                                + "c.confmatchtype::text || '|' || c.condeferrable::text || '|' "
+                                + "|| c.condeferred::text || '|' || c.convalidated::text "
+                                + "FROM pg_constraint c JOIN pg_class r ON r.oid = c.conrelid "
+                                + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                                + "WHERE n.nspname = 'catalog_order' "
+                                + "AND c.conname = 'fk_customer_order_consent'"))
+                        .as("late fk_customer_order_consent properties")
+                        .containsExactly("rrs|false|false|true");
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM information_schema.columns "
                                 + "WHERE table_schema = 'catalog_order' "
@@ -16501,11 +18119,30 @@ class PostgresContainerIT {
                                 + "AND k.table_name = 'customer_order' "
                                 + "AND k.column_name = 'purchase_consent_id' "
                                 + "AND c.constraint_type = 'FOREIGN KEY'"))
-                        .as("purchase_consent_id has no FK at V004").isZero();
-                assertThat(queryLong(connection,
-                        "SELECT count(*) FROM information_schema.tables "
-                                + "WHERE table_schema = 'activation_consent'"))
-                        .as("activation_consent has zero tables at V004").isZero();
+                        .as("purchase_consent_id has the late FK after V007").isEqualTo(1);
+
+                // Fully valid order with a random non-null orphan consent fails the late FK.
+                expectSqlFailure(connection, "23503", "fk_customer_order_consent",
+                        "INSERT INTO catalog_order.customer_order "
+                                + "(id, order_no, account_id, owner_organization_id, subject_id, "
+                                + "channel, catalog_version_id, catalog_offer_id, "
+                                + "purchase_consent_id, amount_cents, currency, payment_status, "
+                                + "snapshot, snapshot_sha256, version_token, idempotency_key, "
+                                + "request_fingerprint, revision) "
+                                + "VALUES (?, ?, ?, ?, ?, 'WEB', ?, ?, ?, 9900, 'CNY', 'UNPAID', "
+                                + "'{\"line\":1}', ?, 's2-fk', ?, ?, 1)",
+                        UUID.randomUUID(),
+                        "S2ORDORPH" + UUID.randomUUID().toString().replace("-", "")
+                                .substring(0, 8),
+                        accountId, organizationId, subjectId, versionForOrder, offerId,
+                        UUID.randomUUID(), randomSha256(),
+                        "s2-idem-orphan-" + UUID.randomUUID(), randomSha256());
+
+                // Parent-delete RESTRICT: consent_record is append-only (P0001 shadow),
+                // while subject/account deletes still hit their order FKs.
+                expectSqlFailure(connection, "P0001", "CONSENT_TRANSITION_APPEND_ONLY",
+                        "DELETE FROM activation_consent.consent_record WHERE id = ?",
+                        realConsentId);
 
                 // All fixtures rolled back.
                 connection.rollback();
@@ -16529,6 +18166,9 @@ class PostgresContainerIT {
             assertThat(queryLong(connection,
                     "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
                     accountId)).isZero();
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                    realConsentId)).isZero();
         }
     }
 
@@ -16774,6 +18414,7 @@ class PostgresContainerIT {
         UUID offerId = UUID.randomUUID();
         UUID winnerOrder = UUID.randomUUID();
         UUID loserOrder = UUID.randomUUID();
+        UUID orderRaceConsentId = UUID.randomUUID();
         String idempotencyKey = "s2-idem-race-" + UUID.randomUUID();
         String winnerApplication = "pa4-s2-order-idem-winner";
         String loserApplication = "pa4-s2-order-idem-loser";
@@ -16791,6 +18432,8 @@ class PostgresContainerIT {
                         .isEqualTo(1);
                 assertThat(insertCatalogOffer(setup, offerId, versionId, "WEB", "s2-race-token"))
                         .isEqualTo(1);
+                resetToMigrationIdentity(setup);
+                insertPurchaseConsent(setup, orderRaceConsentId, subjectId, accountId);
                 setup.commit();
             } catch (SQLException | RuntimeException exception) {
                 setup.rollback();
@@ -16807,7 +18450,7 @@ class PostgresContainerIT {
             assertThat(insertCustomerOrder(winner, winnerOrder,
                     "S2ORDW" + UUID.randomUUID().toString().replace("-", ""),
                     accountId, organizationId, subjectId, versionId, offerId,
-                    UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                    orderRaceConsentId, 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
                     "s2-race-token", idempotencyKey, randomSha256(), createdAt, null, null, 1))
                     .isEqualTo(1);
 
@@ -16817,7 +18460,7 @@ class PostgresContainerIT {
                     loserOrder,
                     "S2ORDL" + UUID.randomUUID().toString().replace("-", ""),
                     accountId, organizationId, subjectId, versionId, offerId,
-                    UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                    orderRaceConsentId, 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
                     "s2-race-token", idempotencyKey, randomSha256(), createdAt, null, null, 1));
             awaitBlockedBackend(loserApplication);
             winner.commit();
@@ -16857,6 +18500,7 @@ class PostgresContainerIT {
         UUID productId = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
         UUID offerId = UUID.randomUUID();
+        UUID payRaceConsentId = UUID.randomUUID();
         OffsetDateTime createdAt = OffsetDateTime.now(ZoneOffset.UTC);
 
         try (Connection setup = openConnection()) {
@@ -16871,6 +18515,8 @@ class PostgresContainerIT {
                         .isEqualTo(1);
                 assertThat(insertCatalogOffer(setup, offerId, versionId, "WEB", "s2-pay-token"))
                         .isEqualTo(1);
+                resetToMigrationIdentity(setup);
+                insertPurchaseConsent(setup, payRaceConsentId, subjectId, accountId);
                 setup.commit();
             } catch (SQLException | RuntimeException exception) {
                 setup.rollback();
@@ -16891,7 +18537,7 @@ class PostgresContainerIT {
                 assertThat(insertCustomerOrder(setup, orderForIdRace,
                         "S2ORDPID" + UUID.randomUUID().toString().replace("-", ""),
                         accountId, organizationId, subjectId, versionId, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        payRaceConsentId, 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
                         "s2-pay-token", "s2-idem-pid-" + UUID.randomUUID(), randomSha256(),
                         createdAt, null, null, 1)).isEqualTo(1);
                 setup.commit();
@@ -16947,13 +18593,13 @@ class PostgresContainerIT {
                 assertThat(insertCustomerOrder(setup, orderTxnA,
                         "S2ORDTXA" + UUID.randomUUID().toString().replace("-", ""),
                         accountId, organizationId, subjectId, versionId, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        payRaceConsentId, 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
                         "s2-pay-token", "s2-idem-txa-" + UUID.randomUUID(), randomSha256(),
                         createdAt, null, null, 1)).isEqualTo(1);
                 assertThat(insertCustomerOrder(setup, orderTxnB,
                         "S2ORDTXB" + UUID.randomUUID().toString().replace("-", ""),
                         accountId, organizationId, subjectId, versionId, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        payRaceConsentId, 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
                         "s2-pay-token", "s2-idem-txb-" + UUID.randomUUID(), randomSha256(),
                         createdAt, null, null, 1)).isEqualTo(1);
                 setup.commit();
@@ -17026,6 +18672,7 @@ class PostgresContainerIT {
         UUID paymentOrderId = UUID.randomUUID();
         UUID winnerEvent = UUID.randomUUID();
         UUID loserEvent = UUID.randomUUID();
+        UUID eventRaceConsentId = UUID.randomUUID();
         String providerEventId = "evt-s2-race-" + UUID.randomUUID();
         String winnerApplication = "pa4-s2-event-identity-winner";
         String loserApplication = "pa4-s2-event-identity-loser";
@@ -17043,10 +18690,13 @@ class PostgresContainerIT {
                         .isEqualTo(1);
                 assertThat(insertCatalogOffer(setup, offerId, versionId, "WEB", "s2-evt-token"))
                         .isEqualTo(1);
+                resetToMigrationIdentity(setup);
+                insertPurchaseConsent(setup, eventRaceConsentId, subjectId, accountId);
+                switchLocalRole(setup, "catalog_order_role");
                 assertThat(insertCustomerOrder(setup, orderId,
                         "S2ORDEVT" + UUID.randomUUID().toString().replace("-", ""),
                         accountId, organizationId, subjectId, versionId, offerId,
-                        UUID.randomUUID(), 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
+                        eventRaceConsentId, 9900L, "CNY", "UNPAID", "{\"race\":1}", randomSha256(),
                         "s2-evt-token", "s2-idem-evt-" + UUID.randomUUID(), randomSha256(),
                         createdAt, null, null, 1)).isEqualTo(1);
                 assertThat(insertPaymentOrder(setup, paymentOrderId, orderId,
@@ -17118,6 +18768,7 @@ class PostgresContainerIT {
         List<UUID> orderIds = new ArrayList<>();
         List<UUID> paymentOrderIds = new ArrayList<>();
         List<UUID> paymentEventIds = new ArrayList<>();
+        List<UUID> consentIds = new ArrayList<>();
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
@@ -17144,12 +18795,19 @@ class PostgresContainerIT {
                                 + "(SELECT id FROM catalog_order.payment_order WHERE order_id IN "
                                 + "(SELECT id FROM catalog_order.customer_order WHERE account_id = ?))",
                         accountId);
+                collectUuids(connection, consentIds,
+                        "SELECT id FROM activation_consent.consent_record "
+                                + "WHERE account_id = ? OR subject_id = ?",
+                        accountId, subjectId);
                 execute(connection,
                         "ALTER TABLE catalog_order.payment_event "
                                 + "DISABLE TRIGGER trg_payment_event_immutable");
                 execute(connection,
                         "ALTER TABLE catalog_order.catalog_product "
                                 + "DISABLE TRIGGER trg_catalog_product_immutable");
+                execute(connection,
+                        "ALTER TABLE activation_consent.consent_record "
+                                + "DISABLE TRIGGER trg_consent_record_immutable");
                 for (UUID id : paymentEventIds) {
                     executeUpdate(connection,
                             "DELETE FROM catalog_order.payment_event WHERE id = ?", id);
@@ -17161,6 +18819,10 @@ class PostgresContainerIT {
                 for (UUID id : orderIds) {
                     executeUpdate(connection,
                             "DELETE FROM catalog_order.customer_order WHERE id = ?", id);
+                }
+                for (UUID id : consentIds) {
+                    executeUpdate(connection,
+                            "DELETE FROM activation_consent.consent_record WHERE id = ?", id);
                 }
                 for (UUID id : offerIds) {
                     executeUpdate(connection,
@@ -17189,9 +18851,13 @@ class PostgresContainerIT {
                 execute(connection,
                         "ALTER TABLE catalog_order.catalog_product "
                                 + "ENABLE TRIGGER trg_catalog_product_immutable");
+                execute(connection,
+                        "ALTER TABLE activation_consent.consent_record "
+                                + "ENABLE TRIGGER trg_consent_record_immutable");
                 for (String[] qualified : new String[][] {
                         {"catalog_order", "payment_event", "trg_payment_event_immutable"},
-                        {"catalog_order", "catalog_product", "trg_catalog_product_immutable"}}) {
+                        {"catalog_order", "catalog_product", "trg_catalog_product_immutable"},
+                        {"activation_consent", "consent_record", "trg_consent_record_immutable"}}) {
                     assertThat(queryString(connection,
                             "SELECT tgenabled FROM pg_trigger t "
                                     + "JOIN pg_class c ON c.oid = t.tgrelid "
@@ -17243,6 +18909,11 @@ class PostgresContainerIT {
                 assertThat(queryLong(verify,
                         "SELECT count(*) FROM catalog_order.payment_event WHERE id = ?", id))
                         .as("method-local payment_event %s deleted", id).isZero();
+            }
+            for (UUID id : consentIds) {
+                assertThat(queryLong(verify,
+                        "SELECT count(*) FROM activation_consent.consent_record WHERE id = ?",
+                        id)).as("method-local consent_record %s deleted", id).isZero();
             }
             assertThat(queryLong(verify,
                     "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?",
@@ -19191,7 +20862,8 @@ class PostgresContainerIT {
                                 + "entitlement_metering.usage_reservation(id) ON UPDATE RESTRICT "
                                 + "ON DELETE RESTRICT|rrs|false|false|true");
 
-                // Seven entitlement_metering tables and zero activation_consent tables.
+                // Seven entitlement_metering tables and exactly three final V007
+                // activation_consent tables (staged absence is proved in @BeforeAll).
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM pg_class c "
                                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -19201,7 +20873,7 @@ class PostgresContainerIT {
                         "SELECT count(*) FROM pg_class c "
                                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
                                 + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r'"))
-                        .as("activation_consent tables remain absent").isZero();
+                        .as("exactly three activation_consent tables after V007").isEqualTo(3);
 
                 // Representative unambiguous parent-delete RESTRICT probes. Each fixture
                 // attaches exactly one child FK so the reported constraint is exact.
