@@ -75,7 +75,7 @@ jobs:
               sys.exit(f"expected one container IT report, got {len(failsafe)}")
           suite = failsafe[0]
           expected = {
-              "v001ThroughV006MigrateCleanPostgres16WithoutSkipping",
+              "v001ThroughV007MigrateCleanPostgres16WithoutSkipping",
               "v001ThroughV003InventoryMatchesTheFrozenContract",
               "brokenMigrationFailsVisibly",
               "idempotencyNewReplayConflictAndFinalizeOnce",
@@ -104,7 +104,7 @@ jobs:
               "v004OwnerPublicRuntimeAndCrossModuleAclsAreExact",
               "v004CatalogVersionLifecycleAndGuardBackstops",
               "v004OrderPaymentLifecycleAndAppendOnlyBackstops",
-              "v004ForeignKeyAndAbsentConsentFkBackstops",
+              "v004ForeignKeyAndStagedConsentFkBackstops",
               "concurrentCatalogPublicationAndCommerceIdentityHasOneWinner",
               "v005IvrTaskSessionCallInventoryAndGuardShapesAreExact",
               "v005OwnerPublicRuntimeAndCrossModuleAclsAreExact",
@@ -120,16 +120,22 @@ jobs:
               "v006ReservationUsageForeignKeyAndLateFkBackstops",
               "v006NestedOutboxAtomicityAndReplayRollbackEvidence",
               "concurrentV006FirstTrialAndReservationIdentityHasOneWinner",
+              "v007ActivationConsentInventoryAndGuardShapesAreExact",
+              "v007OwnerPublicRuntimeAndCrossModuleAclsAreExact",
+              "v007ForeignKeyAndLateOrderConsentFkBackstops",
+              "v007ConsentShapeDefaultsAppendOnlyAndRollbackBackstops",
+              "v007ActivationHeadTransitionRevisionMatrixAndImmutabilityBackstops",
+              "concurrentV007ActivationAndTransitionIdentityHasOneWinner",
           }
           if int(suite.get("tests", "0")) != len(expected):
-              sys.exit("container IT did not report the V006 S2 test count (45)")
+              sys.exit("container IT did not report the PA7 V007 S2 test count (51)")
           if int(suite.get("skipped", "0")) != 0:
               sys.exit("container IT was skipped")
           if int(suite.get("failures", "0")) != 0 or int(suite.get("errors", "0")) != 0:
               sys.exit("container IT failed")
           cases = {case.get("name") for case in suite.findall("testcase")}
           if cases != expected:
-              sys.exit(f"container IT methods differ from V006 S2: {sorted(cases)}")
+              sys.exit(f"container IT methods differ from PA7 V007 S2: {sorted(cases)}")
           for surefire in suites("target/surefire-reports/TEST-*.xml"):
               if int(surefire.get("skipped", "0")) != 0:
                   sys.exit("a unit/module test was skipped")
