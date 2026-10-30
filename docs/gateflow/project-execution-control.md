@@ -12,6 +12,15 @@
 
 ## Active resume checkpoint — 2026-10-30
 
+### Latest authoritative state — PA8 final closeout pass, 2026-10-31
+
+- `PA8-v008-evidence-foundation` is completed at `final closeout pass`; earlier in-flight, push-blocked and historical gate records below are superseded. No live task needs resuming.
+- Draft PR #16: `https://github.com/zh94695424/one-call/pull/16`, base `main`, head `codex/pa8-v008-evidence-foundation`; fresh GitHub metadata confirms OPEN/Draft. Accepted PR-review checkpoint `2d3c10eaf5cbdc2e76c13decfe59a631c016d969` and follow-up bookkeeping `de3fcda6f739a76d0f10f3710546a3104e294f03` were pushed. Remote branch, PR ref and GitHub headRefOid all independently match `de3fcda6f739a76d0f10f3710546a3104e294f03`; network blocker resolved and `draft-PR-pass` accepted.
+- Independent A/B PR reviews both pass-with-risks; final full tracked-blob and untracked-scope audit confirms both frozen workspaces unchanged except the assigned artifact, imported bytes identical, CR-aware diff clean. All blocking findings closed; common revision-delta witness gap deferred to Backend QA/post-PA8 test-hardening. Stale PR-existence observations resolved by direct metadata/ref evidence. Full risk reconciliation and owner/destination mapping: `docs/gateflow/pa8-v008-evidence-foundation-final-closeout.md`.
+- Validation remains focused3 then full57 Failsafe +10 Surefire PASS, zero failures/errors/skips, exact source=CI=XML/source provenance. No runtime rerun is needed for controller-only closeout documentation. Remote CI success and production readiness are not claimed. No associated issue; issue comments/closure not applicable.
+- Final closeout summary: `docs/gateflow/pa8-v008-evidence-foundation-final-closeout.md`. Deliver only that summary and this controller update in a closeout bookkeeping commit; exclude private `.pa8-*`, `.codex` and generated files. No merge/approve/ready/reviewer request/external comment.
+- Next entry point: after the user merges PR #16, update target `main`, then fresh Phaseflow goal confirmation for PA9 V009 sharing persistence foundation. No new work-unit implementation is authorized by this closeout. Pause automation `pa8` now that PA8 reached final closeout pass.
+
 - PR #15 is verified MERGED at `2026-10-30T06:39:52Z`, merge commit `02dfa319bc3b4a1aa29a4252b9269c67aae688aa`. Earlier Open/Draft PA7 observations below are historical.
 - Fetched `origin/main`; created a fresh managed worktree and branch `codex/pa8-v008-evidence-foundation` at that exact merged commit. Existing source worktrees and their local changes remain preserved.
 - Active work unit: `PA8-v008-evidence-foundation`, architecture-sensitive migration/persistence feature. User confirmed the bounded goal on 2026-10-30 and then explicitly reassigned this planning task to MiMo-V2.6-Pro (`claude-agent-run --provider mimo26`). Current gate and next entry point: `plan`; no implementation dispatched. The PA7 current-work-unit section below is retained as completed historical evidence.
