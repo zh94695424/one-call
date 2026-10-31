@@ -901,6 +901,8 @@ class PostgresContainerIT {
     private static boolean stagedV006SubjectUsageAbsent;
     private static boolean stagedV006CustomerIamUsageAbsent;
     private static boolean stagedV006OrganizationAccessUsageAbsent;
+    private static MigrateResult stagedV008Migration;
+    private static boolean stagedV008FencesVerified;
     private static MigrateResult stagedV007Migration;
     private static boolean stagedV007EvidenceSchemaAbsent;
     private static boolean stagedV007EvidenceRolesAbsent;
@@ -1089,6 +1091,25 @@ class PostgresContainerIT {
                 .dataSource(url, DB_USER, PASSWORD)
                 .locations("classpath:db/migration")
                 .load();
+        stagedV008Migration = Flyway.configure()
+                .dataSource(url, DB_USER, PASSWORD)
+                .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("008"))
+                .load().migrate();
+        try (Connection connection = openConnection()) {
+            assertNoV008PlusObjects(connection);
+            assertNoV009PlusObjects(connection);
+            assertV008TablesColumnsChecksIndexesFks(connection);
+            assertV008FunctionsAndTriggersExact(connection);
+            assertV008PublicAclIsZero(connection);
+            assertV008OwnedTableGrants(connection);
+            assertThat(queryStrings(connection,
+                    "SELECT rolname FROM pg_roles WHERE rolname NOT LIKE 'pg%' "
+                            + "AND has_schema_privilege(oid, 'evidence', 'USAGE') "
+                            + "AND rolname <> '" + DB_USER + "' ORDER BY 1"))
+                    .containsExactly("evidence_owner", "evidence_role");
+            stagedV008FencesVerified = true;
+        }
         initialMigration = flyway.migrate();
     }
 
@@ -1202,11 +1223,13 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThroughV008MigrateCleanPostgres16WithoutSkipping() throws Exception {
+    void v001ThroughV009MigrateCleanPostgres16WithoutSkipping() throws Exception {
         assertThat(stagedV004Migration.migrationsExecuted).isEqualTo(4);
         assertThat(stagedV005Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV006Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV007Migration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV008Migration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV008FencesVerified).isTrue();
         assertThat(initialMigration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV004OrphanConsentEvidence)
                 .as("assigned-once V004 orphan-consent probe evidence is present").isNotNull();
@@ -1329,6 +1352,13 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V008__evidence_media.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("009");
+            assertThat(resultSet.getString("description")).isEqualTo("sharing");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script")).isEqualTo("V009__sharing.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -2456,7 +2486,7 @@ class PostgresContainerIT {
             assertV006CheckPredicateInventory(connection);
             assertV006FunctionsAndTriggersExact(connection);
             assertV006NoIdDefaultsOrSequences(connection);
-            assertNoV008PlusObjects(connection);
+            assertV009LiveFence(connection);
             assertV008StagedPrefixBooleansStillTrue();
         }
     }
@@ -2500,7 +2530,7 @@ class PostgresContainerIT {
     /**
      * PA7 V007 S1: exact activation_consent inventory (3/43/31/3 PK/5 unique/12 index/2
      * function/3 trigger/6 default), owners, function flags/search paths, trigger shapes
-     * and no V008+ object.
+     * and the exact final V009 live fence with no V010 or extra object.
      */
     @Test
     void v007ActivationConsentInventoryAndGuardShapesAreExact() throws Exception {
@@ -2509,7 +2539,7 @@ class PostgresContainerIT {
             assertV007CheckPredicateInventory(connection);
             assertV007FunctionsAndTriggersExact(connection);
             assertV007NoIdDefaultsOrSequences(connection);
-            assertNoV008PlusObjects(connection);
+            assertV009LiveFence(connection);
             assertV008StagedPrefixBooleansStillTrue();
         }
     }
@@ -2583,7 +2613,8 @@ class PostgresContainerIT {
     /**
      * PA8 V008 S1: exact evidence inventory (5 tables/56 columns/39 checks/5 PK/5 ordinary
      * unique + 2 partial unique/8 secondary indexes/10 defaults/5 functions/7 triggers),
-     * guard shapes, function-wave fence, sharing-absent fence and V001–V007 digest witness.
+     * guard shapes, function-wave fence, exact final V009 live fence with no V010 or extra
+     * object, staged V008 sharing-absence evidence and V001–V009 digest witness.
      */
     @Test
     void v008EvidenceInventoryAndGuardShapesAreExact() throws Exception {
@@ -2592,10 +2623,10 @@ class PostgresContainerIT {
             assertV008CheckPredicateInventory(connection);
             assertV008FunctionsAndTriggersExact(connection);
             assertV008DefaultsAndNoServiceFunctions(connection);
-            assertNoV009PlusObjects(connection);
+            assertV009LiveFence(connection);
             assertV008StagedPrefixBooleansStillTrue();
         }
-        assertV001ThroughV007MigrationDigestsUnchanged();
+        assertV001ThroughV009MigrationDigestsUnchanged();
     }
 
     /**
@@ -3008,6 +3039,785 @@ class PostgresContainerIT {
         } finally {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void v009SharingInventoryAndGuardShapesAreExact() throws Exception {
+        assertV001ThroughV009MigrationDigestsUnchanged();
+        try (Connection connection = openConnection()) {
+            assertV009LiveFence(connection);
+            assertV009Catalog(connection);
+            assertV009ForeignKeys(connection);
+        }
+    }
+
+    @Test
+    void v009OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV009AclCatalog(connection);
+            assertV008SchemaAndFunctionFences(connection);
+        }
+        V009Fixture fixture;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                fixture = v009Fixture(connection, true);
+                switchLocalRole(connection, "sharing_role");
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM (SELECT id FROM sharing.evidence_share_grant "
+                                + "WHERE id = ? FOR UPDATE) locked", fixture.grantId())).isEqualTo(1);
+                for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+                    String relation = projection.getKey();
+                    for (String column : v009Columns(connection, relation)) {
+                        if (projection.getValue().contains(column)) {
+                            assertThat(queryStrings(connection, "SELECT " + column + "::text FROM " + relation))
+                                    .as("declared projection has known synthetic row: %s.%s", relation, column)
+                                    .isNotEmpty();
+                        } else {
+                            v009DeniedQuery(connection, "SELECT " + column + " FROM " + relation);
+                        }
+                    }
+                    v009DeniedQuery(connection, "SELECT * FROM " + relation);
+                    for (String lock : List.of(" FOR UPDATE", " FOR SHARE")) {
+                        v009DeniedQuery(connection, "SELECT " + String.join(",", projection.getValue())
+                                + " FROM " + relation + lock);
+                    }
+                    expectSqlFailure(connection, "42501", null,
+                            "INSERT INTO " + relation + " DEFAULT VALUES");
+                    String column = projection.getValue().getFirst();
+                    expectSqlFailure(connection, "42501", null,
+                            "UPDATE " + relation + " SET " + column + " = " + column);
+                    expectSqlFailure(connection, "42501", null, "DELETE FROM " + relation);
+                }
+                for (String table : V009_TABLES) {
+                    for (String column : v009Columns(connection, "sharing." + table)) {
+                        if (!table.equals("evidence_share_grant") || !V009_UPDATE_COLUMNS.contains(column)) {
+                            expectSqlFailure(connection, "42501", null,
+                                    "UPDATE sharing." + table + " SET " + column + " = " + column);
+                        }
+                    }
+                    expectSqlFailure(connection, "42501", null, "DELETE FROM sharing." + table);
+                    expectSqlFailure(connection, "42501", null, "TRUNCATE sharing." + table);
+                }
+                for (String relation : List.of("platform.idempotency_record", "platform.outbox_event",
+                        "audit.audit_fact", "evidence.media_object", "evidence.recording")) {
+                    expectSqlFailure(connection, "42501", null, "INSERT INTO " + relation + " DEFAULT VALUES");
+                    expectSqlFailure(connection, "42501", null, "UPDATE " + relation + " SET id = id");
+                    expectSqlFailure(connection, "42501", null, "DELETE FROM " + relation);
+                    v009DeniedQuery(connection, "SELECT * FROM " + relation);
+                }
+                for (String schema : queryStrings(connection,
+                        "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
+                                + "AND nspname <> 'information_schema' ORDER BY 1")) {
+                    expectSqlFailure(connection, "42501", null,
+                            "CREATE TABLE " + schema + ".pa9_denied_probe (id integer)");
+                }
+                UUID runtimeGrantId = UUID.randomUUID();
+                fixture.rows().get("sharing.evidence_share_grant").add(runtimeGrantId.toString());
+                assertThat(executeUpdate(connection, v009GrantSql(), runtimeGrantId,
+                        "s1-runtime-" + UUID.randomUUID(), randomSha256(), fixture.evidenceId(),
+                        fixture.accountId(), null, randomSha256())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE sharing.evidence_share_grant SET revision = revision + 1 WHERE id = ?",
+                        fixture.grantId())).isEqualTo(1);
+            } finally {
+                connection.rollback();
+            }
+        }
+        v009AssertNoResidue(fixture);
+    }
+
+    @Test
+    void v009ForeignKeyAndRestrictDeleteBackstops() throws Exception {
+        V009Fixture fixture;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                fixture = v009Fixture(connection, false);
+                switchLocalRole(connection, "sharing_role");
+                for (String missing : List.of("evidence", "creator_account", "owner_organization")) {
+                    UUID evidence = missing.equals("evidence") ? UUID.randomUUID() : fixture.evidenceId();
+                    UUID account = missing.equals("creator_account") ? UUID.randomUUID() : fixture.accountId();
+                    UUID organization = missing.equals("owner_organization")
+                            ? UUID.randomUUID() : fixture.organizationId();
+                    v009ExpectConstraint(connection, "23503", "fk_share_grant_" + missing,
+                            v009GrantSql(), UUID.randomUUID(), "s1-orphan-" + UUID.randomUUID(),
+                            randomSha256(), evidence, account, organization, randomSha256());
+                }
+                expectSqlFailure(connection, "P0001", "SHARE_ADMISSION_REFUSED", v009AdmissionSql(),
+                        UUID.randomUUID(), UUID.randomUUID(), "missing-parent");
+                switchLocalRole(connection, "sharing_owner");
+                Savepoint guardProbe = connection.setSavepoint();
+                try {
+                    execute(connection, "ALTER TABLE sharing.share_admission DISABLE TRIGGER trg_share_admission_guard");
+                    v009ExpectConstraint(connection, "23503", "fk_share_admission_grant", v009AdmissionSql(),
+                            UUID.randomUUID(), UUID.randomUUID(), "missing-parent");
+                } finally {
+                    connection.rollback(guardProbe);
+                }
+                v009AssertTriggerStates(connection);
+                switchLocalRole(connection, "sharing_role");
+                v009ExpectConstraint(connection, "23503", "fk_share_access_event_grant", v009EventSql(),
+                        UUID.randomUUID(), UUID.randomUUID(), null, "s1-orphan-" + UUID.randomUUID(), randomSha256());
+                v009ExpectConstraint(connection, "23503", "fk_share_access_event_admission", v009EventSql(),
+                        UUID.randomUUID(), fixture.eventGrantId(), UUID.randomUUID(),
+                        "s1-orphan-" + UUID.randomUUID(), randomSha256());
+                UUID nullableGrantId = UUID.randomUUID();
+                fixture.rows().get("sharing.evidence_share_grant").add(nullableGrantId.toString());
+                assertThat(executeUpdate(connection, v009GrantSql(), nullableGrantId,
+                        "s1-null-org-" + UUID.randomUUID(), randomSha256(), fixture.evidenceId(),
+                        fixture.accountId(), null, randomSha256())).isEqualTo(1);
+                UUID nullableEventId = UUID.randomUUID();
+                fixture.rows().get("sharing.share_access_event").add(nullableEventId.toString());
+                assertThat(executeUpdate(connection, v009EventSql(), nullableEventId, fixture.eventGrantId(),
+                        null, "s1-null-admission-" + UUID.randomUUID(), randomSha256())).isEqualTo(1);
+                List<String[]> parents = List.of(
+                        new String[]{"evidence.evidence_record", "evidence_owner", "trg_evidence_record_guard",
+                                fixture.evidenceId().toString(), "fk_share_grant_evidence"},
+                        new String[]{"customer_iam.customer_account", "customer_iam_owner", "trg_customer_account_guard",
+                                fixture.accountId().toString(), "fk_share_grant_creator_account"},
+                        new String[]{"organization_access.organization", "organization_access_owner", "trg_organization_guard",
+                                fixture.organizationId().toString(), "fk_share_grant_owner_organization"},
+                        new String[]{"sharing.evidence_share_grant", "sharing_owner", "trg_share_grant_guard",
+                                fixture.grantId().toString(), "fk_share_admission_grant"},
+                        new String[]{"sharing.evidence_share_grant", "sharing_owner", "trg_share_grant_guard",
+                                fixture.eventGrantId().toString(), "fk_share_access_event_grant"},
+                        new String[]{"sharing.share_admission", "sharing_owner", "trg_share_admission_immutable",
+                                fixture.admissionId().toString(), "fk_share_access_event_admission"});
+                for (String[] parent : parents) {
+                    switchLocalRole(connection, parent[1]);
+                    Savepoint restrictProbe = connection.setSavepoint();
+                    try {
+                        if (parent[0].equals("evidence.evidence_record")) {
+                            execute(connection, "SET CONSTRAINTS evidence.fk_evidence_source_event, "
+                                    + "evidence.fk_evidence_event_record DEFERRED");
+                        }
+                        execute(connection, "ALTER TABLE " + parent[0] + " DISABLE TRIGGER " + parent[2]);
+                        v009ExpectConstraint(connection, "23503", parent[4],
+                                "DELETE FROM " + parent[0] + " WHERE id = ?", UUID.fromString(parent[3]));
+                        v009ExpectConstraint(connection, "23503", parent[4],
+                                "UPDATE " + parent[0] + " SET id = ? WHERE id = ?",
+                                UUID.randomUUID(), UUID.fromString(parent[3]));
+                        assertThat(queryLong(connection, "SELECT count(*) FROM " + parent[0]
+                                + " WHERE id = ?", UUID.fromString(parent[3]))).isEqualTo(1);
+                    } finally {
+                        connection.rollback(restrictProbe);
+                    }
+                    assertThat(queryString(connection, "SELECT tgenabled::text FROM pg_trigger "
+                            + "WHERE tgrelid = ?::regclass AND tgname = ?", parent[0], parent[2])).isEqualTo("O");
+                }
+                execute(connection, "RESET ROLE");
+                assertV009ForeignKeys(connection);
+                assertV009Catalog(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+        v009AssertNoResidue(fixture);
+    }
+
+    private static final List<String> V009_TABLES = List.of(
+            "evidence_share_grant", "share_access_event", "share_admission");
+    private static final List<String> V009_UPDATE_COLUMNS = List.of(
+            "status", "admissions_used", "revocation_generation", "revision", "expires_at",
+            "code_salt", "code_hash", "code_generation");
+    private static final Map<String, List<String>> V009_FOREIGN_COLUMNS = Map.ofEntries(
+            Map.entry("evidence.evidence_record", List.of("id", "subject_id", "status", "source_type", "source_ref_id", "call_id", "session_id", "reservation_id", "identity_at_capture", "created_at")),
+            Map.entry("evidence.evidence_artifact", List.of("evidence_id", "media_object_id", "artifact_role")),
+            Map.entry("customer_iam.customer_account", List.of("id", "status")),
+            Map.entry("organization_access.organization", List.of("id", "status")),
+            Map.entry("organization_access.organization_membership", List.of("organization_id", "account_id", "role", "status")),
+            Map.entry("subject_number.business_subject", List.of("id", "owner_account_id", "owner_organization_id", "revision")),
+            Map.entry("subject_number.caller_number_binding", List.of("id", "subject_id", "status", "verified_at", "revision")),
+            Map.entry("subject_number.subject_risk_state", List.of("caller_number_binding_id", "risk_type", "state", "revision")));
+
+    private static final Map<String, Map<String, String>> V009_CHECK_DEF_MAP = Map.ofEntries(
+            Map.entry("evidence_share_grant", Map.ofEntries(
+                    Map.entry("ck_share_grant_share_id", "CHECK ((((length(share_id) >= 1) AND (length(share_id) <= 128)) AND (btrim(share_id) <> ''::text)))"),
+                    Map.entry("ck_share_grant_token_hash", "CHECK ((capability_token_hash ~ '^[0-9a-f]{64}$'::text))"),
+                    Map.entry("ck_share_grant_verification_mode", "CHECK ((verification_mode = ANY (ARRAY['NONE'::text, 'EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])))"),
+                    Map.entry("ck_share_grant_code_salt", "CHECK (((code_salt IS NULL) OR (((length(code_salt) >= 22) AND (length(code_salt) <= 256)) AND (code_salt ~ '^[A-Za-z0-9_-]+$'::text))))"),
+                    Map.entry("ck_share_grant_code_hash", "CHECK (((code_hash IS NULL) OR (code_hash ~ '^[0-9a-f]{64}$'::text)))"),
+                    Map.entry("ck_share_grant_code_generation", "CHECK ((code_generation >= 0))"),
+                    Map.entry("ck_share_grant_verification_shape", "CHECK ((((verification_mode = 'EXTRACTION_CODE'::text) AND (code_salt IS NOT NULL) AND (code_hash IS NOT NULL) AND (code_generation >= 1)) OR ((verification_mode <> 'EXTRACTION_CODE'::text) AND (code_salt IS NULL) AND (code_hash IS NULL) AND (code_generation = 0))))"),
+                    Map.entry("ck_share_grant_org_member", "CHECK (((verification_mode <> 'ORGANIZATION_MEMBER'::text) OR (owner_organization_id IS NOT NULL)))"),
+                    Map.entry("ck_share_grant_validity", "CHECK ((expires_at > valid_from))"),
+                    Map.entry("ck_share_grant_admissions", "CHECK (((admissions_used >= 0) AND ((max_admissions IS NULL) OR ((max_admissions >= 1) AND (admissions_used <= max_admissions)))))"),
+                    Map.entry("ck_share_grant_snapshot_shape", "CHECK (((jsonb_typeof(content_snapshot) = 'object'::text) AND (content_snapshot ? 'content'::text) AND (content_snapshot ? 'verification'::text) AND (content_snapshot ? 'creation'::text) AND (jsonb_typeof((content_snapshot -> 'content'::text)) = 'object'::text) AND (jsonb_typeof((content_snapshot -> 'verification'::text)) = 'object'::text) AND (jsonb_typeof((content_snapshot -> 'creation'::text)) = 'object'::text) AND (((content_snapshot -> 'content'::text) ->> 'evidenceId'::text) = (evidence_id)::text) AND (((content_snapshot -> 'creation'::text) ->> 'creatorAccountId'::text) = (created_by_account_id)::text) AND (((content_snapshot -> 'creation'::text) ->> 'evidenceId'::text) = (evidence_id)::text) AND (NOT (((content_snapshot -> 'creation'::text) ->> 'ownerOrganizationId'::text) IS DISTINCT FROM (owner_organization_id)::text)) AND (((content_snapshot -> 'creation'::text) ->> 'scopeDigest'::text) ~ '^[0-9a-f]{64}$'::text) AND (((content_snapshot -> 'creation'::text) ->> 'creationRequestDigest'::text) ~ '^[0-9a-f]{64}$'::text) AND (((content_snapshot -> 'creation'::text) ->> 'creationFingerprint'::text) ~ '^[0-9a-f]{64}$'::text)))"),
+                    Map.entry("ck_share_grant_snapshot_binding", "CHECK ((((content_snapshot -> 'verification'::text) ->> 'mode'::text) = verification_mode))"),
+                    Map.entry("ck_share_grant_mobile_binding", "CHECK ((((verification_mode = 'DESIGNATED_MOBILE'::text) AND (((content_snapshot -> 'verification'::text) ->> 'mobileHmac'::text) ~ '^[0-9a-f]{64}$'::text) AND ((length(((content_snapshot -> 'verification'::text) ->> 'keyVersion'::text)) >= 1) AND (length(((content_snapshot -> 'verification'::text) ->> 'keyVersion'::text)) <= 64))) OR ((verification_mode <> 'DESIGNATED_MOBILE'::text) AND (NOT ((content_snapshot -> 'verification'::text) ? 'mobileHmac'::text)))))"),
+                    Map.entry("ck_share_grant_content_sha256", "CHECK ((content_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                    Map.entry("ck_share_grant_status", "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'EXPIRED'::text, 'REVOKED'::text, 'LOCKED'::text])))"),
+                    Map.entry("ck_share_grant_revocation_generation", "CHECK ((revocation_generation >= 0))"),
+                    Map.entry("ck_share_grant_revision", "CHECK ((revision >= 1))"))),
+            Map.entry("share_admission", Map.ofEntries(
+                    Map.entry("ck_share_admission_key", "CHECK ((((length(admission_key) >= 1) AND (length(admission_key) <= 128)) AND (btrim(admission_key) <> ''::text)))"),
+                    Map.entry("ck_share_admission_no", "CHECK ((admission_no >= 1))"),
+                    Map.entry("ck_share_admission_mode", "CHECK ((verification_mode = ANY (ARRAY['NONE'::text, 'EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])))"),
+                    Map.entry("ck_share_admission_result", "CHECK ((verification_result = ANY (ARRAY['VERIFIED'::text, 'NOT_REQUIRED'::text])))"),
+                    Map.entry("ck_share_admission_result_shape", "CHECK ((((verification_mode = 'NONE'::text) AND (verification_result = 'NOT_REQUIRED'::text)) OR ((verification_mode = ANY (ARRAY['EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])) AND (verification_result = 'VERIFIED'::text))))"))),
+            Map.entry("share_access_event", Map.ofEntries(
+                    Map.entry("ck_share_access_event_domain", "CHECK ((event_domain = 'SHARE_ACCESS'::text))"),
+                    Map.entry("ck_share_access_event_id", "CHECK ((((length(event_id) >= 1) AND (length(event_id) <= 128)) AND (btrim(event_id) <> ''::text)))"),
+                    Map.entry("ck_share_access_event_type", "CHECK ((event_type = ANY (ARRAY['PAGE_OPENED'::text, 'PREFETCH_IGNORED'::text, 'VERIFICATION_FAILED'::text, 'LOCKED'::text, 'ADMISSION_GRANTED'::text, 'TICKET_ISSUED'::text, 'TICKET_FAILED'::text, 'PLAYBACK_AUTHORIZED'::text, 'SEEK_AUTHORIZED'::text, 'RENEWED'::text, 'EXTENDED'::text, 'CODE_ROTATED'::text, 'REVOKED'::text, 'EXPIRED'::text, 'FAILURE'::text])))"),
+                    Map.entry("ck_share_access_event_result", "CHECK ((result = ANY (ARRAY['SUCCESS'::text, 'DENIED'::text, 'FAILED'::text, 'IGNORED'::text])))"),
+                    Map.entry("ck_share_access_event_risk_digest", "CHECK (((risk_digest IS NULL) OR (risk_digest ~ '^[0-9a-f]{64}$'::text)))"),
+                    Map.entry("ck_share_access_event_payload", "CHECK ((jsonb_typeof(payload_redacted) = 'object'::text))"),
+                    Map.entry("ck_share_access_event_payload_sha256", "CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                    Map.entry("ck_share_access_event_admission_shape", "CHECK (((event_type <> ALL (ARRAY['ADMISSION_GRANTED'::text, 'TICKET_ISSUED'::text, 'TICKET_FAILED'::text, 'PLAYBACK_AUTHORIZED'::text, 'SEEK_AUTHORIZED'::text, 'RENEWED'::text])) OR (share_admission_id IS NOT NULL)))"),
+                    Map.entry("ck_share_access_event_admission_facts", "CHECK (((event_type <> 'ADMISSION_GRANTED'::text) OR ((payload_redacted ? 'verificationMode'::text) AND ((payload_redacted ->> 'verificationMode'::text) = ANY (ARRAY['NONE'::text, 'EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])) AND (payload_redacted ? 'revocationGeneration'::text) AND (payload_redacted ? 'codeGeneration'::text) AND (payload_redacted ? 'grantExpiresAt'::text) AND (payload_redacted ? 'admissionExpiresAt'::text) AND (payload_redacted ? 'sessionExpiresAt'::text) AND (((payload_redacted ->> 'verificationMode'::text) <> 'ORGANIZATION_MEMBER'::text) OR ((payload_redacted ? 'recipientAccountId'::text) AND (payload_redacted ? 'recipientOrganizationId'::text))))))"))));
+
+    private static void assertV009ObjectInventory(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT c.relname || '|' || c.relkind::text || '|' || pg_get_userbyid(c.relowner) "
+                        + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'sharing' ORDER BY 1"))
+                .containsExactly(
+                "evidence_share_grant|r|sharing_owner",
+                "ix_share_access_event_admission|i|sharing_owner",
+                "ix_share_access_event_grant|i|sharing_owner",
+                "ix_share_admission_grant_time|i|sharing_owner",
+                "ix_share_grant_evidence|i|sharing_owner",
+                "ix_share_grant_expiry|i|sharing_owner",
+                "pk_evidence_share_grant|i|sharing_owner",
+                "pk_share_access_event|i|sharing_owner",
+                "pk_share_admission|i|sharing_owner",
+                "share_access_event|r|sharing_owner",
+                "share_admission|r|sharing_owner",
+                "uq_share_access_event_domain_id|i|sharing_owner",
+                "uq_share_admission_key|i|sharing_owner",
+                "uq_share_admission_no|i|sharing_owner",
+                "uq_share_grant_share_id|i|sharing_owner",
+                "uq_share_grant_token_hash|i|sharing_owner");
+        assertThat(queryString(connection,
+                "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'sharing'"))
+                .isEqualTo("sharing_owner");
+        assertThat(queryStrings(connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'sharing' AND c.relkind::text = 'r' ORDER BY 1"))
+                .containsExactlyElementsOf(V009_TABLES);
+        assertThat(queryStrings(connection,
+                "SELECT p.proname || '|' || pg_get_userbyid(p.proowner) || '|' || p.prosecdef "
+                        + "|| '|' || l.lanname || '|' || p.prorettype::regtype::text || '|' || p.pronargs "
+                        + "|| '|' || array_to_string(p.proconfig, ',') FROM pg_proc p "
+                        + "JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang "
+                        + "WHERE n.nspname = 'sharing' ORDER BY 1"))
+                .containsExactly(
+                        "guard_share_admission|sharing_owner|false|plpgsql|trigger|0|search_path=sharing, pg_temp",
+                        "guard_share_grant|sharing_owner|false|plpgsql|trigger|0|search_path=sharing, pg_temp",
+                        "reject_row_mutation|sharing_owner|false|plpgsql|trigger|0|search_path=sharing, pg_temp");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_class WHERE relnamespace = 'sharing'::regnamespace "
+                        + "AND (relrowsecurity OR relforcerowsecurity OR relispartition OR relhassubclass)"))
+                .isZero();
+        assertThat(queryStrings(connection,
+                "SELECT typname || '|' || pg_get_userbyid(typowner) FROM pg_type "
+                        + "WHERE typnamespace = 'sharing'::regnamespace ORDER BY 1"))
+                .containsExactly("_evidence_share_grant|sharing_owner", "_share_access_event|sharing_owner",
+                        "_share_admission|sharing_owner", "evidence_share_grant|sharing_owner",
+                        "share_access_event|sharing_owner", "share_admission|sharing_owner");
+        assertV009TriggerInventory(connection);
+    }
+
+    private static void assertV009TriggerInventory(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT c.relname || '.' || t.tgname || '|' || pn.nspname || '.' || p.proname "
+                        + "|| '|' || t.tgtype || '|' || t.tgenabled::text || '|' || t.tgdeferrable "
+                        + "|| '|' || t.tginitdeferred || '|' || t.tgconstraint || '|' || t.tgnargs "
+                        + "|| '|' || coalesce(pg_get_expr(t.tgqual, t.tgrelid), '<none>') "
+                        + "FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_proc p ON p.oid = t.tgfoid "
+                        + "JOIN pg_namespace pn ON pn.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'sharing' AND NOT t.tgisinternal ORDER BY 1"))
+                .containsExactly(
+                        "evidence_share_grant.trg_share_grant_guard|sharing.guard_share_grant|19|O|false|false|0|0|<none>",
+                        "share_access_event.trg_share_access_event_immutable|sharing.reject_row_mutation|27|O|false|false|0|0|<none>",
+                        "share_admission.trg_share_admission_guard|sharing.guard_share_admission|7|O|false|false|0|0|<none>",
+                        "share_admission.trg_share_admission_immutable|sharing.reject_row_mutation|27|O|false|false|0|0|<none>");
+    }
+
+    private static void v009AssertTriggerStates(Connection connection) throws SQLException {
+        assertV009TriggerInventory(connection);
+    }
+
+    private static void assertV009Catalog(Connection connection) throws SQLException {
+        Map<String, List<String>> expectedColumns = Map.ofEntries(
+                Map.entry("evidence_share_grant", List.of(
+                        "id|uuid|NO|<none>||",
+                        "share_id|text|NO|<none>||",
+                        "capability_token_hash|text|NO|<none>||",
+                        "evidence_id|uuid|NO|<none>||",
+                        "created_by_account_id|uuid|NO|<none>||",
+                        "owner_organization_id|uuid|YES|<none>||",
+                        "verification_mode|text|NO|<none>||",
+                        "code_salt|text|YES|<none>||",
+                        "code_hash|text|YES|<none>||",
+                        "code_generation|integer|NO|0||",
+                        "valid_from|timestamp with time zone|NO|now()||",
+                        "expires_at|timestamp with time zone|NO|<none>||",
+                        "max_admissions|integer|YES|<none>||",
+                        "admissions_used|integer|NO|0||",
+                        "download_allowed|boolean|NO|false||",
+                        "content_snapshot|jsonb|NO|<none>||",
+                        "content_sha256|text|NO|<none>||",
+                        "status|text|NO|'ACTIVE'::text||",
+                        "revocation_generation|integer|NO|0||",
+                        "revision|integer|NO|1||")),
+                Map.entry("share_admission", List.of(
+                        "id|uuid|NO|<none>||",
+                        "share_grant_id|uuid|NO|<none>||",
+                        "admission_key|text|NO|<none>||",
+                        "admission_no|integer|NO|<none>||",
+                        "verification_mode|text|NO|<none>||",
+                        "verification_result|text|NO|<none>||",
+                        "admitted_at|timestamp with time zone|NO|now()||")),
+                Map.entry("share_access_event", List.of(
+                        "id|uuid|NO|<none>||",
+                        "share_grant_id|uuid|NO|<none>||",
+                        "share_admission_id|uuid|YES|<none>||",
+                        "event_domain|text|NO|<none>||",
+                        "event_id|text|NO|<none>||",
+                        "event_type|text|NO|<none>||",
+                        "result|text|NO|<none>||",
+                        "occurred_at|timestamp with time zone|NO|now()||",
+                        "risk_digest|text|YES|<none>||",
+                        "payload_redacted|jsonb|NO|<none>||",
+                        "payload_sha256|text|NO|<none>||")));
+        for (String table : V009_TABLES) {
+            assertThat(queryStrings(connection,
+                    "SELECT a.attname || '|' || format_type(a.atttypid, a.atttypmod) "
+                            + "|| '|' || CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END "
+                            + "|| '|' || coalesce(pg_get_expr(d.adbin, d.adrelid), '<none>') "
+                            + "|| '|' || a.attidentity::text || '|' || a.attgenerated::text "
+                            + "FROM pg_attribute a LEFT JOIN pg_attrdef d "
+                            + "ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
+                            + "WHERE a.attrelid = ?::regclass AND a.attnum > 0 ORDER BY a.attnum", "sharing." + table))
+                    .as("ordered type/null/default/identity/generated inventory: %s", table)
+                    .containsExactlyElementsOf(expectedColumns.get(table));
+            Map<String, String> actualChecks = new java.util.TreeMap<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                            + "WHERE conrelid = ?::regclass AND contype = 'c' ORDER BY conname")) {
+                statement.setString(1, "sharing." + table);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        actualChecks.put(rows.getString(1), rows.getString(2));
+                    }
+                }
+            }
+            assertThat(actualChecks).as("independent PG16 literal CHECK oracle: %s", table)
+                    .isEqualTo(V009_CHECK_DEF_MAP.get(table));
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint WHERE connamespace = 'sharing'::regnamespace"))
+                .isEqualTo(45);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint WHERE connamespace = 'sharing'::regnamespace "
+                        + "AND (NOT convalidated OR condeferrable OR condeferred OR (contype = 'c' AND connoinherit))"))
+                .isZero();
+        assertThat(queryStrings(connection,
+                "SELECT c.relname || '.' || con.conname || '|' || con.contype::text || '|' "
+                        + "|| pg_get_constraintdef(con.oid) FROM pg_constraint con "
+                        + "JOIN pg_class c ON c.oid = con.conrelid "
+                        + "WHERE con.connamespace = 'sharing'::regnamespace AND con.contype::text IN ('p','u') ORDER BY 1"))
+                .containsExactly(
+                "evidence_share_grant.pk_evidence_share_grant|p|PRIMARY KEY (id)",
+                "evidence_share_grant.uq_share_grant_share_id|u|UNIQUE (share_id)",
+                "evidence_share_grant.uq_share_grant_token_hash|u|UNIQUE (capability_token_hash)",
+                "share_access_event.pk_share_access_event|p|PRIMARY KEY (id)",
+                "share_access_event.uq_share_access_event_domain_id|u|UNIQUE (event_domain, event_id)",
+                "share_admission.pk_share_admission|p|PRIMARY KEY (id)",
+                "share_admission.uq_share_admission_key|u|UNIQUE (share_grant_id, admission_key)",
+                "share_admission.uq_share_admission_no|u|UNIQUE (share_grant_id, admission_no)");
+        assertThat(queryStrings(connection,
+                "SELECT i.relname || '|' || t.relname || '|' || x.indisunique || '|' || x.indisprimary "
+                        + "|| '|' || am.amname || '|' || x.indisvalid || '|' || x.indisready || '|' || x.indislive "
+                        + "|| '|' || x.indnkeyatts || '|' || x.indnatts || '|' || x.indnullsnotdistinct "
+                        + "|| '|' || coalesce(pg_get_expr(x.indpred,x.indrelid), '<none>') "
+                        + "|| '|' || coalesce(pg_get_expr(x.indexprs,x.indrelid), '<none>') "
+                        + "|| '|' || coalesce(con.conname, '<none>') || '|' "
+                        + "|| (SELECT string_agg(a.attname || ':' || ((x.indoption[key.ordinality - 1] & 1) = 1), "
+                        + "',' ORDER BY key.ordinality) FROM unnest(x.indkey) WITH ORDINALITY key(attnum, ordinality) "
+                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = key.attnum) "
+                        + "FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid "
+                        + "JOIN pg_am am ON am.oid = i.relam LEFT JOIN pg_constraint con ON con.conindid = i.oid "
+                        + "AND con.contype::text IN ('p','u') WHERE t.relnamespace = 'sharing'::regnamespace ORDER BY 1"))
+                .containsExactly(
+                "ix_share_access_event_admission|share_access_event|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|share_admission_id:false,occurred_at:false",
+                "ix_share_access_event_grant|share_access_event|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|share_grant_id:false,occurred_at:true",
+                "ix_share_admission_grant_time|share_admission|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|share_grant_id:false,admitted_at:false",
+                "ix_share_grant_evidence|evidence_share_grant|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|evidence_id:false,status:false",
+                "ix_share_grant_expiry|evidence_share_grant|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|status:false,expires_at:false",
+                "pk_evidence_share_grant|evidence_share_grant|true|true|btree|true|true|true|1|1|false|<none>|<none>|pk_evidence_share_grant|id:false",
+                "pk_share_access_event|share_access_event|true|true|btree|true|true|true|1|1|false|<none>|<none>|pk_share_access_event|id:false",
+                "pk_share_admission|share_admission|true|true|btree|true|true|true|1|1|false|<none>|<none>|pk_share_admission|id:false",
+                "uq_share_access_event_domain_id|share_access_event|true|false|btree|true|true|true|2|2|false|<none>|<none>|uq_share_access_event_domain_id|event_domain:false,event_id:false",
+                "uq_share_admission_key|share_admission|true|false|btree|true|true|true|2|2|false|<none>|<none>|uq_share_admission_key|share_grant_id:false,admission_key:false",
+                "uq_share_admission_no|share_admission|true|false|btree|true|true|true|2|2|false|<none>|<none>|uq_share_admission_no|share_grant_id:false,admission_no:false",
+                "uq_share_grant_share_id|evidence_share_grant|true|false|btree|true|true|true|1|1|false|<none>|<none>|uq_share_grant_share_id|share_id:false",
+                "uq_share_grant_token_hash|evidence_share_grant|true|false|btree|true|true|true|1|1|false|<none>|<none>|uq_share_grant_token_hash|capability_token_hash:false");
+        assertThat(queryStrings(connection,
+                "SELECT pg_get_indexdef(indexrelid) FROM pg_index "
+                        + "WHERE indrelid IN (SELECT oid FROM pg_class WHERE relnamespace = 'sharing'::regnamespace) "
+                        + "ORDER BY indexrelid::regclass::text"))
+                .containsExactly(
+                        "CREATE INDEX ix_share_access_event_admission ON sharing.share_access_event USING btree (share_admission_id, occurred_at)",
+                        "CREATE INDEX ix_share_access_event_grant ON sharing.share_access_event USING btree (share_grant_id, occurred_at DESC)",
+                        "CREATE INDEX ix_share_admission_grant_time ON sharing.share_admission USING btree (share_grant_id, admitted_at)",
+                        "CREATE INDEX ix_share_grant_evidence ON sharing.evidence_share_grant USING btree (evidence_id, status)",
+                        "CREATE INDEX ix_share_grant_expiry ON sharing.evidence_share_grant USING btree (status, expires_at)",
+                        "CREATE UNIQUE INDEX pk_evidence_share_grant ON sharing.evidence_share_grant USING btree (id)",
+                        "CREATE UNIQUE INDEX pk_share_access_event ON sharing.share_access_event USING btree (id)",
+                        "CREATE UNIQUE INDEX pk_share_admission ON sharing.share_admission USING btree (id)",
+                        "CREATE UNIQUE INDEX uq_share_access_event_domain_id ON sharing.share_access_event USING btree (event_domain, event_id)",
+                        "CREATE UNIQUE INDEX uq_share_admission_key ON sharing.share_admission USING btree (share_grant_id, admission_key)",
+                        "CREATE UNIQUE INDEX uq_share_admission_no ON sharing.share_admission USING btree (share_grant_id, admission_no)",
+                        "CREATE UNIQUE INDEX uq_share_grant_share_id ON sharing.evidence_share_grant USING btree (share_id)",
+                        "CREATE UNIQUE INDEX uq_share_grant_token_hash ON sharing.evidence_share_grant USING btree (capability_token_hash)");
+        String grantGuard = queryString(connection,
+                "SELECT prosrc FROM pg_proc WHERE oid = 'sharing.guard_share_grant()'::regprocedure");
+        for (String column : List.of("id", "share_id", "capability_token_hash", "evidence_id",
+                "created_by_account_id", "owner_organization_id", "verification_mode", "valid_from",
+                "max_admissions", "download_allowed", "content_snapshot", "content_sha256")) {
+            assertThat(grantGuard).contains("NEW." + column + " IS DISTINCT FROM OLD." + column);
+        }
+        assertThat(grantGuard).contains(
+                "SHARE_GRANT_IMMUTABLE", "SHARE_GRANT_EXPIRY_DECREASE", "SHARE_GRANT_GENERATION_INVALID",
+                "SHARE_GRANT_CODE_ROTATION_INVALID", "SHARE_GRANT_STATUS_TERMINAL",
+                "SHARE_GRANT_STATUS_TRANSITION", "SHARE_GRANT_REVISION_INVALID",
+                "SHARE_GRANT_EXTENSION_INVALID", "SHARE_GRANT_EXPIRY_INVALID",
+                "NEW.expires_at < OLD.expires_at", "NEW.code_generation < OLD.code_generation",
+                "NEW.revocation_generation < OLD.revocation_generation",
+                "OLD.status IN ('EXPIRED', 'REVOKED')", "NEW.revision <> OLD.revision + 1",
+                "NEW.code_generation <> OLD.code_generation + 1",
+                "NEW.revocation_generation <> OLD.revocation_generation + 1",
+                "NEW.code_salt IS NOT DISTINCT FROM OLD.code_salt",
+                "NEW.code_hash IS NOT DISTINCT FROM OLD.code_hash",
+                "OLD.status = 'LOCKED' AND NEW.status = 'ACTIVE'",
+                "OLD.verification_mode <> 'EXTRACTION_CODE'",
+                "NEW.status IS DISTINCT FROM OLD.status", "NEW.expires_at > OLD.expires_at",
+                "OLD.status <> 'ACTIVE' OR clock_timestamp() >= OLD.expires_at",
+                "NEW.status = 'EXPIRED' AND clock_timestamp() < OLD.expires_at");
+        String admissionGuard = queryString(connection,
+                "SELECT prosrc FROM pg_proc WHERE oid = 'sharing.guard_share_admission()'::regprocedure");
+        assertThat(admissionGuard).contains("FROM sharing.evidence_share_grant", "IF NOT FOUND",
+                "NEW.verification_mode IS DISTINCT FROM parent_grant.verification_mode",
+                "parent_grant.status <> 'ACTIVE'", "clock_timestamp() < parent_grant.valid_from",
+                "clock_timestamp() >= parent_grant.expires_at", "parent_grant.max_admissions IS NOT NULL",
+                "parent_grant.admissions_used >= parent_grant.max_admissions",
+                "NEW.admission_no IS DISTINCT FROM parent_grant.admissions_used + 1", "SHARE_ADMISSION_REFUSED");
+        assertThat(admissionGuard.toUpperCase(Locale.ROOT)).doesNotContain("FOR UPDATE", "FOR SHARE", "NOW()");
+        assertThat(queryString(connection,
+                "SELECT prosrc FROM pg_proc WHERE oid = 'sharing.reject_row_mutation()'::regprocedure"))
+                .contains("RAISE EXCEPTION 'SHARING_ROW_APPEND_ONLY' USING ERRCODE = 'P0001'")
+                .doesNotContain("RETURN");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_proc WHERE pronamespace = 'sharing'::regnamespace "
+                        + "AND prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction|execute|insert|delete)\\M'"))
+                .isZero();
+        assertV009ObjectInventory(connection);
+    }
+
+    private static void assertV009ForeignKeys(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT c.conname || '|' || c.conrelid::regclass || '|' || a.attname "
+                        + "|| '|' || c.confrelid::regclass || '|' || pa.attname "
+                        + "|| '|' || c.confupdtype::text || '|' || c.confdeltype::text || '|' || c.confmatchtype::text "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "|| '|' || (SELECT conname FROM pg_constraint pk WHERE pk.conindid = c.conindid "
+                        + "AND pk.contype = 'p') || '|' || cardinality(c.conkey) || '|' || cardinality(c.confkey) "
+                        + "FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] "
+                        + "JOIN pg_attribute pa ON pa.attrelid = c.confrelid AND pa.attnum = c.confkey[1] "
+                        + "WHERE c.connamespace = 'sharing'::regnamespace AND c.contype = 'f' ORDER BY 1"))
+                .containsExactly(
+                "fk_share_access_event_admission|sharing.share_access_event|share_admission_id|sharing.share_admission|id|r|r|s|false|false|true|pk_share_admission|1|1",
+                "fk_share_access_event_grant|sharing.share_access_event|share_grant_id|sharing.evidence_share_grant|id|r|r|s|false|false|true|pk_evidence_share_grant|1|1",
+                "fk_share_admission_grant|sharing.share_admission|share_grant_id|sharing.evidence_share_grant|id|r|r|s|false|false|true|pk_evidence_share_grant|1|1",
+                "fk_share_grant_creator_account|sharing.evidence_share_grant|created_by_account_id|customer_iam.customer_account|id|r|r|s|false|false|true|pk_customer_account|1|1",
+                "fk_share_grant_evidence|sharing.evidence_share_grant|evidence_id|evidence.evidence_record|id|r|r|s|false|false|true|pk_evidence_record|1|1",
+                "fk_share_grant_owner_organization|sharing.evidence_share_grant|owner_organization_id|organization_access.organization|id|r|r|s|false|false|true|pk_organization|1|1");
+    }
+
+    private static void assertV009AclCatalog(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT rolname || '|' || rolcanlogin || '|' || rolsuper || '|' || rolcreatedb "
+                        + "|| '|' || rolcreaterole || '|' || rolinherit || '|' || rolreplication "
+                        + "|| '|' || rolbypassrls || '|' || rolconnlimit || '|' || (rolpassword IS NULL) "
+                        + "FROM pg_authid WHERE rolname IN ('sharing_owner','sharing_role') ORDER BY 1"))
+                .containsExactly("sharing_owner|false|false|false|false|true|false|false|-1|true",
+                        "sharing_role|false|false|false|false|true|false|false|-1|true");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_auth_members WHERE roleid IN "
+                        + "('sharing_owner'::regrole, 'sharing_role'::regrole) OR member IN "
+                        + "('sharing_owner'::regrole, 'sharing_role'::regrole)"))
+                .isZero();
+        for (String aclQuery : List.of(
+                "SELECT n.nspacl AS acl, n.nspowner AS owner FROM pg_namespace n WHERE n.nspname = 'sharing'",
+                "SELECT c.relacl AS acl, c.relowner AS owner FROM pg_class c WHERE c.relnamespace = 'sharing'::regnamespace",
+                "SELECT a.attacl AS acl, c.relowner AS owner FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+                        + "WHERE c.relnamespace = 'sharing'::regnamespace AND a.attnum > 0",
+                "SELECT p.proacl AS acl, p.proowner AS owner FROM pg_proc p WHERE p.pronamespace = 'sharing'::regnamespace")) {
+            String defaultType = aclQuery.contains("n.nspacl") ? "n" : aclQuery.contains("p.proacl") ? "f"
+                    : aclQuery.contains("a.attacl") ? "c" : "r";
+            assertThat(queryLong(connection, "SELECT count(*) FROM (" + aclQuery + ") objects, "
+                    + "LATERAL aclexplode(coalesce(acl, acldefault('" + defaultType + "', owner))) acl "
+                    + "WHERE acl.grantee = 0 OR acl.is_grantable OR acl.grantee NOT IN "
+                    + "('sharing_owner'::regrole, 'sharing_role'::regrole)"))
+                    .as("PUBLIC zero, no grant options or undeclared sharing grantee").isZero();
+        }
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '|' || a.privilege_type || '|' || a.is_grantable FROM pg_namespace n, "
+                        + "LATERAL aclexplode(n.nspacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactly("audit|USAGE|false", "customer_iam|USAGE|false", "evidence|USAGE|false",
+                        "organization_access|USAGE|false", "platform|USAGE|false", "sharing|USAGE|false",
+                        "subject_number|USAGE|false");
+        assertThat(queryStrings(connection,
+                "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
+                        + "AND nspname <> 'information_schema' AND nspname <> 'public' "
+                        + "AND has_schema_privilege('sharing_role', oid, 'USAGE') ORDER BY 1"))
+                .containsExactly("audit", "customer_iam", "evidence", "organization_access", "platform",
+                        "sharing", "subject_number");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
+                        + "AND has_schema_privilege('sharing_role', oid, 'CREATE')"))
+                .isZero();
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || c.relname || '|' || a.privilege_type || '|' || a.is_grantable "
+                        + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "LATERAL aclexplode(c.relacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactly("sharing.evidence_share_grant|INSERT|false", "sharing.evidence_share_grant|SELECT|false",
+                        "sharing.share_access_event|INSERT|false", "sharing.share_access_event|SELECT|false",
+                        "sharing.share_admission|INSERT|false", "sharing.share_admission|SELECT|false");
+        List<String> expectedColumnAcls = new ArrayList<>();
+        for (String column : V009_UPDATE_COLUMNS) {
+            expectedColumnAcls.add("sharing.evidence_share_grant." + column + "|UPDATE|false");
+        }
+        for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+            for (String column : projection.getValue()) {
+                expectedColumnAcls.add(projection.getKey() + "." + column + "|SELECT|false");
+            }
+        }
+        expectedColumnAcls.sort(String::compareTo);
+        assertThat(expectedColumnAcls).hasSize(42);
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || c.relname || '.' || column_info.attname || '|' "
+                        + "|| a.privilege_type || '|' || a.is_grantable FROM pg_attribute column_info "
+                        + "JOIN pg_class c ON c.oid = column_info.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "LATERAL aclexplode(column_info.attacl) a "
+                        + "WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactlyElementsOf(expectedColumnAcls);
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' "
+                        + "|| '|' || a.privilege_type || '|' || a.is_grantable "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "LATERAL aclexplode(p.proacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactly(
+                        "audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)|EXECUTE|false",
+                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)|EXECUTE|false",
+                        "sharing.guard_share_admission()|EXECUTE|false",
+                        "sharing.guard_share_grant()|EXECUTE|false", "sharing.reject_row_mutation()|EXECUTE|false");
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname NOT LIKE 'pg%' AND n.nspname <> 'information_schema' "
+                        + "AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass "
+                        + "AND d.objid = p.oid AND d.refclassid = 'pg_extension'::regclass AND d.deptype = 'e') "
+                        + "AND has_function_privilege('sharing_role', p.oid, 'EXECUTE') ORDER BY 1"))
+                .containsExactly(
+                        "audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)",
+                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)",
+                        "sharing.guard_share_admission()", "sharing.guard_share_grant()", "sharing.reject_row_mutation()");
+        List<String> previousRoles = new ArrayList<>(S1_ROLES);
+        previousRoles.addAll(V004_ROLES);
+        previousRoles.addAll(V008_ROLES);
+        for (String role : previousRoles) {
+            assertThat(hasSchema(connection, role, "sharing", "USAGE")).as("%s no sharing expansion", role).isFalse();
+            assertThat(hasSchema(connection, role, "sharing", "CREATE")).isFalse();
+            for (String function : List.of("guard_share_grant", "guard_share_admission", "reject_row_mutation")) {
+                assertThat(hasFunction(connection, role, "sharing." + function + "()", "EXECUTE")).isFalse();
+            }
+        }
+        for (String table : V009_TABLES) {
+            String relation = "sharing." + table;
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "sharing_owner", relation, privilege)).isTrue();
+                assertThat(hasTable(connection, "sharing_role", relation, privilege))
+                        .isEqualTo(List.of("SELECT", "INSERT").contains(privilege));
+                for (String role : previousRoles) {
+                    assertThat(hasTable(connection, role, relation, privilege)).isFalse();
+                }
+            }
+            for (String column : v009Columns(connection, relation)) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    assertThat(hasColumn(connection, "sharing_role", relation, column, privilege))
+                            .isEqualTo(List.of("SELECT", "INSERT").contains(privilege)
+                                    || (privilege.equals("UPDATE") && table.equals("evidence_share_grant")
+                                    && V009_UPDATE_COLUMNS.contains(column)));
+                    for (String role : previousRoles) {
+                        assertThat(hasColumn(connection, role, relation, column, privilege)).isFalse();
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "sharing_role", projection.getKey(), privilege)).isFalse();
+            }
+            for (String column : v009Columns(connection, projection.getKey())) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    assertThat(hasColumn(connection, "sharing_role", projection.getKey(), column, privilege))
+                            .isEqualTo(privilege.equals("SELECT") && projection.getValue().contains(column));
+                }
+            }
+        }
+    }
+
+    private record V009Fixture(UUID accountId, UUID organizationId, UUID evidenceId, UUID grantId,
+                               UUID eventGrantId, UUID admissionId, Map<String, List<String>> rows) {
+    }
+
+    private static V009Fixture v009Fixture(Connection connection, boolean withProjections) throws SQLException {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID eventGrantId = UUID.randomUUID();
+        UUID admissionId = UUID.randomUUID();
+        Map<String, List<String>> rows = new java.util.LinkedHashMap<>();
+        switchLocalRole(connection, "customer_iam_role");
+        assertThat(insertCustomerAccount(connection, accountId, "PA9 synthetic DB-shape creator")).isEqualTo(1);
+        rows.put("customer_iam.customer_account", List.of(accountId.toString()));
+        switchLocalRole(connection, "organization_access_role");
+        assertThat(insertOrganization(connection, organizationId, "PA9 synthetic DB-shape organization")).isEqualTo(1);
+        rows.put("organization_access.organization", List.of(organizationId.toString()));
+        if (withProjections) {
+            UUID membershipId = UUID.randomUUID();
+            assertThat(insertMembership(connection, membershipId, organizationId, accountId, "ADMINISTRATOR")).isEqualTo(1);
+            rows.put("organization_access.organization_membership", List.of(membershipId.toString()));
+        }
+        UUID subjectId = v008InsertSubjectSameTx(connection);
+        rows.put("subject_number.business_subject", List.of(subjectId.toString()));
+        if (withProjections) {
+            UUID bindingId = UUID.randomUUID();
+            UUID riskId = UUID.randomUUID();
+            assertThat(insertBinding(connection, bindingId, subjectId, "MOBILE", "v1.pa9.synthetic",
+                    randomSha256(), "138****0009", "ACTIVE", OffsetDateTime.now(ZoneOffset.UTC), 1)).isEqualTo(1);
+            assertThat(insertRisk(connection, riskId, bindingId, "CONFLICT", "OPEN", "CLAIM_CHECK",
+                    OffsetDateTime.now(ZoneOffset.UTC), null, 1)).isEqualTo(1);
+            rows.put("subject_number.caller_number_binding", List.of(bindingId.toString()));
+            rows.put("subject_number.subject_risk_state", List.of(riskId.toString()));
+        }
+        String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+        rows.put("ivr.call_record", List.of(callId));
+        UUID sessionId = UUID.fromString(queryString(connection,
+                "SELECT id::text FROM ivr.inbound_session WHERE call_id = ?", callId));
+        rows.put("ivr.inbound_session", List.of(sessionId.toString()));
+        switchLocalRole(connection, "evidence_owner");
+        UUID evidenceId = v008InsertValidRecordAndCreationEvent(connection, subjectId, callId,
+                sessionId, null, "s1-sharing-evidence-" + UUID.randomUUID(), withProjections);
+        assertThat(executeUpdate(connection, "UPDATE evidence.evidence_record SET status = 'SOLIDIFIED', "
+                + "solidified_at = now(), revision = revision + 1 WHERE id = ?", evidenceId)).isEqualTo(1);
+        rows.put("evidence.evidence_record", List.of(evidenceId.toString()));
+        rows.put("evidence.evidence_event", queryStrings(connection,
+                "SELECT id::text FROM evidence.evidence_event WHERE evidence_id = ?", evidenceId));
+        if (withProjections) {
+            rows.put("evidence.media_object", queryStrings(connection,
+                    "SELECT media_object_id::text FROM evidence.evidence_artifact WHERE evidence_id = ?", evidenceId));
+            rows.put("evidence.evidence_artifact", queryStrings(connection,
+                    "SELECT id::text FROM evidence.evidence_artifact WHERE evidence_id = ?", evidenceId));
+        }
+        execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
+        switchLocalRole(connection, "sharing_role");
+        for (UUID grant : List.of(grantId, eventGrantId)) {
+            assertThat(executeUpdate(connection, v009GrantSql(), grant, "s1-synthetic-" + grant,
+                    randomSha256(), evidenceId, accountId, organizationId, randomSha256())).isEqualTo(1);
+        }
+        assertThat(executeUpdate(connection, v009AdmissionSql(), admissionId, grantId, "s1-synthetic-admission"))
+                .isEqualTo(1);
+        UUID eventId = UUID.randomUUID();
+        assertThat(executeUpdate(connection, v009EventSql(), eventId, eventGrantId, admissionId,
+                "s1-synthetic-" + eventId, randomSha256())).isEqualTo(1);
+        rows.put("sharing.evidence_share_grant", new ArrayList<>(List.of(grantId.toString(), eventGrantId.toString())));
+        rows.put("sharing.share_admission", new ArrayList<>(List.of(admissionId.toString())));
+        rows.put("sharing.share_access_event", new ArrayList<>(List.of(eventId.toString())));
+        return new V009Fixture(accountId, organizationId, evidenceId, grantId, eventGrantId, admissionId, rows);
+    }
+
+    private static String v009GrantSql() {
+        return "INSERT INTO sharing.evidence_share_grant (id, share_id, capability_token_hash, evidence_id, "
+                + "created_by_account_id, owner_organization_id, verification_mode, valid_from, expires_at, "
+                + "max_admissions, content_snapshot, content_sha256) "
+                + "SELECT id, share_id, token_hash, evidence_id, account_id, organization_id, 'NONE', "
+                + "clock_timestamp() - interval '1 hour', clock_timestamp() + interval '1 day', NULL, "
+                + "jsonb_build_object('content', jsonb_build_object('evidenceId', evidence_id::text), "
+                + "'verification', jsonb_build_object('mode', 'NONE'), 'creation', jsonb_build_object("
+                + "'creatorAccountId', account_id::text, 'evidenceId', evidence_id::text, "
+                + "'ownerOrganizationId', organization_id::text, 'scopeDigest', digest, "
+                + "'creationRequestDigest', digest, 'creationFingerprint', digest)), digest "
+                + "FROM (VALUES (?::uuid, ?::text, ?::text, ?::uuid, ?::uuid, ?::uuid, ?::text)) "
+                + "fixture(id, share_id, token_hash, evidence_id, account_id, organization_id, digest)";
+    }
+
+    private static String v009AdmissionSql() {
+        return "INSERT INTO sharing.share_admission (id, share_grant_id, admission_key, admission_no, "
+                + "verification_mode, verification_result) VALUES (?, ?, ?, 1, 'NONE', 'NOT_REQUIRED')";
+    }
+
+    private static String v009EventSql() {
+        return "INSERT INTO sharing.share_access_event (id, share_grant_id, share_admission_id, event_domain, "
+                + "event_id, event_type, result, payload_redacted, payload_sha256) "
+                + "VALUES (?, ?, ?, 'SHARE_ACCESS', ?, 'PAGE_OPENED', 'SUCCESS', '{}'::jsonb, ?)";
+    }
+
+    private static List<String> v009Columns(Connection connection, String relation) throws SQLException {
+        return queryStrings(connection, "SELECT attname FROM pg_attribute WHERE attrelid = ?::regclass "
+                + "AND attnum > 0 AND NOT attisdropped ORDER BY attnum", relation);
+    }
+
+    private static void v009DeniedQuery(Connection connection, String sql) throws SQLException {
+        Savepoint denial = connection.setSavepoint();
+        try {
+            expectSqlState(connection, "42501", null, () -> queryStrings(connection, sql));
+        } finally {
+            connection.rollback(denial);
+        }
+    }
+
+    private static void v009ExpectConstraint(Connection connection, String state, String constraint,
+                                           String sql, Object... parameters) throws SQLException {
+        Savepoint probe = connection.setSavepoint();
+        try {
+            try {
+                executeUpdate(connection, sql, parameters);
+                fail("expected %s/%s", state, constraint);
+            } catch (org.postgresql.util.PSQLException failure) {
+                assertThat(failure.getSQLState()).isEqualTo(state);
+                assertThat(failure.getServerErrorMessage()).isNotNull();
+                assertThat(failure.getServerErrorMessage().getConstraint()).isEqualTo(constraint);
+            }
+        } finally {
+            connection.rollback(probe);
+        }
+    }
+
+    private static void v009AssertNoResidue(V009Fixture fixture) throws SQLException {
+        try (Connection connection = openConnection()) {
+            for (Map.Entry<String, List<String>> registered : fixture.rows().entrySet()) {
+                String column = registered.getKey().equals("ivr.call_record") ? "call_id" : "id";
+                for (String identifier : registered.getValue()) {
+                    assertThat(queryLong(connection, "SELECT count(*) FROM " + registered.getKey()
+                            + " WHERE " + column + "::text = ?", identifier))
+                            .as("fresh-connection rollback residue %s/%s", registered.getKey(), identifier).isZero();
+                }
+            }
+            assertV009TriggerInventory(connection);
+            assertV009ForeignKeys(connection);
+            assertV008ForeignKeyInventory(connection);
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                            + "WHERE NOT t.tgisinternal AND c.relnamespace = 'evidence'::regnamespace "
+                            + "AND t.tgenabled::text <> 'O'"))
+                    .isZero();
         }
     }
 
@@ -6087,7 +6897,7 @@ class PostgresContainerIT {
                 connection,
                 "SELECT n.nspname || '=' || pg_get_userbyid(n.nspowner) FROM pg_namespace n "
                         + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam','subject_number',"
-                        + "'catalog_order','ivr','entitlement_metering','activation_consent','evidence') "
+                        + "'catalog_order','ivr','entitlement_metering','activation_consent','evidence','sharing') "
                         + "ORDER BY n.nspname"))
                 .containsExactly(
                         "activation_consent=activation_consent_owner",
@@ -6100,12 +6910,8 @@ class PostgresContainerIT {
                         "operations_iam=operations_iam_owner",
                         "organization_access=organization_access_owner",
                         "platform=platform_reliability_owner",
+                        "sharing=sharing_owner",
                         "subject_number=subject_number_owner");
-
-        assertThat(queryLong(
-                connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
-                .isZero();
 
         assertThat(queryStrings(
                 connection,
@@ -6122,6 +6928,7 @@ class PostgresContainerIT {
                         "operations_iam",
                         "organization_access",
                         "platform",
+                        "sharing",
                         "subject_number");
 
         List<String> expectedRoles = new ArrayList<>();
@@ -6134,6 +6941,8 @@ class PostgresContainerIT {
         for (String role : V008_ROLES) {
             expectedRoles.add(role + ":false:false:false:false");
         }
+        expectedRoles.add("sharing_owner:false:false:false:false");
+        expectedRoles.add("sharing_role:false:false:false:false");
         expectedRoles.sort(String::compareTo);
 
         assertThat(queryStrings(
@@ -6142,10 +6951,7 @@ class PostgresContainerIT {
                         + "FROM pg_roles WHERE rolname <> '" + DB_USER + "' AND rolname NOT LIKE 'pg%' ORDER BY rolname"))
                 .containsExactlyElementsOf(expectedRoles);
 
-        assertThat(queryLong(
-                connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
-                .isZero();
+
     }
 
     private static void assertTablesColumnsChecksAndIndexes(Connection connection) throws SQLException {
@@ -6894,6 +7700,9 @@ class PostgresContainerIT {
                         "platform.idempotency_begin",
                         "platform.idempotency_complete",
                         "platform.outbox_append",
+                        "sharing.guard_share_admission",
+                        "sharing.guard_share_grant",
+                        "sharing.reject_row_mutation",
                         "subject_number.guard_caller_number_binding",
                         "subject_number.guard_subject_owner",
                         "subject_number.guard_subject_risk_state",
@@ -7031,6 +7840,10 @@ class PostgresContainerIT {
                         "operations_iam.employee_account.trg_employee_account_guard",
                         "organization_access.organization.trg_organization_guard",
                         "organization_access.organization_membership.trg_membership_guard",
+                        "sharing.evidence_share_grant.trg_share_grant_guard",
+                        "sharing.share_access_event.trg_share_access_event_immutable",
+                        "sharing.share_admission.trg_share_admission_guard",
+                        "sharing.share_admission.trg_share_admission_immutable",
                         "subject_number.business_subject.trg_business_subject_guard",
                         "subject_number.caller_number_binding.trg_caller_number_binding_guard",
                         "subject_number.subject_claim.trg_subject_claim_immutable",
@@ -8334,6 +9147,115 @@ class PostgresContainerIT {
             assertThat(toRegclass(connection, "evidence." + v008PlusName)).isNull();
             assertThat(toRegclass(connection, "sharing." + v008PlusName)).isNull();
         }
+    }
+
+    private static void assertV009LiveFence(Connection connection) throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.relkind = 'r' ORDER BY 1"))
+                .containsExactlyElementsOf(List.of(
+                        "call_event", "call_leg", "call_record", "inbound_session",
+                        "ivr_decision", "outbound_call_task"));
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the seven V006 entitlement_metering tables")
+                .containsExactlyElementsOf(V006_TABLES);
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the three V007 activation_consent tables")
+                .containsExactlyElementsOf(V007_TABLES);
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the five V008 evidence tables")
+                .containsExactlyElementsOf(V008_TABLES);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
+                .isEqualTo(1);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
+                .isEqualTo(2);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('evidence_owner','evidence_role')"))
+                .isEqualTo(2);
+        assertThat(queryStrings(
+                connection,
+                "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' "
+                        + "AND p.prosecdef ORDER BY 1"))
+                .as("issue_first_trial is the only SECURITY DEFINER service function")
+                .containsExactly("issue_first_trial");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema'"))
+                .as("function wave remains the five SECURITY DEFINER services")
+                .isEqualTo(5);
+        assertThat(queryStrings(
+                connection,
+                "SELECT proname FROM pg_proc WHERE proname IN "
+                        + "('select_call_action','record_activation_next_action',"
+                        + "'reserve_call_usage','settle_call_usage','publish_trial_policy',"
+                        + "'disable_trial_policy','record_activation_next_action')"))
+                .isEmpty();
+        assertThat(toRegclass(connection, "ivr.call_task")).isNull();
+        assertThat(toRegclass(connection, "ivr.call_session")).isNull();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c "
+                        + "JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
+                .as("V007 consent FK is present").isEqualTo(1);
+        for (String v008PlusName : List.of(
+                "evidence_share_grant", "share_admission", "share_access_event")) {
+            assertThat(toRegclass(connection, "activation_consent." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "entitlement_metering." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "evidence." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "sharing." + v008PlusName)).isNotNull();
+        }
+        assertSchemasAndRoles(connection);
+        assertFunctionsAndTrigger(connection);
+        assertV009ObjectInventory(connection);
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || p.proname FROM pg_proc p "
+                        + "JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema' ORDER BY 1"))
+                .containsExactly("audit.append_fact", "entitlement_metering.issue_first_trial",
+                        "platform.idempotency_begin", "platform.idempotency_complete", "platform.outbox_append");
+        assertThat(queryStrings(connection,
+                "SELECT version || '|' || script || '|' || type || '|' || success "
+                        + "FROM public.flyway_schema_history ORDER BY installed_rank"))
+                .containsExactly(
+                        "001|V001__platform_schemas_roles_idempotency_outbox_audit.sql|SQL|true",
+                        "002|V002__identity_organization_and_employee.sql|SQL|true",
+                        "003|V003__subject_number_and_claim.sql|SQL|true",
+                        "004|V004__catalog_order_and_payment.sql|SQL|true",
+                        "005|V005__ivr_task_session_call.sql|SQL|true",
+                        "006|V006__trial_entitlement_issuance_reservation_usage.sql|SQL|true",
+                        "007|V007__activation_and_consent.sql|SQL|true",
+                        "008|V008__evidence_media.sql|SQL|true",
+                        "009|V009__sharing.sql|SQL|true");
+        assertThat(java.util.Arrays.stream(flyway.info().all())
+                .map(info -> info.getScript()).toList())
+                .containsExactly(
+                        "V001__platform_schemas_roles_idempotency_outbox_audit.sql",
+                        "V002__identity_organization_and_employee.sql",
+                        "V003__subject_number_and_claim.sql", "V004__catalog_order_and_payment.sql",
+                        "V005__ivr_task_session_call.sql",
+                        "V006__trial_entitlement_issuance_reservation_usage.sql",
+                        "V007__activation_and_consent.sql", "V008__evidence_media.sql", "V009__sharing.sql");
     }
 
     /**
@@ -18122,10 +19044,9 @@ class PostgresContainerIT {
                                 + "WHERE n.nspname = 'ivr' AND c.relkind = 'r'"))
                         .as("V005 ivr tables exist")
                         .isEqualTo(6);
-                assertThat(queryLong(connection,
-                        "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
-                        .as("no sharing schema")
-                        .isZero();
+                assertThat(queryString(connection,
+                        "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'sharing'"))
+                        .isEqualTo("sharing_owner");
                 assertThat(toRegclass(connection, "ivr.call_task")).isNull();
                 assertThat(toRegclass(connection, "ivr.call_session")).isNull();
                 assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNotNull();
@@ -23902,7 +24823,7 @@ class PostgresContainerIT {
                 .as("staged V007 function wave remains five SECURITY DEFINER services").isTrue();
     }
 
-    private static void assertV001ThroughV007MigrationDigestsUnchanged() throws Exception {
+    private static void assertV001ThroughV009MigrationDigestsUnchanged() throws Exception {
         // Pinned canonical LF (Git blob) digests; CRLF bytes are normalized to LF before hashing.
         Map<String, String> expected = Map.of(
                 "db/migration/V001__platform_schemas_roles_idempotency_outbox_audit.sql",
@@ -23918,7 +24839,11 @@ class PostgresContainerIT {
                 "db/migration/V006__trial_entitlement_issuance_reservation_usage.sql",
                 "830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475",
                 "db/migration/V007__activation_and_consent.sql",
-                "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659");
+                "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659",
+                "db/migration/V008__evidence_media.sql",
+                "2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e",
+                "db/migration/V009__sharing.sql",
+                "ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae");
         for (Map.Entry<String, String> entry : expected.entrySet()) {
             byte[] raw = readClasspathBytes(entry.getKey());
             byte[] lf = toLfBytes(raw);
