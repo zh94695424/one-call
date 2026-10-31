@@ -1,5 +1,29 @@
 # PA9 V009 Sharing Foundation — S3 Completion 1
 
+## Current aggregate-fix evidence — 2026-10-31
+
+Task `pa9-v009-aggregate-codefix-gpt-20261031-01`; aggregate-review **fix only**, intake/current HEAD `96db75a17f6ea2b657cfb06d30dfcdf8d88f4dfc`. This section supersedes current-state claims below; all earlier execution history and raw identities remain historical. The complete author evidence, commands, identities and residuals are in `docs/gateflow/pa9-v009-sharing-foundation-aggregate-fix-1.md`. This is not aggregate re-review acceptance.
+
+- AF-1 fixed: cumulative PA0–PA9/V001–V009 class javadoc explicitly covers V008/V009 and exactly 64 methods.
+- AF-2 fixed: V006 inventory javadoc describes the final V009/no-V010 live fence and retained staged V008 prefix booleans; its body is unchanged.
+- AF-3 fixed: SQL-only harness checks current ACTIVE/LOCKED status and statement-clock validity before fact replay; new admissions retain the existing ACTIVE/generation/limit checks. ACTIVE/LOCKED same-key replay passes; legal REVOKED/EXPIRED transitions are followed by same-key DENIED witnesses with current generation, exact unchanged admission/event/count/revision rows and a committed fresh-connection comparison. All 18 existing Lock races remain. No production service or policy is added; admission-key 129 logic is unchanged (B non-finding).
+- Provenance corrected additively: historical S3 raw hashes describe the controller's mixed-LF/CRLF working tree, not canonical committed LF blobs. Intake canonical Git-content SHA256: Java `5e6a4fd04d06c94dddd443551fbdcc25839cccfeb1cb489a434fed27eed45d0d`, CI `7bffd120aa3da912977aca923a375cc814dc67803614a55fdfd0204df6b1d55f`, README `93cdb627cdd481e2873ac98078ccc6e0485555c65ce56ef37676cbce6f074b41`. Final uncommitted Java LF-normalized SHA256 `336f2b0669da4fb4d981affc46d4ca1a5eea334509602428c77327bb8edc890f`; environment-specific raw `2403afc612a1b7c9f460272387fff0d7b44b769f73fff34a16e16417b91ba8f6`. CI/README remain byte-identical; historical review/fix artifacts are not rewritten.
+
+Actual commands from `backend`, with `JAVA_HOME=/opt/jdk21` and that JDK first on PATH; Maven `/opt/maven-3.9.9/bin/mvn`:
+
+| Command / audit | Actual result |
+| --- | --- |
+| `mvn -B -ntp test-compile` | exit 0, BUILD SUCCESS, 7.129 s |
+| `timeout 240s mvn -B -ntp -Pcontainer-smoke '-Dit.test=PostgresContainerIT#v009AdmissionCountOnceLimitAndAtomicRollbackBackstops+concurrentV009AdmissionIdentityLimitAndLifecycleHasOneWinner' verify` | exit 0, 40.179 s; Failsafe 2 + Surefire 10, zero failures/errors/skips; ACTIVE/LOCKED replay, REVOKE/EXPIRY denial, 18 Lock/7 rollback/2 cleanup markers |
+| Exactly one `timeout 240s mvn -B -ntp -Pcontainer-smoke verify` | exit 0, 59.458 s; Failsafe 64 + Surefire 10, zero failures/errors/skips; same markers |
+| `python3 /tmp/pa9-aggregate-fix-01/audit.py preflight /tmp/pa9-aggregate-fix-01/preflight-xml`, then `python3 /tmp/pa9-aggregate-fix-01/audit.py final` | exit 0; base/slice ancestry, accepted plan/A/B pins, V001–V008 base equality/plan pins and frozen V009 verified; independent source=CI=XML exact 64, Surefire 10; allowed scope/frozen raw bytes/empty index/whitespace verified |
+| `cd backend && python3 /tmp/pa9-aggregate-fix-01/ci-validator.py` (unchanged extracted CI heredoc) | exit 0, `container-smoke report assertions passed` |
+| `docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}'` | exit 0, empty after cleanup |
+
+Runtime/provider: OpenAI assistant through Codex CLI, Linux/WSL2 amd64, Temurin 21.0.13, Maven 3.9.9, real Docker Desktop engine 29.9.2 and Testcontainers `postgres:16` / PostgreSQL 16.15. No subagent; backing model/provider routing is not independently terminal-attested. Logs/XML/audits and final non-circular file-hash manifest are under `/tmp/pa9-aggregate-fix-01`. Full log SHA256 `d9002f902896c38c49349b932fc7d5f9f7749e3d624802029e63029ceda9209c`; full Failsafe XML `e9e98b4d8a6292ce38f568b4142c72f88fc62a435df9ef00812248e92ca968a7`.
+
+Bounded-race/timing, CHECK UNKNOWN, policy/provisioning and remote-CI residuals are unchanged and not addressed. V001–V009, CI, README, plan/design/controller, historical artifacts and pre-existing `.codex`/`build/` bytes remain untouched. No stage/commit/push/PR/review/approval/comment or external workflow action. Stop at author aggregate fix; fresh aggregate A/B re-review is separate.
+
 ## Current S3 code-fix evidence — 2026-10-31
 
 This section supersedes the historical pre-fix source/evidence identities below, not their retained execution history. Task `pa9-v009-s3-codefix-gpt-20261031-01`, intake/current HEAD `209b658e249ef26e22be69db77726de63cc255f4`, gate **fix** only. F1 is fixed: README lines 3/117 now say 64; its only remaining 62 explicitly describes the accepted S2 checkpoint. F2 is fixed: only `v009S3Fixture()` changed; its outer `Exception | Error` handler independently removes the possibly committed synthetic account and cleans the committed V008 fixture, suppresses cleanup failures, and rethrows the original setup failure. Rollback failures also become suppressed rather than replacing that failure. All 64 test bodies, normal S3 cleanup and every other helper/assertion are unchanged.

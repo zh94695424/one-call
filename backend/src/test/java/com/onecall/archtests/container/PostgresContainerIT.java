@@ -40,9 +40,9 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7 PostgreSQL 16 proof for the frozen V001-V007
- * contracts: V001-then-...-then-V007 migration, exact
- * V001+V002+V003+V004+V005+V006+V007 inventory (including the normalized
+ * PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7/PA8/PA9 PostgreSQL 16 proof for the frozen V001-V009
+ * contracts: V001-then-...-then-V009 migration, exact
+ * V001+V002+V003+V004+V005+V006+V007+V008+V009 inventory (including the normalized
  * pg_get_constraintdef maps) and failure-visibility; idempotency/Outbox
  * first-result and transaction atomicity; audit append-only, reason/denylist,
  * fixed-search-path and privilege boundaries; runtime/cross-module privilege
@@ -52,8 +52,11 @@ import org.testcontainers.utility.DockerImageName;
  * ALREADY_GRANTED/TRIAL_* database semantics; and PA7 V007 S1 exact
  * activation_consent inventory/ACL and all 11 FK decisions including the late
  * order-consent FK, plus PA7 V007 S2 consent/head/transition lifecycle,
- * named-check, append-only, rollback and bounded concurrency backstops.
- * Cumulative V001-V009 S2 evidence has exactly 62 container methods. There is no skip path: an
+ * named-check, append-only, rollback and bounded concurrency backstops;
+ * PA8 V008 evidence catalog/ACL, lifecycle and concurrency backstops; and
+ * PA9 V009 sharing catalog/ACL, staged/live fences, lifecycle, atomic admission,
+ * replay-before-limit, rollback and bounded concurrency backstops.
+ * Cumulative V001-V009 evidence has exactly 64 container methods. There is no skip path: an
  * unavailable Docker daemon, failed image pull, failed container start, JDBC
  * failure, Flyway failure or assertion failure fails the Maven build. The
  * password is generated per JVM run and never persisted.
@@ -2477,7 +2480,8 @@ class PostgresContainerIT {
 
     /**
      * PA6 V006 S1: exact entitlement_metering inventory, guard shapes, independent
-     * Outbox-payload oracle support constants, and absence of any V007+ object.
+     * Outbox-payload oracle support constants, the final V009 live fence with no
+     * V010 or extra object, and retained staged V008 prefix booleans.
      */
     @Test
     void v006EntitlementReservationUsageInventoryAndGuardShapesAreExact() throws Exception {
@@ -3451,6 +3455,7 @@ class PostgresContainerIT {
                             .outcome()).isEqualTo("DENIED");
                     assertThat(v009S2Rows(connection, grant)).isEqualTo(baseline);
                     connection.commit();
+                    System.out.printf("PA9 aggregate same-key: %s REPLAY; original admission/event/count unchanged%n", state);
                 }
             }
             try (Connection connection = openConnection()) {
@@ -3671,6 +3676,11 @@ class PostgresContainerIT {
                 .isEqualTo(grant.toString());
         long count = queryLong(connection, "SELECT admissions_used FROM sharing.evidence_share_grant WHERE id = ?", grant);
         long revision = queryLong(connection, "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", grant);
+        if (queryLong(connection, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ? "
+                + "AND status IN ('ACTIVE', 'LOCKED') "
+                + "AND clock_timestamp() >= valid_from AND clock_timestamp() < expires_at", grant) != 1) {
+            return new V009S3Admission("DENIED", null, null, count, revision);
+        }
         List<String> replay = queryStrings(connection, "SELECT a.id || '|' || e.id FROM sharing.share_admission a "
                 + "JOIN sharing.share_access_event e ON e.share_admission_id = a.id AND e.share_grant_id = a.share_grant_id "
                 + "AND e.event_type = 'ADMISSION_GRANTED' WHERE a.share_grant_id = ? AND a.admission_key = ?", grant, key);
@@ -4042,14 +4052,19 @@ class PostgresContainerIT {
                         .isEqualTo("b".repeat(22) + "|" + "b".repeat(64));
             }
         }
-        if (action.equals("LOCK") && !transitionFirst) {
+        if (List.of("LOCK", "REVOKE", "EXPIRY").contains(action) && !transitionFirst) {
             try (Connection connection = openConnection()) {
                 v009S3Configure(connection, application + "-replay");
                 String before = v009S2Rows(connection, grant);
-                assertThat(v009S3Admit(connection, grant, "lifecycle-key", UUID.randomUUID(), UUID.randomUUID(), 0, false))
-                        .isEqualTo(new V009S3Admission("REPLAY", admission, event, 1, 3));
+                boolean locked = action.equals("LOCK");
+                String outcome = locked ? "REPLAY" : "DENIED";
+                assertThat(v009S3Admit(connection, grant, "lifecycle-key", UUID.randomUUID(), UUID.randomUUID(),
+                        locked ? 0 : 1, false))
+                        .isEqualTo(new V009S3Admission(outcome, locked ? admission : null, locked ? event : null, 1, 3));
                 assertThat(v009S2Rows(connection, grant)).isEqualTo(before);
-                connection.rollback();
+                connection.commit();
+                assertThat(v009S3Snapshot(grant)).isEqualTo(before);
+                System.out.printf("PA9 aggregate same-key: %s %s; admission/event/count unchanged%n", action, outcome);
             }
         }
         System.out.printf("PA9 S3 observed Lock: admission vs %s transition-first=%s; current state/generations/revision/no-residue exact%n", action, transitionFirst);
