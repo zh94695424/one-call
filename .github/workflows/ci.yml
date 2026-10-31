@@ -81,6 +81,8 @@ jobs:
               "v009SharingInventoryAndGuardShapesAreExact",
               "v009OwnerPublicRuntimeAndCrossModuleAclsAreExact",
               "v009ForeignKeyAndRestrictDeleteBackstops",
+              "v009ShapeDefaultsAndAppendOnlyBackstops",
+              "v009GrantLifecycleRevisionMatrixAndImmutabilityBackstops",
               "v008EvidenceInventoryAndGuardShapesAreExact",
               "v008OwnerPublicRuntimeAndCrossModuleAclsAreExact",
               "v008ForeignKeyAndDeferredCreationCycleFkBackstops",
@@ -140,20 +142,20 @@ jobs:
           }
           source = Path("src/test/java/com/onecall/archtests/container/PostgresContainerIT.java").read_text()
           source_names = re.findall(r"@Test\s+void\s+(\w+)\s*\(", source)
-          if len(source_names) != 60 or len(set(source_names)) != 60 or len(expected) != 60:
-              sys.exit("PA9 V009 S1 requires exactly 60 distinct source/CI methods")
+          if len(source_names) != 62 or len(set(source_names)) != 62 or len(expected) != 62:
+              sys.exit("PA9 V009 S2 requires exactly 62 distinct source/CI methods")
           if set(source_names) != expected:
               sys.exit(f"container source and CI expected methods differ: {sorted(set(source_names) ^ expected)}")
           if int(suite.get("tests", "0")) != len(expected):
-              sys.exit("container IT did not report the PA9 V009 S1 test count (60)")
+              sys.exit("container IT did not report the PA9 V009 S2 test count (62)")
           if int(suite.get("skipped", "0")) != 0:
               sys.exit("container IT was skipped")
           if int(suite.get("failures", "0")) != 0 or int(suite.get("errors", "0")) != 0:
               sys.exit("container IT failed")
           case_names = [case.get("name") for case in suite.findall("testcase")]
           cases = set(case_names)
-          if len(case_names) != 60 or len(cases) != 60 or cases != expected:
-              sys.exit(f"container IT methods differ from PA9 V009 S1: {sorted(cases)}")
+          if len(case_names) != 62 or len(cases) != 62 or cases != expected:
+              sys.exit(f"container IT methods differ from PA9 V009 S2: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
           if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 10:
               sys.exit("expected exactly 10 Surefire unit/module tests")
