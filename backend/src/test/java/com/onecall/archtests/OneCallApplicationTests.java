@@ -20,5 +20,13 @@ class OneCallApplicationTests {
         assertThat(context.containsBean("dataSource")).isFalse();
         assertThat(context.containsBean("flyway")).isFalse();
         assertThat(context.containsBean("springSecurityFilterChain")).isFalse();
+        for (Class<?> type : java.util.List.of(javax.sql.DataSource.class, org.jooq.DSLContext.class,
+                org.springframework.transaction.PlatformTransactionManager.class,
+                org.springframework.transaction.support.TransactionTemplate.class,
+                com.zaxxer.hikari.HikariDataSource.class,
+                com.onecall.core.sharing.internal.application.CustomerShareQueryService.class,
+                com.onecall.core.sharing.internal.persistence.ShareQueryRepository.class)) {
+            assertThat(context.getBeansOfType(type)).isEmpty();
+        }
     }
 }

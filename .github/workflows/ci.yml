@@ -159,12 +159,79 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 10:
-              sys.exit("expected exactly 10 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 21:
+              sys.exit("expected exactly 21 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
-          print("container-smoke report assertions passed")
+          expected_query = {
+              "queryRuntimeStartsAfterFixtureProvisioning",
+              "personalListingIsCreatorScoped",
+              "organizationListingIsCreatorAndWorkspaceScoped",
+              "inactiveAndMissingCreatorContextsFailClosed",
+              "keysetTiesAndConcurrentInsertRemainStable",
+              "pageLimitsEmptyAndTailStatesAreExact",
+              "invalidAndCrossContextCursorsNeverWidenScope",
+              "listingProjectionNeverReadsOrReturnsSecrets",
+              "runtimeRoleAndPoolCleanupHoldOnSuccessAndFailure",
+              "committedLifecycleChangesDenyNextQueryAndFailuresRollBack",
+          }
+          unit_expected = {
+              "com.onecall.archtests.architecture.ModuleBoundaryTests": {
+                  "discoversExactlyTheFrozenModuleSet", "everyExpectedModuleDeclaresApplicationModule",
+                  "assertsExactAllowedDependencyMapFromPlan62", "discoveredProductionEdgesStayInsideTheConfiguredMap",
+                  "verifiesNoCyclesOrBoundaryViolations", "rejectsCycleFixture", "rejectsForbiddenDependencyFixture",
+                  "rejectsInternalPackageAccessFixture",
+              },
+              "com.onecall.archtests.OneCallApplicationTests": {"contextLoadsWithoutDatabaseOrSecurityAutoConfiguration"},
+              "com.onecall.archtests.architecture.BootstrapDependencyBoundaryTests": {"approvedPersistenceFrameworksAndForbiddenStacksAreExact"},
+              "com.onecall.core.sharing.internal.application.CustomerShareQueryServiceTests": {
+                  "defaultsAndBoundsAreDeterministic", "trustedContextCannotBeOverridden",
+                  "cursorBindingAndAnchorValidationAreDeterministic", "lookaheadUsesLastReturnedRow",
+                  "emptyAndTailPagesHaveNoCursor", "projectionComponentsMatchFrozenListing",
+                  "creatorContextDenialDoesNotFetchShares", "technicalFailuresReturnNoPartialPageOrSensitiveText",
+              },
+              "com.onecall.archtests.SharingPersistenceConfigurationTests": {
+                  "defaultProfileCreatesNoPersistenceBeans", "persistenceRequiresExplicitQueryCredentials",
+              },
+              "com.onecall.archtests.architecture.SharingQueryBoundaryTests": {"sharingQueryApiAndProjectionAreExact"},
+          }
+          container_expected = {
+              "com.onecall.archtests.container.PostgresContainerIT": expected,
+              "com.onecall.archtests.container.SharingQueryServiceIT": expected_query,
+          }
+
+          def exact_inventory(pattern, inventory, total):
+              reports = suites(pattern)
+              if len(reports) != len(inventory) or {report.get("name") for report in reports} != set(inventory):
+                  sys.exit("unexpected/missing test report class")
+              if sum(int(report.get("tests", "0")) for report in reports) != total:
+                  sys.exit("wrong aggregate test inventory")
+              for report in reports:
+                  class_name = report.get("name")
+                  names = inventory[class_name]
+                  source = Path("src/test/java", class_name.replace(".", "/") + ".java").read_text()
+                  source_names = re.findall(r"@Test\s+(?:public\s+)?void\s+(\w+)\s*\(", source)
+                  if len(source_names) != len(names) or set(source_names) != names:
+                      sys.exit(f"source/CI inventory mismatch: {class_name}")
+                  if re.search(r"@(ParameterizedTest|RepeatedTest|TestFactory|Disabled|Enabled\w*|Disabled\w*)\b", source):
+                      sys.exit(f"unsupported/conditional tests: {class_name}")
+                  pairs = [(case.get("classname"), case.get("name")) for case in report.findall("testcase")]
+                  if len(pairs) != len(names) or set(pairs) != {(class_name, name) for name in names}:
+                      sys.exit(f"XML/CI inventory mismatch: {class_name}")
+                  if int(report.get("tests", "0")) != len(names) or any(int(report.get(key, "0")) for key in ("skipped", "failures", "errors")):
+                      sys.exit(f"non-green or incorrect report: {class_name}")
+
+          source_classes = set()
+          for path in Path("src/test/java").rglob("*.java"):
+              source = path.read_text()
+              if re.search(r"@(?:Test|ParameterizedTest|RepeatedTest|TestFactory)\b", source):
+                  source_classes.add(str(path.relative_to("src/test/java")).removesuffix(".java").replace("/", "."))
+          if source_classes != set(unit_expected) | set(container_expected):
+              sys.exit("unexpected/missing source test class")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 21)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 74)
+          print("PA10 exact source/CI/XML inventory passed: Surefire 21; Failsafe 64+10=74; zero skips/errors/failures")
           PY
       - name: boot jar smoke
         run: |
@@ -173,10 +240,34 @@ jobs:
       - name: production jar dependency firewall
         run: |
           jar tf target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/jar-index.txt
-          if grep -Eq 'BOOT-INF/lib/(spring-security|flyway|jooq|HikariCP|postgresql|testcontainers)' target/jar-index.txt; then
-            echo 'forbidden runtime dependency in fat jar'
-            exit 1
-          fi
+          ./mvnw -B -ntp dependency:list -DincludeScope=runtime -DoutputFile=target/pa10-runtime-dependencies.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          jars = [entry.removeprefix("BOOT-INF/lib/") for entry in Path("target/jar-index.txt").read_text().splitlines()
+                  if entry.startswith("BOOT-INF/lib/") and entry.endswith(".jar")]
+          resolved = re.findall(r"^\s*([\w.]+):([\w.-]+):jar:([^:\s]+):(compile|runtime)\b",
+                                Path("target/pa10-runtime-dependencies.txt").read_text(), re.M)
+          approved = {("org.jooq", "jooq"), ("com.zaxxer", "HikariCP"), ("org.postgresql", "postgresql"),
+                      ("org.springframework", "spring-jdbc"), ("org.springframework", "spring-tx")}
+          for group, artifact in approved:
+              matches = [(version, scope) for actual_group, actual_artifact, version, scope in resolved
+                         if (actual_group, actual_artifact) == (group, artifact)]
+              if len(matches) != 1:
+                  sys.exit(f"missing/duplicate resolved product coordinate: {group}:{artifact}")
+              version, scope = matches[0]
+              if scope != ("runtime" if artifact == "postgresql" else "compile"):
+                  sys.exit(f"incorrect product scope: {artifact}")
+              actual = [jar for jar in jars if jar.startswith(artifact + "-")]
+              if actual != [f"{artifact}-{version}.jar"]:
+                  sys.exit(f"missing/duplicate/unapproved version of {artifact}")
+          forbidden = r"^(flyway|spring-security|spring-orm|hibernate|spring-data-|spring-web|tomcat|jetty|undertow|reactor-netty|jakarta.servlet|jakarta.validation|testcontainers|junit|mockito|byte-buddy-agent|assertj|awaitility|jooq-(?!\d)|h2-|hsqldb|derby|mybatis|spring-boot-(?:jdbc|jooq|flyway|test|web|security)|spring-boot-starter-(?:jdbc|jooq|flyway|web|security|data-)|spring-test)"
+          if any(re.search(forbidden, jar) for jar in jars):
+              sys.exit("forbidden framework/test tooling in product JAR")
+          print("PA10 exact resolved query JAR inventory and negative firewall passed")
+          PY
 
   contract-regressions:
     runs-on: ubuntu-latest

@@ -40,6 +40,18 @@
 
   <dependencies>
     <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jooq</groupId>
+      <artifactId>jooq</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.zaxxer</groupId>
+      <artifactId>HikariCP</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter</artifactId>
     </dependency>
@@ -62,7 +74,7 @@
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
-      <scope>test</scope>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>
@@ -118,12 +130,28 @@
                     <exclude>org.springframework.boot:spring-boot-starter-security</exclude>
                     <exclude>org.springframework.boot:spring-boot-starter-data-jpa</exclude>
                     <exclude>org.springframework.boot:spring-boot-starter-jdbc</exclude>
+                    <exclude>org.springframework.boot:spring-boot-starter-jooq</exclude>
+                    <exclude>org.springframework.boot:spring-boot-starter-flyway</exclude>
                     <exclude>org.springframework.security:*</exclude>
                     <exclude>org.flywaydb:*:*:*:compile</exclude>
                     <exclude>org.flywaydb:*:*:*:runtime</exclude>
                     <exclude>org.jooq:*</exclude>
-                    <exclude>com.zaxxer:HikariCP</exclude>
+                    <exclude>com.zaxxer:*</exclude>
+                    <exclude>org.springframework.boot:spring-boot-starter-test:*:*:compile</exclude>
+                    <exclude>org.springframework.boot:spring-boot-starter-test:*:*:runtime</exclude>
+                    <exclude>org.springframework:spring-test:*:*:compile</exclude>
+                    <exclude>org.springframework:spring-test:*:*:runtime</exclude>
+                    <exclude>org.testcontainers:*:*:*:compile</exclude>
+                    <exclude>org.testcontainers:*:*:*:runtime</exclude>
+                    <exclude>org.junit.jupiter:*:*:*:compile</exclude>
+                    <exclude>org.junit.jupiter:*:*:*:runtime</exclude>
+                    <exclude>org.mockito:*:*:*:compile</exclude>
+                    <exclude>org.mockito:*:*:*:runtime</exclude>
                   </excludes>
+                  <includes>
+                    <include>org.jooq:jooq:*:*:compile</include>
+                    <include>com.zaxxer:HikariCP:*:*:compile</include>
+                  </includes>
                 </bannedDependencies>
               </rules>
             </configuration>
@@ -144,6 +172,7 @@
             <configuration>
               <includes>
                 <include>**/PostgresContainerIT.java</include>
+                <include>**/SharingQueryServiceIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>
