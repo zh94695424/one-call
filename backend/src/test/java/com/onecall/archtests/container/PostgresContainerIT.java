@@ -40,9 +40,9 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7 PostgreSQL 16 proof for the frozen V001-V007
- * contracts: V001-then-...-then-V007 migration, exact
- * V001+V002+V003+V004+V005+V006+V007 inventory (including the normalized
+ * PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7/PA8/PA9 PostgreSQL 16 proof for the frozen V001-V009
+ * contracts: V001-then-...-then-V009 migration, exact
+ * V001+V002+V003+V004+V005+V006+V007+V008+V009 inventory (including the normalized
  * pg_get_constraintdef maps) and failure-visibility; idempotency/Outbox
  * first-result and transaction atomicity; audit append-only, reason/denylist,
  * fixed-search-path and privilege boundaries; runtime/cross-module privilege
@@ -52,8 +52,11 @@ import org.testcontainers.utility.DockerImageName;
  * ALREADY_GRANTED/TRIAL_* database semantics; and PA7 V007 S1 exact
  * activation_consent inventory/ACL and all 11 FK decisions including the late
  * order-consent FK, plus PA7 V007 S2 consent/head/transition lifecycle,
- * named-check, append-only, rollback and bounded concurrency backstops.
- * Exactly 51 container methods. There is no skip path: an
+ * named-check, append-only, rollback and bounded concurrency backstops;
+ * PA8 V008 evidence catalog/ACL, lifecycle and concurrency backstops; and
+ * PA9 V009 sharing catalog/ACL, staged/live fences, lifecycle, atomic admission,
+ * replay-before-limit, rollback and bounded concurrency backstops.
+ * Cumulative V001-V009 evidence has exactly 64 container methods. There is no skip path: an
  * unavailable Docker daemon, failed image pull, failed container start, JDBC
  * failure, Flyway failure or assertion failure fails the Maven build. The
  * password is generated per JVM run and never persisted.
@@ -901,6 +904,8 @@ class PostgresContainerIT {
     private static boolean stagedV006SubjectUsageAbsent;
     private static boolean stagedV006CustomerIamUsageAbsent;
     private static boolean stagedV006OrganizationAccessUsageAbsent;
+    private static MigrateResult stagedV008Migration;
+    private static boolean stagedV008FencesVerified;
     private static MigrateResult stagedV007Migration;
     private static boolean stagedV007EvidenceSchemaAbsent;
     private static boolean stagedV007EvidenceRolesAbsent;
@@ -1089,6 +1094,25 @@ class PostgresContainerIT {
                 .dataSource(url, DB_USER, PASSWORD)
                 .locations("classpath:db/migration")
                 .load();
+        stagedV008Migration = Flyway.configure()
+                .dataSource(url, DB_USER, PASSWORD)
+                .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("008"))
+                .load().migrate();
+        try (Connection connection = openConnection()) {
+            assertNoV008PlusObjects(connection);
+            assertNoV009PlusObjects(connection);
+            assertV008TablesColumnsChecksIndexesFks(connection);
+            assertV008FunctionsAndTriggersExact(connection);
+            assertV008PublicAclIsZero(connection);
+            assertV008OwnedTableGrants(connection);
+            assertThat(queryStrings(connection,
+                    "SELECT rolname FROM pg_roles WHERE rolname NOT LIKE 'pg%' "
+                            + "AND has_schema_privilege(oid, 'evidence', 'USAGE') "
+                            + "AND rolname <> '" + DB_USER + "' ORDER BY 1"))
+                    .containsExactly("evidence_owner", "evidence_role");
+            stagedV008FencesVerified = true;
+        }
         initialMigration = flyway.migrate();
     }
 
@@ -1202,11 +1226,13 @@ class PostgresContainerIT {
     }
 
     @Test
-    void v001ThroughV008MigrateCleanPostgres16WithoutSkipping() throws Exception {
+    void v001ThroughV009MigrateCleanPostgres16WithoutSkipping() throws Exception {
         assertThat(stagedV004Migration.migrationsExecuted).isEqualTo(4);
         assertThat(stagedV005Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV006Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV007Migration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV008Migration.migrationsExecuted).isEqualTo(1);
+        assertThat(stagedV008FencesVerified).isTrue();
         assertThat(initialMigration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV004OrphanConsentEvidence)
                 .as("assigned-once V004 orphan-consent probe evidence is present").isNotNull();
@@ -1329,6 +1355,13 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script"))
                     .isEqualTo("V008__evidence_media.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("009");
+            assertThat(resultSet.getString("description")).isEqualTo("sharing");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script")).isEqualTo("V009__sharing.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -2447,7 +2480,8 @@ class PostgresContainerIT {
 
     /**
      * PA6 V006 S1: exact entitlement_metering inventory, guard shapes, independent
-     * Outbox-payload oracle support constants, and absence of any V007+ object.
+     * Outbox-payload oracle support constants, the final V009 live fence with no
+     * V010 or extra object, and retained staged V008 prefix booleans.
      */
     @Test
     void v006EntitlementReservationUsageInventoryAndGuardShapesAreExact() throws Exception {
@@ -2456,7 +2490,7 @@ class PostgresContainerIT {
             assertV006CheckPredicateInventory(connection);
             assertV006FunctionsAndTriggersExact(connection);
             assertV006NoIdDefaultsOrSequences(connection);
-            assertNoV008PlusObjects(connection);
+            assertV009LiveFence(connection);
             assertV008StagedPrefixBooleansStillTrue();
         }
     }
@@ -2500,7 +2534,7 @@ class PostgresContainerIT {
     /**
      * PA7 V007 S1: exact activation_consent inventory (3/43/31/3 PK/5 unique/12 index/2
      * function/3 trigger/6 default), owners, function flags/search paths, trigger shapes
-     * and no V008+ object.
+     * and the exact final V009 live fence with no V010 or extra object.
      */
     @Test
     void v007ActivationConsentInventoryAndGuardShapesAreExact() throws Exception {
@@ -2509,7 +2543,7 @@ class PostgresContainerIT {
             assertV007CheckPredicateInventory(connection);
             assertV007FunctionsAndTriggersExact(connection);
             assertV007NoIdDefaultsOrSequences(connection);
-            assertNoV008PlusObjects(connection);
+            assertV009LiveFence(connection);
             assertV008StagedPrefixBooleansStillTrue();
         }
     }
@@ -2583,7 +2617,8 @@ class PostgresContainerIT {
     /**
      * PA8 V008 S1: exact evidence inventory (5 tables/56 columns/39 checks/5 PK/5 ordinary
      * unique + 2 partial unique/8 secondary indexes/10 defaults/5 functions/7 triggers),
-     * guard shapes, function-wave fence, sharing-absent fence and V001–V007 digest witness.
+     * guard shapes, function-wave fence, exact final V009 live fence with no V010 or extra
+     * object, staged V008 sharing-absence evidence and V001–V009 digest witness.
      */
     @Test
     void v008EvidenceInventoryAndGuardShapesAreExact() throws Exception {
@@ -2592,10 +2627,10 @@ class PostgresContainerIT {
             assertV008CheckPredicateInventory(connection);
             assertV008FunctionsAndTriggersExact(connection);
             assertV008DefaultsAndNoServiceFunctions(connection);
-            assertNoV009PlusObjects(connection);
+            assertV009LiveFence(connection);
             assertV008StagedPrefixBooleansStillTrue();
         }
-        assertV001ThroughV007MigrationDigestsUnchanged();
+        assertV001ThroughV009MigrationDigestsUnchanged();
     }
 
     /**
@@ -3008,6 +3043,2278 @@ class PostgresContainerIT {
         } finally {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void v009SharingInventoryAndGuardShapesAreExact() throws Exception {
+        assertV001ThroughV009MigrationDigestsUnchanged();
+        try (Connection connection = openConnection()) {
+            assertV009LiveFence(connection);
+            assertV009Catalog(connection);
+            assertV009ForeignKeys(connection);
+        }
+    }
+
+    @Test
+    void v009OwnerPublicRuntimeAndCrossModuleAclsAreExact() throws Exception {
+        try (Connection connection = openConnection()) {
+            assertV009AclCatalog(connection);
+            assertV008SchemaAndFunctionFences(connection);
+        }
+        V009Fixture fixture;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                fixture = v009Fixture(connection, true);
+                switchLocalRole(connection, "sharing_role");
+                assertThat(queryLong(connection,
+                        "SELECT count(*) FROM (SELECT id FROM sharing.evidence_share_grant "
+                                + "WHERE id = ? FOR UPDATE) locked", fixture.grantId())).isEqualTo(1);
+                for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+                    String relation = projection.getKey();
+                    for (String column : v009Columns(connection, relation)) {
+                        if (projection.getValue().contains(column)) {
+                            assertThat(queryStrings(connection, "SELECT " + column + "::text FROM " + relation))
+                                    .as("declared projection has known synthetic row: %s.%s", relation, column)
+                                    .isNotEmpty();
+                        } else {
+                            v009DeniedQuery(connection, "SELECT " + column + " FROM " + relation);
+                        }
+                    }
+                    v009DeniedQuery(connection, "SELECT * FROM " + relation);
+                    for (String lock : List.of(" FOR UPDATE", " FOR SHARE")) {
+                        v009DeniedQuery(connection, "SELECT " + String.join(",", projection.getValue())
+                                + " FROM " + relation + lock);
+                    }
+                    expectSqlFailure(connection, "42501", null,
+                            "INSERT INTO " + relation + " DEFAULT VALUES");
+                    String column = projection.getValue().getFirst();
+                    expectSqlFailure(connection, "42501", null,
+                            "UPDATE " + relation + " SET " + column + " = " + column);
+                    expectSqlFailure(connection, "42501", null, "DELETE FROM " + relation);
+                }
+                for (String table : V009_TABLES) {
+                    for (String column : v009Columns(connection, "sharing." + table)) {
+                        if (!table.equals("evidence_share_grant") || !V009_UPDATE_COLUMNS.contains(column)) {
+                            expectSqlFailure(connection, "42501", null,
+                                    "UPDATE sharing." + table + " SET " + column + " = " + column);
+                        }
+                    }
+                    expectSqlFailure(connection, "42501", null, "DELETE FROM sharing." + table);
+                    expectSqlFailure(connection, "42501", null, "TRUNCATE sharing." + table);
+                }
+                for (String relation : List.of("platform.idempotency_record", "platform.outbox_event",
+                        "audit.audit_fact", "evidence.media_object", "evidence.recording")) {
+                    expectSqlFailure(connection, "42501", null, "INSERT INTO " + relation + " DEFAULT VALUES");
+                    expectSqlFailure(connection, "42501", null, "UPDATE " + relation + " SET id = id");
+                    expectSqlFailure(connection, "42501", null, "DELETE FROM " + relation);
+                    v009DeniedQuery(connection, "SELECT * FROM " + relation);
+                }
+                for (String schema : queryStrings(connection,
+                        "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
+                                + "AND nspname <> 'information_schema' ORDER BY 1")) {
+                    expectSqlFailure(connection, "42501", null,
+                            "CREATE TABLE " + schema + ".pa9_denied_probe (id integer)");
+                }
+                UUID runtimeGrantId = UUID.randomUUID();
+                fixture.rows().get("sharing.evidence_share_grant").add(runtimeGrantId.toString());
+                assertThat(executeUpdate(connection, v009GrantSql(), runtimeGrantId,
+                        "s1-runtime-" + UUID.randomUUID(), randomSha256(), fixture.evidenceId(),
+                        fixture.accountId(), null, randomSha256())).isEqualTo(1);
+                assertThat(executeUpdate(connection,
+                        "UPDATE sharing.evidence_share_grant SET revision = revision + 1 WHERE id = ?",
+                        fixture.grantId())).isEqualTo(1);
+            } finally {
+                connection.rollback();
+            }
+        }
+        v009AssertNoResidue(fixture);
+    }
+
+    @Test
+    void v009ForeignKeyAndRestrictDeleteBackstops() throws Exception {
+        V009Fixture fixture;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                fixture = v009Fixture(connection, false);
+                switchLocalRole(connection, "sharing_role");
+                for (String missing : List.of("evidence", "creator_account", "owner_organization")) {
+                    UUID evidence = missing.equals("evidence") ? UUID.randomUUID() : fixture.evidenceId();
+                    UUID account = missing.equals("creator_account") ? UUID.randomUUID() : fixture.accountId();
+                    UUID organization = missing.equals("owner_organization")
+                            ? UUID.randomUUID() : fixture.organizationId();
+                    v009ExpectConstraint(connection, "23503", "fk_share_grant_" + missing,
+                            v009GrantSql(), UUID.randomUUID(), "s1-orphan-" + UUID.randomUUID(),
+                            randomSha256(), evidence, account, organization, randomSha256());
+                }
+                expectSqlFailure(connection, "P0001", "SHARE_ADMISSION_REFUSED", v009AdmissionSql(),
+                        UUID.randomUUID(), UUID.randomUUID(), "missing-parent");
+                switchLocalRole(connection, "sharing_owner");
+                Savepoint guardProbe = connection.setSavepoint();
+                try {
+                    execute(connection, "ALTER TABLE sharing.share_admission DISABLE TRIGGER trg_share_admission_guard");
+                    v009ExpectConstraint(connection, "23503", "fk_share_admission_grant", v009AdmissionSql(),
+                            UUID.randomUUID(), UUID.randomUUID(), "missing-parent");
+                } finally {
+                    connection.rollback(guardProbe);
+                }
+                v009AssertTriggerStates(connection);
+                switchLocalRole(connection, "sharing_role");
+                v009ExpectConstraint(connection, "23503", "fk_share_access_event_grant", v009EventSql(),
+                        UUID.randomUUID(), UUID.randomUUID(), null, "s1-orphan-" + UUID.randomUUID(), randomSha256());
+                v009ExpectConstraint(connection, "23503", "fk_share_access_event_admission", v009EventSql(),
+                        UUID.randomUUID(), fixture.eventGrantId(), UUID.randomUUID(),
+                        "s1-orphan-" + UUID.randomUUID(), randomSha256());
+                UUID nullableGrantId = UUID.randomUUID();
+                fixture.rows().get("sharing.evidence_share_grant").add(nullableGrantId.toString());
+                assertThat(executeUpdate(connection, v009GrantSql(), nullableGrantId,
+                        "s1-null-org-" + UUID.randomUUID(), randomSha256(), fixture.evidenceId(),
+                        fixture.accountId(), null, randomSha256())).isEqualTo(1);
+                UUID nullableEventId = UUID.randomUUID();
+                fixture.rows().get("sharing.share_access_event").add(nullableEventId.toString());
+                assertThat(executeUpdate(connection, v009EventSql(), nullableEventId, fixture.eventGrantId(),
+                        null, "s1-null-admission-" + UUID.randomUUID(), randomSha256())).isEqualTo(1);
+                List<String[]> parents = List.of(
+                        new String[]{"evidence.evidence_record", "evidence_owner", "trg_evidence_record_guard",
+                                fixture.evidenceId().toString(), "fk_share_grant_evidence"},
+                        new String[]{"customer_iam.customer_account", "customer_iam_owner", "trg_customer_account_guard",
+                                fixture.accountId().toString(), "fk_share_grant_creator_account"},
+                        new String[]{"organization_access.organization", "organization_access_owner", "trg_organization_guard",
+                                fixture.organizationId().toString(), "fk_share_grant_owner_organization"},
+                        new String[]{"sharing.evidence_share_grant", "sharing_owner", "trg_share_grant_guard",
+                                fixture.grantId().toString(), "fk_share_admission_grant"},
+                        new String[]{"sharing.evidence_share_grant", "sharing_owner", "trg_share_grant_guard",
+                                fixture.eventGrantId().toString(), "fk_share_access_event_grant"},
+                        new String[]{"sharing.share_admission", "sharing_owner", "trg_share_admission_immutable",
+                                fixture.admissionId().toString(), "fk_share_access_event_admission"});
+                for (String[] parent : parents) {
+                    switchLocalRole(connection, parent[1]);
+                    Savepoint restrictProbe = connection.setSavepoint();
+                    try {
+                        if (parent[0].equals("evidence.evidence_record")) {
+                            execute(connection, "SET CONSTRAINTS evidence.fk_evidence_source_event, "
+                                    + "evidence.fk_evidence_event_record DEFERRED");
+                        }
+                        execute(connection, "ALTER TABLE " + parent[0] + " DISABLE TRIGGER " + parent[2]);
+                        v009ExpectConstraint(connection, "23503", parent[4],
+                                "DELETE FROM " + parent[0] + " WHERE id = ?", UUID.fromString(parent[3]));
+                        v009ExpectConstraint(connection, "23503", parent[4],
+                                "UPDATE " + parent[0] + " SET id = ? WHERE id = ?",
+                                UUID.randomUUID(), UUID.fromString(parent[3]));
+                        assertThat(queryLong(connection, "SELECT count(*) FROM " + parent[0]
+                                + " WHERE id = ?", UUID.fromString(parent[3]))).isEqualTo(1);
+                    } finally {
+                        connection.rollback(restrictProbe);
+                    }
+                    assertThat(queryString(connection, "SELECT tgenabled::text FROM pg_trigger "
+                            + "WHERE tgrelid = ?::regclass AND tgname = ?", parent[0], parent[2])).isEqualTo("O");
+                }
+                execute(connection, "RESET ROLE");
+                assertV009ForeignKeys(connection);
+                assertV009Catalog(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+        v009AssertNoResidue(fixture);
+    }
+
+    @Test
+    void v009ShapeDefaultsAndAppendOnlyBackstops() throws Exception {
+        V009Fixture fixture;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                fixture = v009Fixture(connection, false);
+                v009S2Defaults(connection, fixture);
+                v009S2GrantChecks(connection, fixture);
+                v009S2AdmissionChecks(connection, fixture);
+                v009S2EventChecks(connection, fixture);
+                v009S2KeysAndNulls(connection, fixture);
+                for (String table : List.of("share_admission", "share_access_event")) {
+                    UUID identifier = UUID.fromString(fixture.rows().get("sharing." + table).getFirst());
+                    switchLocalRole(connection, "sharing_owner");
+                    v009S2Failure(connection, "P0001", "SHARING_ROW_APPEND_ONLY",
+                            "UPDATE sharing." + table + " SET id = id WHERE id = ?", identifier);
+                    v009S2Failure(connection, "P0001", "SHARING_ROW_APPEND_ONLY",
+                            "DELETE FROM sharing." + table + " WHERE id = ?", identifier);
+                    switchLocalRole(connection, "sharing_role");
+                    v009S2Failure(connection, "42501", null,
+                            "UPDATE sharing." + table + " SET id = id WHERE id = ?", identifier);
+                    v009S2Failure(connection, "42501", null,
+                            "DELETE FROM sharing." + table + " WHERE id = ?", identifier);
+                }
+                execute(connection, "RESET ROLE");
+                assertV009Catalog(connection);
+            } finally {
+                connection.rollback();
+            }
+        }
+        v009AssertNoResidue(fixture);
+    }
+
+    @Test
+    void v009GrantLifecycleRevisionMatrixAndImmutabilityBackstops() throws Exception {
+        V008S2Fixture evidence = v008S2Fixture();
+        UUID accountId = UUID.randomUUID();
+        List<UUID> grants = new ArrayList<>();
+        try {
+            Map<String, UUID> states = new java.util.LinkedHashMap<>();
+            try (Connection connection = openConnection()) {
+                connection.setAutoCommit(false);
+                try {
+                    switchLocalRole(connection, "customer_iam_role");
+                    assertThat(insertCustomerAccount(connection, accountId, "PA9 S2 synthetic creator")).isEqualTo(1);
+                    switchLocalRole(connection, "evidence_owner");
+                    assertThat(executeUpdate(connection, "UPDATE evidence.evidence_record SET status = 'SOLIDIFIED', "
+                            + "solidified_at = now(), revision = revision + 1 WHERE id = ?", evidence.recordId)).isEqualTo(1);
+                    execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
+                    switchLocalRole(connection, "sharing_role");
+                    UUID active = UUID.randomUUID();
+                    grants.add(active);
+                    assertThat(executeUpdate(connection, v009GrantSql(), active, "s2-" + active,
+                            randomSha256(), evidence.recordId, accountId, null, randomSha256())).isEqualTo(1);
+                    states.put("ACTIVE", active);
+                    for (String status : List.of("LOCKED", "REVOKED", "EXPIRED")) {
+                        UUID identifier = UUID.randomUUID();
+                        grants.add(identifier);
+                        Map<String, String> changes = new java.util.LinkedHashMap<>();
+                        changes.put("id", v008S2Literal(identifier));
+                        if (status.equals("EXPIRED")) {
+                            changes.put("valid_from", "clock_timestamp() - interval '2 days'");
+                            changes.put("expires_at", "clock_timestamp() - interval '1 day'");
+                        }
+                        assertThat(executeUpdate(connection, v009S2Clone(connection, "evidence_share_grant", changes), active))
+                                .isEqualTo(1);
+                        assertThat(executeUpdate(connection, "UPDATE sharing.evidence_share_grant SET status = ?, "
+                                + "revocation_generation = revocation_generation + ?, revision = revision + 1 WHERE id = ?",
+                                status, status.equals("LOCKED") ? 0 : 1, identifier)).isEqualTo(1);
+                        states.put(status, identifier);
+                    }
+                    for (String status : List.of("ACTIVE", "LOCKED")) {
+                        UUID identifier = UUID.randomUUID();
+                        grants.add(identifier);
+                        assertThat(executeUpdate(connection, v009S2Clone(connection, "evidence_share_grant", Map.of(
+                                "id", v008S2Literal(identifier), "verification_mode", "'EXTRACTION_CODE'",
+                                "code_salt", "repeat('a',22)", "code_hash", "repeat('a',64)", "code_generation", "2",
+                                "revocation_generation", "2", "status", "'" + status + "'",
+                                "content_snapshot", v009S2Verification("EXTRACTION_CODE"))), active)).isEqualTo(1);
+                        states.put(status + "_CODE", identifier);
+                    }
+                    for (String status : List.of("ACTIVE", "LOCKED", "EXPIRED", "REVOKED")) {
+                        UUID identifier = UUID.randomUUID();
+                        grants.add(identifier);
+                        assertThat(executeUpdate(connection, v009S2Clone(connection, "evidence_share_grant", Map.of(
+                                "id", v008S2Literal(identifier), "status", "'" + status + "'",
+                                "valid_from", "clock_timestamp() - interval '2 days'",
+                                "expires_at", status.equals("ACTIVE") || status.equals("LOCKED")
+                                        ? "clock_timestamp() - interval '1 day'" : "clock_timestamp() + interval '1 day'")), active))
+                                .isEqualTo(1);
+                        states.put(status + "_CLOCK", identifier);
+                    }
+                    connection.commit();
+                } finally {
+                    connection.rollback();
+                }
+            }
+            for (String oldStatus : List.of("ACTIVE", "LOCKED", "EXPIRED", "REVOKED")) {
+                for (String newStatus : List.of("ACTIVE", "LOCKED", "EXPIRED", "REVOKED")) {
+                    if (oldStatus.equals(newStatus)) {
+                        v009S2Mutation(states.get(oldStatus), "same-state no-op " + oldStatus, Map.of(), null);
+                        v009S2Mutation(states.get(oldStatus), "same-state revision-only " + oldStatus,
+                                Map.of("revision", "revision + 2"), null);
+                    } else if (oldStatus.equals("EXPIRED") || oldStatus.equals("REVOKED")) {
+                        v009S2Mutation(states.get(oldStatus), oldStatus + "->" + newStatus,
+                                Map.of("status", "'" + newStatus + "'", "revision", "revision + 1"),
+                                "SHARE_GRANT_STATUS_TERMINAL");
+                    } else {
+                        UUID identifier = newStatus.equals("EXPIRED") ? states.get(oldStatus + "_CLOCK")
+                                : oldStatus.equals("LOCKED") && newStatus.equals("ACTIVE")
+                                        ? states.get("LOCKED_CODE") : states.get(oldStatus);
+                        Map<String, String> changes = new java.util.LinkedHashMap<>();
+                        changes.put("status", "'" + newStatus + "'");
+                        changes.put("revision", "revision + 1");
+                        if (!newStatus.equals("LOCKED")) {
+                            changes.put("revocation_generation", "revocation_generation + 1");
+                        }
+                        if (oldStatus.equals("LOCKED") && newStatus.equals("ACTIVE")) {
+                            changes.putAll(v009S2Rotation());
+                        }
+                        v009S2Action(identifier, oldStatus + "->" + newStatus, changes);
+                    }
+                }
+            }
+            v009S2Action(states.get("ACTIVE"), "pure extension",
+                    Map.of("expires_at", "expires_at + interval '1 hour'", "revision", "revision + 1"));
+            v009S2Action(states.get("ACTIVE"), "count revision shape only, not S3 admission atomicity",
+                    Map.of("admissions_used", "admissions_used + 1", "revision", "revision + 1"));
+            v009S2Mutation(states.get("ACTIVE"), "service-forbidden mixed lock+extension",
+                    Map.of("status", "'LOCKED'", "expires_at", "expires_at + interval '1 hour'", "revision", "revision + 1"), null);
+            for (String status : List.of("LOCKED", "EXPIRED", "REVOKED")) {
+                v009S2Mutation(states.get(status), "service-forbidden same-state generation " + status,
+                        Map.of("revocation_generation", "revocation_generation + 1", "revision", "revision + 1"), null);
+                v009S2Mutation(states.get(status.equals("LOCKED") ? status : status + "_CLOCK"),
+                        "non-ACTIVE future-expiry extension " + status,
+                        Map.of("expires_at", "expires_at + interval '1 hour'", "revision", "revision + 1"),
+                        "SHARE_GRANT_EXTENSION_INVALID");
+            }
+            v009S2Mutation(states.get("ACTIVE_CODE"), "service-forbidden ACTIVE code rotation", v009S2Rotation(), null);
+            for (String status : List.of("ACTIVE", "LOCKED")) {
+                v009S2Mutation(states.get(status), "early expiry " + status,
+                        Map.of("status", "'EXPIRED'", "revocation_generation", "revocation_generation + 1",
+                                "revision", "revision + 1"), "SHARE_GRANT_EXPIRY_INVALID");
+            }
+            v009S2Mutation(states.get("ACTIVE_CLOCK"), "expired ACTIVE extension",
+                    Map.of("expires_at", "expires_at + interval '2 days'", "revision", "revision + 1"),
+                    "SHARE_GRANT_EXTENSION_INVALID");
+            v009S2Mutation(states.get("LOCKED"), "non-code unlock",
+                    Map.of("status", "'ACTIVE'", "revision", "revision + 1"), "SHARE_GRANT_STATUS_TRANSITION");
+            v009S2Mutation(states.get("LOCKED_CODE"), "code unlock without rotation",
+                    Map.of("status", "'ACTIVE'", "revision", "revision + 1"), "SHARE_GRANT_STATUS_TRANSITION");
+            v009S2Mutation(states.get("ACTIVE"), "unknown status edge",
+                    Map.of("status", "'INVALID'", "revision", "revision + 1"), "SHARE_GRANT_STATUS_TRANSITION");
+            v009S2Mutation(states.get("ACTIVE"), "non-code rotation fails verification shape", v009S2Rotation(),
+                    "sharing_role", "23514", "ck_share_grant_verification_shape");
+            v009S2Mutation(states.get("ACTIVE"), "expiry shrink",
+                    Map.of("expires_at", "expires_at - interval '1 minute'", "revision", "revision + 1"),
+                    "SHARE_GRANT_EXPIRY_DECREASE");
+            for (String generation : List.of("code_generation", "revocation_generation")) {
+                v009S2Mutation(states.get("ACTIVE_CODE"), "nonnegative generation decrease " + generation,
+                        Map.of(generation, generation + " - 1", "revision", "revision + 1"),
+                        "SHARE_GRANT_GENERATION_INVALID");
+            }
+            for (Map<String, String> partial : List.of(
+                    Map.of("code_salt", "repeat('b',22)"), Map.of("code_hash", "repeat('b',64)"),
+                    Map.of("code_generation", "code_generation + 1"),
+                    Map.of("code_salt", "repeat('b',22)", "code_hash", "repeat('b',64)"),
+                    Map.of("code_salt", "repeat('b',22)", "code_generation", "code_generation + 1"),
+                    Map.of("code_hash", "repeat('b',64)", "code_generation", "code_generation + 1"))) {
+                v009S2Mutation(states.get("LOCKED_CODE"), "partial rotation " + partial, partial,
+                        "SHARE_GRANT_CODE_ROTATION_INVALID");
+            }
+            for (String field : List.of("code_generation", "revocation_generation")) {
+                for (String delta : List.of("0", "2")) {
+                    Map<String, String> changes = new java.util.LinkedHashMap<>(v009S2Rotation());
+                    changes.put(field, field + " + " + delta);
+                    v009S2Mutation(states.get("LOCKED_CODE"), "rotation delta " + field + delta, changes,
+                            field.equals("code_generation") && delta.equals("0")
+                                    ? "SHARE_GRANT_CODE_ROTATION_INVALID" : "SHARE_GRANT_GENERATION_INVALID");
+                }
+            }
+            for (String oldStatus : List.of("ACTIVE", "LOCKED")) {
+                for (String target : List.of("REVOKED", "EXPIRED", "LOCKED")) {
+                    if (oldStatus.equals(target)) {
+                        continue;
+                    }
+                    for (int delta : List.of(0, 2)) {
+                        v009S2Mutation(states.get(target.equals("EXPIRED") ? oldStatus + "_CLOCK" : oldStatus),
+                                "status generation delta " + oldStatus + "->" + target + delta,
+                                Map.of("status", "'" + target + "'", "revocation_generation", "revocation_generation + "
+                                        + (target.equals("LOCKED") ? delta + 1 : delta), "revision", "revision + 1"),
+                                "SHARE_GRANT_GENERATION_INVALID");
+                    }
+                }
+            }
+            v009S2FrozenColumns(states.get("ACTIVE"));
+        } finally {
+            v009S2Cleanup(evidence, accountId, grants);
+        }
+    }
+
+    @Test
+    void v009AdmissionCountOnceLimitAndAtomicRollbackBackstops() throws Exception {
+        V009S3Fixture fixture = v009S3Fixture();
+        try {
+            UUID grant = v009S3Grant(fixture, 1, "NONE", "OPEN");
+            UUID admission = UUID.randomUUID();
+            UUID event = UUID.randomUUID();
+            V009S3Admission first;
+            try (Connection connection = openConnection()) {
+                v009S3Configure(connection, "pa9-s3-admit");
+                first = v009S3Admit(connection, grant, "synthetic-key", admission, event, 0, false);
+                assertThat(first).isEqualTo(new V009S3Admission("GRANTED", admission, event, 1, 2));
+                connection.commit();
+            }
+            String admitted = v009S3Snapshot(grant);
+            for (String state : List.of("ACTIVE", "LOCKED")) {
+                try (Connection connection = openConnection()) {
+                    v009S3Configure(connection, "pa9-s3-replay-" + state);
+                    if (state.equals("LOCKED")) {
+                        v009S3Transition(connection, grant, "LOCK", UUID.randomUUID(), false);
+                    }
+                    String baseline = v009S2Rows(connection, grant);
+                    V009S3Admission replay = v009S3Admit(connection, grant, "synthetic-key",
+                            UUID.randomUUID(), UUID.randomUUID(), 0, false);
+                    assertThat(replay.outcome()).isEqualTo("REPLAY");
+                    assertThat(replay.admission()).isEqualTo(admission);
+                    assertThat(replay.event()).isEqualTo(event);
+                    assertThat(replay.count()).isEqualTo(1);
+                    assertThat(v009S3Admit(connection, grant, "new-key", UUID.randomUUID(), UUID.randomUUID(), 0, false)
+                            .outcome()).isEqualTo("DENIED");
+                    assertThat(v009S2Rows(connection, grant)).isEqualTo(baseline);
+                    connection.commit();
+                    System.out.printf("PA9 aggregate same-key: %s REPLAY; original admission/event/count unchanged%n", state);
+                }
+            }
+            try (Connection connection = openConnection()) {
+                v009S3Configure(connection, "pa9-s3-observations");
+                String facts = v009S3Facts(connection, grant);
+                for (String type : List.of("PAGE_OPENED", "PREFETCH_IGNORED", "VERIFICATION_FAILED", "TICKET_FAILED")) {
+                    UUID identity = UUID.randomUUID();
+                    String result = switch (type) {
+                        case "PREFETCH_IGNORED" -> "IGNORED";
+                        case "VERIFICATION_FAILED" -> "DENIED";
+                        case "TICKET_FAILED" -> "FAILED";
+                        default -> "SUCCESS";
+                    };
+                    assertThat(v009S3Event(connection, identity, grant, type.equals("TICKET_FAILED") ? admission : null,
+                            type, result)).isEqualTo(identity);
+                    String baseline = v009S2Rows(connection, grant);
+                    assertThat(v009S3Event(connection, identity, grant, type.equals("TICKET_FAILED") ? admission : null,
+                            type, result)).isEqualTo(identity);
+                    assertThat(v009S2Rows(connection, grant)).isEqualTo(baseline);
+                    v009ExpectConstraint(connection, "23505", "uq_share_access_event_domain_id",
+                            v009EventSql(), UUID.randomUUID(), grant, null, "s3-event-" + identity, randomSha256());
+                }
+                assertThat(v009S3Facts(connection, grant)).isEqualTo(facts);
+                assertThat(queryLong(connection, "SELECT count(*) FROM sharing.share_access_event "
+                        + "WHERE share_grant_id = ? AND event_type = 'TICKET_ISSUED'", grant)).isZero();
+                assertThat(queryString(connection, "SELECT to_jsonb(a)::text FROM sharing.share_admission a WHERE id = ?", admission))
+                        .isEqualTo(v009S3AdmissionRow(admission));
+                connection.commit();
+            }
+            assertThat(admitted).isNotEmpty();
+            for (String failure : List.of("sentinel", "duplicate-event", "duplicate-key", "duplicate-number",
+                    "guard", "stale", "transition-audit-outbox")) {
+                UUID probe = v009S3Grant(fixture, null, "NONE", "OPEN");
+                String before = v009S3Snapshot(probe);
+                UUID nestedOutbox = null;
+                UUID nestedAudit = null;
+                try (Connection connection = openConnection()) {
+                    v009S3Configure(connection, "pa9-s3-rollback-" + failure);
+                    try {
+                        UUID probeAdmission = UUID.randomUUID();
+                        UUID probeEvent = UUID.randomUUID();
+                        v009S3Admit(connection, probe, "rollback-key", probeAdmission, probeEvent, 0, failure.equals("stale"));
+                        switch (failure) {
+                            case "duplicate-event" -> executeUpdate(connection, v009EventSql(), UUID.randomUUID(),
+                                    probe, null, "s3-event-" + probeEvent, randomSha256());
+                            case "duplicate-key", "duplicate-number" -> {
+                                executeUpdate(connection, "INSERT INTO sharing.share_admission "
+                                        + "(id, share_grant_id, admission_key, admission_no, verification_mode, verification_result) "
+                                        + "VALUES (?, ?, ?, 2, 'NONE', 'NOT_REQUIRED')", UUID.randomUUID(), probe, "second-key");
+                                executeUpdate(connection, "INSERT INTO sharing.share_admission "
+                                        + "(id, share_grant_id, admission_key, admission_no, verification_mode, verification_result) "
+                                        + "VALUES (?, ?, ?, 2, 'NONE', 'NOT_REQUIRED')", UUID.randomUUID(), probe,
+                                        failure.equals("duplicate-key") ? "second-key" : "third-key");
+                            }
+                            case "guard" -> executeUpdate(connection, v009AdmissionSql(), UUID.randomUUID(), probe, "bad-next-no");
+                            case "transition-audit-outbox" -> {
+                                v009S3Transition(connection, probe, "REVOKE", UUID.randomUUID(), false);
+                                nestedAudit = callAppendFact(connection, probe, "SYSTEM", "S3_SYNTHETIC", null, "{}");
+                                nestedOutbox = callOutboxAppend(connection, "SHARE_ACCESS", "s3-rollback-" + probe,
+                                        "SHARE", probe, "S3_SYNTHETIC", "{}", null, randomSha256());
+                                execute(connection, "RESET ROLE");
+                                assertThat(countAuditRows(connection, probe)).isEqualTo(1);
+                            }
+                            default -> { }
+                        }
+                        throw new SQLException("S3_SENTINEL", "P0001");
+                    } catch (SQLException expected) {
+                        if (failure.startsWith("duplicate-")) {
+                            assertThat((Object) expected).isInstanceOf(org.postgresql.util.PSQLException.class);
+                            assertThat(expected.getSQLState()).isEqualTo("23505");
+                            String constraint = switch (failure) {
+                                case "duplicate-event" -> "uq_share_access_event_domain_id";
+                                case "duplicate-key" -> "uq_share_admission_key";
+                                default -> "uq_share_admission_no";
+                            };
+                            assertThat(((org.postgresql.util.PSQLException) expected).getServerErrorMessage().getConstraint()).isEqualTo(constraint);
+                        } else {
+                            assertThat(expected.getSQLState()).isEqualTo("P0001");
+                            assertThat(expected.getMessage()).contains(failure.equals("guard") ? "SHARE_ADMISSION_REFUSED"
+                                    : failure.equals("stale") ? "S3_EXPECTED_REVISION_ZERO" : "S3_SENTINEL");
+                        }
+                    } finally {
+                        connection.rollback();
+                    }
+                }
+                assertThat(v009S3Snapshot(probe)).as("whole transaction rollback %s", failure).isEqualTo(before);
+                try (Connection fresh = openConnection()) {
+                    assertThat(countAuditRows(fresh, probe)).isZero();
+                    assertThat(queryLong(fresh, "SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?", probe)).isZero();
+                    if (nestedAudit != null) {
+                        assertThat(queryLong(fresh, "SELECT count(*) FROM audit.audit_fact WHERE id = ?", nestedAudit)).isZero();
+                        assertThat(queryLong(fresh, "SELECT count(*) FROM platform.outbox_event WHERE id = ?", nestedOutbox)).isZero();
+                    }
+                }
+                System.out.println("PA9 S3 rollback/no-residue: " + failure);
+            }
+            v009S3ClockGuards(fixture);
+        } finally {
+            v009S3Cleanup(fixture);
+        }
+    }
+
+    @Test
+    void concurrentV009AdmissionIdentityLimitAndLifecycleHasOneWinner() throws Exception {
+        V009S3Fixture fixture = v009S3Fixture();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            for (String identity : List.of("uq_share_grant_share_id", "uq_share_grant_token_hash", "uq_share_access_event_domain_id")) {
+                for (boolean commit : List.of(true, false)) {
+                    v009S3IdentityRace(fixture, executor, identity, commit);
+                }
+            }
+            for (Integer limit : new Integer[]{null, 1}) {
+                v009S3AdmissionRace(fixture, executor, limit, true, true);
+            }
+            for (boolean commit : List.of(true, false)) {
+                v009S3AdmissionRace(fixture, executor, 1, false, commit);
+            }
+            for (String action : List.of("REVOKE", "ROTATION", "EXPIRY", "LOCK")) {
+                for (boolean transitionFirst : List.of(true, false)) {
+                    v009S3LifecycleRace(fixture, executor, action, transitionFirst);
+                }
+            }
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            v009S3Cleanup(fixture);
+        }
+    }
+
+    private record V009S3Fixture(V008S2Fixture evidence, UUID account, List<UUID> grants) {
+    }
+
+    private record V009S3Admission(String outcome, UUID admission, UUID event, long count, long revision) {
+    }
+
+    private static V009S3Fixture v009S3Fixture() throws Exception {
+        UUID account = UUID.randomUUID();
+        V008S2Fixture evidence = v008S2Fixture();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "customer_iam_role");
+                assertThat(insertCustomerAccount(connection, account, "PA9 S3 synthetic SQL-only creator")).isEqualTo(1);
+                switchLocalRole(connection, "evidence_owner");
+                assertThat(executeUpdate(connection, "UPDATE evidence.evidence_record SET status = 'SOLIDIFIED', "
+                        + "solidified_at = now(), revision = revision + 1 WHERE id = ?", evidence.recordId)).isEqualTo(1);
+                execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
+                connection.commit();
+            } catch (Exception | Error failure) {
+                try {
+                    connection.rollback();
+                } catch (Exception | Error cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+                throw failure;
+            }
+            return new V009S3Fixture(evidence, account, new ArrayList<>());
+        } catch (Exception | Error failure) {
+            try (Connection cleanup = openConnection()) {
+                cleanup.setAutoCommit(false);
+                switchLocalRole(cleanup, "customer_iam_owner");
+                executeUpdate(cleanup, "DELETE FROM customer_iam.customer_account WHERE id = ?", account);
+                cleanup.commit();
+            } catch (Exception | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            try {
+                v008S2Cleanup(evidence);
+            } catch (Exception | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
+    private static UUID v009S3Grant(V009S3Fixture fixture, Integer limit, String mode, String clock) throws SQLException {
+        UUID grant = UUID.randomUUID();
+        fixture.grants().add(grant);
+        try (Connection connection = openConnection()) {
+            v009S3Configure(connection, "pa9-s3-fixture");
+            try {
+                String sql = v009GrantSql().replace("interval '1 day', NULL,", "interval '1 day', " + (limit == null ? "NULL" : limit) + ",");
+                if (clock.equals("EXPIRY")) {
+                    sql = sql.replace("interval '1 day'", "interval '5 seconds'");
+                } else if (clock.equals("PAST")) {
+                    sql = sql.replace("clock_timestamp() + interval '1 day'", "clock_timestamp() - interval '1 second'");
+                } else if (clock.equals("FUTURE")) {
+                    sql = sql.replace("clock_timestamp() - interval '1 hour'", "clock_timestamp() + interval '1 hour'");
+                }
+                if (mode.equals("EXTRACTION_CODE")) {
+                    sql = sql.replace("max_admissions, content_snapshot", "max_admissions, code_salt, code_hash, code_generation, content_snapshot")
+                            .replace("account_id, organization_id, 'NONE',", "account_id, organization_id, 'EXTRACTION_CODE',")
+                            .replace("jsonb_build_object('content',", "repeat('a',22), repeat('a',64), 1, jsonb_build_object('content',")
+                            .replace("'mode', 'NONE'", "'mode', 'EXTRACTION_CODE'");
+                }
+                assertThat(executeUpdate(connection, sql, grant, "s3-grant-" + grant, randomSha256(),
+                        fixture.evidence().recordId, fixture.account(), null, randomSha256())).isEqualTo(1);
+                connection.commit();
+            } finally {
+                connection.rollback();
+            }
+        }
+        return grant;
+    }
+
+    private static void v009S3Configure(Connection connection, String application) throws SQLException {
+        connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        connection.setAutoCommit(false);
+        configureBlockedWriter(connection, "sharing_role", application);
+        assertThat(queryString(connection, "SELECT current_user")).isEqualTo("sharing_role");
+        assertThat(queryString(connection, "SHOW transaction_isolation")).isEqualTo("read committed");
+    }
+
+    private static V009S3Admission v009S3Admit(Connection connection, UUID grant, String key, UUID admission,
+            UUID event, long expectedGeneration, boolean stale) throws SQLException {
+        assertThat(queryString(connection, "SELECT id::text FROM sharing.evidence_share_grant WHERE id = ? FOR UPDATE", grant))
+                .isEqualTo(grant.toString());
+        long count = queryLong(connection, "SELECT admissions_used FROM sharing.evidence_share_grant WHERE id = ?", grant);
+        long revision = queryLong(connection, "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", grant);
+        if (queryLong(connection, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ? "
+                + "AND status IN ('ACTIVE', 'LOCKED') "
+                + "AND clock_timestamp() >= valid_from AND clock_timestamp() < expires_at", grant) != 1) {
+            return new V009S3Admission("DENIED", null, null, count, revision);
+        }
+        List<String> replay = queryStrings(connection, "SELECT a.id || '|' || e.id FROM sharing.share_admission a "
+                + "JOIN sharing.share_access_event e ON e.share_admission_id = a.id AND e.share_grant_id = a.share_grant_id "
+                + "AND e.event_type = 'ADMISSION_GRANTED' WHERE a.share_grant_id = ? AND a.admission_key = ?", grant, key);
+        if (!replay.isEmpty()) {
+            assertThat(replay).hasSize(1);
+            String[] original = replay.getFirst().split("\\|");
+            return new V009S3Admission("REPLAY", UUID.fromString(original[0]), UUID.fromString(original[1]), count, revision);
+        }
+        if (queryLong(connection, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ? AND status = 'ACTIVE' "
+                + "AND revocation_generation = ? AND clock_timestamp() >= valid_from AND clock_timestamp() < expires_at "
+                + "AND (max_admissions IS NULL OR admissions_used < max_admissions)", grant, expectedGeneration) != 1) {
+            return new V009S3Admission("DENIED", null, null, count, revision);
+        }
+        assertThat(executeUpdate(connection, "INSERT INTO sharing.share_admission "
+                + "(id, share_grant_id, admission_key, admission_no, verification_mode, verification_result) "
+                + "SELECT ?, id, ?, admissions_used + 1, verification_mode, "
+                + "CASE WHEN verification_mode = 'NONE' THEN 'NOT_REQUIRED' ELSE 'VERIFIED' END "
+                + "FROM sharing.evidence_share_grant WHERE id = ?", admission, key, grant)).isEqualTo(1);
+        assertThat(executeUpdate(connection, "INSERT INTO sharing.share_access_event "
+                + "(id, share_grant_id, share_admission_id, event_domain, event_id, event_type, result, payload_redacted, payload_sha256) "
+                + "SELECT ?, id, ?, 'SHARE_ACCESS', ?, 'ADMISSION_GRANTED', 'SUCCESS', "
+                + v009S3Payload() + ", repeat('a',64) FROM sharing.evidence_share_grant WHERE id = ?",
+                event, admission, "s3-event-" + event, grant)).isEqualTo(1);
+        assertThat(queryString(connection, "SELECT payload_redacted::text FROM sharing.share_access_event WHERE id = ?", event))
+                .isEqualTo(queryString(connection, "SELECT " + v009S3Payload() + "::text FROM sharing.evidence_share_grant WHERE id = ?", grant));
+        assertThat(queryString(connection, "SELECT event_domain || '|' || event_id || '|' || event_type || '|' || result "
+                + "|| '|' || payload_sha256 FROM sharing.share_access_event WHERE id = ?", event))
+                .isEqualTo("SHARE_ACCESS|s3-event-" + event + "|ADMISSION_GRANTED|SUCCESS|" + "a".repeat(64));
+        int updated = executeUpdate(connection, "UPDATE sharing.evidence_share_grant SET admissions_used = ?, revision = revision + 1 "
+                + "WHERE id = ? AND status = 'ACTIVE' AND revision = ? AND revocation_generation = ?",
+                count + 1, grant, stale ? revision - 1 : revision, expectedGeneration);
+        assertThat(updated).isEqualTo(stale ? 0 : 1);
+        if (stale) {
+            assertThat(queryString(connection, "SELECT status || '|' || admissions_used || '|' || revision "
+                    + "FROM sharing.evidence_share_grant WHERE id = ?", grant))
+                    .isEqualTo("ACTIVE|" + count + "|" + revision);
+            throw new SQLException("S3_EXPECTED_REVISION_ZERO", "P0001");
+        }
+        return new V009S3Admission("GRANTED", admission, event, count + 1, revision + 1);
+    }
+
+    private static String v009S3Payload() {
+        return "jsonb_build_object('verificationMode',verification_mode,'revocationGeneration',revocation_generation,"
+                + "'codeGeneration',code_generation,'grantExpiresAt',expires_at,"
+                + "'admissionExpiresAt','synthetic-no-ticket-policy','sessionExpiresAt','synthetic-no-ticket-policy')";
+    }
+
+    private static UUID v009S3Event(Connection connection, UUID event, UUID grant, UUID admission,
+            String type, String result) throws SQLException {
+        List<String> replay = queryStrings(connection, "SELECT id::text FROM sharing.share_access_event "
+                + "WHERE event_domain = 'SHARE_ACCESS' AND event_id = ?", "s3-event-" + event);
+        if (!replay.isEmpty()) {
+            assertThat(replay).containsExactly(event.toString());
+            assertThat(queryString(connection, "SELECT event_type || '|' || result || '|' || payload_redacted::text "
+                    + "FROM sharing.share_access_event WHERE id = ?", event)).isEqualTo(type + "|" + result + "|{}");
+            return event;
+        }
+        assertThat(executeUpdate(connection, "INSERT INTO sharing.share_access_event "
+                + "(id, share_grant_id, share_admission_id, event_domain, event_id, event_type, result, payload_redacted, payload_sha256) "
+                + "VALUES (?, ?, ?, 'SHARE_ACCESS', ?, ?, ?, '{}'::jsonb, repeat('b',64))",
+                event, grant, admission, "s3-event-" + event, type, result)).isEqualTo(1);
+        return event;
+    }
+
+    private static String v009S3Snapshot(UUID grant) throws SQLException {
+        try (Connection fresh = openConnection()) {
+            return v009S2Rows(fresh, grant);
+        }
+    }
+
+    private static String v009S3AdmissionRow(UUID admission) throws SQLException {
+        try (Connection fresh = openConnection()) {
+            return queryString(fresh, "SELECT to_jsonb(a)::text FROM sharing.share_admission a WHERE id = ?", admission);
+        }
+    }
+
+    private static String v009S3Facts(Connection connection, UUID grant) throws SQLException {
+        return queryString(connection, "SELECT jsonb_build_object('grant', to_jsonb(g), 'admissions', "
+                + "(SELECT jsonb_agg(to_jsonb(a) ORDER BY a.id) FROM sharing.share_admission a WHERE a.share_grant_id = g.id))::text "
+                + "FROM sharing.evidence_share_grant g WHERE g.id = ?", grant);
+    }
+
+    private static void v009S3Transition(Connection connection, UUID grant, String action, UUID event, boolean stale) throws SQLException {
+        assertThat(queryString(connection, "SELECT id::text FROM sharing.evidence_share_grant WHERE id = ? FOR UPDATE", grant))
+                .isEqualTo(grant.toString());
+        long revision = queryLong(connection, "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", grant);
+        if (stale) {
+            assertThat(executeUpdate(connection, "UPDATE sharing.evidence_share_grant SET revision = revision + 1 "
+                    + "WHERE id = ? AND revision = ?", grant, revision - 1)).isZero();
+        }
+        String changes = switch (action) {
+            case "LOCK", "ROTATION" -> "status = 'LOCKED'";
+            case "REVOKE" -> "status = 'REVOKED', revocation_generation = revocation_generation + 1";
+            case "EXPIRY" -> "status = 'EXPIRED', revocation_generation = revocation_generation + 1";
+            default -> throw new IllegalArgumentException(action);
+        };
+        assertThat(executeUpdate(connection, "UPDATE sharing.evidence_share_grant SET " + changes
+                + ", revision = revision + 1 WHERE id = ? AND status = 'ACTIVE' AND revision = ?", grant, revision)).isEqualTo(1);
+        if (action.equals("ROTATION")) {
+            assertThat(executeUpdate(connection, "UPDATE sharing.evidence_share_grant SET status = 'ACTIVE', "
+                    + "code_salt = repeat('b',22), code_hash = repeat('b',64), code_generation = code_generation + 1, "
+                    + "revocation_generation = revocation_generation + 1, revision = revision + 1 "
+                    + "WHERE id = ? AND status = 'LOCKED' AND revision = ?", grant, revision + 1)).isEqualTo(1);
+        }
+        v009S3Event(connection, event, grant, null, switch (action) {
+            case "LOCK" -> "LOCKED";
+            case "ROTATION" -> "CODE_ROTATED";
+            case "EXPIRY" -> "EXPIRED";
+            default -> "REVOKED";
+        }, "SUCCESS");
+    }
+
+    private static void v009S3WaitExpiry(Connection connection, UUID grant) throws SQLException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            if (queryLong(connection, "SELECT count(*) FROM sharing.evidence_share_grant "
+                    + "WHERE id = ? AND clock_timestamp() >= expires_at", grant) == 1) {
+                return;
+            }
+        }
+        fail("synthetic expiry did not cross the observed statement clock within ten seconds");
+    }
+
+    private static void v009S3ClockGuards(V009S3Fixture fixture) throws Exception {
+        for (String clock : List.of("FUTURE", "PAST", "EXPIRY")) {
+            UUID grant = v009S3Grant(fixture, null, "NONE", clock);
+            String before = v009S3Snapshot(grant);
+            try (Connection connection = openConnection()) {
+                v009S3Configure(connection, "pa9-s3-clock-" + clock);
+                if (clock.equals("EXPIRY")) {
+                    assertThat(queryLong(connection, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ? AND now() < expires_at", grant))
+                            .isEqualTo(1);
+                    v009S3WaitExpiry(connection, grant);
+                    assertThat(queryLong(connection, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ? AND now() < expires_at "
+                            + "AND clock_timestamp() >= expires_at", grant)).isEqualTo(1);
+                }
+                v009S2Failure(connection, "P0001", "SHARE_ADMISSION_REFUSED", v009AdmissionSql(), UUID.randomUUID(), grant, "clock-key");
+                connection.rollback();
+            }
+            assertThat(v009S3Snapshot(grant)).isEqualTo(before);
+        }
+    }
+
+    private static void v009S3IdentityRace(V009S3Fixture fixture, ExecutorService executor,
+            String constraint, boolean commit) throws Exception {
+        UUID base = v009S3Grant(fixture, null, "NONE", "OPEN");
+        UUID winnerId = UUID.randomUUID();
+        UUID loserId = UUID.randomUUID();
+        UUID winnerSentinel = UUID.randomUUID();
+        UUID loserSentinel = UUID.randomUUID();
+        boolean eventRace = constraint.equals("uq_share_access_event_domain_id");
+        if (!eventRace) {
+            fixture.grants().addAll(List.of(winnerId, loserId));
+        }
+        String identity = "s3-collision-" + UUID.randomUUID();
+        String token = randomSha256();
+        String loserToken = constraint.equals("uq_share_grant_token_hash") ? token : randomSha256();
+        String application = "pa9-s3-id-" + (eventRace ? "event" : constraint.endsWith("share_id") ? "share" : "hash")
+                + (commit ? "-commit" : "-rollback");
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            v009S3Configure(winner, application + "-w");
+            v009S3Configure(loser, application + "-l");
+            try {
+                v009S3Event(winner, winnerSentinel, base, null, "PAGE_OPENED", "SUCCESS");
+                v009S3Event(loser, loserSentinel, base, null, "PAGE_OPENED", "SUCCESS");
+                String winnerSql = eventRace ? v009EventSql() : v009S2Clone(winner, "evidence_share_grant", Map.of(
+                        "id", v008S2Literal(winnerId), "share_id", "'" + identity + "'",
+                        "capability_token_hash", "'" + token + "'"));
+                String loserSql = eventRace ? v009EventSql() : v009S2Clone(loser, "evidence_share_grant", Map.of(
+                        "id", v008S2Literal(loserId),
+                        "share_id", "'" + (constraint.equals("uq_share_grant_share_id") ? identity : identity + "-l") + "'",
+                        "capability_token_hash", "'" + loserToken + "'"));
+                Object[] winnerParameters = eventRace ? new Object[]{winnerId, base, null, identity, randomSha256()} : new Object[]{base};
+                Object[] loserParameters = eventRace ? new Object[]{loserId, base, null, identity, randomSha256()} : new Object[]{base};
+                assertThat(executeUpdate(winner, winnerSql, winnerParameters)).isEqualTo(1);
+                Future<String> waiting = executor.submit(() -> {
+                    try {
+                        assertThat(executeUpdate(loser, loserSql, loserParameters)).isEqualTo(1);
+                        loser.commit();
+                        return "INSERTED";
+                    } catch (org.postgresql.util.PSQLException failure) {
+                        assertThat(failure.getSQLState()).isEqualTo("23505");
+                        assertThat(failure.getServerErrorMessage().getConstraint()).isEqualTo(constraint);
+                        loser.rollback();
+                        return "23505/" + constraint;
+                    }
+                });
+                awaitBlockedBackend(application + "-l");
+                if (commit) {
+                    winner.commit();
+                } else {
+                    winner.rollback();
+                }
+                assertThat(awaitFuture(waiting, FUTURE_TIMEOUT_SECONDS)).isEqualTo(commit ? "23505/" + constraint : "INSERTED");
+            } finally {
+                winner.rollback();
+                loser.rollback();
+            }
+        }
+        try (Connection fresh = openConnection()) {
+            String table = eventRace ? "share_access_event" : "evidence_share_grant";
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing." + table + " WHERE id = ?", winnerId)).isEqualTo(commit ? 1 : 0);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing." + table + " WHERE id = ?", loserId)).isEqualTo(commit ? 0 : 1);
+            if (eventRace) {
+                assertThat(queryString(fresh, "SELECT id::text FROM sharing.share_access_event "
+                        + "WHERE event_domain = 'SHARE_ACCESS' AND event_id = ?", identity))
+                        .isEqualTo((commit ? winnerId : loserId).toString());
+            } else {
+                UUID surviving = commit ? winnerId : loserId;
+                assertThat(queryString(fresh, "SELECT share_id || '|' || capability_token_hash "
+                        + "FROM sharing.evidence_share_grant WHERE id = ?", surviving))
+                        .isEqualTo((commit || constraint.equals("uq_share_grant_share_id") ? identity : identity + "-l") + "|" +
+                                (commit ? token : loserToken));
+                v009S3State(fresh, surviving, "ACTIVE", 0, 0, 0, 1, 0, 0);
+            }
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ?", winnerSentinel)).isEqualTo(commit ? 1 : 0);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ?", loserSentinel)).isEqualTo(commit ? 0 : 1);
+            v009S3State(fresh, base, "ACTIVE", 0, 0, 0, 1, 0, eventRace ? 2 : 1);
+        }
+        System.out.printf("PA9 S3 observed Lock: %s winner-%s; fresh identity/sentinel/state exact%n", constraint, commit ? "commit" : "rollback");
+    }
+
+    private static void v009S3AdmissionRace(V009S3Fixture fixture, ExecutorService executor,
+            Integer limit, boolean sameKey, boolean commit) throws Exception {
+        UUID grant = v009S3Grant(fixture, limit, "NONE", "OPEN");
+        UUID sentinelGrant = v009S3Grant(fixture, null, "NONE", "OPEN");
+        UUID winnerAdmission = UUID.randomUUID();
+        UUID loserAdmission = UUID.randomUUID();
+        UUID winnerEvent = UUID.randomUUID();
+        UUID loserEvent = UUID.randomUUID();
+        UUID sentinel = UUID.randomUUID();
+        String application = "pa9-s3-admission-" + sameKey + "-" + limit + "-" + commit;
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            v009S3Configure(winner, application + "-w");
+            v009S3Configure(loser, application + "-l");
+            try {
+                assertThat(v009S3Admit(winner, grant, "winner-key", winnerAdmission, winnerEvent, 0, false).outcome()).isEqualTo("GRANTED");
+                v009S3Event(loser, sentinel, sentinelGrant, null, "PAGE_OPENED", "SUCCESS");
+                Future<V009S3Admission> waiting = executor.submit(() -> v009S3Admit(loser, grant,
+                        sameKey ? "winner-key" : "loser-key", loserAdmission, loserEvent, 0, false));
+                awaitBlockedBackend(application + "-l");
+                if (commit) {
+                    winner.commit();
+                } else {
+                    winner.rollback();
+                }
+                V009S3Admission result = awaitFuture(waiting, FUTURE_TIMEOUT_SECONDS);
+                assertThat(result.outcome()).isEqualTo(!commit ? "GRANTED" : sameKey ? "REPLAY" : "DENIED");
+                assertThat(result.count()).isEqualTo(1);
+                assertThat(result.revision()).isEqualTo(2);
+                if (sameKey) {
+                    assertThat(result.admission()).isEqualTo(winnerAdmission);
+                    assertThat(result.event()).isEqualTo(winnerEvent);
+                }
+                if (result.outcome().equals("GRANTED")) {
+                    execute(loser, "RESET ROLE");
+                    switchLocalRole(loser, "sharing_owner");
+                    execute(loser, "ALTER TABLE sharing.share_access_event DISABLE TRIGGER trg_share_access_event_immutable");
+                    assertThat(executeUpdate(loser, "DELETE FROM sharing.share_access_event WHERE id = ?", sentinel)).isEqualTo(1);
+                    execute(loser, "ALTER TABLE sharing.share_access_event ENABLE TRIGGER trg_share_access_event_immutable");
+                    v009AssertTriggerStates(loser);
+                    loser.commit();
+                } else {
+                    loser.rollback();
+                }
+            } finally {
+                winner.rollback();
+                loser.rollback();
+            }
+        }
+        try (Connection fresh = openConnection()) {
+            v009S3State(fresh, grant, "ACTIVE", 0, 0, 1, 2, 1, 1);
+            UUID actualAdmission = commit ? winnerAdmission : loserAdmission;
+            UUID actualEvent = commit ? winnerEvent : loserEvent;
+            assertThat(queryStrings(fresh, "SELECT id::text FROM sharing.share_admission WHERE share_grant_id = ?", grant))
+                    .containsExactly(actualAdmission.toString());
+            assertThat(queryString(fresh, "SELECT admission_key || '|' || admission_no FROM sharing.share_admission WHERE id = ?", actualAdmission))
+                    .isEqualTo((commit ? "winner-key" : "loser-key") + "|1");
+            assertThat(queryStrings(fresh, "SELECT id::text FROM sharing.share_access_event WHERE share_grant_id = ?", grant))
+                    .containsExactly(actualEvent.toString());
+            assertThat(queryString(fresh, "SELECT event_domain || '|' || event_id || '|' || share_admission_id FROM sharing.share_access_event WHERE id = ?", actualEvent))
+                    .isEqualTo("SHARE_ACCESS|s3-event-" + actualEvent + "|" + actualAdmission);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ?", sentinel)).isZero();
+            if (limit != null) {
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ? AND admissions_used = max_admissions", grant)).isEqualTo(1);
+            }
+            v009AssertTriggerStates(fresh);
+        }
+        System.out.printf("PA9 S3 observed Lock: same-key=%s max=%s winner-commit=%s; fresh one admission/event/count%n", sameKey, limit, commit);
+    }
+
+    private static void v009S3LifecycleRace(V009S3Fixture fixture, ExecutorService executor,
+            String action, boolean transitionFirst) throws Exception {
+        UUID grant = v009S3Grant(fixture, null, action.equals("ROTATION") ? "EXTRACTION_CODE" : "NONE",
+                action.equals("EXPIRY") ? "EXPIRY" : "OPEN");
+        UUID sentinelGrant = v009S3Grant(fixture, null, "NONE", "OPEN");
+        UUID admission = UUID.randomUUID();
+        UUID event = UUID.randomUUID();
+        UUID transitionEvent = UUID.randomUUID();
+        UUID sentinel = UUID.randomUUID();
+        String application = "pa9-s3-life-" + action + "-" + transitionFirst;
+        String originalAdmission = null;
+        String originalEvent = null;
+        try (Connection winner = openConnection(); Connection loser = openConnection()) {
+            v009S3Configure(winner, application + "-w");
+            v009S3Configure(loser, application + "-l");
+            try {
+                assertThat(queryLong(loser, "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", grant)).isEqualTo(1);
+                assertThat(queryLong(loser, "SELECT revocation_generation FROM sharing.evidence_share_grant WHERE id = ?", grant)).isZero();
+                v009S3Event(loser, sentinel, sentinelGrant, null, "PAGE_OPENED", "SUCCESS");
+                Future<String> waiting;
+                if (transitionFirst) {
+                    if (action.equals("EXPIRY")) {
+                        v009S3WaitExpiry(winner, grant);
+                    }
+                    v009S3Transition(winner, grant, action, transitionEvent, false);
+                    waiting = executor.submit(() -> v009S3Admit(loser, grant, "lifecycle-key", admission, event, 0, false).outcome());
+                } else {
+                    assertThat(v009S3Admit(winner, grant, "lifecycle-key", admission, event, 0, false).outcome()).isEqualTo("GRANTED");
+                    originalAdmission = queryString(winner, "SELECT to_jsonb(a)::text FROM sharing.share_admission a WHERE id = ?", admission);
+                    originalEvent = queryString(winner, "SELECT to_jsonb(e)::text FROM sharing.share_access_event e WHERE id = ?", event);
+                    waiting = executor.submit(() -> {
+                        v009S3Transition(loser, grant, action, transitionEvent, true);
+                        return "TRANSITION";
+                    });
+                }
+                awaitBlockedBackend(application + "-l");
+                if (action.equals("EXPIRY") && !transitionFirst) {
+                    v009S3WaitExpiry(winner, grant);
+                }
+                winner.commit();
+                assertThat(awaitFuture(waiting, FUTURE_TIMEOUT_SECONDS)).isEqualTo(transitionFirst ? "DENIED" : "TRANSITION");
+                if (transitionFirst) {
+                    loser.rollback();
+                } else {
+                    switchLocalRole(loser, "sharing_owner");
+                    execute(loser, "ALTER TABLE sharing.share_access_event DISABLE TRIGGER trg_share_access_event_immutable");
+                    assertThat(executeUpdate(loser, "DELETE FROM sharing.share_access_event WHERE id = ?", sentinel)).isEqualTo(1);
+                    execute(loser, "ALTER TABLE sharing.share_access_event ENABLE TRIGGER trg_share_access_event_immutable");
+                    v009AssertTriggerStates(loser);
+                    loser.commit();
+                }
+            } finally {
+                winner.rollback();
+                loser.rollback();
+            }
+        }
+        try (Connection fresh = openConnection()) {
+            String status = switch (action) {
+                case "ROTATION" -> "ACTIVE";
+                case "LOCK" -> "LOCKED";
+                case "EXPIRY" -> "EXPIRED";
+                default -> "REVOKED";
+            };
+            long count = transitionFirst ? 0 : 1;
+            v009S3State(fresh, grant, status, action.equals("LOCK") ? 0 : 1, action.equals("ROTATION") ? 2 : 0,
+                    count, 1 + count + (action.equals("ROTATION") ? 2 : 1), count, count + 1);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ?", sentinel)).isZero();
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_admission WHERE id = ?", admission)).isEqualTo(count);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ?", event)).isEqualTo(count);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ? AND event_domain = 'SHARE_ACCESS' AND event_id = ?",
+                    transitionEvent, "s3-event-" + transitionEvent)).isEqualTo(1);
+            if (!transitionFirst) {
+                assertThat(queryString(fresh, "SELECT to_jsonb(a)::text FROM sharing.share_admission a WHERE id = ?", admission)).isEqualTo(originalAdmission);
+                assertThat(queryString(fresh, "SELECT to_jsonb(e)::text FROM sharing.share_access_event e WHERE id = ?", event)).isEqualTo(originalEvent);
+            }
+            if (action.equals("ROTATION")) {
+                assertThat(queryString(fresh, "SELECT code_salt || '|' || code_hash FROM sharing.evidence_share_grant WHERE id = ?", grant))
+                        .isEqualTo("b".repeat(22) + "|" + "b".repeat(64));
+            }
+        }
+        if (List.of("LOCK", "REVOKE", "EXPIRY").contains(action) && !transitionFirst) {
+            try (Connection connection = openConnection()) {
+                v009S3Configure(connection, application + "-replay");
+                String before = v009S2Rows(connection, grant);
+                boolean locked = action.equals("LOCK");
+                String outcome = locked ? "REPLAY" : "DENIED";
+                assertThat(v009S3Admit(connection, grant, "lifecycle-key", UUID.randomUUID(), UUID.randomUUID(),
+                        locked ? 0 : 1, false))
+                        .isEqualTo(new V009S3Admission(outcome, locked ? admission : null, locked ? event : null, 1, 3));
+                assertThat(v009S2Rows(connection, grant)).isEqualTo(before);
+                connection.commit();
+                assertThat(v009S3Snapshot(grant)).isEqualTo(before);
+                System.out.printf("PA9 aggregate same-key: %s %s; admission/event/count unchanged%n", action, outcome);
+            }
+        }
+        System.out.printf("PA9 S3 observed Lock: admission vs %s transition-first=%s; current state/generations/revision/no-residue exact%n", action, transitionFirst);
+    }
+
+    private static void v009S3State(Connection connection, UUID grant, String status, long generation,
+            long codeGeneration, long count, long revision, long admissions, long events) throws SQLException {
+        assertThat(queryString(connection, "SELECT status || '|' || revocation_generation || '|' || code_generation "
+                + "|| '|' || admissions_used || '|' || revision FROM sharing.evidence_share_grant WHERE id = ?", grant))
+                .isEqualTo(status + "|" + generation + "|" + codeGeneration + "|" + count + "|" + revision);
+        assertThat(queryLong(connection, "SELECT count(*) FROM sharing.share_admission WHERE share_grant_id = ?", grant)).isEqualTo(admissions);
+        assertThat(queryLong(connection, "SELECT count(*) FROM sharing.share_access_event WHERE share_grant_id = ?", grant)).isEqualTo(events);
+    }
+
+    private static void v009S3Cleanup(V009S3Fixture fixture) throws Exception {
+        List<String> admissions = new ArrayList<>();
+        List<String> events = new ArrayList<>();
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "sharing_owner");
+                execute(connection, "ALTER TABLE sharing.share_access_event DISABLE TRIGGER trg_share_access_event_immutable");
+                execute(connection, "ALTER TABLE sharing.share_admission DISABLE TRIGGER trg_share_admission_immutable");
+                for (UUID grant : fixture.grants()) {
+                    admissions.addAll(queryStrings(connection, "SELECT id::text FROM sharing.share_admission WHERE share_grant_id = ?", grant));
+                    events.addAll(queryStrings(connection, "SELECT id::text FROM sharing.share_access_event WHERE share_grant_id = ?", grant));
+                    executeUpdate(connection, "DELETE FROM sharing.share_access_event WHERE share_grant_id = ?", grant);
+                    executeUpdate(connection, "DELETE FROM sharing.share_admission WHERE share_grant_id = ?", grant);
+                    executeUpdate(connection, "DELETE FROM sharing.evidence_share_grant WHERE id = ?", grant);
+                }
+                execute(connection, "ALTER TABLE sharing.share_access_event ENABLE TRIGGER trg_share_access_event_immutable");
+                execute(connection, "ALTER TABLE sharing.share_admission ENABLE TRIGGER trg_share_admission_immutable");
+                v009AssertTriggerStates(connection);
+                switchLocalRole(connection, "customer_iam_owner");
+                assertThat(executeUpdate(connection, "DELETE FROM customer_iam.customer_account WHERE id = ?", fixture.account())).isEqualTo(1);
+                connection.commit();
+            } finally {
+                connection.rollback();
+            }
+        }
+        v008S2Cleanup(fixture.evidence());
+        try (Connection fresh = openConnection()) {
+            for (UUID grant : fixture.grants()) {
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ?", grant)).isZero();
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_admission WHERE share_grant_id = ?", grant)).isZero();
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE share_grant_id = ?", grant)).isZero();
+            }
+            for (String admission : admissions) {
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_admission WHERE id = ?::uuid", admission)).isZero();
+            }
+            for (String event : events) {
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.share_access_event WHERE id = ?::uuid", event)).isZero();
+            }
+            assertThat(queryLong(fresh, "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", fixture.account())).isZero();
+            assertV009Catalog(fresh);
+            assertV009ForeignKeys(fresh);
+            v009AssertTriggerStates(fresh);
+            assertV008ForeignKeyInventory(fresh);
+            assertThat(queryLong(fresh, "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                    + "WHERE NOT t.tgisinternal AND c.relnamespace IN ('evidence'::regnamespace, 'entitlement_metering'::regnamespace) "
+                    + "AND t.tgenabled::text <> 'O'")).isZero();
+        }
+        System.out.println("PA9 S3 cleanup: scoped IDs absent; V009 catalog/triggers/FKs and V008 FK flags restored");
+    }
+
+    private static String v009S2Clone(Connection connection, String table, Map<String, String> changes)
+            throws SQLException {
+        return v009S2Clone(connection, table, changes, List.of());
+    }
+
+    private static String v009S2Clone(Connection connection, String table, Map<String, String> changes,
+                                     List<String> omitted) throws SQLException {
+        List<String> columns = new ArrayList<>(v009Columns(connection, "sharing." + table));
+        assertThat(columns).containsAll(changes.keySet()).containsAll(omitted);
+        columns.removeAll(omitted);
+        Map<String, String> replacements = new java.util.LinkedHashMap<>();
+        replacements.put("id", v008S2Literal(UUID.randomUUID()));
+        if (table.equals("evidence_share_grant")) {
+            replacements.put("share_id", v008S2Literal("s2-" + UUID.randomUUID()));
+            replacements.put("capability_token_hash", v008S2Literal(randomSha256()));
+        } else if (table.equals("share_admission")) {
+            replacements.put("admission_key", v008S2Literal("s2-" + UUID.randomUUID()));
+            replacements.put("admission_no", "admission_no + 1");
+        } else {
+            replacements.put("event_id", v008S2Literal("s2-" + UUID.randomUUID()));
+        }
+        replacements.putAll(changes);
+        List<String> expressions = new ArrayList<>();
+        for (String column : columns) {
+            expressions.add(replacements.getOrDefault(column, column));
+        }
+        return "INSERT INTO sharing." + table + " (" + String.join(",", columns) + ") SELECT "
+                + String.join(",", expressions) + " FROM sharing." + table + " WHERE id = ?";
+    }
+
+    private static List<String> v009S2Catalog(Connection connection) throws SQLException {
+        return queryStrings(connection, "SELECT conrelid::regclass::text || ':' || conname || ':' || "
+                + "pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'sharing'::regnamespace ORDER BY 1");
+    }
+
+    private static String v009S2Rows(Connection connection, UUID grantId) throws SQLException {
+        return queryString(connection, "SELECT jsonb_build_object('grant', to_jsonb(g), 'admissions', "
+                + "(SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY a.id), '[]'::jsonb) FROM sharing.share_admission a "
+                + "WHERE a.share_grant_id = g.id), 'events', (SELECT coalesce(jsonb_agg(to_jsonb(e) ORDER BY e.id), "
+                + "'[]'::jsonb) FROM sharing.share_access_event e WHERE e.share_grant_id = g.id))::text "
+                + "FROM sharing.evidence_share_grant g WHERE g.id = ?", grantId);
+    }
+
+    private static List<String> v009S2FixtureRows(Connection connection, V009Fixture fixture) throws SQLException {
+        List<String> rows = new ArrayList<>();
+        for (String table : V009_TABLES) {
+            String filter = table.equals("evidence_share_grant") ? "evidence_id = ?"
+                    : "share_grant_id IN (SELECT id FROM sharing.evidence_share_grant WHERE evidence_id = ?)";
+            rows.addAll(queryStrings(connection, "SELECT '" + table + ":' || to_jsonb(probe)::text FROM sharing."
+                    + table + " probe WHERE " + filter + " ORDER BY id", fixture.evidenceId()));
+        }
+        return rows;
+    }
+
+    private static void v009S2Failure(Connection connection, String state, String diagnostic,
+                                      String sql, Object... parameters) throws SQLException {
+        Savepoint probe = connection.setSavepoint();
+        try {
+            try {
+                executeUpdate(connection, sql, parameters);
+                fail("expected %s/%s", state, diagnostic);
+            } catch (org.postgresql.util.PSQLException failure) {
+                assertThat(failure.getSQLState()).isEqualTo(state);
+                assertThat(failure.getServerErrorMessage()).isNotNull();
+                if (diagnostic != null) {
+                    assertThat(failure.getServerErrorMessage().getMessage()).isEqualTo(diagnostic);
+                }
+                System.out.printf("PA9 S2 diagnostic %s/%s%n", state, diagnostic);
+            }
+        } finally {
+            connection.rollback(probe);
+        }
+    }
+
+    private static void v009S2Shape(Connection connection, V009Fixture fixture, String table,
+                                    String check, Map<String, String> changes, String... overlaps) throws SQLException {
+        UUID base = table.equals("evidence_share_grant") ? fixture.grantId()
+                : UUID.fromString(fixture.rows().get("sharing." + table).getFirst());
+        List<String> before = v009S2FixtureRows(connection, fixture);
+        List<String> catalog = v009S2Catalog(connection);
+        Savepoint probe = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "sharing_owner");
+            if (table.equals("share_admission")) {
+                execute(connection, "ALTER TABLE sharing.share_admission DISABLE TRIGGER trg_share_admission_guard");
+            }
+            for (String overlap : overlaps) {
+                execute(connection, "ALTER TABLE sharing." + table + " DROP CONSTRAINT " + overlap);
+            }
+            String sql = v009S2Clone(connection, table, changes);
+            if (check == null) {
+                assertThat(executeUpdate(connection, sql, base)).isEqualTo(1);
+            } else {
+                v009ExpectConstraint(connection, "23514", check, sql, base);
+                System.out.printf("PA9 S2 CHECK 23514/%s %s%n", check, changes);
+            }
+        } finally {
+            connection.rollback(probe);
+            assertThat(v009S2FixtureRows(connection, fixture)).containsExactlyElementsOf(before);
+            assertThat(v009S2Catalog(connection)).containsExactlyElementsOf(catalog);
+            v009AssertTriggerStates(connection);
+        }
+    }
+
+    private static String v009S2Verification(String mode) {
+        return "jsonb_set(content_snapshot, '{verification}', jsonb_build_object('mode','" + mode + "'))";
+    }
+
+    private static void v009S2GrantChecks(Connection connection, V009Fixture fixture) throws SQLException {
+        String table = "evidence_share_grant";
+        for (String value : List.of("''", "'   '", "repeat('x',129)")) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_share_id", Map.of("share_id", value));
+        }
+        for (int length : List.of(1, 128)) {
+            v009S2Shape(connection, fixture, table, null, Map.of("share_id", "repeat('x'," + length + ")"));
+        }
+        for (String column : List.of("capability_token_hash", "content_sha256", "code_hash")) {
+            String check = column.equals("capability_token_hash") ? "ck_share_grant_token_hash" : "ck_share_grant_" + column;
+            for (String value : List.of("repeat('A',64)", "repeat('g',64)", "repeat('a',63)", "repeat('a',65)")) {
+                Map<String, String> changes = new java.util.LinkedHashMap<>();
+                if (column.equals("code_hash")) {
+                    changes.putAll(v009S2CodeShape());
+                }
+                changes.put(column, value);
+                v009S2Shape(connection, fixture, table, check, changes);
+            }
+            Map<String, String> positive = new java.util.LinkedHashMap<>();
+            if (column.equals("code_hash")) {
+                positive.putAll(v009S2CodeShape());
+            }
+            positive.put(column, "repeat('a',64)");
+            v009S2Shape(connection, fixture, table, null, positive);
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_grant_verification_mode",
+                Map.of("verification_mode", "'INVALID'"), "ck_share_grant_snapshot_binding");
+        for (int length : List.of(22, 256)) {
+            Map<String, String> changes = new java.util.LinkedHashMap<>(v009S2CodeShape());
+            changes.put("code_salt", "repeat('_'," + length + ")");
+            v009S2Shape(connection, fixture, table, null, changes);
+        }
+        for (String value : List.of("repeat('a',21)", "repeat('a',257)", "repeat('a',21)||'!'")) {
+            Map<String, String> changes = new java.util.LinkedHashMap<>(v009S2CodeShape());
+            changes.put("code_salt", value);
+            v009S2Shape(connection, fixture, table, "ck_share_grant_code_salt", changes);
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_grant_code_generation", Map.of("code_generation", "-1"),
+                "ck_share_grant_verification_shape");
+        for (String column : List.of("code_salt", "code_hash", "code_generation")) {
+            Map<String, String> changes = new java.util.LinkedHashMap<>(v009S2CodeShape());
+            changes.put(column, column.equals("code_generation") ? "0" : "NULL");
+            v009S2Shape(connection, fixture, table, "ck_share_grant_verification_shape", changes);
+            v009S2Shape(connection, fixture, table, "ck_share_grant_verification_shape",
+                    Map.of(column, column.equals("code_generation") ? "1"
+                            : column.equals("code_hash") ? "repeat('a',64)" : "repeat('a',22)"));
+        }
+        v009S2Shape(connection, fixture, table, null, Map.of("verification_mode", "'ORGANIZATION_MEMBER'",
+                "content_snapshot", v009S2Verification("ORGANIZATION_MEMBER")));
+        v009S2Shape(connection, fixture, table, "ck_share_grant_org_member", Map.of(
+                "verification_mode", "'ORGANIZATION_MEMBER'", "owner_organization_id", "NULL",
+                "content_snapshot", "jsonb_set(" + v009S2Verification("ORGANIZATION_MEMBER")
+                        + ",'{creation,ownerOrganizationId}','null'::jsonb)"));
+        for (String expiry : List.of("valid_from", "valid_from - interval '1 microsecond'")) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_validity", Map.of("expires_at", expiry));
+        }
+        v009S2Shape(connection, fixture, table, null, Map.of("expires_at", "valid_from + interval '1 microsecond'"));
+        for (Map<String, String> changes : List.of(Map.of("admissions_used", "-1"), Map.of("max_admissions", "0"),
+                Map.of("max_admissions", "-1"), Map.of("max_admissions", "1", "admissions_used", "2"))) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_admissions", changes);
+        }
+        for (Map<String, String> changes : List.of(Map.of("max_admissions", "NULL", "admissions_used", "0"),
+                Map.of("max_admissions", "1", "admissions_used", "1"))) {
+            v009S2Shape(connection, fixture, table, null, changes);
+        }
+        for (String snapshot : List.of("'[]'::jsonb", "'1'::jsonb", "'null'::jsonb")) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_snapshot_shape", Map.of("content_snapshot", snapshot));
+        }
+        for (String member : List.of("content", "verification", "creation")) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_snapshot_shape",
+                    Map.of("content_snapshot", "content_snapshot - '" + member + "'"));
+            for (String value : List.of("'[]'::jsonb", "'1'::jsonb", "'null'::jsonb")) {
+                v009S2Shape(connection, fixture, table, "ck_share_grant_snapshot_shape",
+                        Map.of("content_snapshot", "jsonb_set(content_snapshot,'{" + member + "}'," + value + ")"));
+            }
+        }
+        for (String path : List.of("content,evidenceId", "creation,creatorAccountId", "creation,evidenceId",
+                "creation,ownerOrganizationId", "creation,scopeDigest", "creation,creationRequestDigest", "creation,creationFingerprint")) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_snapshot_shape", Map.of("content_snapshot",
+                    "jsonb_set(content_snapshot,'{" + path + "}','\"wrong\"'::jsonb)"));
+            v009S2Shape(connection, fixture, table, path.endsWith("ownerOrganizationId") ? "ck_share_grant_snapshot_shape" : null,
+                    Map.of("content_snapshot", "content_snapshot #- '{" + path + "}'"));
+            v009S2Shape(connection, fixture, table, path.endsWith("ownerOrganizationId") ? "ck_share_grant_snapshot_shape" : null,
+                    Map.of("content_snapshot", "jsonb_set(content_snapshot,'{" + path + "}','null'::jsonb)"));
+        }
+        for (String digest : List.of("scopeDigest", "creationRequestDigest", "creationFingerprint")) {
+            for (String value : List.of("repeat('A',64)", "repeat('g',64)", "repeat('a',63)", "repeat('a',65)")) {
+                v009S2Shape(connection, fixture, table, "ck_share_grant_snapshot_shape", Map.of("content_snapshot",
+                        "jsonb_set(content_snapshot,'{creation," + digest + "}',to_jsonb(" + value + "))"));
+            }
+        }
+        v009S2Shape(connection, fixture, table, null, Map.of("owner_organization_id", "NULL", "content_snapshot",
+                "content_snapshot #- '{creation,ownerOrganizationId}'"));
+        v009S2Shape(connection, fixture, table, null, Map.of("owner_organization_id", "NULL", "content_snapshot",
+                "jsonb_set(content_snapshot,'{creation,ownerOrganizationId}','null'::jsonb)"));
+        v009S2Shape(connection, fixture, table, "ck_share_grant_snapshot_binding", Map.of("content_snapshot",
+                "jsonb_set(content_snapshot,'{verification,mode}','\"EXTRACTION_CODE\"'::jsonb)"));
+        for (String snapshot : List.of("content_snapshot #- '{verification,mode}'",
+                "jsonb_set(content_snapshot,'{verification,mode}','null'::jsonb)")) {
+            v009S2Shape(connection, fixture, table, null, Map.of("content_snapshot", snapshot));
+        }
+        String mobile = "jsonb_set(content_snapshot,'{verification}',jsonb_build_object('mode','DESIGNATED_MOBILE',"
+                + "'mobileHmac',repeat('a',64),'keyVersion','v'))";
+        for (int length : List.of(1, 64)) {
+            v009S2Shape(connection, fixture, table, null, Map.of("verification_mode", "'DESIGNATED_MOBILE'",
+                    "content_snapshot", "jsonb_set(" + mobile + ",'{verification,keyVersion}',to_jsonb(repeat('v'," + length + ")))"));
+        }
+        for (String value : List.of("repeat('A',64)", "repeat('g',64)", "repeat('a',63)", "repeat('a',65)")) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_mobile_binding", Map.of("verification_mode", "'DESIGNATED_MOBILE'",
+                    "content_snapshot", "jsonb_set(" + mobile + ",'{verification,mobileHmac}',to_jsonb(" + value + "))"));
+        }
+        for (int length : List.of(0, 65)) {
+            v009S2Shape(connection, fixture, table, "ck_share_grant_mobile_binding", Map.of("verification_mode", "'DESIGNATED_MOBILE'",
+                    "content_snapshot", "jsonb_set(" + mobile + ",'{verification,keyVersion}',to_jsonb(repeat('v'," + length + ")))"));
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_grant_mobile_binding", Map.of("content_snapshot",
+                "jsonb_set(content_snapshot,'{verification,mobileHmac}','null'::jsonb)"));
+        for (String member : List.of("mobileHmac", "keyVersion")) {
+            for (String snapshot : List.of(mobile + " #- '{verification," + member + "}'",
+                    "jsonb_set(" + mobile + ",'{verification," + member + "}','null'::jsonb)")) {
+                v009S2Shape(connection, fixture, table, null, Map.of("verification_mode", "'DESIGNATED_MOBILE'", "content_snapshot", snapshot));
+            }
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_grant_status", Map.of("status", "'INVALID'"));
+        for (String status : List.of("ACTIVE", "LOCKED", "EXPIRED", "REVOKED")) {
+            v009S2Shape(connection, fixture, table, null, Map.of("status", "'" + status + "'"));
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_grant_revocation_generation", Map.of("revocation_generation", "-1"));
+        v009S2Shape(connection, fixture, table, "ck_share_grant_revision", Map.of("revision", "0"));
+        v009S2Shape(connection, fixture, table, null, Map.of("revision", "1", "revocation_generation", "0"));
+    }
+
+    private static Map<String, String> v009S2CodeShape() {
+        return Map.of("verification_mode", "'EXTRACTION_CODE'", "code_salt", "repeat('a',22)",
+                "code_hash", "repeat('a',64)", "code_generation", "1",
+                "content_snapshot", v009S2Verification("EXTRACTION_CODE"));
+    }
+
+    private static void v009S2AdmissionChecks(Connection connection, V009Fixture fixture) throws SQLException {
+        String table = "share_admission";
+        for (String value : List.of("''", "'  '", "repeat('k',129)")) {
+            v009S2Shape(connection, fixture, table, "ck_share_admission_key", Map.of("admission_key", value));
+        }
+        for (int length : List.of(1, 128)) {
+            v009S2Shape(connection, fixture, table, null, Map.of("admission_key", "repeat('k'," + length + ")"));
+        }
+        for (String value : List.of("0", "-1")) {
+            v009S2Shape(connection, fixture, table, "ck_share_admission_no", Map.of("admission_no", value));
+        }
+        v009S2Shape(connection, fixture, table, null, Map.of("admission_no", "1",
+                "share_grant_id", v008S2Literal(fixture.eventGrantId())));
+        v009S2Shape(connection, fixture, table, "ck_share_admission_mode", Map.of("verification_mode", "'INVALID'"),
+                "ck_share_admission_result_shape");
+        v009S2Shape(connection, fixture, table, "ck_share_admission_result", Map.of("verification_result", "'INVALID'"),
+                "ck_share_admission_result_shape");
+        for (String mode : List.of("NONE", "EXTRACTION_CODE", "DESIGNATED_MOBILE", "ORGANIZATION_MEMBER")) {
+            v009S2Shape(connection, fixture, table, null, Map.of("verification_mode", "'" + mode + "'",
+                    "verification_result", mode.equals("NONE") ? "'NOT_REQUIRED'" : "'VERIFIED'"));
+            v009S2Shape(connection, fixture, table, "ck_share_admission_result_shape", Map.of("verification_mode", "'" + mode + "'",
+                    "verification_result", mode.equals("NONE") ? "'VERIFIED'" : "'NOT_REQUIRED'"));
+        }
+    }
+
+    private static String v009S2AdmissionPayload() {
+        return "jsonb_build_object('verificationMode','NONE','revocationGeneration',0,'codeGeneration',0,"
+                + "'grantExpiresAt','synthetic','admissionExpiresAt','synthetic','sessionExpiresAt','synthetic')";
+    }
+
+    private static void v009S2EventChecks(Connection connection, V009Fixture fixture) throws SQLException {
+        String table = "share_access_event";
+        v009S2Shape(connection, fixture, table, "ck_share_access_event_domain", Map.of("event_domain", "'OTHER'"));
+        for (String value : List.of("''", "'  '", "repeat('e',129)")) {
+            v009S2Shape(connection, fixture, table, "ck_share_access_event_id", Map.of("event_id", value));
+        }
+        for (int length : List.of(1, 128)) {
+            v009S2Shape(connection, fixture, table, null, Map.of("event_id", "repeat('e'," + length + ")"));
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_access_event_type", Map.of("event_type", "'OTHER'"));
+        v009S2Shape(connection, fixture, table, "ck_share_access_event_result", Map.of("result", "'OTHER'"));
+        for (String result : List.of("SUCCESS", "DENIED", "FAILED", "IGNORED")) {
+            v009S2Shape(connection, fixture, table, null, Map.of("result", "'" + result + "'"));
+        }
+        for (String type : List.of("PAGE_OPENED", "PREFETCH_IGNORED", "VERIFICATION_FAILED", "LOCKED", "ADMISSION_GRANTED",
+                "TICKET_ISSUED", "TICKET_FAILED", "PLAYBACK_AUTHORIZED", "SEEK_AUTHORIZED", "RENEWED", "EXTENDED", "CODE_ROTATED",
+                "REVOKED", "EXPIRED", "FAILURE")) {
+            v009S2Shape(connection, fixture, table, null, Map.of("event_type", "'" + type + "'", "payload_redacted", v009S2AdmissionPayload()));
+            boolean scoped = List.of("ADMISSION_GRANTED", "TICKET_ISSUED", "TICKET_FAILED", "PLAYBACK_AUTHORIZED", "SEEK_AUTHORIZED", "RENEWED").contains(type);
+            v009S2Shape(connection, fixture, table, scoped ? "ck_share_access_event_admission_shape" : null,
+                    Map.of("event_type", "'" + type + "'", "share_admission_id", "NULL", "payload_redacted", v009S2AdmissionPayload()));
+        }
+        for (String column : List.of("risk_digest", "payload_sha256")) {
+            for (String value : List.of("repeat('A',64)", "repeat('g',64)", "repeat('a',63)", "repeat('a',65)")) {
+                v009S2Shape(connection, fixture, table, "ck_share_access_event_" + column, Map.of(column, value));
+            }
+            v009S2Shape(connection, fixture, table, null, Map.of(column, "repeat('a',64)"));
+        }
+        v009S2Shape(connection, fixture, table, null, Map.of("risk_digest", "NULL"));
+        for (String value : List.of("'[]'::jsonb", "'1'::jsonb", "'null'::jsonb")) {
+            v009S2Shape(connection, fixture, table, "ck_share_access_event_payload", Map.of("payload_redacted", value));
+        }
+        for (String member : List.of("verificationMode", "revocationGeneration", "codeGeneration", "grantExpiresAt", "admissionExpiresAt", "sessionExpiresAt")) {
+            v009S2Shape(connection, fixture, table, "ck_share_access_event_admission_facts", Map.of("event_type", "'ADMISSION_GRANTED'",
+                    "payload_redacted", "(" + v009S2AdmissionPayload() + ") - '" + member + "'"));
+            v009S2Shape(connection, fixture, table, null, Map.of("event_type", "'ADMISSION_GRANTED'", "payload_redacted",
+                    "jsonb_set(" + v009S2AdmissionPayload() + ",'{" + member + "}','null'::jsonb)"));
+        }
+        v009S2Shape(connection, fixture, table, "ck_share_access_event_admission_facts", Map.of("event_type", "'ADMISSION_GRANTED'",
+                "payload_redacted", "jsonb_set(" + v009S2AdmissionPayload() + ",'{verificationMode}','\"OTHER\"'::jsonb)"));
+        for (String mode : List.of("NONE", "EXTRACTION_CODE", "DESIGNATED_MOBILE", "ORGANIZATION_MEMBER")) {
+            String payload = "jsonb_set(" + v009S2AdmissionPayload() + ",'{verificationMode}','\"" + mode + "\"'::jsonb)";
+            if (mode.equals("ORGANIZATION_MEMBER")) {
+                for (String member : List.of("recipientAccountId", "recipientOrganizationId")) {
+                    v009S2Shape(connection, fixture, table, "ck_share_access_event_admission_facts", Map.of("event_type", "'ADMISSION_GRANTED'",
+                            "payload_redacted", "(" + payload + ") || jsonb_build_object('" + member + "',null)"));
+                }
+                payload = "(" + payload + ") || jsonb_build_object('recipientAccountId',null,'recipientOrganizationId',null)";
+            }
+            v009S2Shape(connection, fixture, table, null, Map.of("event_type", "'ADMISSION_GRANTED'", "payload_redacted", payload));
+        }
+    }
+
+    private static void v009S2Defaults(Connection connection, V009Fixture fixture) throws SQLException {
+        List<String> before = v009S2FixtureRows(connection, fixture);
+        Savepoint probe = connection.setSavepoint();
+        try {
+            switchLocalRole(connection, "sharing_role");
+            UUID grantId = UUID.randomUUID();
+            assertThat(executeUpdate(connection, v009S2Clone(connection, "evidence_share_grant",
+                    Map.of("id", v008S2Literal(grantId)), List.of("code_generation", "valid_from", "admissions_used",
+                            "download_allowed", "status", "revocation_generation", "revision")), fixture.grantId())).isEqualTo(1);
+            assertThat(queryString(connection, "SELECT (code_generation = 0 AND valid_from = transaction_timestamp() "
+                    + "AND admissions_used = 0 AND NOT download_allowed AND status = 'ACTIVE' "
+                    + "AND revocation_generation = 0 AND revision = 1)::text FROM sharing.evidence_share_grant WHERE id = ?", grantId))
+                    .isEqualTo("true");
+            UUID admissionId = UUID.randomUUID();
+            assertThat(executeUpdate(connection, v009AdmissionSql(), admissionId, grantId, "s2-default-admission")).isEqualTo(1);
+            assertThat(queryString(connection, "SELECT (admitted_at = transaction_timestamp())::text "
+                    + "FROM sharing.share_admission WHERE id = ?", admissionId)).isEqualTo("true");
+            UUID eventId = UUID.randomUUID();
+            assertThat(executeUpdate(connection, v009EventSql(), eventId, grantId, admissionId,
+                    "s2-default-" + eventId, randomSha256())).isEqualTo(1);
+            assertThat(queryString(connection, "SELECT (occurred_at = transaction_timestamp())::text "
+                    + "FROM sharing.share_access_event WHERE id = ?", eventId)).isEqualTo("true");
+            System.out.println("PA9 S2 defaults 7+1+1 exact values and transaction_timestamp equality");
+        } finally {
+            connection.rollback(probe);
+            assertThat(v009S2FixtureRows(connection, fixture)).containsExactlyElementsOf(before);
+        }
+    }
+
+    private static void v009S2KeysAndNulls(Connection connection, V009Fixture fixture) throws SQLException {
+        List<String> catalog = v009S2Catalog(connection);
+        for (String table : V009_TABLES) {
+            UUID base = table.equals("evidence_share_grant") ? fixture.grantId()
+                    : UUID.fromString(fixture.rows().get("sharing." + table).getFirst());
+            List<String> required = queryStrings(connection, "SELECT attname FROM pg_attribute "
+                    + "WHERE attrelid = ?::regclass AND attnum > 0 AND NOT attisdropped AND attnotnull ORDER BY attnum",
+                    "sharing." + table);
+            assertThat(required).hasSize(table.equals("evidence_share_grant") ? 16 : table.equals("share_admission") ? 7 : 9);
+            for (String column : required) {
+                Savepoint probe = connection.setSavepoint();
+                try {
+                    switchLocalRole(connection, "sharing_owner");
+                    if (table.equals("share_admission")) {
+                        execute(connection, "ALTER TABLE sharing.share_admission DISABLE TRIGGER trg_share_admission_guard");
+                    }
+                    try {
+                        executeUpdate(connection, v009S2Clone(connection, table, Map.of(column, "NULL")), base);
+                        fail("expected 23502/%s.%s", table, column);
+                    } catch (org.postgresql.util.PSQLException failure) {
+                        assertThat(failure.getSQLState()).isEqualTo("23502");
+                        assertThat(failure.getServerErrorMessage().getTable()).isEqualTo(table);
+                        assertThat(failure.getServerErrorMessage().getColumn()).isEqualTo(column);
+                        System.out.printf("PA9 S2 NOT NULL 23502/%s.%s%n", table, column);
+                    }
+                } finally {
+                    connection.rollback(probe);
+                    assertThat(v009S2Catalog(connection)).containsExactlyElementsOf(catalog);
+                    v009AssertTriggerStates(connection);
+                }
+            }
+        }
+        for (String[] key : List.of(
+                new String[]{"evidence_share_grant", "pk_evidence_share_grant", "id"},
+                new String[]{"evidence_share_grant", "uq_share_grant_share_id", "share_id"},
+                new String[]{"evidence_share_grant", "uq_share_grant_token_hash", "capability_token_hash"},
+                new String[]{"share_admission", "pk_share_admission", "id"},
+                new String[]{"share_admission", "uq_share_admission_key", "admission_key"},
+                new String[]{"share_admission", "uq_share_admission_no", "admission_no"},
+                new String[]{"share_access_event", "pk_share_access_event", "id"},
+                new String[]{"share_access_event", "uq_share_access_event_domain_id", "event_id"})) {
+            UUID base = key[0].equals("evidence_share_grant") ? fixture.grantId()
+                    : UUID.fromString(fixture.rows().get("sharing." + key[0]).getFirst());
+            Savepoint probe = connection.setSavepoint();
+            try {
+                switchLocalRole(connection, "sharing_owner");
+                if (key[0].equals("share_admission")) {
+                    execute(connection, "ALTER TABLE sharing.share_admission DISABLE TRIGGER trg_share_admission_guard");
+                }
+                v009ExpectConstraint(connection, "23505", key[1],
+                        v009S2Clone(connection, key[0], Map.of(key[2], key[2])), base);
+                System.out.printf("PA9 S2 key 23505/%s%n", key[1]);
+            } finally {
+                connection.rollback(probe);
+                assertThat(v009S2Catalog(connection)).containsExactlyElementsOf(catalog);
+                v009AssertTriggerStates(connection);
+            }
+        }
+        assertThat(v009S2Catalog(connection)).containsExactlyElementsOf(catalog);
+        v009AssertTriggerStates(connection);
+    }
+
+    private static Map<String, String> v009S2Rotation() {
+        return Map.of("code_salt", "repeat('b',22)", "code_hash", "repeat('b',64)",
+                "code_generation", "code_generation + 1", "revocation_generation", "revocation_generation + 1",
+                "revision", "revision + 1");
+    }
+
+    private static void v009S2Action(UUID identifier, String label, Map<String, String> changes) throws SQLException {
+        v009S2Mutation(identifier, "legal " + label, changes, null);
+        for (int delta : List.of(0, -1, 2)) {
+            Map<String, String> invalid = new java.util.LinkedHashMap<>(changes);
+            invalid.put("revision", "revision + " + delta);
+            v009S2Mutation(identifier, label + " revision delta " + delta, invalid, "SHARE_GRANT_REVISION_INVALID");
+        }
+        String baseline;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "sharing_role");
+                queryString(connection, "SELECT id::text FROM sharing.evidence_share_grant WHERE id = ? FOR UPDATE", identifier);
+                baseline = v009S2Rows(connection, identifier);
+                int revision = Math.toIntExact(queryLong(connection,
+                        "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", identifier));
+                String status = queryString(connection, "SELECT status FROM sharing.evidence_share_grant WHERE id = ?", identifier);
+                assertThat(executeUpdate(connection, v009S2Update(changes), identifier, status, revision - 1)).isZero();
+                assertThat(v009S2Rows(connection, identifier)).isEqualTo(baseline);
+                assertThat(queryLong(connection, "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", identifier))
+                        .isEqualTo(revision);
+                connection.rollback();
+                System.out.printf("PA9 S2 stale WHERE %s: zero rows, bounded reread, explicit ROLLBACK (not SQL error)%n", label);
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection fresh = openConnection()) {
+            assertThat(v009S2Rows(fresh, identifier)).isEqualTo(baseline);
+        }
+    }
+
+    private static String v009S2Update(Map<String, String> changes) {
+        List<String> assignments = new ArrayList<>();
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            assignments.add(change.getKey() + " = " + change.getValue());
+        }
+        if (assignments.isEmpty()) {
+            assignments.add("revision = revision");
+        }
+        return "UPDATE sharing.evidence_share_grant SET " + String.join(",", assignments)
+                + " WHERE id = ? AND status = ? AND revision = ?";
+    }
+
+    private static void v009S2Mutation(UUID identifier, String label, Map<String, String> changes,
+                                       String diagnostic) throws SQLException {
+        v009S2Mutation(identifier, label, changes, "sharing_role", diagnostic == null ? null : "P0001", diagnostic);
+    }
+
+    private static void v009S2Mutation(UUID identifier, String label, Map<String, String> changes,
+                                       String role, String state, String diagnostic) throws SQLException {
+        String baseline;
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, role);
+                queryString(connection, "SELECT id::text FROM sharing.evidence_share_grant WHERE id = ? FOR UPDATE", identifier);
+                baseline = v009S2Rows(connection, identifier);
+                String row = queryString(connection, "SELECT to_jsonb(g)::text FROM sharing.evidence_share_grant g WHERE id = ?", identifier);
+                String status = queryString(connection, "SELECT status FROM sharing.evidence_share_grant WHERE id = ?", identifier);
+                int revision = Math.toIntExact(queryLong(connection,
+                        "SELECT revision FROM sharing.evidence_share_grant WHERE id = ?", identifier));
+                List<String> catalog = v009S2Catalog(connection);
+                Savepoint probe = connection.setSavepoint();
+                try {
+                    String sql = v009S2Update(changes);
+                    if (label.equals("service-forbidden mixed lock+extension")) {
+                        sql += " AND clock_timestamp() < expires_at";
+                    }
+                    if (state == null) {
+                        List<String> expectedFields = new ArrayList<>();
+                        for (Map.Entry<String, String> change : changes.entrySet()) {
+                            expectedFields.add("'" + change.getKey() + "'");
+                            expectedFields.add(change.getValue());
+                        }
+                        String expected = queryString(connection, "SELECT (to_jsonb(g) || jsonb_build_object("
+                                + String.join(",", expectedFields) + "))::text FROM sharing.evidence_share_grant g WHERE id = ?", identifier);
+                        assertThat(executeUpdate(connection, sql, identifier, status, revision)).as(label).isEqualTo(1);
+                        assertThat(queryString(connection, "SELECT to_jsonb(g)::text FROM sharing.evidence_share_grant g WHERE id = ?", identifier))
+                                .as("all columns, exact deltas: %s", label).isEqualTo(expected);
+                        assertThat(queryString(connection, "SELECT (?::jsonb - 'grant')::text", v009S2Rows(connection, identifier)))
+                                .isEqualTo(queryString(connection, "SELECT (?::jsonb - 'grant')::text", baseline));
+                    } else {
+                        if (state.equals("23514")) {
+                            v009ExpectConstraint(connection, state, diagnostic, sql, identifier, status, revision);
+                        } else {
+                            v009S2Failure(connection, state, diagnostic, sql, identifier, status, revision);
+                        }
+                        assertThat(queryString(connection, "SELECT to_jsonb(g)::text FROM sharing.evidence_share_grant g WHERE id = ?", identifier))
+                                .isEqualTo(row);
+                    }
+                    System.out.printf("PA9 S2 lifecycle %s => %s/%s%n", label, state == null ? "one-row structural success" : state, diagnostic);
+                } finally {
+                    connection.rollback(probe);
+                    assertThat(v009S2Rows(connection, identifier)).as("savepoint full row/history restoration: %s", label).isEqualTo(baseline);
+                    assertThat(v009S2Catalog(connection)).containsExactlyElementsOf(catalog);
+                    v009AssertTriggerStates(connection);
+                }
+                connection.rollback();
+            } finally {
+                connection.rollback();
+            }
+        }
+        try (Connection fresh = openConnection()) {
+            assertThat(v009S2Rows(fresh, identifier)).as("fresh connection full row/history restoration: %s", label).isEqualTo(baseline);
+            v009AssertTriggerStates(fresh);
+        }
+    }
+
+    private static void v009S2FrozenColumns(UUID identifier) throws SQLException {
+        Map<String, String> changes = Map.ofEntries(
+                Map.entry("id", v008S2Literal(UUID.randomUUID())), Map.entry("share_id", "share_id || '-changed'"),
+                Map.entry("capability_token_hash", "repeat('e',64)"), Map.entry("evidence_id", v008S2Literal(UUID.randomUUID())),
+                Map.entry("created_by_account_id", v008S2Literal(UUID.randomUUID())),
+                Map.entry("owner_organization_id", v008S2Literal(UUID.randomUUID())), Map.entry("verification_mode", "'DESIGNATED_MOBILE'"),
+                Map.entry("valid_from", "valid_from - interval '1 minute'"), Map.entry("max_admissions", "3"),
+                Map.entry("download_allowed", "true"), Map.entry("content_snapshot", "content_snapshot || '{\"synthetic\":true}'::jsonb"),
+                Map.entry("content_sha256", "repeat('e',64)"));
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            v009S2Mutation(identifier, "owner frozen " + change.getKey(), Map.of(change.getKey(), change.getValue()),
+                    "sharing_owner", "P0001", "SHARE_GRANT_IMMUTABLE");
+            v009S2Mutation(identifier, "runtime frozen " + change.getKey(), Map.of(change.getKey(), change.getValue()),
+                    "sharing_role", "42501", null);
+        }
+        v009S2Mutation(identifier, "same-state revision-only lower bound", Map.of("revision", "0"),
+                "sharing_role", "23514", "ck_share_grant_revision");
+    }
+
+    private static void v009S2Cleanup(V008S2Fixture evidence, UUID accountId, List<UUID> grants) throws Exception {
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                switchLocalRole(connection, "sharing_owner");
+                for (UUID grantId : grants) {
+                    assertThat(queryLong(connection, "SELECT count(*) FROM sharing.share_admission WHERE share_grant_id = ?", grantId)).isZero();
+                    assertThat(queryLong(connection, "SELECT count(*) FROM sharing.share_access_event WHERE share_grant_id = ?", grantId)).isZero();
+                    executeUpdate(connection, "DELETE FROM sharing.evidence_share_grant WHERE id = ?", grantId);
+                }
+                v009AssertTriggerStates(connection);
+                switchLocalRole(connection, "customer_iam_owner");
+                executeUpdate(connection, "DELETE FROM customer_iam.customer_account WHERE id = ?", accountId);
+                connection.commit();
+            } finally {
+                connection.rollback();
+            }
+        }
+        v008S2Cleanup(evidence);
+        try (Connection fresh = openConnection()) {
+            for (UUID grantId : grants) {
+                assertThat(queryLong(fresh, "SELECT count(*) FROM sharing.evidence_share_grant WHERE id = ?", grantId)).isZero();
+            }
+            assertThat(queryLong(fresh, "SELECT count(*) FROM customer_iam.customer_account WHERE id = ?", accountId)).isZero();
+            assertV009Catalog(fresh);
+            assertV009ForeignKeys(fresh);
+            assertV008ForeignKeyInventory(fresh);
+        }
+    }
+
+    private static final List<String> V009_TABLES = List.of(
+            "evidence_share_grant", "share_access_event", "share_admission");
+    private static final List<String> V009_UPDATE_COLUMNS = List.of(
+            "status", "admissions_used", "revocation_generation", "revision", "expires_at",
+            "code_salt", "code_hash", "code_generation");
+    private static final Map<String, List<String>> V009_FOREIGN_COLUMNS = Map.ofEntries(
+            Map.entry("evidence.evidence_record", List.of("id", "subject_id", "status", "source_type", "source_ref_id", "call_id", "session_id", "reservation_id", "identity_at_capture", "created_at")),
+            Map.entry("evidence.evidence_artifact", List.of("evidence_id", "media_object_id", "artifact_role")),
+            Map.entry("customer_iam.customer_account", List.of("id", "status")),
+            Map.entry("organization_access.organization", List.of("id", "status")),
+            Map.entry("organization_access.organization_membership", List.of("organization_id", "account_id", "role", "status")),
+            Map.entry("subject_number.business_subject", List.of("id", "owner_account_id", "owner_organization_id", "revision")),
+            Map.entry("subject_number.caller_number_binding", List.of("id", "subject_id", "status", "verified_at", "revision")),
+            Map.entry("subject_number.subject_risk_state", List.of("caller_number_binding_id", "risk_type", "state", "revision")));
+
+    private static final Map<String, Map<String, String>> V009_CHECK_DEF_MAP = Map.ofEntries(
+            Map.entry("evidence_share_grant", Map.ofEntries(
+                    Map.entry("ck_share_grant_share_id", "CHECK ((((length(share_id) >= 1) AND (length(share_id) <= 128)) AND (btrim(share_id) <> ''::text)))"),
+                    Map.entry("ck_share_grant_token_hash", "CHECK ((capability_token_hash ~ '^[0-9a-f]{64}$'::text))"),
+                    Map.entry("ck_share_grant_verification_mode", "CHECK ((verification_mode = ANY (ARRAY['NONE'::text, 'EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])))"),
+                    Map.entry("ck_share_grant_code_salt", "CHECK (((code_salt IS NULL) OR (((length(code_salt) >= 22) AND (length(code_salt) <= 256)) AND (code_salt ~ '^[A-Za-z0-9_-]+$'::text))))"),
+                    Map.entry("ck_share_grant_code_hash", "CHECK (((code_hash IS NULL) OR (code_hash ~ '^[0-9a-f]{64}$'::text)))"),
+                    Map.entry("ck_share_grant_code_generation", "CHECK ((code_generation >= 0))"),
+                    Map.entry("ck_share_grant_verification_shape", "CHECK ((((verification_mode = 'EXTRACTION_CODE'::text) AND (code_salt IS NOT NULL) AND (code_hash IS NOT NULL) AND (code_generation >= 1)) OR ((verification_mode <> 'EXTRACTION_CODE'::text) AND (code_salt IS NULL) AND (code_hash IS NULL) AND (code_generation = 0))))"),
+                    Map.entry("ck_share_grant_org_member", "CHECK (((verification_mode <> 'ORGANIZATION_MEMBER'::text) OR (owner_organization_id IS NOT NULL)))"),
+                    Map.entry("ck_share_grant_validity", "CHECK ((expires_at > valid_from))"),
+                    Map.entry("ck_share_grant_admissions", "CHECK (((admissions_used >= 0) AND ((max_admissions IS NULL) OR ((max_admissions >= 1) AND (admissions_used <= max_admissions)))))"),
+                    Map.entry("ck_share_grant_snapshot_shape", "CHECK (((jsonb_typeof(content_snapshot) = 'object'::text) AND (content_snapshot ? 'content'::text) AND (content_snapshot ? 'verification'::text) AND (content_snapshot ? 'creation'::text) AND (jsonb_typeof((content_snapshot -> 'content'::text)) = 'object'::text) AND (jsonb_typeof((content_snapshot -> 'verification'::text)) = 'object'::text) AND (jsonb_typeof((content_snapshot -> 'creation'::text)) = 'object'::text) AND (((content_snapshot -> 'content'::text) ->> 'evidenceId'::text) = (evidence_id)::text) AND (((content_snapshot -> 'creation'::text) ->> 'creatorAccountId'::text) = (created_by_account_id)::text) AND (((content_snapshot -> 'creation'::text) ->> 'evidenceId'::text) = (evidence_id)::text) AND (NOT (((content_snapshot -> 'creation'::text) ->> 'ownerOrganizationId'::text) IS DISTINCT FROM (owner_organization_id)::text)) AND (((content_snapshot -> 'creation'::text) ->> 'scopeDigest'::text) ~ '^[0-9a-f]{64}$'::text) AND (((content_snapshot -> 'creation'::text) ->> 'creationRequestDigest'::text) ~ '^[0-9a-f]{64}$'::text) AND (((content_snapshot -> 'creation'::text) ->> 'creationFingerprint'::text) ~ '^[0-9a-f]{64}$'::text)))"),
+                    Map.entry("ck_share_grant_snapshot_binding", "CHECK ((((content_snapshot -> 'verification'::text) ->> 'mode'::text) = verification_mode))"),
+                    Map.entry("ck_share_grant_mobile_binding", "CHECK ((((verification_mode = 'DESIGNATED_MOBILE'::text) AND (((content_snapshot -> 'verification'::text) ->> 'mobileHmac'::text) ~ '^[0-9a-f]{64}$'::text) AND ((length(((content_snapshot -> 'verification'::text) ->> 'keyVersion'::text)) >= 1) AND (length(((content_snapshot -> 'verification'::text) ->> 'keyVersion'::text)) <= 64))) OR ((verification_mode <> 'DESIGNATED_MOBILE'::text) AND (NOT ((content_snapshot -> 'verification'::text) ? 'mobileHmac'::text)))))"),
+                    Map.entry("ck_share_grant_content_sha256", "CHECK ((content_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                    Map.entry("ck_share_grant_status", "CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'EXPIRED'::text, 'REVOKED'::text, 'LOCKED'::text])))"),
+                    Map.entry("ck_share_grant_revocation_generation", "CHECK ((revocation_generation >= 0))"),
+                    Map.entry("ck_share_grant_revision", "CHECK ((revision >= 1))"))),
+            Map.entry("share_admission", Map.ofEntries(
+                    Map.entry("ck_share_admission_key", "CHECK ((((length(admission_key) >= 1) AND (length(admission_key) <= 128)) AND (btrim(admission_key) <> ''::text)))"),
+                    Map.entry("ck_share_admission_no", "CHECK ((admission_no >= 1))"),
+                    Map.entry("ck_share_admission_mode", "CHECK ((verification_mode = ANY (ARRAY['NONE'::text, 'EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])))"),
+                    Map.entry("ck_share_admission_result", "CHECK ((verification_result = ANY (ARRAY['VERIFIED'::text, 'NOT_REQUIRED'::text])))"),
+                    Map.entry("ck_share_admission_result_shape", "CHECK ((((verification_mode = 'NONE'::text) AND (verification_result = 'NOT_REQUIRED'::text)) OR ((verification_mode = ANY (ARRAY['EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])) AND (verification_result = 'VERIFIED'::text))))"))),
+            Map.entry("share_access_event", Map.ofEntries(
+                    Map.entry("ck_share_access_event_domain", "CHECK ((event_domain = 'SHARE_ACCESS'::text))"),
+                    Map.entry("ck_share_access_event_id", "CHECK ((((length(event_id) >= 1) AND (length(event_id) <= 128)) AND (btrim(event_id) <> ''::text)))"),
+                    Map.entry("ck_share_access_event_type", "CHECK ((event_type = ANY (ARRAY['PAGE_OPENED'::text, 'PREFETCH_IGNORED'::text, 'VERIFICATION_FAILED'::text, 'LOCKED'::text, 'ADMISSION_GRANTED'::text, 'TICKET_ISSUED'::text, 'TICKET_FAILED'::text, 'PLAYBACK_AUTHORIZED'::text, 'SEEK_AUTHORIZED'::text, 'RENEWED'::text, 'EXTENDED'::text, 'CODE_ROTATED'::text, 'REVOKED'::text, 'EXPIRED'::text, 'FAILURE'::text])))"),
+                    Map.entry("ck_share_access_event_result", "CHECK ((result = ANY (ARRAY['SUCCESS'::text, 'DENIED'::text, 'FAILED'::text, 'IGNORED'::text])))"),
+                    Map.entry("ck_share_access_event_risk_digest", "CHECK (((risk_digest IS NULL) OR (risk_digest ~ '^[0-9a-f]{64}$'::text)))"),
+                    Map.entry("ck_share_access_event_payload", "CHECK ((jsonb_typeof(payload_redacted) = 'object'::text))"),
+                    Map.entry("ck_share_access_event_payload_sha256", "CHECK ((payload_sha256 ~ '^[0-9a-f]{64}$'::text))"),
+                    Map.entry("ck_share_access_event_admission_shape", "CHECK (((event_type <> ALL (ARRAY['ADMISSION_GRANTED'::text, 'TICKET_ISSUED'::text, 'TICKET_FAILED'::text, 'PLAYBACK_AUTHORIZED'::text, 'SEEK_AUTHORIZED'::text, 'RENEWED'::text])) OR (share_admission_id IS NOT NULL)))"),
+                    Map.entry("ck_share_access_event_admission_facts", "CHECK (((event_type <> 'ADMISSION_GRANTED'::text) OR ((payload_redacted ? 'verificationMode'::text) AND ((payload_redacted ->> 'verificationMode'::text) = ANY (ARRAY['NONE'::text, 'EXTRACTION_CODE'::text, 'DESIGNATED_MOBILE'::text, 'ORGANIZATION_MEMBER'::text])) AND (payload_redacted ? 'revocationGeneration'::text) AND (payload_redacted ? 'codeGeneration'::text) AND (payload_redacted ? 'grantExpiresAt'::text) AND (payload_redacted ? 'admissionExpiresAt'::text) AND (payload_redacted ? 'sessionExpiresAt'::text) AND (((payload_redacted ->> 'verificationMode'::text) <> 'ORGANIZATION_MEMBER'::text) OR ((payload_redacted ? 'recipientAccountId'::text) AND (payload_redacted ? 'recipientOrganizationId'::text))))))"))));
+
+    private static void assertV009ObjectInventory(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT c.relname || '|' || c.relkind::text || '|' || pg_get_userbyid(c.relowner) "
+                        + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'sharing' ORDER BY 1"))
+                .containsExactly(
+                "evidence_share_grant|r|sharing_owner",
+                "ix_share_access_event_admission|i|sharing_owner",
+                "ix_share_access_event_grant|i|sharing_owner",
+                "ix_share_admission_grant_time|i|sharing_owner",
+                "ix_share_grant_evidence|i|sharing_owner",
+                "ix_share_grant_expiry|i|sharing_owner",
+                "pk_evidence_share_grant|i|sharing_owner",
+                "pk_share_access_event|i|sharing_owner",
+                "pk_share_admission|i|sharing_owner",
+                "share_access_event|r|sharing_owner",
+                "share_admission|r|sharing_owner",
+                "uq_share_access_event_domain_id|i|sharing_owner",
+                "uq_share_admission_key|i|sharing_owner",
+                "uq_share_admission_no|i|sharing_owner",
+                "uq_share_grant_share_id|i|sharing_owner",
+                "uq_share_grant_token_hash|i|sharing_owner");
+        assertThat(queryString(connection,
+                "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'sharing'"))
+                .isEqualTo("sharing_owner");
+        assertThat(queryStrings(connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'sharing' AND c.relkind::text = 'r' ORDER BY 1"))
+                .containsExactlyElementsOf(V009_TABLES);
+        assertThat(queryStrings(connection,
+                "SELECT p.proname || '|' || pg_get_userbyid(p.proowner) || '|' || p.prosecdef "
+                        + "|| '|' || l.lanname || '|' || p.prorettype::regtype::text || '|' || p.pronargs "
+                        + "|| '|' || array_to_string(p.proconfig, ',') FROM pg_proc p "
+                        + "JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang "
+                        + "WHERE n.nspname = 'sharing' ORDER BY 1"))
+                .containsExactly(
+                        "guard_share_admission|sharing_owner|false|plpgsql|trigger|0|search_path=sharing, pg_temp",
+                        "guard_share_grant|sharing_owner|false|plpgsql|trigger|0|search_path=sharing, pg_temp",
+                        "reject_row_mutation|sharing_owner|false|plpgsql|trigger|0|search_path=sharing, pg_temp");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_class WHERE relnamespace = 'sharing'::regnamespace "
+                        + "AND (relrowsecurity OR relforcerowsecurity OR relispartition OR relhassubclass)"))
+                .isZero();
+        assertThat(queryStrings(connection,
+                "SELECT typname || '|' || pg_get_userbyid(typowner) FROM pg_type "
+                        + "WHERE typnamespace = 'sharing'::regnamespace ORDER BY 1"))
+                .containsExactly("_evidence_share_grant|sharing_owner", "_share_access_event|sharing_owner",
+                        "_share_admission|sharing_owner", "evidence_share_grant|sharing_owner",
+                        "share_access_event|sharing_owner", "share_admission|sharing_owner");
+        assertV009TriggerInventory(connection);
+    }
+
+    private static void assertV009TriggerInventory(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT c.relname || '.' || t.tgname || '|' || pn.nspname || '.' || p.proname "
+                        + "|| '|' || t.tgtype || '|' || t.tgenabled::text || '|' || t.tgdeferrable "
+                        + "|| '|' || t.tginitdeferred || '|' || t.tgconstraint || '|' || t.tgnargs "
+                        + "|| '|' || coalesce(pg_get_expr(t.tgqual, t.tgrelid), '<none>') "
+                        + "FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                        + "JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_proc p ON p.oid = t.tgfoid "
+                        + "JOIN pg_namespace pn ON pn.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'sharing' AND NOT t.tgisinternal ORDER BY 1"))
+                .containsExactly(
+                        "evidence_share_grant.trg_share_grant_guard|sharing.guard_share_grant|19|O|false|false|0|0|<none>",
+                        "share_access_event.trg_share_access_event_immutable|sharing.reject_row_mutation|27|O|false|false|0|0|<none>",
+                        "share_admission.trg_share_admission_guard|sharing.guard_share_admission|7|O|false|false|0|0|<none>",
+                        "share_admission.trg_share_admission_immutable|sharing.reject_row_mutation|27|O|false|false|0|0|<none>");
+    }
+
+    private static void v009AssertTriggerStates(Connection connection) throws SQLException {
+        assertV009TriggerInventory(connection);
+    }
+
+    private static void assertV009Catalog(Connection connection) throws SQLException {
+        Map<String, List<String>> expectedColumns = Map.ofEntries(
+                Map.entry("evidence_share_grant", List.of(
+                        "id|uuid|NO|<none>||",
+                        "share_id|text|NO|<none>||",
+                        "capability_token_hash|text|NO|<none>||",
+                        "evidence_id|uuid|NO|<none>||",
+                        "created_by_account_id|uuid|NO|<none>||",
+                        "owner_organization_id|uuid|YES|<none>||",
+                        "verification_mode|text|NO|<none>||",
+                        "code_salt|text|YES|<none>||",
+                        "code_hash|text|YES|<none>||",
+                        "code_generation|integer|NO|0||",
+                        "valid_from|timestamp with time zone|NO|now()||",
+                        "expires_at|timestamp with time zone|NO|<none>||",
+                        "max_admissions|integer|YES|<none>||",
+                        "admissions_used|integer|NO|0||",
+                        "download_allowed|boolean|NO|false||",
+                        "content_snapshot|jsonb|NO|<none>||",
+                        "content_sha256|text|NO|<none>||",
+                        "status|text|NO|'ACTIVE'::text||",
+                        "revocation_generation|integer|NO|0||",
+                        "revision|integer|NO|1||")),
+                Map.entry("share_admission", List.of(
+                        "id|uuid|NO|<none>||",
+                        "share_grant_id|uuid|NO|<none>||",
+                        "admission_key|text|NO|<none>||",
+                        "admission_no|integer|NO|<none>||",
+                        "verification_mode|text|NO|<none>||",
+                        "verification_result|text|NO|<none>||",
+                        "admitted_at|timestamp with time zone|NO|now()||")),
+                Map.entry("share_access_event", List.of(
+                        "id|uuid|NO|<none>||",
+                        "share_grant_id|uuid|NO|<none>||",
+                        "share_admission_id|uuid|YES|<none>||",
+                        "event_domain|text|NO|<none>||",
+                        "event_id|text|NO|<none>||",
+                        "event_type|text|NO|<none>||",
+                        "result|text|NO|<none>||",
+                        "occurred_at|timestamp with time zone|NO|now()||",
+                        "risk_digest|text|YES|<none>||",
+                        "payload_redacted|jsonb|NO|<none>||",
+                        "payload_sha256|text|NO|<none>||")));
+        for (String table : V009_TABLES) {
+            assertThat(queryStrings(connection,
+                    "SELECT a.attname || '|' || format_type(a.atttypid, a.atttypmod) "
+                            + "|| '|' || CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END "
+                            + "|| '|' || coalesce(pg_get_expr(d.adbin, d.adrelid), '<none>') "
+                            + "|| '|' || a.attidentity::text || '|' || a.attgenerated::text "
+                            + "FROM pg_attribute a LEFT JOIN pg_attrdef d "
+                            + "ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
+                            + "WHERE a.attrelid = ?::regclass AND a.attnum > 0 ORDER BY a.attnum", "sharing." + table))
+                    .as("ordered type/null/default/identity/generated inventory: %s", table)
+                    .containsExactlyElementsOf(expectedColumns.get(table));
+            Map<String, String> actualChecks = new java.util.TreeMap<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                            + "WHERE conrelid = ?::regclass AND contype = 'c' ORDER BY conname")) {
+                statement.setString(1, "sharing." + table);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        actualChecks.put(rows.getString(1), rows.getString(2));
+                    }
+                }
+            }
+            assertThat(actualChecks).as("independent PG16 literal CHECK oracle: %s", table)
+                    .isEqualTo(V009_CHECK_DEF_MAP.get(table));
+        }
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint WHERE connamespace = 'sharing'::regnamespace"))
+                .isEqualTo(45);
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_constraint WHERE connamespace = 'sharing'::regnamespace "
+                        + "AND (NOT convalidated OR condeferrable OR condeferred OR (contype = 'c' AND connoinherit))"))
+                .isZero();
+        assertThat(queryStrings(connection,
+                "SELECT c.relname || '.' || con.conname || '|' || con.contype::text || '|' "
+                        + "|| pg_get_constraintdef(con.oid) FROM pg_constraint con "
+                        + "JOIN pg_class c ON c.oid = con.conrelid "
+                        + "WHERE con.connamespace = 'sharing'::regnamespace AND con.contype::text IN ('p','u') ORDER BY 1"))
+                .containsExactly(
+                "evidence_share_grant.pk_evidence_share_grant|p|PRIMARY KEY (id)",
+                "evidence_share_grant.uq_share_grant_share_id|u|UNIQUE (share_id)",
+                "evidence_share_grant.uq_share_grant_token_hash|u|UNIQUE (capability_token_hash)",
+                "share_access_event.pk_share_access_event|p|PRIMARY KEY (id)",
+                "share_access_event.uq_share_access_event_domain_id|u|UNIQUE (event_domain, event_id)",
+                "share_admission.pk_share_admission|p|PRIMARY KEY (id)",
+                "share_admission.uq_share_admission_key|u|UNIQUE (share_grant_id, admission_key)",
+                "share_admission.uq_share_admission_no|u|UNIQUE (share_grant_id, admission_no)");
+        assertThat(queryStrings(connection,
+                "SELECT i.relname || '|' || t.relname || '|' || x.indisunique || '|' || x.indisprimary "
+                        + "|| '|' || am.amname || '|' || x.indisvalid || '|' || x.indisready || '|' || x.indislive "
+                        + "|| '|' || x.indnkeyatts || '|' || x.indnatts || '|' || x.indnullsnotdistinct "
+                        + "|| '|' || coalesce(pg_get_expr(x.indpred,x.indrelid), '<none>') "
+                        + "|| '|' || coalesce(pg_get_expr(x.indexprs,x.indrelid), '<none>') "
+                        + "|| '|' || coalesce(con.conname, '<none>') || '|' "
+                        + "|| (SELECT string_agg(a.attname || ':' || ((x.indoption[key.ordinality - 1] & 1) = 1), "
+                        + "',' ORDER BY key.ordinality) FROM unnest(x.indkey) WITH ORDINALITY key(attnum, ordinality) "
+                        + "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = key.attnum) "
+                        + "FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid "
+                        + "JOIN pg_am am ON am.oid = i.relam LEFT JOIN pg_constraint con ON con.conindid = i.oid "
+                        + "AND con.contype::text IN ('p','u') WHERE t.relnamespace = 'sharing'::regnamespace ORDER BY 1"))
+                .containsExactly(
+                "ix_share_access_event_admission|share_access_event|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|share_admission_id:false,occurred_at:false",
+                "ix_share_access_event_grant|share_access_event|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|share_grant_id:false,occurred_at:true",
+                "ix_share_admission_grant_time|share_admission|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|share_grant_id:false,admitted_at:false",
+                "ix_share_grant_evidence|evidence_share_grant|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|evidence_id:false,status:false",
+                "ix_share_grant_expiry|evidence_share_grant|false|false|btree|true|true|true|2|2|false|<none>|<none>|<none>|status:false,expires_at:false",
+                "pk_evidence_share_grant|evidence_share_grant|true|true|btree|true|true|true|1|1|false|<none>|<none>|pk_evidence_share_grant|id:false",
+                "pk_share_access_event|share_access_event|true|true|btree|true|true|true|1|1|false|<none>|<none>|pk_share_access_event|id:false",
+                "pk_share_admission|share_admission|true|true|btree|true|true|true|1|1|false|<none>|<none>|pk_share_admission|id:false",
+                "uq_share_access_event_domain_id|share_access_event|true|false|btree|true|true|true|2|2|false|<none>|<none>|uq_share_access_event_domain_id|event_domain:false,event_id:false",
+                "uq_share_admission_key|share_admission|true|false|btree|true|true|true|2|2|false|<none>|<none>|uq_share_admission_key|share_grant_id:false,admission_key:false",
+                "uq_share_admission_no|share_admission|true|false|btree|true|true|true|2|2|false|<none>|<none>|uq_share_admission_no|share_grant_id:false,admission_no:false",
+                "uq_share_grant_share_id|evidence_share_grant|true|false|btree|true|true|true|1|1|false|<none>|<none>|uq_share_grant_share_id|share_id:false",
+                "uq_share_grant_token_hash|evidence_share_grant|true|false|btree|true|true|true|1|1|false|<none>|<none>|uq_share_grant_token_hash|capability_token_hash:false");
+        assertThat(queryStrings(connection,
+                "SELECT pg_get_indexdef(indexrelid) FROM pg_index "
+                        + "WHERE indrelid IN (SELECT oid FROM pg_class WHERE relnamespace = 'sharing'::regnamespace) "
+                        + "ORDER BY indexrelid::regclass::text"))
+                .containsExactly(
+                        "CREATE INDEX ix_share_access_event_admission ON sharing.share_access_event USING btree (share_admission_id, occurred_at)",
+                        "CREATE INDEX ix_share_access_event_grant ON sharing.share_access_event USING btree (share_grant_id, occurred_at DESC)",
+                        "CREATE INDEX ix_share_admission_grant_time ON sharing.share_admission USING btree (share_grant_id, admitted_at)",
+                        "CREATE INDEX ix_share_grant_evidence ON sharing.evidence_share_grant USING btree (evidence_id, status)",
+                        "CREATE INDEX ix_share_grant_expiry ON sharing.evidence_share_grant USING btree (status, expires_at)",
+                        "CREATE UNIQUE INDEX pk_evidence_share_grant ON sharing.evidence_share_grant USING btree (id)",
+                        "CREATE UNIQUE INDEX pk_share_access_event ON sharing.share_access_event USING btree (id)",
+                        "CREATE UNIQUE INDEX pk_share_admission ON sharing.share_admission USING btree (id)",
+                        "CREATE UNIQUE INDEX uq_share_access_event_domain_id ON sharing.share_access_event USING btree (event_domain, event_id)",
+                        "CREATE UNIQUE INDEX uq_share_admission_key ON sharing.share_admission USING btree (share_grant_id, admission_key)",
+                        "CREATE UNIQUE INDEX uq_share_admission_no ON sharing.share_admission USING btree (share_grant_id, admission_no)",
+                        "CREATE UNIQUE INDEX uq_share_grant_share_id ON sharing.evidence_share_grant USING btree (share_id)",
+                        "CREATE UNIQUE INDEX uq_share_grant_token_hash ON sharing.evidence_share_grant USING btree (capability_token_hash)");
+        String grantGuard = queryString(connection,
+                "SELECT prosrc FROM pg_proc WHERE oid = 'sharing.guard_share_grant()'::regprocedure");
+        for (String column : List.of("id", "share_id", "capability_token_hash", "evidence_id",
+                "created_by_account_id", "owner_organization_id", "verification_mode", "valid_from",
+                "max_admissions", "download_allowed", "content_snapshot", "content_sha256")) {
+            assertThat(grantGuard).contains("NEW." + column + " IS DISTINCT FROM OLD." + column);
+        }
+        assertThat(grantGuard).contains(
+                "SHARE_GRANT_IMMUTABLE", "SHARE_GRANT_EXPIRY_DECREASE", "SHARE_GRANT_GENERATION_INVALID",
+                "SHARE_GRANT_CODE_ROTATION_INVALID", "SHARE_GRANT_STATUS_TERMINAL",
+                "SHARE_GRANT_STATUS_TRANSITION", "SHARE_GRANT_REVISION_INVALID",
+                "SHARE_GRANT_EXTENSION_INVALID", "SHARE_GRANT_EXPIRY_INVALID",
+                "NEW.expires_at < OLD.expires_at", "NEW.code_generation < OLD.code_generation",
+                "NEW.revocation_generation < OLD.revocation_generation",
+                "OLD.status IN ('EXPIRED', 'REVOKED')", "NEW.revision <> OLD.revision + 1",
+                "NEW.code_generation <> OLD.code_generation + 1",
+                "NEW.revocation_generation <> OLD.revocation_generation + 1",
+                "NEW.code_salt IS NOT DISTINCT FROM OLD.code_salt",
+                "NEW.code_hash IS NOT DISTINCT FROM OLD.code_hash",
+                "OLD.status = 'LOCKED' AND NEW.status = 'ACTIVE'",
+                "OLD.verification_mode <> 'EXTRACTION_CODE'",
+                "NEW.status IS DISTINCT FROM OLD.status", "NEW.expires_at > OLD.expires_at",
+                "OLD.status <> 'ACTIVE' OR clock_timestamp() >= OLD.expires_at",
+                "NEW.status = 'EXPIRED' AND clock_timestamp() < OLD.expires_at");
+        String admissionGuard = queryString(connection,
+                "SELECT prosrc FROM pg_proc WHERE oid = 'sharing.guard_share_admission()'::regprocedure");
+        assertThat(admissionGuard).contains("FROM sharing.evidence_share_grant", "IF NOT FOUND",
+                "NEW.verification_mode IS DISTINCT FROM parent_grant.verification_mode",
+                "parent_grant.status <> 'ACTIVE'", "clock_timestamp() < parent_grant.valid_from",
+                "clock_timestamp() >= parent_grant.expires_at", "parent_grant.max_admissions IS NOT NULL",
+                "parent_grant.admissions_used >= parent_grant.max_admissions",
+                "NEW.admission_no IS DISTINCT FROM parent_grant.admissions_used + 1", "SHARE_ADMISSION_REFUSED");
+        assertThat(admissionGuard.toUpperCase(Locale.ROOT)).doesNotContain("FOR UPDATE", "FOR SHARE", "NOW()");
+        assertThat(queryString(connection,
+                "SELECT prosrc FROM pg_proc WHERE oid = 'sharing.reject_row_mutation()'::regprocedure"))
+                .contains("RAISE EXCEPTION 'SHARING_ROW_APPEND_ONLY' USING ERRCODE = 'P0001'")
+                .doesNotContain("RETURN");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_proc WHERE pronamespace = 'sharing'::regnamespace "
+                        + "AND prosrc ~* '\\m(commit|rollback|start\\s+transaction|set\\s+transaction|execute|insert|delete)\\M'"))
+                .isZero();
+        assertV009ObjectInventory(connection);
+    }
+
+    private static void assertV009ForeignKeys(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT c.conname || '|' || c.conrelid::regclass || '|' || a.attname "
+                        + "|| '|' || c.confrelid::regclass || '|' || pa.attname "
+                        + "|| '|' || c.confupdtype::text || '|' || c.confdeltype::text || '|' || c.confmatchtype::text "
+                        + "|| '|' || c.condeferrable || '|' || c.condeferred || '|' || c.convalidated "
+                        + "|| '|' || (SELECT conname FROM pg_constraint pk WHERE pk.conindid = c.conindid "
+                        + "AND pk.contype = 'p') || '|' || cardinality(c.conkey) || '|' || cardinality(c.confkey) "
+                        + "FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] "
+                        + "JOIN pg_attribute pa ON pa.attrelid = c.confrelid AND pa.attnum = c.confkey[1] "
+                        + "WHERE c.connamespace = 'sharing'::regnamespace AND c.contype = 'f' ORDER BY 1"))
+                .containsExactly(
+                "fk_share_access_event_admission|sharing.share_access_event|share_admission_id|sharing.share_admission|id|r|r|s|false|false|true|pk_share_admission|1|1",
+                "fk_share_access_event_grant|sharing.share_access_event|share_grant_id|sharing.evidence_share_grant|id|r|r|s|false|false|true|pk_evidence_share_grant|1|1",
+                "fk_share_admission_grant|sharing.share_admission|share_grant_id|sharing.evidence_share_grant|id|r|r|s|false|false|true|pk_evidence_share_grant|1|1",
+                "fk_share_grant_creator_account|sharing.evidence_share_grant|created_by_account_id|customer_iam.customer_account|id|r|r|s|false|false|true|pk_customer_account|1|1",
+                "fk_share_grant_evidence|sharing.evidence_share_grant|evidence_id|evidence.evidence_record|id|r|r|s|false|false|true|pk_evidence_record|1|1",
+                "fk_share_grant_owner_organization|sharing.evidence_share_grant|owner_organization_id|organization_access.organization|id|r|r|s|false|false|true|pk_organization|1|1");
+    }
+
+    private static void assertV009AclCatalog(Connection connection) throws SQLException {
+        assertThat(queryStrings(connection,
+                "SELECT rolname || '|' || rolcanlogin || '|' || rolsuper || '|' || rolcreatedb "
+                        + "|| '|' || rolcreaterole || '|' || rolinherit || '|' || rolreplication "
+                        + "|| '|' || rolbypassrls || '|' || rolconnlimit || '|' || (rolpassword IS NULL) "
+                        + "FROM pg_authid WHERE rolname IN ('sharing_owner','sharing_role') ORDER BY 1"))
+                .containsExactly("sharing_owner|false|false|false|false|true|false|false|-1|true",
+                        "sharing_role|false|false|false|false|true|false|false|-1|true");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_auth_members WHERE roleid IN "
+                        + "('sharing_owner'::regrole, 'sharing_role'::regrole) OR member IN "
+                        + "('sharing_owner'::regrole, 'sharing_role'::regrole)"))
+                .isZero();
+        for (String aclQuery : List.of(
+                "SELECT n.nspacl AS acl, n.nspowner AS owner FROM pg_namespace n WHERE n.nspname = 'sharing'",
+                "SELECT c.relacl AS acl, c.relowner AS owner FROM pg_class c WHERE c.relnamespace = 'sharing'::regnamespace",
+                "SELECT a.attacl AS acl, c.relowner AS owner FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+                        + "WHERE c.relnamespace = 'sharing'::regnamespace AND a.attnum > 0",
+                "SELECT p.proacl AS acl, p.proowner AS owner FROM pg_proc p WHERE p.pronamespace = 'sharing'::regnamespace")) {
+            String defaultType = aclQuery.contains("n.nspacl") ? "n" : aclQuery.contains("p.proacl") ? "f"
+                    : aclQuery.contains("a.attacl") ? "c" : "r";
+            assertThat(queryLong(connection, "SELECT count(*) FROM (" + aclQuery + ") objects, "
+                    + "LATERAL aclexplode(coalesce(acl, acldefault('" + defaultType + "', owner))) acl "
+                    + "WHERE acl.grantee = 0 OR acl.is_grantable OR acl.grantee NOT IN "
+                    + "('sharing_owner'::regrole, 'sharing_role'::regrole)"))
+                    .as("PUBLIC zero, no grant options or undeclared sharing grantee").isZero();
+        }
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '|' || a.privilege_type || '|' || a.is_grantable FROM pg_namespace n, "
+                        + "LATERAL aclexplode(n.nspacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactly("audit|USAGE|false", "customer_iam|USAGE|false", "evidence|USAGE|false",
+                        "organization_access|USAGE|false", "platform|USAGE|false", "sharing|USAGE|false",
+                        "subject_number|USAGE|false");
+        assertThat(queryStrings(connection,
+                "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
+                        + "AND nspname <> 'information_schema' AND nspname <> 'public' "
+                        + "AND has_schema_privilege('sharing_role', oid, 'USAGE') ORDER BY 1"))
+                .containsExactly("audit", "customer_iam", "evidence", "organization_access", "platform",
+                        "sharing", "subject_number");
+        assertThat(queryLong(connection,
+                "SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
+                        + "AND has_schema_privilege('sharing_role', oid, 'CREATE')"))
+                .isZero();
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || c.relname || '|' || a.privilege_type || '|' || a.is_grantable "
+                        + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "LATERAL aclexplode(c.relacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactly("sharing.evidence_share_grant|INSERT|false", "sharing.evidence_share_grant|SELECT|false",
+                        "sharing.share_access_event|INSERT|false", "sharing.share_access_event|SELECT|false",
+                        "sharing.share_admission|INSERT|false", "sharing.share_admission|SELECT|false");
+        List<String> expectedColumnAcls = new ArrayList<>();
+        for (String column : V009_UPDATE_COLUMNS) {
+            expectedColumnAcls.add("sharing.evidence_share_grant." + column + "|UPDATE|false");
+        }
+        for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+            for (String column : projection.getValue()) {
+                expectedColumnAcls.add(projection.getKey() + "." + column + "|SELECT|false");
+            }
+        }
+        expectedColumnAcls.sort(String::compareTo);
+        assertThat(expectedColumnAcls).hasSize(42);
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || c.relname || '.' || column_info.attname || '|' "
+                        + "|| a.privilege_type || '|' || a.is_grantable FROM pg_attribute column_info "
+                        + "JOIN pg_class c ON c.oid = column_info.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace, "
+                        + "LATERAL aclexplode(column_info.attacl) a "
+                        + "WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactlyElementsOf(expectedColumnAcls);
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' "
+                        + "|| '|' || a.privilege_type || '|' || a.is_grantable "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
+                        + "LATERAL aclexplode(p.proacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
+                .containsExactly(
+                        "audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)|EXECUTE|false",
+                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)|EXECUTE|false",
+                        "sharing.guard_share_admission()|EXECUTE|false",
+                        "sharing.guard_share_grant()|EXECUTE|false", "sharing.reject_row_mutation()|EXECUTE|false");
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' "
+                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname NOT LIKE 'pg%' AND n.nspname <> 'information_schema' "
+                        + "AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass "
+                        + "AND d.objid = p.oid AND d.refclassid = 'pg_extension'::regclass AND d.deptype = 'e') "
+                        + "AND has_function_privilege('sharing_role', p.oid, 'EXECUTE') ORDER BY 1"))
+                .containsExactly(
+                        "audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)",
+                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)",
+                        "sharing.guard_share_admission()", "sharing.guard_share_grant()", "sharing.reject_row_mutation()");
+        List<String> previousRoles = new ArrayList<>(S1_ROLES);
+        previousRoles.addAll(V004_ROLES);
+        previousRoles.addAll(V008_ROLES);
+        for (String role : previousRoles) {
+            assertThat(hasSchema(connection, role, "sharing", "USAGE")).as("%s no sharing expansion", role).isFalse();
+            assertThat(hasSchema(connection, role, "sharing", "CREATE")).isFalse();
+            for (String function : List.of("guard_share_grant", "guard_share_admission", "reject_row_mutation")) {
+                assertThat(hasFunction(connection, role, "sharing." + function + "()", "EXECUTE")).isFalse();
+            }
+        }
+        for (String table : V009_TABLES) {
+            String relation = "sharing." + table;
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "sharing_owner", relation, privilege)).isTrue();
+                assertThat(hasTable(connection, "sharing_role", relation, privilege))
+                        .isEqualTo(List.of("SELECT", "INSERT").contains(privilege));
+                for (String role : previousRoles) {
+                    assertThat(hasTable(connection, role, relation, privilege)).isFalse();
+                }
+            }
+            for (String column : v009Columns(connection, relation)) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    assertThat(hasColumn(connection, "sharing_role", relation, column, privilege))
+                            .isEqualTo(List.of("SELECT", "INSERT").contains(privilege)
+                                    || (privilege.equals("UPDATE") && table.equals("evidence_share_grant")
+                                    && V009_UPDATE_COLUMNS.contains(column)));
+                    for (String role : previousRoles) {
+                        assertThat(hasColumn(connection, role, relation, column, privilege)).isFalse();
+                    }
+                }
+            }
+        }
+        for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
+                assertThat(hasTable(connection, "sharing_role", projection.getKey(), privilege)).isFalse();
+            }
+            for (String column : v009Columns(connection, projection.getKey())) {
+                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
+                    assertThat(hasColumn(connection, "sharing_role", projection.getKey(), column, privilege))
+                            .isEqualTo(privilege.equals("SELECT") && projection.getValue().contains(column));
+                }
+            }
+        }
+    }
+
+    private record V009Fixture(UUID accountId, UUID organizationId, UUID evidenceId, UUID grantId,
+                               UUID eventGrantId, UUID admissionId, Map<String, List<String>> rows) {
+    }
+
+    private static V009Fixture v009Fixture(Connection connection, boolean withProjections) throws SQLException {
+        UUID accountId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID grantId = UUID.randomUUID();
+        UUID eventGrantId = UUID.randomUUID();
+        UUID admissionId = UUID.randomUUID();
+        Map<String, List<String>> rows = new java.util.LinkedHashMap<>();
+        switchLocalRole(connection, "customer_iam_role");
+        assertThat(insertCustomerAccount(connection, accountId, "PA9 synthetic DB-shape creator")).isEqualTo(1);
+        rows.put("customer_iam.customer_account", List.of(accountId.toString()));
+        switchLocalRole(connection, "organization_access_role");
+        assertThat(insertOrganization(connection, organizationId, "PA9 synthetic DB-shape organization")).isEqualTo(1);
+        rows.put("organization_access.organization", List.of(organizationId.toString()));
+        if (withProjections) {
+            UUID membershipId = UUID.randomUUID();
+            assertThat(insertMembership(connection, membershipId, organizationId, accountId, "ADMINISTRATOR")).isEqualTo(1);
+            rows.put("organization_access.organization_membership", List.of(membershipId.toString()));
+        }
+        UUID subjectId = v008InsertSubjectSameTx(connection);
+        rows.put("subject_number.business_subject", List.of(subjectId.toString()));
+        if (withProjections) {
+            UUID bindingId = UUID.randomUUID();
+            UUID riskId = UUID.randomUUID();
+            assertThat(insertBinding(connection, bindingId, subjectId, "MOBILE", "v1.pa9.synthetic",
+                    randomSha256(), "138****0009", "ACTIVE", OffsetDateTime.now(ZoneOffset.UTC), 1)).isEqualTo(1);
+            assertThat(insertRisk(connection, riskId, bindingId, "CONFLICT", "OPEN", "CLAIM_CHECK",
+                    OffsetDateTime.now(ZoneOffset.UTC), null, 1)).isEqualTo(1);
+            rows.put("subject_number.caller_number_binding", List.of(bindingId.toString()));
+            rows.put("subject_number.subject_risk_state", List.of(riskId.toString()));
+        }
+        String callId = v008InsertCallAndSessionSameTx(connection, subjectId);
+        rows.put("ivr.call_record", List.of(callId));
+        UUID sessionId = UUID.fromString(queryString(connection,
+                "SELECT id::text FROM ivr.inbound_session WHERE call_id = ?", callId));
+        rows.put("ivr.inbound_session", List.of(sessionId.toString()));
+        switchLocalRole(connection, "evidence_owner");
+        UUID evidenceId = v008InsertValidRecordAndCreationEvent(connection, subjectId, callId,
+                sessionId, null, "s1-sharing-evidence-" + UUID.randomUUID(), withProjections);
+        assertThat(executeUpdate(connection, "UPDATE evidence.evidence_record SET status = 'SOLIDIFIED', "
+                + "solidified_at = now(), revision = revision + 1 WHERE id = ?", evidenceId)).isEqualTo(1);
+        rows.put("evidence.evidence_record", List.of(evidenceId.toString()));
+        rows.put("evidence.evidence_event", queryStrings(connection,
+                "SELECT id::text FROM evidence.evidence_event WHERE evidence_id = ?", evidenceId));
+        if (withProjections) {
+            rows.put("evidence.media_object", queryStrings(connection,
+                    "SELECT media_object_id::text FROM evidence.evidence_artifact WHERE evidence_id = ?", evidenceId));
+            rows.put("evidence.evidence_artifact", queryStrings(connection,
+                    "SELECT id::text FROM evidence.evidence_artifact WHERE evidence_id = ?", evidenceId));
+        }
+        execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
+        switchLocalRole(connection, "sharing_role");
+        for (UUID grant : List.of(grantId, eventGrantId)) {
+            assertThat(executeUpdate(connection, v009GrantSql(), grant, "s1-synthetic-" + grant,
+                    randomSha256(), evidenceId, accountId, organizationId, randomSha256())).isEqualTo(1);
+        }
+        assertThat(executeUpdate(connection, v009AdmissionSql(), admissionId, grantId, "s1-synthetic-admission"))
+                .isEqualTo(1);
+        UUID eventId = UUID.randomUUID();
+        assertThat(executeUpdate(connection, v009EventSql(), eventId, eventGrantId, admissionId,
+                "s1-synthetic-" + eventId, randomSha256())).isEqualTo(1);
+        rows.put("sharing.evidence_share_grant", new ArrayList<>(List.of(grantId.toString(), eventGrantId.toString())));
+        rows.put("sharing.share_admission", new ArrayList<>(List.of(admissionId.toString())));
+        rows.put("sharing.share_access_event", new ArrayList<>(List.of(eventId.toString())));
+        return new V009Fixture(accountId, organizationId, evidenceId, grantId, eventGrantId, admissionId, rows);
+    }
+
+    private static String v009GrantSql() {
+        return "INSERT INTO sharing.evidence_share_grant (id, share_id, capability_token_hash, evidence_id, "
+                + "created_by_account_id, owner_organization_id, verification_mode, valid_from, expires_at, "
+                + "max_admissions, content_snapshot, content_sha256) "
+                + "SELECT id, share_id, token_hash, evidence_id, account_id, organization_id, 'NONE', "
+                + "clock_timestamp() - interval '1 hour', clock_timestamp() + interval '1 day', NULL, "
+                + "jsonb_build_object('content', jsonb_build_object('evidenceId', evidence_id::text), "
+                + "'verification', jsonb_build_object('mode', 'NONE'), 'creation', jsonb_build_object("
+                + "'creatorAccountId', account_id::text, 'evidenceId', evidence_id::text, "
+                + "'ownerOrganizationId', organization_id::text, 'scopeDigest', digest, "
+                + "'creationRequestDigest', digest, 'creationFingerprint', digest)), digest "
+                + "FROM (VALUES (?::uuid, ?::text, ?::text, ?::uuid, ?::uuid, ?::uuid, ?::text)) "
+                + "fixture(id, share_id, token_hash, evidence_id, account_id, organization_id, digest)";
+    }
+
+    private static String v009AdmissionSql() {
+        return "INSERT INTO sharing.share_admission (id, share_grant_id, admission_key, admission_no, "
+                + "verification_mode, verification_result) VALUES (?, ?, ?, 1, 'NONE', 'NOT_REQUIRED')";
+    }
+
+    private static String v009EventSql() {
+        return "INSERT INTO sharing.share_access_event (id, share_grant_id, share_admission_id, event_domain, "
+                + "event_id, event_type, result, payload_redacted, payload_sha256) "
+                + "VALUES (?, ?, ?, 'SHARE_ACCESS', ?, 'PAGE_OPENED', 'SUCCESS', '{}'::jsonb, ?)";
+    }
+
+    private static List<String> v009Columns(Connection connection, String relation) throws SQLException {
+        return queryStrings(connection, "SELECT attname FROM pg_attribute WHERE attrelid = ?::regclass "
+                + "AND attnum > 0 AND NOT attisdropped ORDER BY attnum", relation);
+    }
+
+    private static void v009DeniedQuery(Connection connection, String sql) throws SQLException {
+        Savepoint denial = connection.setSavepoint();
+        try {
+            expectSqlState(connection, "42501", null, () -> queryStrings(connection, sql));
+        } finally {
+            connection.rollback(denial);
+        }
+    }
+
+    private static void v009ExpectConstraint(Connection connection, String state, String constraint,
+                                           String sql, Object... parameters) throws SQLException {
+        Savepoint probe = connection.setSavepoint();
+        try {
+            try {
+                executeUpdate(connection, sql, parameters);
+                fail("expected %s/%s", state, constraint);
+            } catch (org.postgresql.util.PSQLException failure) {
+                assertThat(failure.getSQLState()).isEqualTo(state);
+                assertThat(failure.getServerErrorMessage()).isNotNull();
+                assertThat(failure.getServerErrorMessage().getConstraint()).isEqualTo(constraint);
+            }
+        } finally {
+            connection.rollback(probe);
+        }
+    }
+
+    private static void v009AssertNoResidue(V009Fixture fixture) throws SQLException {
+        try (Connection connection = openConnection()) {
+            for (Map.Entry<String, List<String>> registered : fixture.rows().entrySet()) {
+                String column = registered.getKey().equals("ivr.call_record") ? "call_id" : "id";
+                for (String identifier : registered.getValue()) {
+                    assertThat(queryLong(connection, "SELECT count(*) FROM " + registered.getKey()
+                            + " WHERE " + column + "::text = ?", identifier))
+                            .as("fresh-connection rollback residue %s/%s", registered.getKey(), identifier).isZero();
+                }
+            }
+            assertV009TriggerInventory(connection);
+            assertV009ForeignKeys(connection);
+            assertV008ForeignKeyInventory(connection);
+            assertThat(queryLong(connection,
+                    "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+                            + "WHERE NOT t.tgisinternal AND c.relnamespace = 'evidence'::regnamespace "
+                            + "AND t.tgenabled::text <> 'O'"))
+                    .isZero();
         }
     }
 
@@ -6087,7 +8394,7 @@ class PostgresContainerIT {
                 connection,
                 "SELECT n.nspname || '=' || pg_get_userbyid(n.nspowner) FROM pg_namespace n "
                         + "WHERE n.nspname IN ('platform','audit','customer_iam','organization_access','operations_iam','subject_number',"
-                        + "'catalog_order','ivr','entitlement_metering','activation_consent','evidence') "
+                        + "'catalog_order','ivr','entitlement_metering','activation_consent','evidence','sharing') "
                         + "ORDER BY n.nspname"))
                 .containsExactly(
                         "activation_consent=activation_consent_owner",
@@ -6100,12 +8407,8 @@ class PostgresContainerIT {
                         "operations_iam=operations_iam_owner",
                         "organization_access=organization_access_owner",
                         "platform=platform_reliability_owner",
+                        "sharing=sharing_owner",
                         "subject_number=subject_number_owner");
-
-        assertThat(queryLong(
-                connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
-                .isZero();
 
         assertThat(queryStrings(
                 connection,
@@ -6122,6 +8425,7 @@ class PostgresContainerIT {
                         "operations_iam",
                         "organization_access",
                         "platform",
+                        "sharing",
                         "subject_number");
 
         List<String> expectedRoles = new ArrayList<>();
@@ -6134,6 +8438,8 @@ class PostgresContainerIT {
         for (String role : V008_ROLES) {
             expectedRoles.add(role + ":false:false:false:false");
         }
+        expectedRoles.add("sharing_owner:false:false:false:false");
+        expectedRoles.add("sharing_role:false:false:false:false");
         expectedRoles.sort(String::compareTo);
 
         assertThat(queryStrings(
@@ -6142,10 +8448,7 @@ class PostgresContainerIT {
                         + "FROM pg_roles WHERE rolname <> '" + DB_USER + "' AND rolname NOT LIKE 'pg%' ORDER BY rolname"))
                 .containsExactlyElementsOf(expectedRoles);
 
-        assertThat(queryLong(
-                connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
-                .isZero();
+
     }
 
     private static void assertTablesColumnsChecksAndIndexes(Connection connection) throws SQLException {
@@ -6894,6 +9197,9 @@ class PostgresContainerIT {
                         "platform.idempotency_begin",
                         "platform.idempotency_complete",
                         "platform.outbox_append",
+                        "sharing.guard_share_admission",
+                        "sharing.guard_share_grant",
+                        "sharing.reject_row_mutation",
                         "subject_number.guard_caller_number_binding",
                         "subject_number.guard_subject_owner",
                         "subject_number.guard_subject_risk_state",
@@ -7031,6 +9337,10 @@ class PostgresContainerIT {
                         "operations_iam.employee_account.trg_employee_account_guard",
                         "organization_access.organization.trg_organization_guard",
                         "organization_access.organization_membership.trg_membership_guard",
+                        "sharing.evidence_share_grant.trg_share_grant_guard",
+                        "sharing.share_access_event.trg_share_access_event_immutable",
+                        "sharing.share_admission.trg_share_admission_guard",
+                        "sharing.share_admission.trg_share_admission_immutable",
                         "subject_number.business_subject.trg_business_subject_guard",
                         "subject_number.caller_number_binding.trg_caller_number_binding_guard",
                         "subject_number.subject_claim.trg_subject_claim_immutable",
@@ -8334,6 +10644,115 @@ class PostgresContainerIT {
             assertThat(toRegclass(connection, "evidence." + v008PlusName)).isNull();
             assertThat(toRegclass(connection, "sharing." + v008PlusName)).isNull();
         }
+    }
+
+    private static void assertV009LiveFence(Connection connection) throws SQLException {
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'ivr' AND c.relkind = 'r' ORDER BY 1"))
+                .containsExactlyElementsOf(List.of(
+                        "call_event", "call_leg", "call_record", "inbound_session",
+                        "ivr_decision", "outbound_call_task"));
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the seven V006 entitlement_metering tables")
+                .containsExactlyElementsOf(V006_TABLES);
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'activation_consent' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the three V007 activation_consent tables")
+                .containsExactlyElementsOf(V007_TABLES);
+        assertThat(queryStrings(
+                connection,
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                        + "WHERE n.nspname = 'evidence' AND c.relkind = 'r' ORDER BY 1"))
+                .as("exactly the five V008 evidence tables")
+                .containsExactlyElementsOf(V008_TABLES);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
+                .isEqualTo(1);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
+                .isEqualTo(2);
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('evidence_owner','evidence_role')"))
+                .isEqualTo(2);
+        assertThat(queryStrings(
+                connection,
+                "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE n.nspname = 'entitlement_metering' "
+                        + "AND p.prosecdef ORDER BY 1"))
+                .as("issue_first_trial is the only SECURITY DEFINER service function")
+                .containsExactly("issue_first_trial");
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema'"))
+                .as("function wave remains the five SECURITY DEFINER services")
+                .isEqualTo(5);
+        assertThat(queryStrings(
+                connection,
+                "SELECT proname FROM pg_proc WHERE proname IN "
+                        + "('select_call_action','record_activation_next_action',"
+                        + "'reserve_call_usage','settle_call_usage','publish_trial_policy',"
+                        + "'disable_trial_policy','record_activation_next_action')"))
+                .isEmpty();
+        assertThat(toRegclass(connection, "ivr.call_task")).isNull();
+        assertThat(toRegclass(connection, "ivr.call_session")).isNull();
+        assertThat(queryLong(
+                connection,
+                "SELECT count(*) FROM pg_constraint c "
+                        + "JOIN pg_class r ON r.oid = c.conrelid "
+                        + "JOIN pg_namespace n ON n.oid = r.relnamespace "
+                        + "WHERE n.nspname = 'catalog_order' AND c.conname = 'fk_customer_order_consent'"))
+                .as("V007 consent FK is present").isEqualTo(1);
+        for (String v008PlusName : List.of(
+                "evidence_share_grant", "share_admission", "share_access_event")) {
+            assertThat(toRegclass(connection, "activation_consent." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "entitlement_metering." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "evidence." + v008PlusName)).isNull();
+            assertThat(toRegclass(connection, "sharing." + v008PlusName)).isNotNull();
+        }
+        assertSchemasAndRoles(connection);
+        assertFunctionsAndTrigger(connection);
+        assertV009ObjectInventory(connection);
+        assertThat(queryStrings(connection,
+                "SELECT n.nspname || '.' || p.proname FROM pg_proc p "
+                        + "JOIN pg_namespace n ON n.oid = p.pronamespace "
+                        + "WHERE p.prosecdef AND n.nspname NOT LIKE 'pg%' "
+                        + "AND n.nspname <> 'information_schema' ORDER BY 1"))
+                .containsExactly("audit.append_fact", "entitlement_metering.issue_first_trial",
+                        "platform.idempotency_begin", "platform.idempotency_complete", "platform.outbox_append");
+        assertThat(queryStrings(connection,
+                "SELECT version || '|' || script || '|' || type || '|' || success "
+                        + "FROM public.flyway_schema_history ORDER BY installed_rank"))
+                .containsExactly(
+                        "001|V001__platform_schemas_roles_idempotency_outbox_audit.sql|SQL|true",
+                        "002|V002__identity_organization_and_employee.sql|SQL|true",
+                        "003|V003__subject_number_and_claim.sql|SQL|true",
+                        "004|V004__catalog_order_and_payment.sql|SQL|true",
+                        "005|V005__ivr_task_session_call.sql|SQL|true",
+                        "006|V006__trial_entitlement_issuance_reservation_usage.sql|SQL|true",
+                        "007|V007__activation_and_consent.sql|SQL|true",
+                        "008|V008__evidence_media.sql|SQL|true",
+                        "009|V009__sharing.sql|SQL|true");
+        assertThat(java.util.Arrays.stream(flyway.info().all())
+                .map(info -> info.getScript()).toList())
+                .containsExactly(
+                        "V001__platform_schemas_roles_idempotency_outbox_audit.sql",
+                        "V002__identity_organization_and_employee.sql",
+                        "V003__subject_number_and_claim.sql", "V004__catalog_order_and_payment.sql",
+                        "V005__ivr_task_session_call.sql",
+                        "V006__trial_entitlement_issuance_reservation_usage.sql",
+                        "V007__activation_and_consent.sql", "V008__evidence_media.sql", "V009__sharing.sql");
     }
 
     /**
@@ -18122,10 +20541,9 @@ class PostgresContainerIT {
                                 + "WHERE n.nspname = 'ivr' AND c.relkind = 'r'"))
                         .as("V005 ivr tables exist")
                         .isEqualTo(6);
-                assertThat(queryLong(connection,
-                        "SELECT count(*) FROM pg_namespace WHERE nspname = 'sharing'"))
-                        .as("no sharing schema")
-                        .isZero();
+                assertThat(queryString(connection,
+                        "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = 'sharing'"))
+                        .isEqualTo("sharing_owner");
                 assertThat(toRegclass(connection, "ivr.call_task")).isNull();
                 assertThat(toRegclass(connection, "ivr.call_session")).isNull();
                 assertThat(toRegclass(connection, "ivr.outbound_call_task")).isNotNull();
@@ -23902,7 +26320,7 @@ class PostgresContainerIT {
                 .as("staged V007 function wave remains five SECURITY DEFINER services").isTrue();
     }
 
-    private static void assertV001ThroughV007MigrationDigestsUnchanged() throws Exception {
+    private static void assertV001ThroughV009MigrationDigestsUnchanged() throws Exception {
         // Pinned canonical LF (Git blob) digests; CRLF bytes are normalized to LF before hashing.
         Map<String, String> expected = Map.of(
                 "db/migration/V001__platform_schemas_roles_idempotency_outbox_audit.sql",
@@ -23918,7 +26336,11 @@ class PostgresContainerIT {
                 "db/migration/V006__trial_entitlement_issuance_reservation_usage.sql",
                 "830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475",
                 "db/migration/V007__activation_and_consent.sql",
-                "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659");
+                "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659",
+                "db/migration/V008__evidence_media.sql",
+                "2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e",
+                "db/migration/V009__sharing.sql",
+                "ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae");
         for (Map.Entry<String, String> entry : expected.entrySet()) {
             byte[] raw = readClasspathBytes(entry.getKey());
             byte[] lf = toLfBytes(raw);

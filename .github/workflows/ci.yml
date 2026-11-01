@@ -61,6 +61,8 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob
+          import re
+          from pathlib import Path
           import sys
           import xml.etree.ElementTree as ET
 
@@ -75,7 +77,14 @@ jobs:
               sys.exit(f"expected one container IT report, got {len(failsafe)}")
           suite = failsafe[0]
           expected = {
-              "v001ThroughV008MigrateCleanPostgres16WithoutSkipping",
+              "v001ThroughV009MigrateCleanPostgres16WithoutSkipping",
+              "v009SharingInventoryAndGuardShapesAreExact",
+              "v009OwnerPublicRuntimeAndCrossModuleAclsAreExact",
+              "v009ForeignKeyAndRestrictDeleteBackstops",
+              "v009ShapeDefaultsAndAppendOnlyBackstops",
+              "v009GrantLifecycleRevisionMatrixAndImmutabilityBackstops",
+              "v009AdmissionCountOnceLimitAndAtomicRollbackBackstops",
+              "concurrentV009AdmissionIdentityLimitAndLifecycleHasOneWinner",
               "v008EvidenceInventoryAndGuardShapesAreExact",
               "v008OwnerPublicRuntimeAndCrossModuleAclsAreExact",
               "v008ForeignKeyAndDeferredCreationCycleFkBackstops",
@@ -133,18 +142,28 @@ jobs:
               "v007ActivationHeadTransitionRevisionMatrixAndImmutabilityBackstops",
               "concurrentV007ActivationAndTransitionIdentityHasOneWinner",
           }
+          source = Path("src/test/java/com/onecall/archtests/container/PostgresContainerIT.java").read_text()
+          source_names = re.findall(r"@Test\s+void\s+(\w+)\s*\(", source)
+          if len(source_names) != 64 or len(set(source_names)) != 64 or len(expected) != 64:
+              sys.exit("PA9 V009 S3 requires exactly 64 distinct source/CI methods")
+          if set(source_names) != expected:
+              sys.exit(f"container source and CI expected methods differ: {sorted(set(source_names) ^ expected)}")
           if int(suite.get("tests", "0")) != len(expected):
-              sys.exit("container IT did not report the PA8 V008 S2 test count (57)")
+              sys.exit("container IT did not report the PA9 V009 S3 test count (64)")
           if int(suite.get("skipped", "0")) != 0:
               sys.exit("container IT was skipped")
           if int(suite.get("failures", "0")) != 0 or int(suite.get("errors", "0")) != 0:
               sys.exit("container IT failed")
-          cases = {case.get("name") for case in suite.findall("testcase")}
-          if cases != expected:
-              sys.exit(f"container IT methods differ from PA8 V008 S2: {sorted(cases)}")
-          for surefire in suites("target/surefire-reports/TEST-*.xml"):
-              if int(surefire.get("skipped", "0")) != 0:
-                  sys.exit("a unit/module test was skipped")
+          case_names = [case.get("name") for case in suite.findall("testcase")]
+          cases = set(case_names)
+          if len(case_names) != 64 or len(cases) != 64 or cases != expected:
+              sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
+          unit_suites = suites("target/surefire-reports/TEST-*.xml")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 10:
+              sys.exit("expected exactly 10 Surefire unit/module tests")
+          for surefire in unit_suites:
+              if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
+                  sys.exit("a unit/module test was skipped or failed")
           print("container-smoke report assertions passed")
           PY
       - name: boot jar smoke
