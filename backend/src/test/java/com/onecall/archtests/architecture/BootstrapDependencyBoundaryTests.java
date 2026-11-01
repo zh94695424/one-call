@@ -11,14 +11,18 @@ class BootstrapDependencyBoundaryTests {
     private static final List<String> FORBIDDEN = List.of(
             "org.flywaydb.core.Flyway",
             "org.springframework.security.config.annotation.web.builders.HttpSecurity",
-            "org.jooq.DSLContext",
-            "com.zaxxer.hikari.HikariDataSource");
+            "jakarta.persistence.EntityManager", "org.springframework.web.context.WebApplicationContext");
 
     @Test
-    void forbiddenFrameworksAreAbsentFromTheBootstrapClasspath() {
+    void approvedPersistenceFrameworksAndForbiddenStacksAreExact() {
+        for (String type : List.of("org.jooq.DSLContext", "com.zaxxer.hikari.HikariDataSource",
+                "org.springframework.jdbc.core.JdbcTemplate", "org.springframework.transaction.support.TransactionTemplate",
+                "org.postgresql.Driver")) {
+            assertThat(ClassUtils.isPresent(type, getClass().getClassLoader())).as(type).isTrue();
+        }
         for (String type : FORBIDDEN) {
             assertThat(ClassUtils.isPresent(type, getClass().getClassLoader()))
-                    .as(type + " must not be on the PA0 classpath")
+                    .as(type + " must not be on the bootstrap classpath")
                     .isFalse();
         }
     }

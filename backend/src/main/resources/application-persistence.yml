@@ -1,0 +1,9 @@
+onecall:
+  persistence:
+    url: ${ONECALL_DB_URL:}
+    username: ${ONECALL_DB_USERNAME:}
+    password: ${ONECALL_DB_PASSWORD:}
+logging:
+  level:
+    org.jooq: 'OFF'
+    com.zaxxer.hikari: 'OFF'

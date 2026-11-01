@@ -114,6 +114,12 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 
 当前文档集整体状态为“产品/技术评审”。在 [04-acceptance-roadmap.md](04-acceptance-roadmap.md) 的上线门禁全部关闭前，不得标记为“已批准上线”。
 
+## PA10-S1 implementation evidence
+
+- [Implementation artifact](gateflow/pa10-sharing-application-service-s1-implementation.md): query-only PostgreSQL runtime and internal read-only `listCustomerShares`, strict creator scope, current ACTIVE context checks, sanitized eleven-field metadata and keyset paging.
+- [Completion report](gateflow/pa10-sharing-application-service-s1-completion-1.md): local command/report inventories and frozen-boundary evidence; not controller acceptance or remote CI approval.
+- The optional `persistence` profile uses explicit query-only credentials and fixed transaction-local `sharing_role`; default non-web startup remains database-free. Flyway is test/CI only. No public API, sharing mutation, playback authorization, policy values, schema/ACL changes or production readiness is claimed.
+
 ## 7. 核心术语
 
 | 术语 | 定义 |
@@ -149,4 +155,3 @@ S3 独立 review 后的三项修复、针对性回归及截图增量见 [S3 fix]
 - 文件大小上限、证据保存期限、用户删除与法定留存规则。
 - 未成年人是否允许开户，以及监护人流程是否需要建设。
 - 所有对外协议、隐私文本、录音提示音和司法效力表述的法务定稿。
-
