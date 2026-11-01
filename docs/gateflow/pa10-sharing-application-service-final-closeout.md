@@ -3,7 +3,7 @@
 ## Status
 
 - Work unit: `PA10-sharing-application-service-foundation`
-- Final closeout: **pending final push** (all review/validation gates pass locally)
+- Final closeout: **pass**
 - Draft PR: [#18](https://github.com/zh94695424/one-call/pull/18)
 - Base: `main` / `bdfafc706ce7c1f9f515fa27434139e31769576f`
 - Branch: `codex/pa10-sharing-application-service`
@@ -32,8 +32,10 @@
 - Source, CI literal and XML method inventories match exactly.
 - Enforcer, JAR dependency firewall, database-free default JAR and unchanged
   Node contract regressions pass.
-- Remote GitHub CI at PR head `649123f`: `java-runtime` and
-  `contract-regressions` both pass.
+- Remote GitHub CI at final reviewed product head `649123f`: `java-runtime`
+  and `contract-regressions` both pass in run `41305072060`.
+- Final review/closeout push `09efaba` matches the remote branch and Draft PR
+  head; subsequent closeout documentation does not alter the product tree.
 - V001-V009, OpenAPI, design/security docs, protocol, deployment and acceptance
   contracts remain unchanged.
 
@@ -59,10 +61,8 @@
 
 ## Completion boundary
 
-The local work unit is complete through Draft PR and accepted PR review. The
-accepted PR-review commit still needs to be pushed because three bounded network
-attempts were reset/refused. The branch is not final-closeout complete until the
-remote Draft PR head contains that commit. It is not merged, approved, marked
+The work unit is complete through Draft PR, accepted independent PR review,
+remote verification and final closeout. It is not merged, approved, marked
 ready, remotely assigned to reviewers, or declared production-ready. After the
 user merges PR #18, fetch the updated `main` and start the next Phaseflow work
 unit from the merged baseline.
