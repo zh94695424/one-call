@@ -3,7 +3,7 @@
 ## Status
 
 - Work unit: `PA10-sharing-application-service-foundation`
-- Final closeout: **pass**
+- Final closeout: **pending final push** (all review/validation gates pass locally)
 - Draft PR: [#18](https://github.com/zh94695424/one-call/pull/18)
 - Base: `main` / `bdfafc706ce7c1f9f515fa27434139e31769576f`
 - Branch: `codex/pa10-sharing-application-service`
@@ -59,7 +59,10 @@
 
 ## Completion boundary
 
-The local work unit is complete through Draft PR and PR review. It is not
-merged, approved, marked ready, remotely assigned to reviewers, or declared
-production-ready. After the user merges PR #18, fetch the updated `main` and
-start the next Phaseflow work unit from the merged baseline.
+The local work unit is complete through Draft PR and accepted PR review. The
+accepted PR-review commit still needs to be pushed because three bounded network
+attempts were reset/refused. The branch is not final-closeout complete until the
+remote Draft PR head contains that commit. It is not merged, approved, marked
+ready, remotely assigned to reviewers, or declared production-ready. After the
+user merges PR #18, fetch the updated `main` and start the next Phaseflow work
+unit from the merged baseline.
