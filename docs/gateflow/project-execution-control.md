@@ -4,13 +4,28 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa9-v009-sharing-foundation`
+> Branch: `codex/pa10-sharing-application-service`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
 > Dispatch providers: PA9 planning, implementation and fixes are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent code reviews remain **A = `ds` / `deepseek-flash` (DeepSeek-V4.1-Flash)** and **B = `mimo26` / `mimo-v2.6-pro` (MiMo-V2.6-Pro)** when available. Latest user routing on 2026-11-01 changes the current role B provider to `qwen38flash` / `qwen3.8-flash` while MiMo and GLM are unavailable; GLM is no longer the automatic fallback and is retained only as an explicitly authorized manual reserve. An explicit MiMo unavailability/configuration/model failure, failed turn event, non-zero exit or missing valid completion evidence triggers one fresh isolated Qwen run against the same frozen inputs with a new task label; long runtime alone never triggers fallback, and both the MiMo failure and Qwen fallback reason must be recorded. If Qwen also fails, stop rather than silently switching to GLM. Both reviewers inspect the same frozen diff in isolated workspaces and may not read the peer prompt, output, artifact or conclusion before submitting their own artifact. Neither reviewer may fix, stage, commit, push, mutate PR state, approve or merge. The controller independently adjudicates both artifacts; findings are not accepted or rejected by majority vote, and contradictions require code evidence or `needs-more-evidence`. GPT tasks use the JSONL `codex-agent-run` protocol with explicit model selection and completion-event validation. Before the first GPT dispatch in a gate, run a bounded read-only model/connectivity probe; if it lacks a successful turn completion, stop and report the runner blocker rather than silently falling back to another provider.
 
-## Active resume checkpoint — 2026-10-31
+## Active resume checkpoint - 2026-11-01
+
+### PA10 sharing application-service foundation - goal confirmation accepted
+
+- Active work unit: `PA10-sharing-application-service-foundation`, architecture-sensitive application-service feature.
+- Start commit: PR #17 was verified `MERGED` at `2026-11-01T04:56:27Z`; merge commit `bdfafc706ce7c1f9f515fa27434139e31769576f` has parents `835f2ecece1ac8b5c79ab794427424ea380ac052` and reviewed head `e981c53ec9f8e44fbefa90ee544a2ce4631cbc89`. Fetched `origin/main` equals the merge commit.
+- Worktree: `C:\Users\Administrator\.codex\worktrees\pa10-sharing-application-service\codex-call`; branch `codex/pa10-sharing-application-service`; clean at `bdfafc7`. The PA9 worktree and its private/generated files remain preserved and were not copied.
+- User confirmed the binding goal and boundary: introduce the minimal production runtime persistence foundation and implement only the `listCustomerShares` application-service path. The trusted caller context supplies the authenticated account and selected optional organization workspace; the query is creator-scoped and returns only shares created by that same account in the selected personal workspace (`owner_organization_id IS NULL`) or selected organization workspace (`owner_organization_id = organizationId`). Client-supplied owner, account, role or workspace fields are never accepted.
+- Success signal: application/tests execute against real PostgreSQL 16 with the V001-V009 Flyway chain and `sharing_role`; personal and organization creator scopes are isolated; stable order is `valid_from DESC, share_id DESC`; cursor/paging and invalid cursor behavior are deterministic; the projection omits capability token, code, hashes, salt, object identity/version, permanent URL and secrets; existing module boundaries and all frozen contracts remain intact.
+- Non-goals: no HTTP controller, customer-session authentication, `createCustomerShare`, revoke, code rotation, public-share GET, admission, ticket, media authorization/playback, Redis, COS, KMS, OTP/KDF, share-access policy selection, Q12/Q22 values, new migration/table/column/status, production provisioning, merge, approval, ready-for-review, reviewer request or external comment.
+- Direct evidence: `backend/src/main/java/com/onecall/core/sharing` currently contains only the module declaration and marker; `backend/pom.xml` remains the PA0 bootstrap and bans JDBC/jOOQ/Hikari/runtime Flyway; `backend/src/main/resources/application.yml` is non-web; OpenAPI freezes `listCustomerShares` at `GET /api/v1/customer/shares`, creator-context projection and stable ordering; V009 supplies the exact grant table/index/runtime ACL; docs/14/15/17 freeze sanitization, lifecycle and deferred policy boundaries.
+- No blocking open question remains. Creation/rotation/admission are deferred precisely because sharing-access policy and Q12 KDF inputs are not approved; this work unit does not guess them.
+- Dispatch protocol: `sub-agents` one-shot runner. Current `plan` gate is routed to GPT `gpt-6.1-sol` / `high`; implementation/fixes also use GPT. Independent same-frozen-diff code reviews use DeepSeek A and Qwen B while MiMo/GLM remain unavailable. This latest PA10 route supersedes the historical PA9 provider line above.
+- Current gate / next entry point: `plan`. The controller is recording this accepted goal and preparing a code-generation-ready plan only; no implementation is authorized until plan review and accepted-plan commit pass.
+
+## Active resume checkpoint - 2026-10-31
 
 ### PA9 V009 sharing persistence — goal confirmation accepted
 
