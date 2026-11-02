@@ -4,13 +4,13 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa11-customer-auth-api-foundation`
+> Branch: `codex/pa12-customer-share-list-api`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
 > Dispatch providers: PA12 planning, implementation and fixes are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews remain **A = `ds` / `deepseek-flash`** and **B = `qwen38flash` / `qwen3.8-flash`** while MiMo and GLM are unavailable; A/B use fresh isolated inputs, submit before the controller reads either conclusion, and never mutate source or remote state. Qwen uses low reasoning and bounded file reads. All planning/implementation artifacts, validation commands, completion reports and controller adjudications follow accepted plan and current control-document scope.
 
-## Active resume checkpoint - 2026-11-01
+## Active resume checkpoint - 2026-11-02
 
 ### PA12 customer share list API - goal confirmation accepted
 
@@ -24,7 +24,9 @@
 - No blocking product question for this boundary. The plan must decide the exact server-attested selected-workspace representation/contract and route ownership, while retaining the test-owned verifier: production provider/session issuance/storage remains deferred. It may modify the verifier result/trusted caller contract as needed for this API but may not invent provider-specific identifiers or TTL policy.
 - Slice principle: use the minimum behavioral implementation slices; default to one slice unless independently reviewable behavior increments require at most three. Do not split mechanically by module/file/owner. Each slice must remain read-only and executable against PostgreSQL 16.
 - Dispatch protocol: `sub-agents` one-shot runners. Current gate is `plan`, routed to GPT `gpt-6.1-sol` / `high`. Independent plan/code/aggregate/PR reviews use A DeepSeek and B Qwen on frozen hashes with mutual conclusion isolation.
-- Current gate / next entry point: `plan`. GPT must produce `docs/gateflow/pa12-customer-share-list-api-plan.md` only, with first-principles code evidence, exact contract/module/session-workspace decisions, minimal behavioral slices, exact files, complete tests/validation, docs decision, residual risks and the required completion status. Do not implement or enter plan review.
+- GPT plan task `pa12-customer-share-list-api-plan-gpt-20261102-01` completed with 69 valid JSONL events, exactly one `turn.completed`, no failed/error event, and recovered Codex worktree-path stderr diagnostics. It wrote only `docs/gateflow/pa12-customer-share-list-api-plan.md`. Plan SHA256 `d0d2587af4bd36efa649846ff6981f5e274693bdb75b095dd617b4d4f8714830` and `status: plan-complete`.
+- Controller plan intake: the proposal has one end-to-end read-only S1, adds a customer-owned HTTP adapter, `sharing::customer-query` named interface, server-attested selected workspace, an opaque canonical cursor codec, explicit Problem mapping, separate customer/sharing query ownership, and a proposed future test inventory of 67 Surefire/13 classes and 92 Failsafe/4 classes (`64+10+10+8`, 159 combined). It leaves V001-V009/OpenAPI/design/security/default config unchanged and records the module-composition exception explicitly. These remain author claims pending independent plan review.
+- Current gate / next entry point: `plan review`. Fresh independent A/B reviewers must use Planreview against the same frozen plan and binding PA12 goal, inspect architecture/contract/test/sequencing risks, write separate timestamped artifacts before Controller intake, and neither may read the peer conclusion first. No implementation is authorized.
 
 ### PA11 customer authentication and API foundation - goal confirmation accepted
 
