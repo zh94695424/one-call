@@ -13,6 +13,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.DataSourceConnectionProvider;
 import org.jooq.impl.DefaultConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -35,12 +36,12 @@ public class SharingPersistenceConfiguration {
     }
 
     @Bean
-    DataSourceTransactionManager sharingQueryTransactionManager(DataSource dataSource) {
+    DataSourceTransactionManager sharingQueryTransactionManager(@Qualifier("sharingQueryDataSource") DataSource dataSource) {
         return new DataSourceTransactionManager(dataSource);
     }
 
     @Bean
-    TransactionTemplate sharingQueryTransactionTemplate(DataSourceTransactionManager manager) {
+    TransactionTemplate sharingQueryTransactionTemplate(@Qualifier("sharingQueryTransactionManager") DataSourceTransactionManager manager) {
         TransactionTemplate template = new TransactionTemplate(manager);
         template.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -49,7 +50,7 @@ public class SharingPersistenceConfiguration {
     }
 
     @Bean
-    DSLContext sharingQueryDsl(DataSource dataSource) {
+    DSLContext sharingQueryDsl(@Qualifier("sharingQueryDataSource") DataSource dataSource) {
         DefaultConfiguration configuration = new DefaultConfiguration();
         configuration.set(SQLDialect.POSTGRES);
         configuration.set(new Settings().withExecuteLogging(false).withParamType(ParamType.INDEXED)
@@ -59,13 +60,13 @@ public class SharingPersistenceConfiguration {
     }
 
     @Bean
-    ShareQueryRepository sharingQueryRepository(DSLContext context) {
+    ShareQueryRepository sharingQueryRepository(@Qualifier("sharingQueryDsl") DSLContext context) {
         return new JooqShareQueryRepository(context);
     }
 
     @Bean
-    CustomerShareQueryService customerShareQueryService(TransactionTemplate template,
-            DSLContext context, ShareQueryRepository repository) {
+    CustomerShareQueryService customerShareQueryService(@Qualifier("sharingQueryTransactionTemplate") TransactionTemplate template,
+            @Qualifier("sharingQueryDsl") DSLContext context, @Qualifier("sharingQueryRepository") ShareQueryRepository repository) {
         return new CustomerShareQueryService(template, context, repository);
     }
 }

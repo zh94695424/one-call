@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 21:
-              sys.exit("expected exactly 21 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 49:
+              sys.exit("expected exactly 49 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -196,9 +196,61 @@ jobs:
               },
               "com.onecall.archtests.architecture.SharingQueryBoundaryTests": {"sharingQueryApiAndProjectionAreExact"},
           }
+          unit_expected.update({
+              "com.onecall.core.customer_iam.internal.security.CustomerSessionBoundaryTests": {
+                  "verifierReceivesOnlyOpaqueBearerAndCustomerAudience",
+                  "invalidRevokedExpiredDisabledAndWrongAudienceSessionsHaveSameDenialShape",
+                  "malformedVerifierResultsFailClosed",
+                  "missingAmbiguousAndUnavailableVerifiersFailClosed",
+                  "secretWrappersAndPrincipalNeverRetainOrExposeBearer",
+              },
+              "com.onecall.core.customer_iam.internal.application.CustomerContextServiceTests": {
+                  "trustedCallerIsTheOnlyAccountAndChannelSource",
+                  "activeContextHasExactPersonalAndOrganizationProjection",
+                  "missingAndDisabledAccountsAreUnauthenticated",
+                  "invalidProjectionNeverReturnsPartialContext",
+                  "roleAssertionPrecedesRepositoryAndTransactionIsReadOnly",
+                  "technicalAndProgrammingFailuresAreSanitized",
+              },
+              "com.onecall.archtests.CustomerWebConfigurationTests": {
+                  "defaultRuntimeHasNoCustomerOrServletBeans",
+                  "webProfileIsExplicitAndMissingAdapterHasNoDatabaseEffects",
+                  "customerCredentialsAreExplicitAndValidatedBeforeConnection",
+                  "customerAndSharingGraphsUseExactQualifiers",
+                  "testProfileAndProductClasspathCannotEnableVerifierBypass",
+                  "webSettingsDisableUnsafeLoggingAndSessionBehavior",
+              },
+              "com.onecall.archtests.CustomerMeWebTests": {
+                  "authenticatedGetReturnsFrozenCustomerContext",
+                  "missingMalformedAndDuplicateBearersReturnFrozen401",
+                  "clientSelectorsHeadersCookiesAndBodyCannotOverrideContext",
+                  "reachableProblemsAndResponseHeadersAreClosedAndSanitized",
+                  "otherPathsMethodsAndAliasesAreNotCustomerOperations",
+                  "concurrentRequestsKeepAccountAndChannelIsolated",
+                  "applicationNegotiationAndErrorDispatchUseFrozenProblems",
+                  "reservedProblemVocabularyIsWriterOnly",
+              },
+              "com.onecall.archtests.architecture.CustomerApiBoundaryTests": {
+                  "customerApiSignaturesAndProjectionAreExact",
+                  "customerDependenciesAndReadOnlySqlStayInsideBoundary",
+                  "profileAndVerifierArtifactsCannotEscapeIntoProduction",
+              },
+          })
           container_expected = {
               "com.onecall.archtests.container.PostgresContainerIT": expected,
               "com.onecall.archtests.container.SharingQueryServiceIT": expected_query,
+              "com.onecall.archtests.container.CustomerMeIT": {
+                  "webRuntimeReadsMigratedDatabaseUnderCustomerRole",
+                  "personalContextRequiresCurrentActiveAccount",
+                  "onlyActiveMembershipsUnderActiveOrganizationsAreProjected",
+                  "workspaceOrderingIsUuidDeterministicAndPersonalFirst",
+                  "exactGrantsPermitProjectionAndRejectForeignColumnsAndLocks",
+                  "committedLifecycleChangesAreObservedOnNextRequest",
+                  "requestsCannotSelectAnotherAccountOrganizationRoleOrChannel",
+                  "successAndFailuresDoNotWriteAndRestorePoolState",
+                  "webAndPa10PersistenceCoexistWithoutBeanOrRoleLeakage",
+                  "verifierOutageAndDatabaseFailureExposeNoSecrets",
+              },
           }
 
           def exact_inventory(pattern, inventory, total):
@@ -229,45 +281,449 @@ jobs:
                   source_classes.add(str(path.relative_to("src/test/java")).removesuffix(".java").replace("/", "."))
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 21)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 74)
-          print("PA10 exact source/CI/XML inventory passed: Surefire 21; Failsafe 64+10=74; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 49)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 84)
+          print("PA11 exact source/CI/XML inventory passed: Surefire 49; Failsafe 64+10+10=84; combined 133; zero skips/errors/failures")
           PY
-      - name: boot jar smoke
+      - name: default and opt-in web jar smokes
         run: |
-          timeout 60s java -jar target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/boot.log 2>&1
-          grep -F 'Started OneCallApplication' target/boot.log
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import time
+          import urllib.error
+          import urllib.request
+          import uuid
+
+          jar = "target/onecall-runtime-0.0.1-SNAPSHOT.jar"
+          env = {key: value for key, value in os.environ.items()
+                 if not key.startswith(("ONECALL_DB_", "ONECALL_CUSTOMER_DB_", "SPRING_"))}
+          with open("target/boot.log", "w") as log:
+              default = subprocess.run(["java", "-jar", jar], stdout=log, stderr=subprocess.STDOUT, env=env, timeout=60)
+          default.check_returncode()
+          text = Path("target/boot.log").read_text()
+          assert "Started OneCallApplication" in text
+          assert not re.search(r"Tomcat|Netty|Jetty|Undertow|HikariPool", text)
+          with open("target/web-boot.log", "w") as log:
+              process = subprocess.Popen(["java", "-jar", jar, "--spring.profiles.active=web",
+                                          "--spring.main.web-application-type=servlet", "--server.port=0"],
+                                         stdout=log, stderr=subprocess.STDOUT, env=env)
+              try:
+                  deadline = time.monotonic() + 60
+                  while True:
+                      text = Path("target/web-boot.log").read_text()
+                      port = re.search(r"Tomcat started on port (\d+)", text)
+                      if port and "Started OneCallApplication" in text:
+                          break
+                      assert process.poll() is None, "web JVM exited before startup"
+                      assert time.monotonic() < deadline, "web startup timed out"
+                      time.sleep(0.2)
+                  traces = set()
+                  probes = [("/api/v1/customer/me", {}, 401, "UNAUTHENTICATED", "Authentication required"),
+                            ("/api/v1/customer/me", {"Authorization": "Bearer smoke-opaque"}, 503,
+                             "SERVICE_UNAVAILABLE", "Service unavailable"),
+                            ("/api/v1/customer/me", {"Accept": "text/html", "X-Trace-Id": "untrusted"}, 401,
+                             "UNAUTHENTICATED", "Authentication required"),
+                            ("/error", {"Accept": "text/html"}, 404, "NOT_FOUND", "Not found")]
+                  for path, headers, status, code, title in probes:
+                      request = urllib.request.Request(f"http://127.0.0.1:{port.group(1)}{path}", headers=headers)
+                      try:
+                          response = urllib.request.urlopen(request, timeout=10)
+                      except urllib.error.HTTPError as error:
+                          response = error
+                      with response:
+                          body = response.read().decode()
+                          problem = json.loads(body)
+                          assert response.code == status
+                          assert response.headers.get_content_type() == "application/problem+json"
+                          assert response.headers["Cache-Control"] == "no-store"
+                          assert response.headers["Pragma"] == "no-cache"
+                          assert response.headers["X-Content-Type-Options"] == "nosniff"
+                          assert not response.headers.get("Set-Cookie")
+                          assert response.headers.get("WWW-Authenticate") == ("Bearer" if status == 401 else None)
+                          assert set(problem) == {"type", "title", "status", "code", "traceId"}
+                          assert (problem["type"], problem["title"], problem["status"], problem["code"]) == ("about:blank", title, status, code)
+                          assert str(uuid.UUID(problem["traceId"])) == problem["traceId"]
+                          assert problem["traceId"] not in traces
+                          traces.add(problem["traceId"])
+                          assert not re.search(r"smoke-opaque|untrusted|jdbc:|password|exception|timestamp|<html", body, re.I)
+                  assert "HikariPool" not in Path("target/web-boot.log").read_text()
+              finally:
+                  if process.poll() is None:
+                      process.terminate()
+                  try:
+                      process.wait(timeout=15)
+                  except subprocess.TimeoutExpired:
+                      process.kill()
+                      process.wait(timeout=5)
+          print("PA11 bounded default/web JAR smokes passed; no DB/verifier adapter; JVM cleaned up")
+          PYCODE
       - name: production jar dependency firewall
         run: |
           jar tf target/onecall-runtime-0.0.1-SNAPSHOT.jar > target/jar-index.txt
-          ./mvnw -B -ntp dependency:list -DincludeScope=runtime -DoutputFile=target/pa10-runtime-dependencies.txt
-          python3 - <<'PY'
+          ./mvnw -B -ntp dependency:list -DincludeScope=runtime -DoutputFile=target/pa11-runtime-dependencies.txt
+          python3 - <<'PYCODE'
           from pathlib import Path
           import re
-          import sys
+          import struct
+          import zipfile
 
-          jars = [entry.removeprefix("BOOT-INF/lib/") for entry in Path("target/jar-index.txt").read_text().splitlines()
-                  if entry.startswith("BOOT-INF/lib/") and entry.endswith(".jar")]
-          resolved = re.findall(r"^\s*([\w.]+):([\w.-]+):jar:([^:\s]+):(compile|runtime)\b",
-                                Path("target/pa10-runtime-dependencies.txt").read_text(), re.M)
-          approved = {("org.jooq", "jooq"), ("com.zaxxer", "HikariCP"), ("org.postgresql", "postgresql"),
-                      ("org.springframework", "spring-jdbc"), ("org.springframework", "spring-tx")}
-          for group, artifact in approved:
-              matches = [(version, scope) for actual_group, actual_artifact, version, scope in resolved
-                         if (actual_group, actual_artifact) == (group, artifact)]
-              if len(matches) != 1:
-                  sys.exit(f"missing/duplicate resolved product coordinate: {group}:{artifact}")
-              version, scope = matches[0]
-              if scope != ("runtime" if artifact == "postgresql" else "compile"):
-                  sys.exit(f"incorrect product scope: {artifact}")
-              actual = [jar for jar in jars if jar.startswith(artifact + "-")]
-              if actual != [f"{artifact}-{version}.jar"]:
-                  sys.exit(f"missing/duplicate/unapproved version of {artifact}")
+          coordinate_pattern = re.compile(r"^\s*([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([^:\s]+):(?:([^:\s]*):)?(compile|runtime|test|provided|system)(?:\s|$)")
+
+          def parse_coordinates(text):
+              result = []
+              for line in text.splitlines():
+                  if not line.strip() or line.strip() == "The following files have been resolved:":
+                      continue
+                  match = coordinate_pattern.match(line)
+                  if not match:
+                      raise ValueError("malformed coordinate evidence")
+                  result.append(tuple(value or "" for value in match.groups()))
+              return result
+
+          def literal_coordinates(text):
+              rows = [tuple(line.split(":")) for line in text.splitlines() if line]
+              assert all(len(row) == 6 for row in rows)
+              assert len(set(rows)) == len(rows)
+              return set(rows)
+
+          baseline_resolved = literal_coordinates("""ch.qos.logback:logback-classic:jar:1.5.38::compile
+          ch.qos.logback:logback-core:jar:1.5.38::compile
+          com.tngtech.archunit:archunit:jar:1.4.2::runtime
+          com.zaxxer:HikariCP:jar:7.0.2::compile
+          commons-logging:commons-logging:jar:1.3.6::compile
+          io.micrometer:micrometer-commons:jar:1.17.2::compile
+          io.micrometer:micrometer-observation:jar:1.17.2::compile
+          io.r2dbc:r2dbc-spi:jar:1.0.0.RELEASE::compile
+          jakarta.annotation:jakarta.annotation-api:jar:3.0.0::compile
+          org.apache.logging.log4j:log4j-api:jar:2.25.5::compile
+          org.apache.logging.log4j:log4j-to-slf4j:jar:2.25.5::compile
+          org.checkerframework:checker-qual:jar:3.55.1::runtime
+          org.jmolecules:jmolecules-events:jar:2.0.1::compile
+          org.jmolecules:jstereotype:jar:2.0.1::compile
+          org.jooq:jooq:jar:3.21.9::compile
+          org.jspecify:jspecify:jar:1.0.1::compile
+          org.postgresql:postgresql:jar:42.7.14::runtime
+          org.reactivestreams:reactive-streams:jar:1.0.4::compile
+          org.slf4j:jul-to-slf4j:jar:2.0.20::compile
+          org.slf4j:slf4j-api:jar:2.0.20::compile
+          org.springframework.boot:spring-boot-autoconfigure:jar:4.1.2::compile
+          org.springframework.boot:spring-boot-starter-logging:jar:4.1.2::compile
+          org.springframework.boot:spring-boot-starter:jar:4.1.2::compile
+          org.springframework.boot:spring-boot:jar:4.1.2::compile
+          org.springframework.modulith:spring-modulith-api:jar:2.1.2::compile
+          org.springframework.modulith:spring-modulith-apt:jar:2.1.2::compile
+          org.springframework.modulith:spring-modulith-core:jar:2.1.2::runtime
+          org.springframework.modulith:spring-modulith-moments:jar:2.1.2::compile
+          org.springframework.modulith:spring-modulith-starter-core:jar:2.1.2::compile
+          org.springframework:spring-aop:jar:7.0.10::compile
+          org.springframework:spring-beans:jar:7.0.10::compile
+          org.springframework:spring-context:jar:7.0.10::compile
+          org.springframework:spring-core:jar:7.0.10::compile
+          org.springframework:spring-expression:jar:7.0.10::compile
+          org.springframework:spring-jdbc:jar:7.0.10::compile
+          org.springframework:spring-tx:jar:7.0.10::compile
+          org.yaml:snakeyaml:jar:2.6::compile""")
+          baseline_jars = """HikariCP-7.0.2.jar
+          archunit-1.4.2.jar
+          checker-qual-3.55.1.jar
+          commons-logging-1.3.6.jar
+          jakarta.annotation-api-3.0.0.jar
+          jmolecules-events-2.0.1.jar
+          jooq-3.21.9.jar
+          jspecify-1.0.1.jar
+          jstereotype-2.0.1.jar
+          jul-to-slf4j-2.0.20.jar
+          log4j-api-2.25.5.jar
+          log4j-to-slf4j-2.25.5.jar
+          logback-classic-1.5.38.jar
+          logback-core-1.5.38.jar
+          micrometer-commons-1.17.2.jar
+          micrometer-observation-1.17.2.jar
+          postgresql-42.7.14.jar
+          r2dbc-spi-1.0.0.RELEASE.jar
+          reactive-streams-1.0.4.jar
+          slf4j-api-2.0.20.jar
+          snakeyaml-2.6.jar
+          spring-aop-7.0.10.jar
+          spring-beans-7.0.10.jar
+          spring-boot-4.1.2.jar
+          spring-boot-autoconfigure-4.1.2.jar
+          spring-boot-jarmode-tools-4.1.2.jar
+          spring-context-7.0.10.jar
+          spring-core-7.0.10.jar
+          spring-expression-7.0.10.jar
+          spring-jdbc-7.0.10.jar
+          spring-modulith-api-2.1.2.jar
+          spring-modulith-core-2.1.2.jar
+          spring-modulith-moments-2.1.2.jar
+          spring-tx-7.0.10.jar""".splitlines()
+          approved_rows = """org.springframework:spring-jdbc:jar:7.0.10::compile spring-jdbc-7.0.10.jar
+          org.springframework:spring-beans:jar:7.0.10::compile spring-beans-7.0.10.jar
+          org.springframework:spring-core:jar:7.0.10::compile spring-core-7.0.10.jar
+          commons-logging:commons-logging:jar:1.3.6::compile commons-logging-1.3.6.jar
+          org.jspecify:jspecify:jar:1.0.1::compile jspecify-1.0.1.jar
+          org.springframework:spring-tx:jar:7.0.10::compile spring-tx-7.0.10.jar
+          org.jooq:jooq:jar:3.21.9::compile jooq-3.21.9.jar
+          io.r2dbc:r2dbc-spi:jar:1.0.0.RELEASE::compile r2dbc-spi-1.0.0.RELEASE.jar
+          org.reactivestreams:reactive-streams:jar:1.0.4::compile reactive-streams-1.0.4.jar
+          com.zaxxer:HikariCP:jar:7.0.2::compile HikariCP-7.0.2.jar
+          org.slf4j:slf4j-api:jar:2.0.20::compile slf4j-api-2.0.20.jar
+          org.springframework.boot:spring-boot-starter:jar:4.1.2::compile -
+          org.springframework.boot:spring-boot-starter-logging:jar:4.1.2::compile -
+          ch.qos.logback:logback-classic:jar:1.5.38::compile logback-classic-1.5.38.jar
+          ch.qos.logback:logback-core:jar:1.5.38::compile logback-core-1.5.38.jar
+          org.apache.logging.log4j:log4j-to-slf4j:jar:2.25.5::compile log4j-to-slf4j-2.25.5.jar
+          org.apache.logging.log4j:log4j-api:jar:2.25.5::compile log4j-api-2.25.5.jar
+          org.slf4j:jul-to-slf4j:jar:2.0.20::compile jul-to-slf4j-2.0.20.jar
+          org.springframework.boot:spring-boot-autoconfigure:jar:4.1.2::compile spring-boot-autoconfigure-4.1.2.jar
+          org.springframework.boot:spring-boot:jar:4.1.2::compile spring-boot-4.1.2.jar
+          jakarta.annotation:jakarta.annotation-api:jar:3.0.0::compile jakarta.annotation-api-3.0.0.jar
+          org.yaml:snakeyaml:jar:2.6::compile snakeyaml-2.6.jar
+          org.springframework.boot:spring-boot-starter-webmvc:jar:4.1.2::compile -
+          org.springframework.boot:spring-boot-starter-jackson:jar:4.1.2::compile -
+          org.springframework.boot:spring-boot-jackson:jar:4.1.2::compile spring-boot-jackson-4.1.2.jar
+          org.springframework.boot:spring-boot-starter-tomcat:jar:4.1.2::compile -
+          org.springframework.boot:spring-boot-starter-tomcat-runtime:jar:4.1.2::compile -
+          org.springframework.boot:spring-boot-web-server:jar:4.1.2::compile spring-boot-web-server-4.1.2.jar
+          org.apache.tomcat.embed:tomcat-embed-core:jar:11.0.27::compile tomcat-embed-core-11.0.27.jar
+          org.apache.tomcat.embed:tomcat-embed-el:jar:11.0.27::compile tomcat-embed-el-11.0.27.jar
+          org.apache.tomcat.embed:tomcat-embed-websocket:jar:11.0.27::compile tomcat-embed-websocket-11.0.27.jar
+          org.springframework.boot:spring-boot-tomcat:jar:4.1.2::compile spring-boot-tomcat-4.1.2.jar
+          org.springframework.boot:spring-boot-http-converter:jar:4.1.2::compile spring-boot-http-converter-4.1.2.jar
+          org.springframework:spring-web:jar:7.0.10::compile spring-web-7.0.10.jar
+          io.micrometer:micrometer-observation:jar:1.17.2::compile micrometer-observation-1.17.2.jar
+          io.micrometer:micrometer-commons:jar:1.17.2::compile micrometer-commons-1.17.2.jar
+          org.springframework.boot:spring-boot-webmvc:jar:4.1.2::compile spring-boot-webmvc-4.1.2.jar
+          org.springframework.boot:spring-boot-servlet:jar:4.1.2::compile spring-boot-servlet-4.1.2.jar
+          org.springframework:spring-webmvc:jar:7.0.10::compile spring-webmvc-7.0.10.jar
+          org.springframework:spring-aop:jar:7.0.10::compile spring-aop-7.0.10.jar
+          org.springframework:spring-expression:jar:7.0.10::compile spring-expression-7.0.10.jar
+          org.springframework.modulith:spring-modulith-starter-core:jar:2.1.2::compile -
+          org.springframework.modulith:spring-modulith-api:jar:2.1.2::compile spring-modulith-api-2.1.2.jar
+          org.springframework.modulith:spring-modulith-apt:jar:2.1.2::compile -
+          org.springframework.modulith:spring-modulith-core:jar:2.1.2::runtime spring-modulith-core-2.1.2.jar
+          com.tngtech.archunit:archunit:jar:1.4.2::runtime archunit-1.4.2.jar
+          org.springframework:spring-context:jar:7.0.10::compile spring-context-7.0.10.jar
+          org.springframework.modulith:spring-modulith-moments:jar:2.1.2::compile spring-modulith-moments-2.1.2.jar
+          org.jmolecules:jmolecules-events:jar:2.0.1::compile jmolecules-events-2.0.1.jar
+          org.jmolecules:jstereotype:jar:2.0.1::compile jstereotype-2.0.1.jar
+          com.fasterxml.jackson.core:jackson-annotations:jar:2.21::compile jackson-annotations-2.21.jar
+          org.postgresql:postgresql:jar:42.7.14::runtime postgresql-42.7.14.jar
+          org.checkerframework:checker-qual:jar:3.55.1::runtime checker-qual-3.55.1.jar
+          tools.jackson.core:jackson-databind:jar:3.1.7::compile jackson-databind-3.1.7.jar
+          tools.jackson.core:jackson-core:jar:3.1.7::compile jackson-core-3.1.7.jar""".splitlines()
+          packaged_literal = """HikariCP-7.0.2.jar
+          archunit-1.4.2.jar
+          checker-qual-3.55.1.jar
+          commons-logging-1.3.6.jar
+          jackson-annotations-2.21.jar
+          jackson-core-3.1.7.jar
+          jackson-databind-3.1.7.jar
+          jakarta.annotation-api-3.0.0.jar
+          jmolecules-events-2.0.1.jar
+          jooq-3.21.9.jar
+          jspecify-1.0.1.jar
+          jstereotype-2.0.1.jar
+          jul-to-slf4j-2.0.20.jar
+          log4j-api-2.25.5.jar
+          log4j-to-slf4j-2.25.5.jar
+          logback-classic-1.5.38.jar
+          logback-core-1.5.38.jar
+          micrometer-commons-1.17.2.jar
+          micrometer-observation-1.17.2.jar
+          postgresql-42.7.14.jar
+          r2dbc-spi-1.0.0.RELEASE.jar
+          reactive-streams-1.0.4.jar
+          slf4j-api-2.0.20.jar
+          snakeyaml-2.6.jar
+          spring-aop-7.0.10.jar
+          spring-beans-7.0.10.jar
+          spring-boot-4.1.2.jar
+          spring-boot-autoconfigure-4.1.2.jar
+          spring-boot-http-converter-4.1.2.jar
+          spring-boot-jackson-4.1.2.jar
+          spring-boot-jarmode-tools-4.1.2.jar
+          spring-boot-servlet-4.1.2.jar
+          spring-boot-tomcat-4.1.2.jar
+          spring-boot-web-server-4.1.2.jar
+          spring-boot-webmvc-4.1.2.jar
+          spring-context-7.0.10.jar
+          spring-core-7.0.10.jar
+          spring-expression-7.0.10.jar
+          spring-jdbc-7.0.10.jar
+          spring-modulith-api-2.1.2.jar
+          spring-modulith-core-2.1.2.jar
+          spring-modulith-moments-2.1.2.jar
+          spring-tx-7.0.10.jar
+          spring-web-7.0.10.jar
+          spring-webmvc-7.0.10.jar
+          tomcat-embed-core-11.0.27.jar
+          tomcat-embed-el-11.0.27.jar
+          tomcat-embed-websocket-11.0.27.jar""".splitlines()
+          approved = {}
+          for row in approved_rows:
+              coordinate, filename = row.split()
+              key = tuple(coordinate.split(":"))
+              assert len(key) == 6 and key not in approved
+              approved[key] = None if filename == "-" else filename
+          dependency_only = {coordinate for coordinate, filename in approved.items() if filename is None}
+          counterparts = {filename: coordinate for coordinate, filename in approved.items() if filename is not None}
+          jarmode = "spring-boot-jarmode-tools-4.1.2.jar"
           forbidden = r"^(flyway|spring-security|spring-orm|hibernate|spring-data-|spring-web|tomcat|jetty|undertow|reactor-netty|jakarta.servlet|jakarta.validation|testcontainers|junit|mockito|byte-buddy-agent|assertj|awaitility|jooq-(?!\d)|h2-|hsqldb|derby|mybatis|spring-boot-(?:jdbc|jooq|flyway|test|web|security)|spring-boot-starter-(?:jdbc|jooq|flyway|web|security|data-)|spring-test)"
-          if any(re.search(forbidden, jar) for jar in jars):
-              sys.exit("forbidden framework/test tooling in product JAR")
-          print("PA10 exact resolved query JAR inventory and negative firewall passed")
-          PY
+          collisions = sorted(filename for filename in counterparts if re.search(forbidden, filename))
+          assert len(baseline_resolved) == 37 and len(baseline_jars) == len(set(baseline_jars)) == 34
+          assert len(approved) == 55 and len(dependency_only) == 8 and len(counterparts) == 47
+          assert len(packaged_literal) == len(set(packaged_literal)) == 48
+          assert set(packaged_literal) == set(counterparts) | {jarmode}
+          assert baseline_resolved <= set(approved) and len(set(approved) - baseline_resolved) == 18
+          assert set(baseline_jars) <= set(packaged_literal) and len(set(packaged_literal) - set(baseline_jars)) == 14
+          assert len(collisions) == 7
+          for coordinate, filename in approved.items():
+              group, artifact, kind, version, classifier, scope = coordinate
+              assert kind == "jar" and classifier == "" and scope in {"compile", "runtime"}
+              if filename is not None:
+                  assert filename == f"{artifact}-{version}.jar"
+          assert parse_coordinates("commons-logging:commons-logging:jar:1.3.6:compile") == [
+              ("commons-logging", "commons-logging", "jar", "1.3.6", "", "compile")]
+          assert parse_coordinates("commons-logging:commons-logging:jar:1.3.6::compile") == [
+              ("commons-logging", "commons-logging", "jar", "1.3.6", "", "compile")]
+          assert parse_coordinates("group-with-hyphen:artifact-with-hyphen:jar:1.0:tests:test") == [
+              ("group-with-hyphen", "artifact-with-hyphen", "jar", "1.0", "tests", "test")]
+
+          def validate(resolved, jars):
+              if len(resolved) != len(set(resolved)) or len(jars) != len(set(jars)):
+                  raise ValueError("duplicate coordinate or filename")
+              for coordinate in resolved:
+                  if coordinate in approved:
+                      filename = approved[coordinate]
+                      if filename is not None and filename not in jars:
+                          raise ValueError("missing approved counterpart")
+                      if filename is None and f"{coordinate[1]}-{coordinate[3]}.jar" in jars:
+                          raise ValueError("dependency-only coordinate materialized")
+                      continue
+                  if coordinate[:2] in {("com.fasterxml.jackson.core", "jackson-core"),
+                                        ("com.fasterxml.jackson.core", "jackson-databind")}:
+                      raise ValueError("Jackson 2 core/databind identity forbidden")
+                  raise ValueError("nonmember resolved coordinate")
+              for filename in jars:
+                  if filename == jarmode:
+                      continue
+                  if filename in counterparts and counterparts[filename] in resolved:
+                      continue
+                  if re.search(forbidden, filename) or re.search(r"(?i)test|tool|fixture", filename):
+                      raise ValueError("forbidden nonmember JAR")
+                  raise ValueError("nonmember packaged JAR")
+              if set(resolved) != set(approved) or set(jars) != set(packaged_literal):
+                  raise ValueError("exact resolved/packaged inventory mismatch")
+
+          probes = 0
+          def rejected(resolved, jars, reason=None):
+              global probes
+              try:
+                  validate(resolved, jars)
+              except ValueError as failure:
+                  if reason is not None:
+                      assert reason in str(failure)
+                  probes += 1
+                  return
+              raise AssertionError("adversarial manifest passed")
+
+          good_resolved, good_jars = list(approved), list(packaged_literal)
+          validate(good_resolved, good_jars)
+          for coordinate in dependency_only:
+              rejected(good_resolved, good_jars + [f"{coordinate[1]}-{coordinate[3]}.jar"])
+          for family in ("spring-boot-starter-web", "spring-websocket", "tomcat-embed-jasper", "jakarta.servlet-api",
+                         "spring-boot-starter-webflux", "reactor-netty-http", "jetty-server", "undertow-core",
+                         "spring-boot-starter-security", "spring-security-core", "spring-security-oauth2-jose",
+                         "jjwt-api", "spring-boot-starter-data-jpa", "hibernate-core", "flyway-core",
+                         "spring-boot-starter-flyway", "spring-boot-starter-jdbc", "spring-boot-starter-jooq",
+                         "spring-boot-starter-data-jdbc", "spring-boot-starter-validation", "jakarta.validation-api",
+                         "testcontainers", "junit-jupiter", "mockito-core", "spring-test", "arbitrary-tools",
+                         "r2dbc-postgresql", "h2", "spring-boot-jarmode-tools"):
+              coordinate = ("unapproved", family, "jar", "0.0", "", "runtime")
+              rejected(good_resolved + [coordinate], good_jars + [f"{family}-0.0.jar"])
+              rejected(good_resolved, good_jars + [f"{family}-0.0.jar"])
+          for artifact in ("jackson-core", "jackson-databind"):
+              forged = ("com.fasterxml.jackson.core", artifact, "jar", "3.1.7", "", "compile")
+              rejected(good_resolved + [forged], good_jars, "Jackson 2")
+          rejected(good_resolved + [("org.postgresql", "r2dbc-postgresql", "jar", "1.0.0.RELEASE", "", "runtime")],
+                   good_jars + ["r2dbc-postgresql-1.0.0.RELEASE.jar"])
+          anchor = next(coordinate for coordinate in good_resolved if coordinate[1] == "spring-webmvc")
+          for index, value in ((0, "forged.group"), (2, "pom"), (3, "0.0"), (4, "tests"), (5, "test")):
+              wrong = list(anchor)
+              wrong[index] = value
+              rejected([tuple(wrong) if item == anchor else item for item in good_resolved], good_jars)
+          rejected(good_resolved + [good_resolved[0]], good_jars)
+          rejected(good_resolved[:-1], good_jars)
+          rejected(good_resolved, good_jars + [good_jars[0]])
+          rejected(good_resolved, good_jars[:-1])
+          rejected(good_resolved, [jar for jar in good_jars if jar != jarmode])
+          for text in ("bad-coordinate", "group:artifact:jar:1.0:compile:extra", "group:artifact:jar:1.0:bogus"):
+              try:
+                  parse_coordinates(text)
+              except ValueError:
+                  probes += 1
+              else:
+                  raise AssertionError("malformed coordinate accepted")
+
+          resolved = parse_coordinates(Path("target/pa11-runtime-dependencies.txt").read_text())
+          index = Path("target/jar-index.txt").read_text().splitlines()
+          jar_entries = [entry for entry in index if entry.startswith("BOOT-INF/lib/") and entry.endswith(".jar")]
+          assert all(entry.count("/") == 2 for entry in jar_entries)
+          jars = [entry.removeprefix("BOOT-INF/lib/") for entry in jar_entries]
+          validate(resolved, jars)
+          assert not any(coordinate[5] == "test" for coordinate in resolved)
+
+          def direct_interfaces(data):
+              offset, constants, number = 10, {}, 1
+              count = struct.unpack_from(">H", data, 8)[0]
+              while number < count:
+                  tag = data[offset]
+                  offset += 1
+                  if tag == 1:
+                      size = struct.unpack_from(">H", data, offset)[0]
+                      offset += 2
+                      constants[number] = data[offset:offset+size].decode("utf-8", errors="replace")
+                      offset += size
+                  elif tag == 7:
+                      constants[number] = struct.unpack_from(">H", data, offset)[0]
+                      offset += 2
+                  elif tag in (3, 4, 9, 10, 11, 12, 17, 18):
+                      offset += 4
+                  elif tag in (5, 6):
+                      offset += 8
+                      number += 1
+                  elif tag in (8, 16, 19, 20):
+                      offset += 2
+                  elif tag == 15:
+                      offset += 3
+                  else:
+                      raise AssertionError("unknown class constant tag")
+                  number += 1
+              offset += 6
+              size = struct.unpack_from(">H", data, offset)[0]
+              offset += 2
+              return [constants[constants[struct.unpack_from(">H", data, offset + 2 * item)[0]]] for item in range(size)]
+
+          with zipfile.ZipFile("target/onecall-runtime-0.0.1-SNAPSHOT.jar") as product:
+              entries = product.namelist()
+              assert len(entries) == len(set(entries))
+              for entry in entries:
+                  if not entry.startswith("BOOT-INF/classes/"):
+                      continue
+                  assert not re.search(r"(?i)fixture|testbeans|testapplication|verifieradapter|testconfiguration", entry)
+                  if entry.endswith(".class"):
+                      interfaces = direct_interfaces(product.read(entry))
+                      assert "com/onecall/core/customer_iam/internal/security/CustomerSessionVerifier" not in interfaces
+                      assert "org/springframework/security/web/SecurityFilterChain" not in interfaces
+          print(f"PA11 firewall passed: baseline37/34, web55/48, counterparts47, dependency-only8, packager1; deltas18/0 and14/0; {probes} adversarial probes")
+          print("Approved legacy-regex collisions (positive-first): " + ", ".join(collisions))
+          print("Only packager branch: " + jarmode + "; commons-logging parsed; tuple order group:artifact:type:version:classifier:scope")
+          PYCODE
 
   contract-regressions:
     runs-on: ubuntu-latest

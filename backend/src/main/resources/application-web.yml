@@ -1,0 +1,22 @@
+spring:
+  main:
+    web-application-type: servlet
+  mvc:
+    log-request-details: false
+onecall:
+  customer:
+    persistence:
+      url: ${ONECALL_CUSTOMER_DB_URL:}
+      username: ${ONECALL_CUSTOMER_DB_USERNAME:}
+      password: ${ONECALL_CUSTOMER_DB_PASSWORD:}
+server:
+  tomcat:
+    accesslog:
+      enabled: false
+logging:
+  level:
+    org.jooq: 'OFF'
+    com.zaxxer.hikari: 'OFF'
+    org.springframework.transaction: 'OFF'
+    org.springframework.jdbc: 'OFF'
+    org.springframework.web: WARN

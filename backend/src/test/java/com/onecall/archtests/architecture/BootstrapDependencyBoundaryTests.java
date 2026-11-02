@@ -11,13 +11,15 @@ class BootstrapDependencyBoundaryTests {
     private static final List<String> FORBIDDEN = List.of(
             "org.flywaydb.core.Flyway",
             "org.springframework.security.config.annotation.web.builders.HttpSecurity",
-            "jakarta.persistence.EntityManager", "org.springframework.web.context.WebApplicationContext");
+            "jakarta.persistence.EntityManager");
 
     @Test
     void approvedPersistenceFrameworksAndForbiddenStacksAreExact() {
         for (String type : List.of("org.jooq.DSLContext", "com.zaxxer.hikari.HikariDataSource",
                 "org.springframework.jdbc.core.JdbcTemplate", "org.springframework.transaction.support.TransactionTemplate",
-                "org.postgresql.Driver")) {
+                "org.postgresql.Driver", "org.springframework.web.context.WebApplicationContext",
+                "org.springframework.web.servlet.DispatcherServlet", "org.apache.catalina.startup.Tomcat",
+                "tools.jackson.databind.json.JsonMapper", "com.fasterxml.jackson.annotation.JsonInclude")) {
             assertThat(ClassUtils.isPresent(type, getClass().getClassLoader())).as(type).isTrue();
         }
         for (String type : FORBIDDEN) {
