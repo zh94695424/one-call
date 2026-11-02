@@ -1,6 +1,8 @@
 # onecall-runtime（PA0–PA9 foundations / PA10-S1 query / PA11-S1 customer API）
 
-## Current PA10-S1 internal query capability
+## Historical PA10-S1 internal query capability
+
+This PA10-S1 capability description is historical context. The current PA11 runtime adds the opt-in MVC/Tomcat/Jackson customer boundary described below; PA10 remains an internal sharing query service.
 
 The PA10 application service remains internal `CustomerShareQueryService.listCustomerShares(TrustedShareCaller, SharePageRequest)`.
 Trusted embedding code supplies the authenticated account and optional selected organization; there is no sharing HTTP adapter or public module API. PA11 adds the separate opt-in customer boundary described below.
@@ -14,9 +16,17 @@ The managed Hikari/Spring JDBC/jOOQ path starts a fresh READ_COMMITTED/read-only
 Flyway is test/CI only: the runtime neither provisions/migrates the database nor accepts migration properties. Default non-web bootstrap remains database-free.
 Only fixed public errors and a six-field sanitized failure diagnostic are emitted; SQL, bindings, identities, credentials and raw exception messages are not logged by the query path.
 
+## Current PA11/shared runtime dependency summary
+
+The following current dependency summary covers the shared PA10 query stack and PA11 MVC/Tomcat/Jackson boundary, with test-only tooling identified by scope; it is not a historical PA10 inventory.
+
 | Dependency | Resolved version | Maven scope |
 | --- | --- | --- |
 | `org.springframework:spring-jdbc` / transitive `spring-tx` | 7.0.10 | compile |
+| `org.springframework:spring-webmvc` / `spring-context` / `spring-beans` | 7.0.10 | compile |
+| `com.fasterxml.jackson.core:jackson-annotations` | 2.21 | compile |
+| `tools.jackson.core:jackson-databind` / `tools.jackson.core:jackson-core` | 3.1.7 | compile |
+| `org.apache.tomcat.embed:tomcat-embed-core` / `tomcat-embed-el` / `tomcat-embed-websocket` | 11.0.27 | compile |
 | `org.jooq:jooq` | 3.21.9 | compile |
 | `com.zaxxer:HikariCP` | 7.0.2 | compile |
 | `org.postgresql:postgresql` | 42.7.14 | runtime |
@@ -26,7 +36,7 @@ Only fixed public errors and a six-field sanitized failure diagnostic are emitte
 
 The PA11 JAR firewall freezes the complete resolved and packaged inventories below, including the inherited PA10 query stack. Surefire still excludes Flyway from its classpath; only Failsafe fixtures use it.
 
-Current validation inventory: **49 Surefire methods in 11 classes; 84 Failsafe methods in three classes; 133 combined**, with zero skips. `./mvnw -B -ntp -Pcontainer-smoke verify` runs the unchanged 64 historical PostgreSQL methods, 10 PA10 methods and 10 PA11 methods against disposable PostgreSQL 16. PA11 adds exactly 28 unit/web/architecture and 10 integration methods; existing method inventories remain intact.
+Current validation inventory: **49 Surefire methods in 11 classes; 84 Failsafe methods in 3 classes (64+10+10); 133 combined**, with zero failures, errors or skips. The default and opt-in web packaged-JAR smokes both run, and the production-JAR firewall exercises 82 adversarial probes. `./mvnw -B -ntp -Pcontainer-smoke verify` runs 64 PostgreSQL methods, 10 PA10 methods and 10 PA11 methods against disposable PostgreSQL 16. PA11 adds exactly 28 unit/web/architecture and 10 integration methods; existing method inventories remain intact.
 No schema/index/ACL/V001–V009 change, mutation/public sharing/evidence service, cloud integration, policy selection or production-readiness claim is included.
 Provisioning/collation/performance remain Platform/Database/Security concerns; transport/authentication and wire cursor serialization remain adapter concerns.
 Evidence: `docs/gateflow/pa10-sharing-application-service-s1-implementation.md` and `docs/gateflow/pa10-sharing-application-service-s1-completion-1.md` (repository-relative).
@@ -276,7 +286,7 @@ cd backend
 ## CI（`.github/workflows/ci.yml`）
 
 - 两个 job、只读权限（`contents: read`），只在 `backend/**`、contract assets（`api/openapi/**`、`protocol/**`、`security/**`、`deployment/capacity/**`、`acceptance/**`）、本 workflow 与顶层 `docs/*.md` 变化时触发；prototype/screenshot-only 变更不触发。
-- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`，随后解析 failsafe/surefire XML（累计既有 S1+S2+S3 加 PA9 S1–S3 恰好 64 个具名 container test、`skipped=0`），并执行 boot jar smoke 与 production jar firewall。
+- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`；job 解析 Surefire XML（49 methods / 11 classes）与 Failsafe XML（84 methods / 3 classes：`64+10+10`），要求合计 133 且 failures/errors/skips 均为零，然后执行 default 与 opt-in web packaged-JAR smokes，以及 production-JAR firewall 的 82 个 adversarial probes；保留 Java/Maven/Docker 与 30 分钟 ceiling 约束。
 - `contract-regressions`：Node `22.23.4` 精确 pin、`npm ci` + `npm run check:s3`，以及 A2/A3/A4/A5 既有 validator 命令（不修改其 fixtures/语义）。
 - `docker info` 在任何 Maven/容器步骤之前；Docker 不可用时 job 立即失败，不会出现“测试被 skip 但 job 绿”。
 
@@ -285,7 +295,7 @@ cd backend
 - 本工程只提供 **build/static/synthetic** 证据：Maven 构建、Enforcer 规则、Modulith 边界测试、classpath/jar firewall、boot smoke、真实 PostgreSQL container smoke，以及 A1-A5 静态/合成 contract regressions。
 - 默认 `./mvnw verify` 不需要 Docker，且**不等于**容器 smoke 通过；author 环境的 container smoke 可以是 `NOT RUN`，但 PA1 accepted checkpoint 前必须由 controller 在 Docker-capable 环境实际执行 `-Pcontainer-smoke verify` 并通过。
 - 本地/CI 成功都**不是** A5 `PASS`、`productionAccepted=true` 或生产验收；不证明 carrier/IVR media/腾讯云/provider/load/restore/penetration/manual/production acceptance，不创建 A5 evidence/authority/acceptance record。GitHub Actions 结果只有在真实运行时才算证据，未运行前不得声称 CI 绿。
-- PA8 V008 S2 保留证据与 PA9 V009 S1–S3 累计边界：默认 `verify` 仍为 10 个 surefire 测试；`-Pcontainer-smoke verify` 的目标为 64 个 container 方法（`skipped=0 failures=0 errors=0`，PA8 六个 S1+S2 方法）；V001–V008 canonical Git 字节保持冻结；V009 完整 DDL 在 S1 写入并记录 SHA256；S1 的五表/56 列/39 check/10 FK/5 函数/7 触发器精确 catalog、ACL、FK 与 staged-prefix 断言保留。S2 增加 39 check 正控及 38 个命名 `23514` 负控（`ck_evidence_source_ref` 单独为 NOT NULL `23502` + 精确 catalog + 非空提交正控）、两个插入顺序及真实 `evidence_role` COMMIT、分类 deferred-cycle 错误、生命周期/不可变/append-only、recording-only 与完整 record/event/artifact/模拟 Outbox sentinel 回滚、有界双连接唯一竞争和局部清理。CI expected-set 为 64 names；包含 PA9 V009 S1–S3 sharing persistence；不含 application service、runtime DataSource/Flyway 接线；author 证据和本地/CI 成功均不是 accepted checkpoint 或生产验收。
+- PA11 当前 CI/证据边界：`verify` 产生 49 个 Surefire 方法（11 classes）；`-Pcontainer-smoke verify` 另产生 84 个 Failsafe 方法（3 classes，64+10+10），合计 133，且 failures/errors/skips 均为 0。64 个 PostgreSQL 方法仍是既有持久化证据，另有 10 个 PA10 与 10 个 PA11 方法；V001–V009、OpenAPI 与架构/设计/安全文档保持冻结。author 证据和本地/CI 成功均不是 accepted checkpoint 或生产验收。
 - PA5 aggregate deepreview fix-1 backstops (database-only): terminal task/call facts are absorbing, `UNKNOWN` only converges to `ENDED`/`FAILED`, confirmed sessions bind `confirmed_subject_id` to `subject_id` and clear it outside `CONFIRMED`, and call-event redacted payloads require typed source members plus a lowercase 64-hex server fingerprint. These are covered by existing V005 S2 methods; no application service/API claim is added.
 
 ## PA9 V009 S1 Sharing Persistence

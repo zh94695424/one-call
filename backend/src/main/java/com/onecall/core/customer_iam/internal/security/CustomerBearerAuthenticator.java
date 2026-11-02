@@ -23,7 +23,12 @@ public final class CustomerBearerAuthenticator {
         if (header == null || headers.hasMoreElements()) { throw new CustomerContextException(UNAUTHENTICATED); }
         Matcher match = BEARER.matcher(header);
         if (!match.matches()) { throw new CustomerContextException(UNAUTHENTICATED); }
-        var candidates = verifiers.stream().limit(2).toList();
+        final java.util.List<CustomerSessionVerifier> candidates;
+        try {
+            candidates = verifiers.stream().limit(2).toList();
+        } catch (RuntimeException failure) {
+            throw new CustomerContextException(SERVICE_UNAVAILABLE);
+        }
         if (candidates.size() != 1) { throw new CustomerContextException(SERVICE_UNAVAILABLE); }
         VerifiedCustomerSession session;
         try {

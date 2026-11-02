@@ -9,10 +9,10 @@
 
 | Input review | SHA256 |
 | --- | --- |
-| `docs/gateflow/plan-review-20261101-213334.md` | `5b3abfbd967cbab23fafef95fcd48cafbbf683b666f113937f6c7e8320aa73bd` |
-| `docs/gateflow/plan-review-20261101-213337.md` | `843da4d8f3033c83f41d398f7d807009ee8e3560172ce25f0fec31f734531de5` |
-| `docs/gateflow/plan-review-20261101-222252.md` | `4d945384f846bd8dbd27a568b6c53452d2fed80fe9a4494d68a176bcbb52242b` |
-| `docs/gateflow/plan-review-20261101-222256.md` | `d420b87ffa28af223d7b80b35c130abf57aab7d1c6cdddad2007d5bf13430529` |
+| `docs/reviews/plan-review-20261101-213334.md` | `5b3abfbd967cbab23fafef95fcd48cafbbf683b666f113937f6c7e8320aa73bd` |
+| `docs/reviews/plan-review-20261101-213337.md` | `843da4d8f3033c83f41d398f7d807009ee8e3560172ce25f0fec31f734531de5` |
+| `docs/reviews/plan-review-20261101-222252.md` | `4d945384f846bd8dbd27a568b6c53452d2fed80fe9a4494d68a176bcbb52242b` |
+| `docs/reviews/plan-review-20261101-222256.md` | `d420b87ffa28af223d7b80b35c130abf57aab7d1c6cdddad2007d5bf13430529` |
 
 Only `docs/gateflow/pa11-customer-auth-api-foundation-plan.md` is modified and this fix artifact is added. No implementation, code/test/POM/CI/config/canonical contract, controller/history/review change, staging, commit, push, PR mutation or external comment is performed. One opt-in customer GET, no production verifier adapter, no login/issuer/store/Redis/provider policy, no new route/capability/mutation/schema/ACL/module edge remain binding. Compute final artifact hashes externally, not through self-referential digest fields.
 

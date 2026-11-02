@@ -31,6 +31,11 @@ public final class CustomerBoundaryFilter implements Filter {
         this.problems = problems;
     }
 
+    static UUID trace(HttpServletRequest request) {
+        Object value = request.getAttribute(TRACE_ATTRIBUTE);
+        return value instanceof UUID traceId ? traceId : UUID.randomUUID();
+    }
+
     @Override
     public void doFilter(ServletRequest incoming, ServletResponse outgoing, FilterChain chain)
             throws IOException, ServletException {

@@ -9,6 +9,7 @@
 - Git inspection uses process-local `GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call9` and `GIT_WORK_TREE=$PWD`; the checkout's Windows-form gitdir otherwise fails under WSL. No repository configuration is changed.
 - Accepted plan SHA256: `70fce4d677e9c77bd9389d3ec3db9ecbdeacd127a91930c107658db118bc5f5e`; fix-3 SHA256: `fa80ee71318d70695a6112ca8cbf95672f950011b4d31be6ddd83ec6a158fb41`. Current control-file SHA256: `76da0d290dfff047d548f531e49dcd00ec54a0ae11e45ed5ccfb9052457b6dfc`. These are recomputed working-tree bytes, not substituted historical controller hashes.
 - Final implementation identity: complete 33-file product/test/CI/README diff SHA256 `4676ea1a98c608765d81e22a1e73694461e1520425f57f53687956b1d82dbbe4`; product JAR SHA256 `dbc43d4c8ccf3f05567410b0f1da67e923caf9864c5600b7972feceb8e4d7f80`.
+- Supersession note: the pre-review-fix-1 “final” identities above are historical. The accepted post-fix identities are diff SHA256 `0f70cf59d40f9aee6f7234dfe57b36c2f25ebf6f2f9ac97cdf420bebbccf4d64` and product JAR SHA256 `f70f36d5c9aeeccf01139eafa627f881bd46ad3f41828238894d27abf79ea1ea`.
 - Reporting entry has six tracked modifications and 27 untracked implementation files, exactly the 33 files below. Reporting completion adds this one untracked report, for 34 changed/new files in total. The index is unchanged and contains no staged changes. The 33-file diff and hash manifest intentionally exclude this report, avoiding a circular report hash.
 
 ## 2. Goal, non-goals and allowed-file boundary

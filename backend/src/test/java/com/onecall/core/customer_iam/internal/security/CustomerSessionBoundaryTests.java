@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.mock.web.MockHttpServletResponse;
 import tools.jackson.databind.json.JsonMapper;
@@ -90,6 +91,17 @@ class CustomerSessionBoundaryTests {
         }));
         unavailable(authenticator((bearer, audience) -> { throw new IllegalStateException("CANARY"); }));
         unavailable(authenticator((bearer, audience) -> { throw new CustomerContextException(CustomerContextException.Code.FORBIDDEN); }));
+        unavailable(new CustomerBearerAuthenticator(new ObjectProvider<>() {
+            @Override
+            public CustomerSessionVerifier getObject() {
+                throw new IllegalStateException("CANARY");
+            }
+
+            @Override
+            public java.util.stream.Stream<CustomerSessionVerifier> stream() {
+                throw new IllegalStateException("CANARY");
+            }
+        }));
     }
 
     @Test

@@ -371,17 +371,29 @@ jobs:
           import struct
           import zipfile
 
-          coordinate_pattern = re.compile(r"^\s*([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+):([^:\s]+):(?:([^:\s]*):)?(compile|runtime|test|provided|system)(?:\s|$)")
-
           def parse_coordinates(text):
               result = []
               for line in text.splitlines():
                   if not line.strip() or line.strip() == "The following files have been resolved:":
                       continue
-                  match = coordinate_pattern.match(line)
-                  if not match:
+                  fields = line.strip().split()[0].split(":")
+                  if len(fields) == 5:
+                      group, artifact, kind, version, scope = fields
+                      classifier = ""
+                  elif len(fields) == 6:
+                      group, artifact, kind, fourth, fifth, scope = fields
+                      if fifth == "":
+                          version, classifier = fourth, ""
+                      else:
+                          classifier, version = fourth, fifth
+                  else:
                       raise ValueError("malformed coordinate evidence")
-                  result.append(tuple(value or "" for value in match.groups()))
+                  if (not all(re.fullmatch(r"[A-Za-z0-9_.-]+", value) for value in (group, artifact, kind, version, scope))
+                          or (classifier and not re.fullmatch(r"[A-Za-z0-9_.-]+", classifier))
+                          or kind != "jar"
+                          or scope not in {"compile", "runtime", "test", "provided", "system"}):
+                      raise ValueError("malformed coordinate evidence")
+                  result.append((group, artifact, kind, version, classifier, scope))
               return result
 
           def literal_coordinates(text):
@@ -591,7 +603,7 @@ jobs:
               ("commons-logging", "commons-logging", "jar", "1.3.6", "", "compile")]
           assert parse_coordinates("commons-logging:commons-logging:jar:1.3.6::compile") == [
               ("commons-logging", "commons-logging", "jar", "1.3.6", "", "compile")]
-          assert parse_coordinates("group-with-hyphen:artifact-with-hyphen:jar:1.0:tests:test") == [
+          assert parse_coordinates("group-with-hyphen:artifact-with-hyphen:jar:tests:1.0:test") == [
               ("group-with-hyphen", "artifact-with-hyphen", "jar", "1.0", "tests", "test")]
 
           def validate(resolved, jars):
@@ -669,6 +681,7 @@ jobs:
                   probes += 1
               else:
                   raise AssertionError("malformed coordinate accepted")
+          assert probes == 82
 
           resolved = parse_coordinates(Path("target/pa11-runtime-dependencies.txt").read_text())
           index = Path("target/jar-index.txt").read_text().splitlines()

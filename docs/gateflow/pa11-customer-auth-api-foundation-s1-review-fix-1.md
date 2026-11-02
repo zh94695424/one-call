@@ -4,6 +4,8 @@ Task label: `pa11-s1-code-review-fix1-gpt-20261102-01`
 
 ## Findings and status
 
+- Review-fix-1 provenance: `0f70cf59d40f9aee6f7234dfe57b36c2f25ebf6f2f9ac97cdf420bebbccf4d64` is the SHA256 of the retained exact diff file `/tmp/pa11-web-probe/fix1-product-test-ci-readme.diff`, computed with `sha256sum /tmp/pa11-web-probe/fix1-product-test-ci-readme.diff`; the controller independently reproduced this value. Product code is unchanged for this provenance item.
+
 - Registration and mapping cardinality — fixed in the production-scanned web context and no-DB HTTP context. Existing tests assert exactly one `CustomerProblemWriter`, `CustomerApiErrorController`, and boundary-filter registration; exactly one `GET /api/v1/customer/me` mapping and `/error` mapping; and absence of `BasicErrorController` bean/handler. Spring's mapping registry also rejects ambiguous duplicate mappings during context creation.
 - Wrong non-null database role — fixed within `roleAssertionPrecedesRepositoryAndTransactionIsReadOnly`; the `postgres` result asserts `SERVICE_UNAVAILABLE`, transaction rollback, and no repository interaction. Existing null-role coverage remains.
 - Verifier candidate count — fixed; the count check now occurs outside the verifier-failure translation `try` block. Zero/multiple candidates yield 503; verifier invocation failures retain the specified status translation.

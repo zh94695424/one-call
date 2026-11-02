@@ -64,7 +64,7 @@ ce8de66d9bbc3c3e2fbbc6469f146e6d7e9b58223d3fd7c2187e95c26a6e7e30  api/openapi/on
 
 All other baseline file identities derive from `git ls-tree -r 9ec3a6a6d484fd9e128601b6bfd0bb922a5b743e -- backend .github/workflows/ci.yml`; reviewers retain that manifest and `git diff --binary <accepted-plan-checkpoint>..<implementation-head>` with SHA256. Compute this artifact's SHA256 externally; do not create a self-referential hash field.
 
-Actual local review inputs are `docs/gateflow/plan-review-20261101-213334.md`, `docs/gateflow/plan-review-20261101-213337.md`, `docs/gateflow/plan-review-20261101-222252.md` and `docs/gateflow/plan-review-20261101-222256.md`; fix-1/controller references under docs/reviews are historical path labels, not extra files to create or move here. Fix-2 intake control SHA256 is `c6eeeaa3a1728b400f11979689d3f05750e23d011fc4a9ba600f026a92991ad6`; it too is provenance only. Controller owns acceptance-time hash/path reconciliation at the accepted-plan checkpoint.
+Actual local review inputs are `docs/reviews/plan-review-20261101-213334.md`, `docs/reviews/plan-review-20261101-213337.md`, `docs/reviews/plan-review-20261101-222252.md` and `docs/reviews/plan-review-20261101-222256.md`; these are not extra files to create or move here. Fix-2 intake control SHA256 is `c6eeeaa3a1728b400f11979689d3f05750e23d011fc4a9ba600f026a92991ad6`; it too is provenance only. Controller owns acceptance-time hash/path reconciliation at the accepted-plan checkpoint.
 
 ## 3. One behavioral slice and exact future write set
 

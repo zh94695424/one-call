@@ -7,7 +7,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.security.Principal;
-import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -42,16 +41,11 @@ public class CustomerMeController {
 
     @ExceptionHandler(CustomerContextException.class)
     void known(CustomerContextException failure, HttpServletRequest request, HttpServletResponse response) throws IOException {
-        problems.write(response, failure.code(), trace(request));
+        problems.write(response, failure.code(), CustomerBoundaryFilter.trace(request));
     }
 
     @ExceptionHandler(Exception.class)
     void unexpected(Exception failure, HttpServletRequest request, HttpServletResponse response) throws IOException {
-        problems.write(response, CustomerContextException.Code.INTERNAL, trace(request));
-    }
-
-    static UUID trace(HttpServletRequest request) {
-        Object value = request.getAttribute(CustomerBoundaryFilter.TRACE_ATTRIBUTE);
-        return value instanceof UUID traceId ? traceId : UUID.randomUUID();
+        problems.write(response, CustomerContextException.Code.INTERNAL, CustomerBoundaryFilter.trace(request));
     }
 }

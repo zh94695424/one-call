@@ -23,16 +23,16 @@ public class CustomerApiErrorController implements ErrorController {
     @RequestMapping("${server.error.path:/error}")
     public void error(HttpServletRequest request, HttpServletResponse response) throws IOException {
         if (request.getDispatcherType() != DispatcherType.ERROR) {
-            problems.notFound(response, CustomerMeController.trace(request));
+            problems.notFound(response, CustomerBoundaryFilter.trace(request));
             return;
         }
         Object value = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
         if (Integer.valueOf(404).equals(value)) {
-            problems.notFound(response, CustomerMeController.trace(request));
+            problems.notFound(response, CustomerBoundaryFilter.trace(request));
         } else {
             problems.write(response, Integer.valueOf(401).equals(value) ? CustomerContextException.Code.UNAUTHENTICATED
                     : Integer.valueOf(503).equals(value) ? CustomerContextException.Code.SERVICE_UNAVAILABLE
-                    : CustomerContextException.Code.INTERNAL, CustomerMeController.trace(request));
+                    : CustomerContextException.Code.INTERNAL, CustomerBoundaryFilter.trace(request));
         }
     }
 }
