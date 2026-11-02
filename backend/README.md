@@ -36,7 +36,7 @@ The following current dependency summary covers the shared PA10 query stack and 
 
 The PA11 JAR firewall freezes the complete resolved and packaged inventories below, including the inherited PA10 query stack. Surefire still excludes Flyway from its classpath; only Failsafe fixtures use it.
 
-Current validation inventory: **49 Surefire methods in 11 classes; 84 Failsafe methods in 3 classes (64+10+10); 133 combined**, with zero failures, errors or skips. The default and opt-in web packaged-JAR smokes both run, and the production-JAR firewall exercises 82 adversarial probes. `./mvnw -B -ntp -Pcontainer-smoke verify` runs 64 PostgreSQL methods, 10 PA10 methods and 10 PA11 methods against disposable PostgreSQL 16. PA11 adds exactly 28 unit/web/architecture and 10 integration methods; existing method inventories remain intact.
+Current validation inventory: **67 Surefire methods in 13 classes; 92 Failsafe methods in 4 classes (64+10+10+8); 159 combined**, with zero failures, errors or skips. The default and opt-in web packaged-JAR smokes both run, and the production-JAR firewall exercises 82 adversarial probes. `./mvnw -B -ntp -Pcontainer-smoke verify` runs 64 PostgreSQL methods, 10 PA10 methods, 10 PA11 methods and 8 PA12 share-list methods against disposable PostgreSQL 16. PA12 adds exactly 18 unit/web/architecture and 8 integration methods; existing method inventories remain intact.
 No schema/index/ACL/V001–V009 change, mutation/public sharing/evidence service, cloud integration, policy selection or production-readiness claim is included.
 Provisioning/collation/performance remain Platform/Database/Security concerns; transport/authentication and wire cursor serialization remain adapter concerns.
 Evidence: `docs/gateflow/pa10-sharing-application-service-s1-implementation.md` and `docs/gateflow/pa10-sharing-application-service-s1-completion-1.md` (repository-relative).
@@ -48,17 +48,17 @@ Default startup stays non-web and database-free, even with the MVC classes on th
 java -jar target/onecall-runtime-0.0.1-SNAPSHOT.jar --spring.profiles.active=web --spring.main.web-application-type=servlet
 ```
 
-Only exact `GET /api/v1/customer/me` is application-reachable. Other methods/paths, aliases and direct `/error` return sanitized 404; container-level malformed HTTP rejections are outside this application contract. The provider-neutral opaque `customerSession` port always receives audience `onecall:customer-session:v1`; no JWT decoding or client-selected account/workspace/role/channel is supported. A fresh request principal carries only verifier-attested UUID and MINIAPP/WEB channel. Query, body, cookie, forwarded identity and selector headers cannot select identity or workspace.
+Only exact `GET /api/v1/customer/me` and `GET /api/v1/customer/shares` are application-reachable. Other methods/paths, aliases and direct `/error` return sanitized 404. The embedded connector's default rejects network TRACE before application-filter dispatch; the filter-level TRACE 404 is tested by direct filter invocation. The provider-neutral opaque `customerSession` port always receives audience `onecall:customer-session:v1`; no JWT decoding or client-selected account/workspace/role/channel is supported. The fresh request principal carries the verifier-attested account, channel and optional selected workspace. `/me` ignores selection and preserves its existing projection; `/shares` requires a structurally valid verifier-attested PERSONAL or ORGANIZATION selection. Query, body, cookie, forwarded identity and selector headers cannot select identity or workspace.
 
-**No production verifier exists.** Missing/malformed/ambiguous bearer returns 401 with bare `WWW-Authenticate: Bearer`; a syntactically valid bearer returns fixed 503 until a separately approved real adapter exists. It does not initialize a DB pool. There is no property, `test`/`dev` profile or fake-token bypass. Do not mistake these expected 401/503 responses for login or provider readiness.
+**No production verifier exists.** Missing/malformed/ambiguous bearer returns 401 with bare `WWW-Authenticate: Bearer`; a syntactically valid bearer returns fixed 503 until a separately approved real adapter exists. `/shares` also fails closed when the verifier has no trusted workspace selection or its selection is structurally invalid. Neither case initializes a DB pool. There is no property, `test`/`dev` profile or fake-token bypass. Do not mistake these expected 401/503 responses for login or provider readiness.
 
-With a future real verifier, the lazy qualified customer graph requires `ONECALL_CUSTOMER_DB_URL`, `ONECALL_CUSTOMER_DB_USERNAME`, `ONECALL_CUSTOMER_DB_PASSWORD`, mapped only to `onecall.customer.persistence.url/username/password` with no usable defaults. Use a separately provisioned non-owner, non-superuser login allowed to assume only `customer_iam_role`, never migration/admin credentials. PA10 uses its separate `ONECALL_DB_*` credentials; profiles `web,persistence` coexist through explicit qualifiers, not aliases or primary beans. Runtime never provisions or migrates the database.
+With a future real verifier, the lazy qualified customer graph requires `ONECALL_CUSTOMER_DB_URL`, `ONECALL_CUSTOMER_DB_USERNAME`, `ONECALL_CUSTOMER_DB_PASSWORD`, mapped only to `onecall.customer.persistence.url/username/password` with no usable defaults. Use a separately provisioned non-owner, non-superuser login allowed to assume only `customer_iam_role`, never migration/admin credentials. PA10 sharing persistence uses its separate `ONECALL_DB_*` credentials and `sharing_role`; `/shares` composes with it only through the declared `sharing::customer-query` interface. Profiles `web,persistence` coexist through explicit qualifiers, not aliases or primary beans. Runtime never provisions or migrates the database.
 
-The service uses a fresh read-only READ_COMMITTED/REQUIRES_NEW transaction, fixed `SET LOCAL ROLE customer_iam_role` plus role assertion, and one prepared SELECT over V002-granted columns. It requires the current ACTIVE account and projects only ACTIVE memberships under ACTIVE organizations, PostgreSQL UUID order, PERSONAL first. PERSONAL has exactly `workspaceType,status`; organization fields are omitted, not null. Account includes `accountId,displayName,status`; organization workspace includes `workspaceType,organizationId,organizationDisplayName,role,status`; response also includes server-attested `channel`. Each request rechecks lifecycle state; there is no authorization lease or cache.
+The `/me` service uses a fresh read-only READ_COMMITTED/REQUIRES_NEW transaction, fixed `SET LOCAL ROLE customer_iam_role` plus role assertion, and one prepared SELECT over V002-granted columns. It requires the current ACTIVE account and projects only ACTIVE memberships under ACTIVE organizations, PostgreSQL UUID order, PERSONAL first. PERSONAL has exactly `workspaceType,status`; organization fields are omitted, not null. Account includes `accountId,displayName,status`; organization workspace includes `workspaceType,organizationId,organizationDisplayName,role,status`; response also includes server-attested `channel`. The `/shares` adapter requires server-attested workspace selection and calls the PA10 query service, which opens its separately qualified read-only READ_COMMITTED/REQUIRES_NEW transaction, asserts `sharing_role`, rechecks ACTIVE creator/account/membership/organization state, and applies creator/workspace-scoped keyset pagination. Each request rechecks lifecycle state; there is no authorization lease or cache.
 
 Success is JSON. Application failures use exactly `type,title,status,code,traceId` as `application/problem+json`, fresh server UUID traces and fixed titles/codes. Every application response uses `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff`, never session/cookie creation. Authentication precedes content negotiation; authenticated unsupported/malformed negotiation maps to sanitized 500. SQL/credentials/bearers/exception causes never appear in PA11 responses or logs. Error dispatch uses the custom Boot ErrorController; connector errors are not promised this JSON shape.
 
-No login/signup/logout/OTP/WeChat/provider mapping, session issuance/storage/TTL, Redis, profile edit, other public API, mutation, schema/ACL change or production-readiness claim is included. Future adapter/session storage is owned by Customer IAM/Security; production provisioning, collation and performance remain Platform/Database concerns. Deferred denial acknowledgement is not implemented by this read path.
+No login/signup/logout/OTP/WeChat/provider mapping, session issuance/storage/TTL, Redis, profile edit, API beyond `/me` and the read-only `/shares` list, mutation, schema/ACL change or production-readiness claim is included. Future adapter/session storage is owned by Customer IAM/Security; production provisioning, collation and performance remain Platform/Database concerns. Deferred denial acknowledgement is not implemented by these read paths.
 
 ### Frozen runtime firewall inventories
 
@@ -262,7 +262,7 @@ cd backend
 
 | 模块包 | allowedDependencies |
 | --- | --- |
-| `customer_iam` | `{}` |
+| `customer_iam` | `{"sharing::customer-query"}` |
 | `organization_access` | `{customer_iam}` |
 | `operations_iam` | `{operations_audit}` |
 | `subject_number` | `{}` |
@@ -277,7 +277,7 @@ cd backend
 | `operations_audit` | `{}` |
 | `platform_reliability` | `{}` |
 
-`ModuleBoundaryTests` 断言精确 14 模块集、annotation 存在、与上表 exact set equality、discovered production edges 为空且不超过配置上限，并证明 cycle / forbidden / internal 三类 test-only fixture 均被 `Violations` 拒绝。测试类位于 `com.onecall.archtests`，fixtures 位于 `com.onecall.archfixtures`，不会成为第 15 个模块。
+`ModuleBoundaryTests` 断言精确 14 模块集、annotation 存在、与上表 exact set equality、discovered production edges 精确包含 `customer_iam -> sharing::customer-query` 且不超过配置上限，并证明 cycle / forbidden / internal 三类 test-only fixture 均被 `Violations` 拒绝；同时断言 production/fixture model exposure 与精确允许目标。`SharingQueryBoundaryTests` 断言 `customer-query` 是精确的非 unnamed named interface，恰有八个顶层类型和三个嵌套类型（包括 `ShareQueryDiagnostic`）、存在 source annotation，并断言 named interface 的精确导出成员和方法。`CustomerApiBoundaryTests` 断言 controller imports 精确，并禁止 persistence、reflection、直接构造及 diagnostic import/use。测试类位于 `com.onecall.archtests`，fixtures 位于 `com.onecall.archfixtures`，不会成为第 15 个模块。
 
 ## Modulith moments auto-configuration
 
@@ -286,7 +286,7 @@ cd backend
 ## CI（`.github/workflows/ci.yml`）
 
 - 两个 job、只读权限（`contents: read`），只在 `backend/**`、contract assets（`api/openapi/**`、`protocol/**`、`security/**`、`deployment/capacity/**`、`acceptance/**`）、本 workflow 与顶层 `docs/*.md` 变化时触发；prototype/screenshot-only 变更不触发。
-- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`；job 解析 Surefire XML（49 methods / 11 classes）与 Failsafe XML（84 methods / 3 classes：`64+10+10`），要求合计 133 且 failures/errors/skips 均为零，然后执行 default 与 opt-in web packaged-JAR smokes，以及 production-JAR firewall 的 82 个 adversarial probes；保留 Java/Maven/Docker 与 30 分钟 ceiling 约束。
+- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`；job 解析 Surefire XML（67 methods / 13 classes）与 Failsafe XML（92 methods / 4 classes：`64+10+10+8`），要求合计 159 且 failures/errors/skips 均为零，然后执行 default 与 opt-in web packaged-JAR smokes，以及 production-JAR firewall 的 82 个 adversarial probes；保留 Java/Maven/Docker 与 30 分钟 ceiling 约束。
 - `contract-regressions`：Node `22.23.4` 精确 pin、`npm ci` + `npm run check:s3`，以及 A2/A3/A4/A5 既有 validator 命令（不修改其 fixtures/语义）。
 - `docker info` 在任何 Maven/容器步骤之前；Docker 不可用时 job 立即失败，不会出现“测试被 skip 但 job 绿”。
 
@@ -295,7 +295,7 @@ cd backend
 - 本工程只提供 **build/static/synthetic** 证据：Maven 构建、Enforcer 规则、Modulith 边界测试、classpath/jar firewall、boot smoke、真实 PostgreSQL container smoke，以及 A1-A5 静态/合成 contract regressions。
 - 默认 `./mvnw verify` 不需要 Docker，且**不等于**容器 smoke 通过；author 环境的 container smoke 可以是 `NOT RUN`，但 PA1 accepted checkpoint 前必须由 controller 在 Docker-capable 环境实际执行 `-Pcontainer-smoke verify` 并通过。
 - 本地/CI 成功都**不是** A5 `PASS`、`productionAccepted=true` 或生产验收；不证明 carrier/IVR media/腾讯云/provider/load/restore/penetration/manual/production acceptance，不创建 A5 evidence/authority/acceptance record。GitHub Actions 结果只有在真实运行时才算证据，未运行前不得声称 CI 绿。
-- PA11 当前 CI/证据边界：`verify` 产生 49 个 Surefire 方法（11 classes）；`-Pcontainer-smoke verify` 另产生 84 个 Failsafe 方法（3 classes，64+10+10），合计 133，且 failures/errors/skips 均为 0。64 个 PostgreSQL 方法仍是既有持久化证据，另有 10 个 PA10 与 10 个 PA11 方法；V001–V009、OpenAPI 与架构/设计/安全文档保持冻结。author 证据和本地/CI 成功均不是 accepted checkpoint 或生产验收。
+- PA12 当前 CI/证据边界：`verify` 产生 67 个 Surefire 方法（13 classes）；`-Pcontainer-smoke verify` 另产生 92 个 Failsafe 方法（4 classes，64+10+10+8），合计 159，且 failures/errors/skips 均为 0。64 个 PostgreSQL 方法仍是既有持久化证据，另有 10 个 PA10、10 个 PA11 与 8 个 PA12 share-list 方法；V001–V009、OpenAPI 与架构/设计/安全文档保持冻结。author 证据和本地/CI 成功均不是 accepted checkpoint 或生产验收。
 - PA5 aggregate deepreview fix-1 backstops (database-only): terminal task/call facts are absorbing, `UNKNOWN` only converges to `ENDED`/`FAILED`, confirmed sessions bind `confirmed_subject_id` to `subject_id` and clear it outside `CONFIRMED`, and call-event redacted payloads require typed source members plus a lowercase 64-hex server fingerprint. These are covered by existing V005 S2 methods; no application service/API claim is added.
 
 ## PA9 V009 S1 Sharing Persistence

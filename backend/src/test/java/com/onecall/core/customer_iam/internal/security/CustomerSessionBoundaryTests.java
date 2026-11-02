@@ -3,6 +3,8 @@ package com.onecall.core.customer_iam.internal.security;
 import static org.assertj.core.api.Assertions.*;
 
 import com.onecall.core.customer_iam.internal.application.CustomerContextException;
+import com.onecall.core.customer_iam.internal.application.CustomerContext.WorkspaceType;
+import com.onecall.core.customer_iam.internal.application.SelectedCustomerWorkspace;
 import com.onecall.core.customer_iam.internal.application.TrustedCustomerCaller;
 import com.onecall.core.customer_iam.internal.web.CustomerProblemWriter;
 import com.onecall.core.customer_iam.internal.web.CustomerRequestPrincipal;
@@ -41,6 +43,33 @@ class CustomerSessionBoundaryTests {
         }));
         assertThat(caller).isEqualTo(new TrustedCustomerCaller(account, TrustedCustomerCaller.Channel.MINIAPP));
         assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void attestedWorkspaceIsCarriedWithoutClientAuthority() {
+        var selected = new SelectedCustomerWorkspace(WorkspaceType.ORGANIZATION, UUID.randomUUID());
+        var caller = invoke(authenticator((bearer, audience) -> new VerifiedCustomerSession(account,
+                TrustedCustomerCaller.Channel.WEB, audience, selected)));
+        assertThat(caller.selectedWorkspace()).isSameAs(selected);
+        assertThat(new CustomerRequestPrincipal(caller).caller().selectedWorkspace()).isSameAs(selected);
+        assertThat(new VerifiedCustomerSession(account, TrustedCustomerCaller.Channel.WEB, AUDIENCE).selectedWorkspace()).isNull();
+        assertThat(new TrustedCustomerCaller(account, TrustedCustomerCaller.Channel.WEB).selectedWorkspace()).isNull();
+    }
+
+    @Test
+    void workspaceStructureIsCarriedWithoutChangingAuthentication() {
+        for (SelectedCustomerWorkspace selected : java.util.Arrays.asList(null,
+                new SelectedCustomerWorkspace(null, null), new SelectedCustomerWorkspace(WorkspaceType.PERSONAL, UUID.randomUUID()),
+                new SelectedCustomerWorkspace(WorkspaceType.ORGANIZATION, null))) {
+            var caller = invoke(authenticator((bearer, audience) -> new VerifiedCustomerSession(account,
+                    TrustedCustomerCaller.Channel.WEB, audience, selected)));
+            assertThat(caller.selectedWorkspace()).isSameAs(selected);
+        }
+        assertThatThrownBy(() -> invoke(authenticator((bearer, audience) ->
+                new VerifiedCustomerSession(account, TrustedCustomerCaller.Channel.WEB, "wrong",
+                        new SelectedCustomerWorkspace(WorkspaceType.PERSONAL, null)))))
+                .isInstanceOfSatisfying(CustomerContextException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(CustomerContextException.Code.UNAUTHENTICATED));
     }
 
     @Test

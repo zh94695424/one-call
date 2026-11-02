@@ -44,8 +44,11 @@ public final class CustomerBoundaryFilter implements Filter {
         UUID traceId = UUID.randomUUID();
         request.setAttribute(TRACE_ATTRIBUTE, traceId);
         problems.headers(response);
-        if (!"GET".equals(request.getMethod()) || !"/api/v1/customer/me".equals(request.getServletPath())
-                || !(request.getContextPath() + "/api/v1/customer/me").equals(request.getRequestURI())) {
+        String servletPath = request.getServletPath();
+        boolean admittedPath = "/api/v1/customer/me".equals(servletPath)
+                || "/api/v1/customer/shares".equals(servletPath);
+        if (!"GET".equals(request.getMethod()) || !admittedPath
+                || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 import com.onecall.core.customer_iam.internal.application.CustomerContext;
 import com.onecall.core.customer_iam.internal.application.CustomerContextException;
 import com.onecall.core.customer_iam.internal.application.CustomerContextService;
+import com.onecall.core.customer_iam.internal.application.SelectedCustomerWorkspace;
 import com.onecall.core.customer_iam.internal.application.TrustedCustomerCaller;
 import com.onecall.core.customer_iam.internal.persistence.CustomerContextRepository;
 import com.onecall.core.customer_iam.internal.security.CustomerSessionVerificationException;
@@ -59,6 +60,9 @@ class CustomerMeWebTests {
     private static final AtomicInteger SEND_ERROR = new AtomicInteger();
     private static volatile String failure;
     private static volatile boolean organizations;
+    private static volatile SelectedCustomerWorkspace selectedWorkspace;
+    private static volatile AccountStatus accountStatus = AccountStatus.ACTIVE;
+    private static volatile boolean accountMissing;
     private final JsonMapper mapper = JsonMapper.builder().build();
     @LocalServerPort
     private int port;
@@ -81,7 +85,8 @@ class CustomerMeWebTests {
                 }
                 if (bearer.value().equals("outage")) { throw new IllegalStateException("ADAPTER_CANARY"); }
                 return new VerifiedCustomerSession(bearer.value().equals("second") ? SECOND : FIRST,
-                        bearer.value().equals("second") ? TrustedCustomerCaller.Channel.MINIAPP : TrustedCustomerCaller.Channel.WEB, audience);
+                        bearer.value().equals("second") ? TrustedCustomerCaller.Channel.MINIAPP : TrustedCustomerCaller.Channel.WEB,
+                        audience, selectedWorkspace);
             };
         }
 
@@ -99,6 +104,7 @@ class CustomerMeWebTests {
                 }
                 if ("programming".equals(failure)) { throw new IllegalArgumentException("APPLICATION_CANARY"); }
                 if ("database".equals(failure)) { throw new org.jooq.exception.DataAccessException("SQL_CANARY"); }
+                if (accountMissing) { return Optional.empty(); }
                 var rows = new java.util.ArrayList<WorkspaceSummary>();
                 rows.add(new WorkspaceSummary(WorkspaceType.PERSONAL, null, null, null, WorkspaceStatus.ACTIVE));
                 if (organizations) {
@@ -107,7 +113,7 @@ class CustomerMeWebTests {
                                 "Organization", role, WorkspaceStatus.ACTIVE));
                     }
                 }
-                return Optional.of(new CustomerContext(new AccountSummary(caller.accountId(), "Customer", AccountStatus.ACTIVE), rows, caller.channel()));
+                return Optional.of(new CustomerContext(new AccountSummary(caller.accountId(), "Customer", accountStatus), rows, caller.channel()));
             };
         }
 
@@ -142,6 +148,9 @@ class CustomerMeWebTests {
         SEND_ERROR.set(0);
         failure = null;
         organizations = false;
+        selectedWorkspace = null;
+        accountStatus = AccountStatus.ACTIVE;
+        accountMissing = false;
     }
 
     private HttpResponse<String> request(String method, String path, String bearer, String accept, String... extra) throws Exception {
@@ -188,6 +197,28 @@ class CustomerMeWebTests {
 
     @Test
     void authenticatedGetReturnsFrozenCustomerContext() throws Exception {
+        var personal = new SelectedCustomerWorkspace(WorkspaceType.PERSONAL, null);
+        var organization = new SelectedCustomerWorkspace(WorkspaceType.ORGANIZATION, UUID.randomUUID());
+        var cases = java.util.Arrays.asList((SelectedCustomerWorkspace) null, personal, organization,
+                new SelectedCustomerWorkspace(null, null), new SelectedCustomerWorkspace(WorkspaceType.PERSONAL, UUID.randomUUID()),
+                new SelectedCustomerWorkspace(WorkspaceType.ORGANIZATION, null));
+        var frozenBodies = new java.util.HashMap<Boolean, String>();
+        for (SelectedCustomerWorkspace selection : cases) {
+            selectedWorkspace = selection;
+            for (boolean multi : List.of(false, true)) {
+                organizations = multi;
+                var response = request("GET", "/api/v1/customer/me", "Bearer first", "application/json");
+                assertThat(response.statusCode()).isEqualTo(200);
+                headers(response);
+                var json = mapper.readTree(response.body());
+                assertThat(json.propertyNames()).containsExactlyInAnyOrder("account", "workspaces", "channel");
+                assertThat(json.toString()).doesNotContain("selectedWorkspace");
+                assertThat(json.get("workspaces").size()).isEqualTo(multi ? 5 : 1);
+                String baseline = frozenBodies.putIfAbsent(multi, response.body());
+                if (baseline != null) { assertThat(response.body()).isEqualTo(baseline); }
+            }
+        }
+        selectedWorkspace = null;
         for (boolean multi : List.of(false, true)) {
             organizations = multi;
             for (String session : List.of("first", "second")) {
@@ -212,6 +243,8 @@ class CustomerMeWebTests {
             assertThat(context.containsBean(name)).isFalse();
         }
         assertThat(context.getBeansOfType(javax.sql.DataSource.class)).isEmpty();
+        assertThat(context.getBeansOfType(com.onecall.core.sharing.internal.application.CustomerShareQueryService.class)).isEmpty();
+        assertThat(context.getBeansOfType(CustomerSharesController.class)).isEmpty();
         assertThat(context.getBeansOfType(org.springframework.jdbc.datasource.DataSourceTransactionManager.class)).isEmpty();
         assertThat(context.getBeansOfType(CustomerBoundaryFilter.class)).isEmpty();
         assertThat(context.getBeansOfType(CustomerMeController.class)).hasSize(1);
@@ -237,9 +270,20 @@ class CustomerMeWebTests {
             problem(request("GET", "/api/v1/customer/me?access_token=QUERY_CANARY", header, null, "Cookie", "access_token=COOKIE_CANARY"),
                     401, "UNAUTHENTICATED");
         }
+        for (SelectedCustomerWorkspace selection : java.util.Arrays.asList(null,
+                new SelectedCustomerWorkspace(WorkspaceType.PERSONAL, null),
+                new SelectedCustomerWorkspace(WorkspaceType.ORGANIZATION, UUID.randomUUID()))) {
+            selectedWorkspace = selection;
+            accountMissing = true;
+            problem(request("GET", "/api/v1/customer/me", "Bearer first", null), 401, "UNAUTHENTICATED");
+            accountMissing = false;
+            accountStatus = AccountStatus.DISABLED;
+            problem(request("GET", "/api/v1/customer/me", "Bearer first", null), 401, "UNAUTHENTICATED");
+            accountStatus = AccountStatus.ACTIVE;
+        }
         problem(request("GET", "/api/v1/customer/me", "Bearer first", null, "Authorization", "Bearer second"), 401, "UNAUTHENTICATED");
-        assertThat(VERIFICATIONS).hasValue(0);
-        assertThat(QUERIES).hasValue(0);
+        assertThat(VERIFICATIONS).hasValue(6);
+        assertThat(QUERIES).hasValue(6);
         for (String header : List.of("bEaReR  opaque._~+/-==", "Bearer eyJaccount.fake.signature")) {
             assertThat(request("GET", "/api/v1/customer/me", header, null).statusCode()).isEqualTo(200);
         }
@@ -291,7 +335,7 @@ class CustomerMeWebTests {
             if (!method.equals("HEAD")) { problem(response, 404, "NOT_FOUND"); }
             else { assertThat(response.body()).isEmpty(); }
         }
-        for (String path : List.of("/api/v1/customer/me/", "/api/v1/customer/%6de", "/api/v1/customer/shares", "/api/v1/employee/me", "/error", "/")) {
+        for (String path : List.of("/api/v1/customer/me/", "/api/v1/customer/%6de", "/api/v1/customer/unimplemented", "/api/v1/employee/me", "/error", "/")) {
             problem(request("GET", path, "Bearer first", null), 404, "NOT_FOUND");
         }
         assertThat(VERIFICATIONS).hasValue(0);
@@ -346,14 +390,20 @@ class CustomerMeWebTests {
     @Test
     void reservedProblemVocabularyIsWriterOnly() throws Exception {
         var writer = new CustomerProblemWriter();
-        var statuses = List.of(401, 403, 422, 429, 503, 500);
-        var titles = List.of("Authentication required", "Access denied", "Request validation failed", "Too many requests", "Service unavailable", "Internal error");
-        for (int index = 0; index < CustomerContextException.Code.values().length; index++) {
+        var cases = List.of(
+                new Object[]{CustomerContextException.Code.UNAUTHENTICATED, 401, "Authentication required"},
+                new Object[]{CustomerContextException.Code.FORBIDDEN, 403, "Access denied"},
+                new Object[]{CustomerContextException.Code.VALIDATION_FAILED, 422, "Request validation failed"},
+                new Object[]{CustomerContextException.Code.RATE_LIMITED, 429, "Too many requests"},
+                new Object[]{CustomerContextException.Code.SERVICE_UNAVAILABLE, 503, "Service unavailable"},
+                new Object[]{CustomerContextException.Code.INTERNAL, 500, "Internal error"},
+                new Object[]{CustomerContextException.Code.CURSOR_INVALID, 400, "Invalid cursor"});
+        for (Object[] problemCase : cases) {
             var response = new MockHttpServletResponse();
-            writer.write(response, CustomerContextException.Code.values()[index], UUID.randomUUID());
-            assertThat(response.getStatus()).isEqualTo(statuses.get(index));
+            writer.write(response, (CustomerContextException.Code) problemCase[0], UUID.randomUUID());
+            assertThat(response.getStatus()).isEqualTo(problemCase[1]);
             var json = mapper.readTree(response.getContentAsString());
-            assertThat(json.get("title").asString()).isEqualTo(titles.get(index));
+            assertThat(json.get("title").asString()).isEqualTo(problemCase[2]);
             assertThat(json.propertyNames()).containsExactlyInAnyOrder("type", "title", "status", "code", "traceId");
         }
         var response = new MockHttpServletResponse();

@@ -178,6 +178,7 @@
                 <include>**/PostgresContainerIT.java</include>
                 <include>**/SharingQueryServiceIT.java</include>
                 <include>**/CustomerMeIT.java</include>
+                <include>**/CustomerSharesIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

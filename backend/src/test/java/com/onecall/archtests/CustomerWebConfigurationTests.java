@@ -64,6 +64,15 @@ class CustomerWebConfigurationTests {
         }
     }
 
+    private HttpResponse<String> getShares(ConfigurableApplicationContext context) throws Exception {
+        int port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
+        try (var client = HttpClient.newHttpClient()) {
+            var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/customer/shares"))
+                    .timeout(Duration.ofSeconds(30)).header("Authorization", "Bearer configuration-probe").GET().build();
+            return client.send(request, HttpResponse.BodyHandlers.ofString());
+        }
+    }
+
     @Test
     void defaultRuntimeHasNoCustomerOrServletBeans() {
         try (var context = start("default", false, Map.of("ONECALL_CUSTOMER_DB_URL", "jdbc:postgresql://invalid/test",
@@ -73,7 +82,11 @@ class CustomerWebConfigurationTests {
                     "customerBoundaryFilterRegistration", "customerPersistenceConfiguration")) {
                 assertThat(context.containsBean(name)).as(name).isFalse();
             }
-            assertThat(context.getBeansOfType(javax.sql.DataSource.class)).isEmpty();
+            assertThat(context.getBeanFactory().containsSingleton("customerQueryDataSource")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("sharingQueryDataSource")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("customerQueryTransactionManager")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("sharingQueryTransactionManager")).isFalse();
+            assertThat(context.getBeansOfType(CustomerSessionVerifier.class)).isEmpty();
         }
     }
 
@@ -82,6 +95,7 @@ class CustomerWebConfigurationTests {
         try (var context = start("web", false, Map.of())) {
             assertThat(get(context, false).statusCode()).isEqualTo(401);
             assertThat(get(context, true).statusCode()).isEqualTo(503);
+            assertThat(getShares(context).statusCode()).isEqualTo(503);
             for (String name : List.of("customerContextService", "customerContextRepository", "customerQueryDataSource")) {
                 assertThat(context.getBeanFactory().containsSingleton(name)).as(name).isFalse();
                 assertThat(context.containsBeanDefinition(name)).isTrue();
@@ -94,6 +108,11 @@ class CustomerWebConfigurationTests {
             assertThat(context.containsBean("customerApiErrorController")).isTrue();
             assertThat(context.containsBean("basicErrorController")).isFalse();
             assertThat(context.getBeansOfType(CustomerSessionVerifier.class)).isEmpty();
+            assertThat(context.getBeansOfType(com.onecall.core.sharing.internal.application.CustomerShareQueryService.class)).isEmpty();
+            assertThat(context.getBeanFactory().containsSingleton("customerQueryDataSource")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("sharingQueryDataSource")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("customerQueryTransactionManager")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("sharingQueryTransactionManager")).isFalse();
             var mappings = context.getBean(RequestMappingHandlerMapping.class).getHandlerMethods();
             assertThat(mappings.entrySet().stream().filter(entry -> entry.getKey().getMethodsCondition().getMethods().contains(RequestMethod.GET)
                     && entry.getKey().getPatternValues().contains("/api/v1/customer/me"))).hasSize(1);
@@ -150,9 +169,15 @@ class CustomerWebConfigurationTests {
                 }
                 assertThat(qualifierIndex).isEqualTo(expectedQualifiers.size());
             }
+            assertThat(expected.keySet()).containsExactlyInAnyOrderElementsOf(Arrays.stream(configuration.getDeclaredMethods())
+                    .map(java.lang.reflect.Method::getName).toList());
             assertThat(configuration.getAnnotation(org.springframework.context.annotation.Profile.class).value())
                     .containsExactly(configuration == CustomerPersistenceConfiguration.class ? "web" : "persistence");
         }
+        var serviceParameter = Arrays.stream(com.onecall.core.customer_iam.internal.web.CustomerSharesController.class
+                .getDeclaredConstructors()[0].getParameters()).filter(parameter -> parameter.getType().getName().contains("ObjectProvider"))
+                .findFirst().orElseThrow();
+        assertThat(serviceParameter.getAnnotation(Qualifier.class).value()).isEqualTo("customerShareQueryService");
     }
 
     @Test
