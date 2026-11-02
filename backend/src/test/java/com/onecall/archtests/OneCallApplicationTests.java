@@ -20,6 +20,11 @@ class OneCallApplicationTests {
         assertThat(context.containsBean("dataSource")).isFalse();
         assertThat(context.containsBean("flyway")).isFalse();
         assertThat(context.containsBean("springSecurityFilterChain")).isFalse();
+        assertThat(context).isNotInstanceOf(org.springframework.web.context.WebApplicationContext.class);
+        for (String name : java.util.List.of("customerBoundaryFilterRegistration", "customerMeController",
+                "customerApiErrorController", "customerContextService", "customerContextRepository", "customerQueryDataSource")) {
+            assertThat(context.containsBean(name)).as(name).isFalse();
+        }
         for (Class<?> type : java.util.List.of(javax.sql.DataSource.class, org.jooq.DSLContext.class,
                 org.springframework.transaction.PlatformTransactionManager.class,
                 org.springframework.transaction.support.TransactionTemplate.class,

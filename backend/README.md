@@ -1,9 +1,11 @@
-# onecall-runtime（PA0–PA9 foundations / PA10-S1 query runtime）
+# onecall-runtime（PA0–PA9 foundations / PA10-S1 query / PA11-S1 customer API）
 
-## PA10-S1 current capability
+## Historical PA10-S1 internal query capability
 
-The only application service is internal `CustomerShareQueryService.listCustomerShares(TrustedShareCaller, SharePageRequest)`.
-Trusted embedding code supplies the authenticated account and optional selected organization; there is no HTTP/auth/session adapter or public module API.
+This PA10-S1 capability description is historical context. The current PA11 runtime adds the opt-in MVC/Tomcat/Jackson customer boundary described below; PA10 remains an internal sharing query service.
+
+The PA10 application service remains internal `CustomerShareQueryService.listCustomerShares(TrustedShareCaller, SharePageRequest)`.
+Trusted embedding code supplies the authenticated account and optional selected organization; there is no sharing HTTP adapter or public module API. PA11 adds the separate opt-in customer boundary described below.
 Every call rechecks current ACTIVE account/organization/membership facts without locks, then lists only that creator's personal or exact organization grants.
 The eleven-column immutable metadata projection includes all stored statuses, never secrets/snapshots, and uses PostgreSQL-native descending timestamp/text keyset ordering (default 20, range 1–100, lookahead +1).
 This advisory listing is not a playback/share authorization lease and does not serialize a lifecycle change racing after a check.
@@ -14,9 +16,17 @@ The managed Hikari/Spring JDBC/jOOQ path starts a fresh READ_COMMITTED/read-only
 Flyway is test/CI only: the runtime neither provisions/migrates the database nor accepts migration properties. Default non-web bootstrap remains database-free.
 Only fixed public errors and a six-field sanitized failure diagnostic are emitted; SQL, bindings, identities, credentials and raw exception messages are not logged by the query path.
 
+## Current PA11/shared runtime dependency summary
+
+The following current dependency summary covers the shared PA10 query stack and PA11 MVC/Tomcat/Jackson boundary, with test-only tooling identified by scope; it is not a historical PA10 inventory.
+
 | Dependency | Resolved version | Maven scope |
 | --- | --- | --- |
 | `org.springframework:spring-jdbc` / transitive `spring-tx` | 7.0.10 | compile |
+| `org.springframework:spring-webmvc` / `spring-context` / `spring-beans` | 7.0.10 | compile |
+| `com.fasterxml.jackson.core:jackson-annotations` | 2.21 | compile |
+| `tools.jackson.core:jackson-databind` / `tools.jackson.core:jackson-core` | 3.1.7 | compile |
+| `org.apache.tomcat.embed:tomcat-embed-core` / `tomcat-embed-el` / `tomcat-embed-websocket` | 11.0.27 | compile |
 | `org.jooq:jooq` | 3.21.9 | compile |
 | `com.zaxxer:HikariCP` | 7.0.2 | compile |
 | `org.postgresql:postgresql` | 42.7.14 | runtime |
@@ -24,13 +34,152 @@ Only fixed public errors and a six-field sanitized failure diagnostic are emitte
 | `org.testcontainers:testcontainers` | 2.0.5 | test only |
 | `org.springframework.boot:spring-boot-starter-test` | 4.1.2 | test only |
 
-The JAR firewall positively compares the five query JDBC/jOOQ/pool/transaction jars to resolved coordinates/versions and rejects migration, security, JPA/web/server, validation, codegen and test tooling. Surefire still excludes Flyway from its classpath; only Failsafe fixtures use it.
+The PA11 JAR firewall freezes the complete resolved and packaged inventories below, including the inherited PA10 query stack. Surefire still excludes Flyway from its classpath; only Failsafe fixtures use it.
 
-Validation inventory: 21 Surefire tests; `./mvnw -B -ntp -Pcontainer-smoke verify` additionally runs 64 unchanged historical methods plus 10 actual-service PostgreSQL 16.15 methods (74 Failsafe), with no skip path.
+Current validation inventory: **49 Surefire methods in 11 classes; 84 Failsafe methods in 3 classes (64+10+10); 133 combined**, with zero failures, errors or skips. The default and opt-in web packaged-JAR smokes both run, and the production-JAR firewall exercises 82 adversarial probes. `./mvnw -B -ntp -Pcontainer-smoke verify` runs 64 PostgreSQL methods, 10 PA10 methods and 10 PA11 methods against disposable PostgreSQL 16. PA11 adds exactly 28 unit/web/architecture and 10 integration methods; existing method inventories remain intact.
 No schema/index/ACL/V001–V009 change, mutation/public sharing/evidence service, cloud integration, policy selection or production-readiness claim is included.
 Provisioning/collation/performance remain Platform/Database/Security concerns; transport/authentication and wire cursor serialization remain adapter concerns.
 Evidence: `docs/gateflow/pa10-sharing-application-service-s1-implementation.md` and `docs/gateflow/pa10-sharing-application-service-s1-completion-1.md` (repository-relative).
-The following PA0–PA9 sections describe historical checkpoints, not the current PA10 dependency/service inventory.
+## PA11-S1 customer API foundation
+
+Default startup stays non-web and database-free, even with the MVC classes on the classpath. Opt in explicitly:
+
+```sh
+java -jar target/onecall-runtime-0.0.1-SNAPSHOT.jar --spring.profiles.active=web --spring.main.web-application-type=servlet
+```
+
+Only exact `GET /api/v1/customer/me` is application-reachable. Other methods/paths, aliases and direct `/error` return sanitized 404; container-level malformed HTTP rejections are outside this application contract. The provider-neutral opaque `customerSession` port always receives audience `onecall:customer-session:v1`; no JWT decoding or client-selected account/workspace/role/channel is supported. A fresh request principal carries only verifier-attested UUID and MINIAPP/WEB channel. Query, body, cookie, forwarded identity and selector headers cannot select identity or workspace.
+
+**No production verifier exists.** Missing/malformed/ambiguous bearer returns 401 with bare `WWW-Authenticate: Bearer`; a syntactically valid bearer returns fixed 503 until a separately approved real adapter exists. It does not initialize a DB pool. There is no property, `test`/`dev` profile or fake-token bypass. Do not mistake these expected 401/503 responses for login or provider readiness.
+
+With a future real verifier, the lazy qualified customer graph requires `ONECALL_CUSTOMER_DB_URL`, `ONECALL_CUSTOMER_DB_USERNAME`, `ONECALL_CUSTOMER_DB_PASSWORD`, mapped only to `onecall.customer.persistence.url/username/password` with no usable defaults. Use a separately provisioned non-owner, non-superuser login allowed to assume only `customer_iam_role`, never migration/admin credentials. PA10 uses its separate `ONECALL_DB_*` credentials; profiles `web,persistence` coexist through explicit qualifiers, not aliases or primary beans. Runtime never provisions or migrates the database.
+
+The service uses a fresh read-only READ_COMMITTED/REQUIRES_NEW transaction, fixed `SET LOCAL ROLE customer_iam_role` plus role assertion, and one prepared SELECT over V002-granted columns. It requires the current ACTIVE account and projects only ACTIVE memberships under ACTIVE organizations, PostgreSQL UUID order, PERSONAL first. PERSONAL has exactly `workspaceType,status`; organization fields are omitted, not null. Account includes `accountId,displayName,status`; organization workspace includes `workspaceType,organizationId,organizationDisplayName,role,status`; response also includes server-attested `channel`. Each request rechecks lifecycle state; there is no authorization lease or cache.
+
+Success is JSON. Application failures use exactly `type,title,status,code,traceId` as `application/problem+json`, fresh server UUID traces and fixed titles/codes. Every application response uses `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff`, never session/cookie creation. Authentication precedes content negotiation; authenticated unsupported/malformed negotiation maps to sanitized 500. SQL/credentials/bearers/exception causes never appear in PA11 responses or logs. Error dispatch uses the custom Boot ErrorController; connector errors are not promised this JSON shape.
+
+No login/signup/logout/OTP/WeChat/provider mapping, session issuance/storage/TTL, Redis, profile edit, other public API, mutation, schema/ACL change or production-readiness claim is included. Future adapter/session storage is owned by Customer IAM/Security; production provisioning, collation and performance remain Platform/Database concerns. Deferred denial acknowledgement is not implemented by this read path.
+
+### Frozen runtime firewall inventories
+
+The only added direct runtime dependency is managed `org.springframework.boot:spring-boot-starter-webmvc:4.1.2` (no explicit POM version). The following **55** tuples are literal CI approvals, not generated from the candidate. Field order is **group:artifact:type:version:classifier:scope**; `<empty>` means an empty classifier and every type is `jar`. Baseline **37 resolved / 34 packaged** are also literal CI data, never rebuilt at CI time. Exact differences are **18 additions / 0 removals** resolved and **14 additions / 0 removals** packaged. There are **eight dependency-only rows**, **47 packaged counterparts**, and only the exact packager addition `spring-boot-jarmode-tools-4.1.2.jar`, for **48 packaged JARs**. Entry observations match these identities; any mismatch fails closed rather than changing approvals. The observed omission of `spring-modulith-apt` is empirical repackager evidence, not a claim about its internal mechanism.
+
+| Resolved tuple | Exact packaged counterpart |
+| --- | --- |
+| `org.springframework:spring-jdbc:jar:7.0.10:<empty>:compile` | `spring-jdbc-7.0.10.jar` |
+| `org.springframework:spring-beans:jar:7.0.10:<empty>:compile` | `spring-beans-7.0.10.jar` |
+| `org.springframework:spring-core:jar:7.0.10:<empty>:compile` | `spring-core-7.0.10.jar` |
+| `commons-logging:commons-logging:jar:1.3.6:<empty>:compile` | `commons-logging-1.3.6.jar` |
+| `org.jspecify:jspecify:jar:1.0.1:<empty>:compile` | `jspecify-1.0.1.jar` |
+| `org.springframework:spring-tx:jar:7.0.10:<empty>:compile` | `spring-tx-7.0.10.jar` |
+| `org.jooq:jooq:jar:3.21.9:<empty>:compile` | `jooq-3.21.9.jar` |
+| `io.r2dbc:r2dbc-spi:jar:1.0.0.RELEASE:<empty>:compile` | `r2dbc-spi-1.0.0.RELEASE.jar` |
+| `org.reactivestreams:reactive-streams:jar:1.0.4:<empty>:compile` | `reactive-streams-1.0.4.jar` |
+| `com.zaxxer:HikariCP:jar:7.0.2:<empty>:compile` | `HikariCP-7.0.2.jar` |
+| `org.slf4j:slf4j-api:jar:2.0.20:<empty>:compile` | `slf4j-api-2.0.20.jar` |
+| `org.springframework.boot:spring-boot-starter:jar:4.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.boot:spring-boot-starter-logging:jar:4.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `ch.qos.logback:logback-classic:jar:1.5.38:<empty>:compile` | `logback-classic-1.5.38.jar` |
+| `ch.qos.logback:logback-core:jar:1.5.38:<empty>:compile` | `logback-core-1.5.38.jar` |
+| `org.apache.logging.log4j:log4j-to-slf4j:jar:2.25.5:<empty>:compile` | `log4j-to-slf4j-2.25.5.jar` |
+| `org.apache.logging.log4j:log4j-api:jar:2.25.5:<empty>:compile` | `log4j-api-2.25.5.jar` |
+| `org.slf4j:jul-to-slf4j:jar:2.0.20:<empty>:compile` | `jul-to-slf4j-2.0.20.jar` |
+| `org.springframework.boot:spring-boot-autoconfigure:jar:4.1.2:<empty>:compile` | `spring-boot-autoconfigure-4.1.2.jar` |
+| `org.springframework.boot:spring-boot:jar:4.1.2:<empty>:compile` | `spring-boot-4.1.2.jar` |
+| `jakarta.annotation:jakarta.annotation-api:jar:3.0.0:<empty>:compile` | `jakarta.annotation-api-3.0.0.jar` |
+| `org.yaml:snakeyaml:jar:2.6:<empty>:compile` | `snakeyaml-2.6.jar` |
+| `org.springframework.boot:spring-boot-starter-webmvc:jar:4.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.boot:spring-boot-starter-jackson:jar:4.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.boot:spring-boot-jackson:jar:4.1.2:<empty>:compile` | `spring-boot-jackson-4.1.2.jar` |
+| `org.springframework.boot:spring-boot-starter-tomcat:jar:4.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.boot:spring-boot-starter-tomcat-runtime:jar:4.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.boot:spring-boot-web-server:jar:4.1.2:<empty>:compile` | `spring-boot-web-server-4.1.2.jar` |
+| `org.apache.tomcat.embed:tomcat-embed-core:jar:11.0.27:<empty>:compile` | `tomcat-embed-core-11.0.27.jar` |
+| `org.apache.tomcat.embed:tomcat-embed-el:jar:11.0.27:<empty>:compile` | `tomcat-embed-el-11.0.27.jar` |
+| `org.apache.tomcat.embed:tomcat-embed-websocket:jar:11.0.27:<empty>:compile` | `tomcat-embed-websocket-11.0.27.jar` |
+| `org.springframework.boot:spring-boot-tomcat:jar:4.1.2:<empty>:compile` | `spring-boot-tomcat-4.1.2.jar` |
+| `org.springframework.boot:spring-boot-http-converter:jar:4.1.2:<empty>:compile` | `spring-boot-http-converter-4.1.2.jar` |
+| `org.springframework:spring-web:jar:7.0.10:<empty>:compile` | `spring-web-7.0.10.jar` |
+| `io.micrometer:micrometer-observation:jar:1.17.2:<empty>:compile` | `micrometer-observation-1.17.2.jar` |
+| `io.micrometer:micrometer-commons:jar:1.17.2:<empty>:compile` | `micrometer-commons-1.17.2.jar` |
+| `org.springframework.boot:spring-boot-webmvc:jar:4.1.2:<empty>:compile` | `spring-boot-webmvc-4.1.2.jar` |
+| `org.springframework.boot:spring-boot-servlet:jar:4.1.2:<empty>:compile` | `spring-boot-servlet-4.1.2.jar` |
+| `org.springframework:spring-webmvc:jar:7.0.10:<empty>:compile` | `spring-webmvc-7.0.10.jar` |
+| `org.springframework:spring-aop:jar:7.0.10:<empty>:compile` | `spring-aop-7.0.10.jar` |
+| `org.springframework:spring-expression:jar:7.0.10:<empty>:compile` | `spring-expression-7.0.10.jar` |
+| `org.springframework.modulith:spring-modulith-starter-core:jar:2.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.modulith:spring-modulith-api:jar:2.1.2:<empty>:compile` | `spring-modulith-api-2.1.2.jar` |
+| `org.springframework.modulith:spring-modulith-apt:jar:2.1.2:<empty>:compile` | **dependency-only; no packaged JAR** |
+| `org.springframework.modulith:spring-modulith-core:jar:2.1.2:<empty>:runtime` | `spring-modulith-core-2.1.2.jar` |
+| `com.tngtech.archunit:archunit:jar:1.4.2:<empty>:runtime` | `archunit-1.4.2.jar` |
+| `org.springframework:spring-context:jar:7.0.10:<empty>:compile` | `spring-context-7.0.10.jar` |
+| `org.springframework.modulith:spring-modulith-moments:jar:2.1.2:<empty>:compile` | `spring-modulith-moments-2.1.2.jar` |
+| `org.jmolecules:jmolecules-events:jar:2.0.1:<empty>:compile` | `jmolecules-events-2.0.1.jar` |
+| `org.jmolecules:jstereotype:jar:2.0.1:<empty>:compile` | `jstereotype-2.0.1.jar` |
+| `com.fasterxml.jackson.core:jackson-annotations:jar:2.21:<empty>:compile` | `jackson-annotations-2.21.jar` |
+| `org.postgresql:postgresql:jar:42.7.14:<empty>:runtime` | `postgresql-42.7.14.jar` |
+| `org.checkerframework:checker-qual:jar:3.55.1:<empty>:runtime` | `checker-qual-3.55.1.jar` |
+| `tools.jackson.core:jackson-databind:jar:3.1.7:<empty>:compile` | `jackson-databind-3.1.7.jar` |
+| `tools.jackson.core:jackson-core:jar:3.1.7:<empty>:compile` | `jackson-core-3.1.7.jar` |
+
+Exact 48 packaged filenames (not a one-to-one 55-entry mapping):
+
+```text
+HikariCP-7.0.2.jar
+archunit-1.4.2.jar
+checker-qual-3.55.1.jar
+commons-logging-1.3.6.jar
+jackson-annotations-2.21.jar
+jackson-core-3.1.7.jar
+jackson-databind-3.1.7.jar
+jakarta.annotation-api-3.0.0.jar
+jmolecules-events-2.0.1.jar
+jooq-3.21.9.jar
+jspecify-1.0.1.jar
+jstereotype-2.0.1.jar
+jul-to-slf4j-2.0.20.jar
+log4j-api-2.25.5.jar
+log4j-to-slf4j-2.25.5.jar
+logback-classic-1.5.38.jar
+logback-core-1.5.38.jar
+micrometer-commons-1.17.2.jar
+micrometer-observation-1.17.2.jar
+postgresql-42.7.14.jar
+r2dbc-spi-1.0.0.RELEASE.jar
+reactive-streams-1.0.4.jar
+slf4j-api-2.0.20.jar
+snakeyaml-2.6.jar
+spring-aop-7.0.10.jar
+spring-beans-7.0.10.jar
+spring-boot-4.1.2.jar
+spring-boot-autoconfigure-4.1.2.jar
+spring-boot-http-converter-4.1.2.jar
+spring-boot-jackson-4.1.2.jar
+spring-boot-jarmode-tools-4.1.2.jar
+spring-boot-servlet-4.1.2.jar
+spring-boot-tomcat-4.1.2.jar
+spring-boot-web-server-4.1.2.jar
+spring-boot-webmvc-4.1.2.jar
+spring-context-7.0.10.jar
+spring-core-7.0.10.jar
+spring-expression-7.0.10.jar
+spring-jdbc-7.0.10.jar
+spring-modulith-api-2.1.2.jar
+spring-modulith-core-2.1.2.jar
+spring-modulith-moments-2.1.2.jar
+spring-tx-7.0.10.jar
+spring-web-7.0.10.jar
+spring-webmvc-7.0.10.jar
+tomcat-embed-core-11.0.27.jar
+tomcat-embed-el-11.0.27.jar
+tomcat-embed-websocket-11.0.27.jar
+```
+
+Exact full-tuple plus filename membership is checked **before** the unchanged legacy negative regex. Seven approved packaged filenames collide with that regex and are exempt only through their exact positive entries; absent dependency-only counterparts may never materialize. Inherited `archunit:1.4.2` and `spring-modulith-core:2.1.2` remain approved runtime coordinates, not permission for arbitrary test tooling. The exact jarmode-tools entry has its own sole packager branch; no broad tools exemption exists. Jackson 2 core/databind are rejected by resolved **group/artifact** even with forged Jackson-3-looking filenames. All unknown versions/scopes/classifiers/groups/JARs, duplicates, missing entries, filename collisions, security/JPA/migration/validation/test stacks and actual reactive DB drivers fail. `commons-logging` and hyphenated groups/artifacts are parsed explicitly. Inline adversarial CI probes and product-class bans enforce these properties without adding JUnit methods.
+
+CI retains the 30-minute backend ceiling, reconciles every exact source/CI/XML method set, and runs bounded default/web packaged-JAR smokes without credentials or a verifier. PostgreSQL fixtures own provisioning, canary redaction, no-write/ACL/transaction/pool cleanup and disposable-resource evidence. Implementation evidence: `docs/gateflow/pa11-customer-auth-api-foundation-s1-implementation.md` (repository-relative).
+
+The following PA0–PA9 sections describe historical checkpoints, not the current PA10/PA11 dependency/service inventory.
 
 Phase A 生产运行时引导脚手架，外加 PA2 V002 identity/organization/employee foundation、PA3 V003 subject-number/claim foundation、PA4 V004 catalog-order/payment foundation、PA5 V005 ivr task/session/call foundation、PA6 V006 trial/entitlement/reservation/usage foundation 与 PA7 V007 activation/consent foundation (S1–S2) 的证据。本工程包含运行时入口、14 个 Spring Modulith 包边界、架构/依赖防火墙测试，以及 V001+V002+V003+V004+V005+V006+V007+V008+V009 的容器行为证据：S1 的 PostgreSQL 16 migration、精确 inventory 和 fail-visible delivery，S2 的 idempotency/Outbox first-result 与事务原子性，以及 S3 的 audit append-only、reason/denylist、固定 search_path、owner/PUBLIC/角色权限边界和 hostile search_path 防护；PA2 V002 S2 追加四个 DB 行为方法，证明六表默认值/条件 revision/34 个命名 check/FK RESTRICT、本地不可变 guard 与 auth rotation、identity/profile/employee/membership 的唯一性与 revoke-regrant，以及并发 identity/live-membership 唯一冲突；PA2 V002 S3 追加两个授权/事务方法，证明 runtime 与 cross-module 的精确 least-privilege 以及 last-enabled-admin 串行/并发 fail-closed 协议；PA3 V003 S1 追加两个 catalog/ACL 方法，证明四张 `subject_number` 表（36 列、25 命名 check、七个普通 immediate RESTRICT FK、18 索引）、三个本地不可变 guard 与 append-only claim 控制，以及精确 owner/PUBLIC/schema/table/column/function ACL；PA3 V003 S2 追加五个行为/并发方法，证明 subject owner set-once、real-name 分离、binding 生命周期、append-only claim、risk open/clear/reopen 与 active HMAC 并发唯一；PA4 V004 S1 追加两个 catalog/ACL 方法，证明四张 S2 schema（`catalog_order`/`ivr`/`entitlement_metering`/`activation_consent`）、八个 NOLOGIN 角色、七张 `catalog_order` 表（78 列、51 命名 check、11 唯一键、28 索引、11 普通 immediate RESTRICT FK）、五个本地 `SECURITY INVOKER` 触发函数、七个触发器与精确 owned/cross-module/PUBLIC ACL；PA4 V004 S2 追加四个行为/并发方法，证明 V004 catalog version/order/payment 生命周期 revision 与四类 `P0001` guard 回压、append-only/runtime 拒绝、51 命名 check 的精确 `23514` 探针、全部 11 个缺失父 FK `23503` 与父删除 RESTRICT、staged absent consent FK/空 `activation_consent`，以及五个有界双连接并发场景的唯一胜者与 scoped FK-safe 清理（方法局部 id 收集、依赖序删除、命名触发器同事务恢复）；PA5 V005 S1 追加两个 catalog/ACL 方法，证明 `ivr` 六张表（103 列、73 命名 check、14 唯一键、31 索引、15 普通 immediate RESTRICT FK、2 NO_FK root `call_id`、1 个 V006-deferred reservation FK 缺席、五个本地 `SECURITY INVOKER` 触发函数、五个触发器、17 默认列、零 id default/sequence）、option-B `call_record.created_at` 与三列 `ix_call_record_subject_time`、reciprocal claim guard 形状，以及精确 owner/PUBLIC/runtime/cross-module ACL 与 `ivr_role` catalog_order USAGE 仍为 FALSE；PA5 V005 S2 追加五个行为/并发方法，证明 V005 六张 `ivr` 表的数据库可见生命周期、guard、named-check、FK 与有界并发 backstop（无 application service）；PA6 V006 S1 追加三个 catalog/ACL/`issue_first_trial` 方法，证明 `entitlement_metering` 七张表（84 列、50 命名 check、12 唯一键=9 普通+3 partial unique、29 索引、15+1 late 普通 immediate RESTRICT FK、19 默认列、零 id default/sequence）、一个 `SECURITY DEFINER` 服务函数 `issue_first_trial`、七个 `SECURITY INVOKER` 触发函数与七个触发器，以及精确 owner/PUBLIC/runtime/cross-module ACL 与 `GRANTED`/`REPLAY`/`ALREADY_GRANTED`/`TRIAL_*` 语义；PA6 V006 S2 追加四个行为/并发方法，证明 V006 trial/balance/issuance 生命周期与 append-only backstop、全部 16 个缺失父 FK `23503` 与 late `fk_ivr_decision_reservation`、nested Outbox `42501` 原子性/回滚/REPLAY，以及 `issue_first_trial`/reservation/unique 身份的有界双连接并发唯一胜者；PA7 V007 S1 追加三个 catalog/ACL/FK 方法，证明 `activation_consent` 三张表（`consent_record`/`service_activation`/`service_activation_transition`，共 43 列 19/6/18、31 命名 check 15/3/13、3 PK、5 普通 unique、4 secondary/12 total 索引、10 本地 immediate RESTRICT FK + late immediate validated non-deferrable `fk_customer_order_consent`、6 默认列、2 个本地 `SECURITY INVOKER` 触发函数、3 个触发器、零 id default/sequence、零 service function），精确 owner/PUBLIC/runtime/cross-module ACL 与 `SERVICE_ACTIVATION_HEAD_IMMUTABLE`/`CONSENT_TRANSITION_APPEND_ONLY` 回压，以及 staged V004 orphan-consent 可插入并回滚、final 有效订单需真实 consent parent 而 orphan `purchase_consent_id` 被 late FK `23503` 拒绝；PA7 V007 S2 追加三个行为/并发方法，证明 consent 形状/默认/append-only/回滚、activation head/transition 生命周期矩阵与不可变回压、以及 consent 事件/head subject/transition revision/action/status-event 身份与 expected-revision head update 的有界双连接并发唯一胜者；PA8 V008 S1–S2 追加六个 catalog/ACL/FK/生命周期/回滚/并发方法（仅 evidence 数据库 backstop）；PA9 V009 S1 追加三个 catalog/ACL/FK 方法（仅 sharing persistence 数据库 backstop）；当前累计容器方法总数为 64。V001 只创建六个 schema（其中四个为空）、15 个 NOLOGIN 角色、`platform`/`audit` 三张表、append-only audit guard 和四个 `SECURITY DEFINER` 函数；V002 在既有角色/scope 上再创建 `customer_iam`/`organization_access`/`operations_iam` 六张表、34 个命名 check、四个 RESTRICT FK、六个本地 guard 触发器与精确 owned/cross-module grants；V003 在既有角色/scope 上再创建 `subject_number` 四张表、25 个命名 check、七个 RESTRICT FK、三个本地 guard、一个 append-only claim 控制与精确 grants；V004 在既有角色/scope 上再创建四个 S2 schema、八个 NOLOGIN 角色、七张 `catalog_order` 表、51 个命名 check、11 个 RESTRICT FK、五个本地触发函数与七个触发器及精确 grants；V005 在既有角色/scope 上再创建六张 `ivr` 表（`outbound_call_task`/`inbound_session`/`call_record`/`call_leg`/`call_event`/`ivr_decision`，共 103 列、73 个命名 check、14 个唯一键、31 个索引、15 个 RESTRICT FK、两个 NO_FK root `call_id`、`reservation_id` 为可空无 FK 的 V006-deferred 列）、五个本地触发函数与五个触发器及精确 grants；V006 在既有角色/scope 上再创建七张 `entitlement_metering` 表（`trial_policy_version`/`entitlement_grant`/`trial_grant`/`entitlement_balance`/`entitlement_issuance`/`usage_reservation`/`usage_fact`，共 84 列、50 个命名 check、12 个唯一键、29 个索引、15+1 late RESTRICT FK、19 默认列）、一个 `SECURITY DEFINER` 服务函数 `issue_first_trial`、七个本地触发函数与七个触发器及精确 grants，并把 `fk_ivr_decision_reservation` 延迟到 V006 添加；V007 在既有角色/scope 上再创建 `activation_consent` 三张表（`consent_record` 19 列/15 check、`service_activation` 6 列/3 check、`service_activation_transition` 18 列/13 check，共 43 列、31 个命名 check、3 PK、5 个普通 unique、12 个索引）、2 个本地 `SECURITY INVOKER` 触发函数与 3 个触发器及精确 grants，并把 `fk_customer_order_consent` 延迟到 V007 以 immediate validated non-deferrable 方式添加；**V008 在既有角色/scope 上再创建 `evidence` schema 与 `evidence_owner`/`evidence_role` 两个 NOLOGIN 角色、五张 evidence 表（`media_object` 11 列/9 check、`recording` 15 列/11 check、`evidence_record` 17 列/13 check、`evidence_artifact` 5 列/1 check、`evidence_event` 8 列/5 check，共 56 列、39 命名 check、5 PK、5 普通 unique + 2 partial unique、8 secondary 索引、10 默认列、8 普通 immediate RESTRICT FK + 2 DEFERRABLE INITIALLY DEFERRED creation-cycle FK）、五个本地 `SECURITY INVOKER` 触发函数与七个触发器及精确 grants**；PA8 V008 S1 只证明 V008 catalog/ACL/FK inventory 与 staged-prefix 边界，**不含 V009/sharing 对象、SQL service function、运行时 DataSource/Flyway、API、认证、供应商或云集成**。S3 只证明既有 V001/V002 行为；PA3 S1/S2 只证明 V003 catalog/ACL 与数据库 backstop 行为；PA4 S1 只证明 V004 catalog/ACL inventory，S2 只证明 V004 数据库可见生命周期/guard/check/FK/并发 backstop；PA5 S1 只证明 V005 catalog/ACL inventory，S2 只证明 V005 数据库可见生命周期/guard/check/FK/并发 backstop；PA6 S1/S2 只证明 V006 catalog/ACL inventory、`issue_first_trial` 数据库语义与数据库可见生命周期/guard/FK/Outbox/并发 backstop；PA7 V007 S1 只证明 V007 catalog/ACL/FK inventory 与 staged-prefix 边界，S2 只证明 V007 数据库可见 consent/head/transition 生命周期/矩阵/append-only/并发 backstop，均不新增超出本切片范围的生产对象。
 
@@ -137,7 +286,7 @@ cd backend
 ## CI（`.github/workflows/ci.yml`）
 
 - 两个 job、只读权限（`contents: read`），只在 `backend/**`、contract assets（`api/openapi/**`、`protocol/**`、`security/**`、`deployment/capacity/**`、`acceptance/**`）、本 workflow 与顶层 `docs/*.md` 变化时触发；prototype/screenshot-only 变更不触发。
-- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`，随后解析 failsafe/surefire XML（累计既有 S1+S2+S3 加 PA9 S1–S3 恰好 64 个具名 container test、`skipped=0`），并执行 boot jar smoke 与 production jar firewall。
+- `java-runtime`：Temurin `21.0.13+9`（`actions/setup-java` 精确 pin，不用 `check-latest`）、`./mvnw` 断言 Maven `3.9.9`、先 `docker info`、再 `./mvnw -B -ntp -Pcontainer-smoke verify`；job 解析 Surefire XML（49 methods / 11 classes）与 Failsafe XML（84 methods / 3 classes：`64+10+10`），要求合计 133 且 failures/errors/skips 均为零，然后执行 default 与 opt-in web packaged-JAR smokes，以及 production-JAR firewall 的 82 个 adversarial probes；保留 Java/Maven/Docker 与 30 分钟 ceiling 约束。
 - `contract-regressions`：Node `22.23.4` 精确 pin、`npm ci` + `npm run check:s3`，以及 A2/A3/A4/A5 既有 validator 命令（不修改其 fixtures/语义）。
 - `docker info` 在任何 Maven/容器步骤之前；Docker 不可用时 job 立即失败，不会出现“测试被 skip 但 job 绿”。
 
@@ -146,7 +295,7 @@ cd backend
 - 本工程只提供 **build/static/synthetic** 证据：Maven 构建、Enforcer 规则、Modulith 边界测试、classpath/jar firewall、boot smoke、真实 PostgreSQL container smoke，以及 A1-A5 静态/合成 contract regressions。
 - 默认 `./mvnw verify` 不需要 Docker，且**不等于**容器 smoke 通过；author 环境的 container smoke 可以是 `NOT RUN`，但 PA1 accepted checkpoint 前必须由 controller 在 Docker-capable 环境实际执行 `-Pcontainer-smoke verify` 并通过。
 - 本地/CI 成功都**不是** A5 `PASS`、`productionAccepted=true` 或生产验收；不证明 carrier/IVR media/腾讯云/provider/load/restore/penetration/manual/production acceptance，不创建 A5 evidence/authority/acceptance record。GitHub Actions 结果只有在真实运行时才算证据，未运行前不得声称 CI 绿。
-- PA8 V008 S2 保留证据与 PA9 V009 S1–S3 累计边界：默认 `verify` 仍为 10 个 surefire 测试；`-Pcontainer-smoke verify` 的目标为 64 个 container 方法（`skipped=0 failures=0 errors=0`，PA8 六个 S1+S2 方法）；V001–V008 canonical Git 字节保持冻结；V009 完整 DDL 在 S1 写入并记录 SHA256；S1 的五表/56 列/39 check/10 FK/5 函数/7 触发器精确 catalog、ACL、FK 与 staged-prefix 断言保留。S2 增加 39 check 正控及 38 个命名 `23514` 负控（`ck_evidence_source_ref` 单独为 NOT NULL `23502` + 精确 catalog + 非空提交正控）、两个插入顺序及真实 `evidence_role` COMMIT、分类 deferred-cycle 错误、生命周期/不可变/append-only、recording-only 与完整 record/event/artifact/模拟 Outbox sentinel 回滚、有界双连接唯一竞争和局部清理。CI expected-set 为 64 names；包含 PA9 V009 S1–S3 sharing persistence；不含 application service、runtime DataSource/Flyway 接线；author 证据和本地/CI 成功均不是 accepted checkpoint 或生产验收。
+- PA11 当前 CI/证据边界：`verify` 产生 49 个 Surefire 方法（11 classes）；`-Pcontainer-smoke verify` 另产生 84 个 Failsafe 方法（3 classes，64+10+10），合计 133，且 failures/errors/skips 均为 0。64 个 PostgreSQL 方法仍是既有持久化证据，另有 10 个 PA10 与 10 个 PA11 方法；V001–V009、OpenAPI 与架构/设计/安全文档保持冻结。author 证据和本地/CI 成功均不是 accepted checkpoint 或生产验收。
 - PA5 aggregate deepreview fix-1 backstops (database-only): terminal task/call facts are absorbing, `UNKNOWN` only converges to `ENDED`/`FAILED`, confirmed sessions bind `confirmed_subject_id` to `subject_id` and clear it outside `CONFIRMED`, and call-event redacted payloads require typed source members plus a lowercase 64-hex server fingerprint. These are covered by existing V005 S2 methods; no application service/API claim is added.
 
 ## PA9 V009 S1 Sharing Persistence
