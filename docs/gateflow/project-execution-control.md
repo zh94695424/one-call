@@ -4,11 +4,28 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa13-sharing-role-least-privilege`
+> Branch: `codex/pa14-sharing-command-service-foundation`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
-> Dispatch providers: PA13 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews remain **A = `ds` / `deepseek-flash`** and, per the user's latest 2026-11-04 routing update, **B = `qwen38flash` / `qwen3.8-flash`** for subsequent PA13 work. The already-running GLM PR review may finish as its existing isolated task; it must not be interrupted or mixed with a Qwen session. A/B use fresh isolated inputs, submit before the controller reads either conclusion, and never mutate source or remote state. Earlier Qwen and GLM records remain historical. All planning/implementation artifacts, validation commands, completion reports and controller adjudications follow accepted plan and current control-document scope.
+> Dispatch providers: PA14 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews remain **A = `ds` / `deepseek-flash`** and, per the user's latest 2026-11-04 routing update, **B = `qwen38flash` / `qwen3.8-flash`**. A/B use fresh isolated inputs, submit before the controller reads either conclusion, and never mutate source or remote state. Earlier Qwen and GLM records remain historical. All planning/implementation artifacts, validation commands, completion reports and controller adjudications follow accepted plan and current control-document scope.
+
+## Active resume checkpoint - 2026-11-04
+
+### PA14 sharing command service foundation - goal confirmation accepted
+
+- Active work unit: `PA14-sharing-command-service-foundation`, backend sharing feature.
+- Start commit: PR #21 is `MERGED` at `259aeb458883c484e15077c3f7a157ef521e2203`, parents `a7438dfc96f6a7845787ab3ce4007436cf796607` and reviewed head `69a628220735a1febb24de3e85adbc750b8ee36f`; fetched `origin/main` equals the merge commit.
+- Worktree: `C:\Users\Administrator\.codex\worktrees\pa14-sharing-command-service-foundation\codex-call`; branch `codex/pa14-sharing-command-service-foundation`; clean at `259aeb4`. The PA13 and all earlier worktrees/private files remain preserved and were not copied.
+- Goal confirmed by the user on 2026-11-04: implement the customer sharing command API foundation for the three already-frozen OpenAPI mutations: `createCustomerShare`, `revokeCustomerShare` and `rotateCustomerShareCode`.
+- Required behavior: authenticate through the existing trusted customer boundary; execute writes only in a separate command transaction with explicit `SET LOCAL ROLE sharing_command_role` and effective-role assertion; preserve the current query transaction on `sharing_role` as read-only. Creation must use the same-connection evidence-owner `read_shareable_projection`, deterministic creation identity/fingerprint, one-time capability token and exact conflict/replay semantics. Revocation and code rotation must use deterministic action identities, conditional expected-revision/generation updates and append redacted access events/audit/outbox as specified.
+- Policy/provider boundary: production sharing policy, KDF/code generation, designated-mobile HMAC, OTP/SMS proof and external provisioning inputs remain unapproved. The plan must define server-owned ports/adapters with production implementations fail closed when configuration or policy is absent; deterministic test adapters may prove behavior. No parameter, TTL, secret, policy role map or production credential may be guessed.
+- Success signal: the three frozen OpenAPI endpoints return their specified success/replay/error shapes; creation returns capability/code secrets only once; revoke/rotation are idempotent and durable; PostgreSQL 16 tests prove command-role wiring, transaction rollback, row locking, exact state/event facts, repeat/concurrent behavior and query-role isolation; existing `/shares`, `/me`, startup and all current tests remain green with synchronized source/CI/XML inventory.
+- Non-goals: no V001-V010 changes; no public `GET /shares/{token}`, admission, ticket, playback/media authorization, Redis, COS/KMS, real SMS/OTP delivery, frontend, production default-policy/KDF values, deployment provisioning, merge, approval, ready action, reviewer request or external comment.
+- Direct evidence: the OpenAPI defines the three customer mutations at `api/openapi/onecall-v1.openapi.yaml:2791`, `:2932` and `:3012`; production Java currently exposes only the GET list path and no sharing command service; the `evidence` Java module has no `read_shareable_projection` implementation; V010 creates the exact unwired `sharing_command_role`; docs/14 §§9.29, 10.21, 10.22 and 4.44-4.46 define creation, admission, transition identity, ownership and immutability contracts.
+- Resolved boundary question: provider values and production policy are intentionally deferred rather than invented. Missing providers/configurations fail closed; tests inject deterministic server-side adapters. This does not claim production enablement.
+- Slice principle: use the minimum behaviorally verifiable slices, default no more than three; split by end-to-end command behavior, not by file/module, and keep public admission/ticket outside this work unit.
+- No blocking open question remains at plan entry. Current gate / next entry point: `plan`, routed to GPT `gpt-6.1-sol` / `high`; no implementation is authorized until the plan passes dual independent review and an accepted-plan checkpoint exists.
 
 ## Active resume checkpoint - 2026-11-03
 
