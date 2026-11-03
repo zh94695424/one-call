@@ -84,9 +84,9 @@ final class CustomerMeFixture implements AutoCloseable {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/customer_me";
         Flyway flyway = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(9);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(10);
         flyway.validate();
-        assertThat(flyway.info().applied()).hasSize(9);
+        assertThat(flyway.info().applied()).hasSize(10);
         try (Connection connection = admin()) {
             for (String identity : List.of(login, sharingLogin, deniedLogin)) {
                 execute(connection, "CREATE ROLE " + identity + " LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '" + password + "'");

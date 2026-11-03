@@ -33,7 +33,7 @@ class SharingQueryServiceIT {
 
     @Test
     void queryRuntimeStartsAfterFixtureProvisioning() throws Exception {
-        assertThat(fixture.flyway.info().applied()).hasSize(9);
+        assertThat(fixture.flyway.info().applied()).hasSize(10);
         fixture.flyway.validate();
         assertThat(fixture.context.getBeansOfType(org.jooq.DSLContext.class)).hasSize(1);
         assertThat(fixture.context.getBeansOfType(javax.sql.DataSource.class)).hasSize(1);
@@ -301,7 +301,8 @@ class SharingQueryServiceIT {
         for (String probe : List.of("select display_name from customer_iam.customer_account",
                 "update customer_iam.customer_account set display_name = 'blocked'", "create table sharing.unapproved(id int)",
                 "select id from customer_iam.customer_account for share", "select id from customer_iam.customer_account for update",
-                "select snapshot from evidence.evidence_record")) {
+                "select snapshot from evidence.evidence_record",
+                "update sharing.evidence_share_grant set revision = revision + 1")) {
             try (Connection connection = fixture.pool.getConnection()) {
                 connection.setAutoCommit(false);
                 SharingQueryFixture.execute(connection, "SET LOCAL ROLE sharing_role");
