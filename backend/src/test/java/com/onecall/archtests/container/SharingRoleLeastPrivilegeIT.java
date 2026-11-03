@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Savepoint;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -343,15 +345,39 @@ class SharingRoleLeastPrivilegeIT {
 
     @Test
     void v010CommandRolePositiveAndNegativeBehavior() throws Exception {
+        UUID outboxId;
+        UUID auditId;
         try (Connection connection = login(COMMAND_LOGIN); Statement statement = connection.createStatement()) {
             connection.setAutoCommit(false);
             statement.execute("SET ROLE sharing_command_role");
             statement.executeQuery("select * from sharing.evidence_share_grant").close();
             statement.executeQuery("select * from sharing.share_admission").close();
+            try (ResultSet result = statement.executeQuery("select platform.outbox_append('SHARE_ACCESS','pa13-command-role-probe','SHARE_ACCESS',gen_random_uuid(),'SHARE_ACCESS_PROBE','{\"probe\":true}'::jsonb,null,'" + "a".repeat(64) + "')")) {
+                assertThat(result.next()).isTrue();
+                outboxId = result.getObject(1, UUID.class);
+            }
+            try (ResultSet result = statement.executeQuery("select audit.append_fact(now(),'SYSTEM',null,'SHARE_ACCESS_PROBE','SYSTEM',null,null,null,'{\"probe\":true}'::jsonb,'pa13-command-role-probe',null)")) {
+                assertThat(result.next()).isTrue();
+                auditId = result.getObject(1, UUID.class);
+            }
             denied(connection, "update sharing.evidence_share_grant set max_admissions=max_admissions", "42501");
             denied(connection, "delete from sharing.evidence_share_grant", "42501");
             denied(connection, "truncate sharing.evidence_share_grant", "42501");
             denied(connection, "select * from ivr.call", "42501");
+            connection.rollback();
+        }
+        try (Connection connection = admin(); PreparedStatement outbox = connection.prepareStatement("select exists (select 1 from platform.outbox_event where id = ?)" );
+             PreparedStatement audit = connection.prepareStatement("select exists (select 1 from audit.audit_fact where id = ?)")) {
+            outbox.setObject(1, outboxId);
+            audit.setObject(1, auditId);
+            try (ResultSet result = outbox.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getBoolean(1)).isFalse();
+            }
+            try (ResultSet result = audit.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getBoolean(1)).isFalse();
+            }
         }
     }
 
