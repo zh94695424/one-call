@@ -5,6 +5,7 @@
 - Draft PR: https://github.com/zh94695424/one-call/pull/21
 - Base: `a7438dfc96f6a7845787ab3ce4007436cf796607`
 - Reviewed implementation + PR-review head: `4daada7e4f54b4eabd27fbe477d8f615b33a2a02`
+- Final closeout delivery head: `5b35d1ae49eea7c2bcdbec420aeda85b43102c43`
 - Status: `final closeout pass`
 - Issue association: not applicable
 
@@ -27,7 +28,8 @@ No production Java, API/OpenAPI, frontend, command-role wiring, view or new serv
 - Exact source/CI/XML inventory: 5 Failsafe classes / 100 methods and 13 Surefire classes / 67 methods matched.
 - V001-V009 raw bytes, sizes, CRLF counts and canonical-LF hashes match the frozen pre-edit manifest.
 - Aggregate deepreview A/B passed after fixes; final PR review passed after direct GitHub blob verification rejected the sole snapshot-only CRLF finding.
-- GitHub Actions run `41721587351` on final reviewed head `4daada7e4f54b4eabd27fbe477d8f615b33a2a02`: `java-runtime` and `contract-regressions` both `success`.
+- GitHub Actions run `41721587351` on product/PR-review head `4daada7e4f54b4eabd27fbe477d8f615b33a2a02`: `java-runtime` and `contract-regressions` both `success`.
+- GitHub Actions run `41722154608` on final closeout delivery head `5b35d1ae49eea7c2bcdbec420aeda85b43102c43`: `java-runtime` and `contract-regressions` both `success`.
 - PR #21 was OPEN/Draft/MERGEABLE/CLEAN when `draft-PR-pass` was accepted.
 
 ## Documentation
