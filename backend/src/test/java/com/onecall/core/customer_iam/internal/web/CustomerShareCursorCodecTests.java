@@ -128,7 +128,7 @@ class CustomerShareCursorCodecTests {
             for (var status : ShareSummary.ShareStatus.values()) {
                 summaries.add(new ShareSummary("s" + summaries.size(), UUID.randomUUID(), mode, status,
                         Instant.parse("2026-01-02T03:04:05.123456Z"), Instant.parse("2026-01-02T03:04:06Z"),
-                        null, 0, false, mode == ShareSummary.VerificationMode.EXTRACTION_CODE ? 1 : 0, 0));
+                        null, 0, false, mode == ShareSummary.VerificationMode.EXTRACTION_CODE ? 17 : 0, 29));
             }
         }
         var page = CustomerSharePage.from(new SharePage(summaries, Optional.empty(), false), null);
@@ -142,6 +142,16 @@ class CustomerShareCursorCodecTests {
         assertThat(json.get("items").get(0).get("maxAdmissions").isNull()).isTrue();
         assertThat(json.get("items").get(0).get("validFrom").asString()).isEqualTo("2026-01-02T03:04:05.123456Z");
         assertThat(json.get("items").get(0).get("expiresAt").asString()).isEqualTo("2026-01-02T03:04:06Z");
+        var extractionItem = java.util.stream.StreamSupport.stream(json.get("items").spliterator(), false)
+                .filter(item -> item.get("verificationMode").asString().equals("EXTRACTION_CODE"))
+                .findFirst().orElseThrow();
+        assertThat(extractionItem.get("codeGeneration").asInt()).isEqualTo(17);
+        assertThat(extractionItem.get("revocationGeneration").asInt()).isEqualTo(29);
+        var nonExtractionItem = java.util.stream.StreamSupport.stream(json.get("items").spliterator(), false)
+                .filter(item -> !item.get("verificationMode").asString().equals("EXTRACTION_CODE"))
+                .findFirst().orElseThrow();
+        assertThat(nonExtractionItem.get("codeGeneration").asInt()).isZero();
+        assertThat(nonExtractionItem.get("revocationGeneration").asInt()).isEqualTo(29);
         assertThat(mapper.readTree(mapper.writeValueAsBytes(new CustomerSharePage(List.of(), "opaque-cursor", true)))
                 .get("nextCursor").asString()).isEqualTo("opaque-cursor");
         assertThat(json.get("items")).extracting(node -> node.get("verificationMode").asString())

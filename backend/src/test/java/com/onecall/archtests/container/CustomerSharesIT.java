@@ -53,12 +53,32 @@ class CustomerSharesIT {
         var personalResponse = fixture.shares("first", "");
         assertThat(personalResponse.statusCode()).isEqualTo(200);
         assertThat(itemIds(personalResponse.body())).containsExactly(personal);
+        assertCompleteItem(personalResponse.body(), personal, timestamp);
         fixture.sessions(WorkspaceType.ORGANIZATION, fixture.organization);
         var organizationResponse = fixture.shares("first", "");
         assertThat(organizationResponse.statusCode()).isEqualTo(200);
         assertThat(itemIds(organizationResponse.body())).containsExactly(organization);
+        assertCompleteItem(organizationResponse.body(), organization, timestamp);
         fixture.sessions(WorkspaceType.ORGANIZATION, fixture.organizationTwo);
         assertThat(itemIds(fixture.shares("first", "").body())).containsExactly(otherWorkspace);
+    }
+
+    private void assertCompleteItem(String body, String shareId, Instant timestamp) throws Exception {
+        JsonNode item = mapper.readTree(body).get("items").get(0);
+        assertThat(item.properties().stream().map(Map.Entry::getKey)).containsExactlyInAnyOrder(
+                "shareId", "evidenceId", "verificationMode", "status", "validFrom", "expiresAt",
+                "maxAdmissions", "admissionsUsed", "downloadAllowed", "codeGeneration", "revocationGeneration");
+        assertThat(item.get("shareId").asString()).isEqualTo(shareId);
+        assertThat(UUID.fromString(item.get("evidenceId").asString())).isNotNull();
+        assertThat(item.get("verificationMode").asString()).isEqualTo("NONE");
+        assertThat(item.get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(item.get("validFrom").asString()).isEqualTo(timestamp.toString());
+        assertThat(item.get("expiresAt").asString()).isEqualTo(timestamp.plusSeconds(86400).toString());
+        assertThat(item.get("maxAdmissions").isNull()).isTrue();
+        assertThat(item.get("admissionsUsed").asInt()).isZero();
+        assertThat(item.get("downloadAllowed").asBoolean()).isFalse();
+        assertThat(item.get("codeGeneration").asInt()).isZero();
+        assertThat(item.get("revocationGeneration").asInt()).isZero();
     }
 
     @Test
@@ -218,7 +238,13 @@ class CustomerSharesIT {
         String shareId = fixture.seedShare(fixture.base.account, null, Instant.parse("2026-01-02T03:04:05Z"));
         fixture.assertSharingReadOnlyWriteDenied(shareId);
         try (Connection sharing = java.sql.DriverManager.getConnection(fixture.base.url, fixture.base.sharingLogin, fixture.base.password)) {
+            try (var statement = sharing.createStatement(); var result = statement.executeQuery("SELECT current_user")) {
+                assertThat(result.next()).as("direct sharing login has a current_user row").isTrue();
+                assertThat(result.getString(1)).as("fresh direct connection has not activated SET ROLE sharing_role")
+                        .isEqualTo(fixture.base.sharingLogin);
+            }
             assertThatThrownBy(() -> CustomerMeFixture.execute(sharing, "SELECT capability_token_hash FROM sharing.evidence_share_grant"))
+                    .as("42501 is asserted for the direct sharing login without SET ROLE, not role-effective ACL evidence")
                     .isInstanceOfSatisfying(SQLException.class, failure -> assertThat(failure.getSQLState()).isEqualTo("42501"));
             assertThatThrownBy(() -> CustomerMeFixture.execute(sharing, "SET ROLE customer_iam_role"))
                     .isInstanceOfSatisfying(SQLException.class, failure -> assertThat(failure.getSQLState()).isEqualTo("42501"));

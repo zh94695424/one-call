@@ -358,18 +358,22 @@ class CustomerSharesWebTests {
             int expected = query.contains("cursor") ? 400 : 422;
             assertThat(send("GET", "/api/v1/customer/shares" + query, "personal", null, null).statusCode()).isEqualTo(expected);
         }
+        assertThat(send("GET", "/api/v1/customer/shares?limit=0&cursor=x", "personal", null, null).statusCode()).isEqualTo(422);
         assertThat(SELECTION).hasValue(0);
         var firstPage = send("GET", "/api/v1/customer/shares?limit=1", "personal", null, null);
         assertThat(firstPage.statusCode()).isEqualTo(200);
         var firstPageJson = tools.jackson.databind.json.JsonMapper.builder().build().readTree(firstPage.body());
         String cursor = firstPageJson.get("nextCursor").asString();
         assertThat(cursor).isNotBlank();
+        assertThat(send("GET", "/api/v1/customer/shares?limit=2&cursor="
+                + java.net.URLEncoder.encode(cursor, java.nio.charset.StandardCharsets.UTF_8), "personal", null, null).statusCode()).isEqualTo(200);
+        assertThat(SELECTION).hasValue(2);
         int afterCursorCreation = SELECTION.get();
         var crossContext = send("GET", "/api/v1/customer/shares?cursor="
                 + java.net.URLEncoder.encode(cursor, java.nio.charset.StandardCharsets.UTF_8), "other", null, null);
         assertThat(crossContext.statusCode()).isEqualTo(400);
         assertThat(SELECTION).hasValue(afterCursorCreation);
-        assertThat(afterCursorCreation).isEqualTo(1);
+        assertThat(afterCursorCreation).isEqualTo(2);
         assertThat(send("GET", "/api/v1/customer/shares?limit=01", "personal", null, null).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/v1/customer/shares?limit=100", "personal", null, null).statusCode()).isEqualTo(200);
         assertThat(send("GET", "/api/v1/customer/shares?limit=1", "personal", null, null).statusCode()).isEqualTo(200);

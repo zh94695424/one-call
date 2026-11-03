@@ -1,4 +1,4 @@
-# onecall-runtime（PA0–PA9 foundations / PA10-S1 query / PA11-S1 customer API）
+# onecall-runtime（PA0–PA9 foundations / PA10-S1 query / PA11-S1 and PA12 customer API）
 
 ## Historical PA10-S1 internal query capability
 
@@ -12,11 +12,12 @@ This advisory listing is not a playback/share authorization lease and does not s
 
 The opt-in Spring `persistence` profile requires exactly `onecall.persistence.url`, `onecall.persistence.username`, `onecall.persistence.password`, supplied through `ONECALL_DB_URL`, `ONECALL_DB_USERNAME`, `ONECALL_DB_PASSWORD`; no usable defaults are supplied.
 Use a separately provisioned non-owner, non-superuser login allowed to assume `sharing_role`, never migration/admin credentials.
+V009 grants `sharing_role` table-wide SELECT/INSERT and lifecycle UPDATE on `sharing.evidence_share_grant`; secret-column reads after `SET ROLE sharing_role` are currently permitted. PA12's direct-login 42501 check does not prove role-effective least privilege. Least-privilege role/view/grant redesign and role-effective denial testing are deferred to a separate Backend/Database/Security work unit before production rollout; V009 remains frozen.
 The managed Hikari/Spring JDBC/jOOQ path starts a fresh READ_COMMITTED/read-only/REQUIRES_NEW transaction, uses fixed transaction-local `SET LOCAL ROLE sharing_role`, asserts the effective role, and cleans up on commit/rollback.
 Flyway is test/CI only: the runtime neither provisions/migrates the database nor accepts migration properties. Default non-web bootstrap remains database-free.
 Only fixed public errors and a six-field sanitized failure diagnostic are emitted; SQL, bindings, identities, credentials and raw exception messages are not logged by the query path.
 
-## Current PA11/shared runtime dependency summary
+## Current PA11/PA12 shared runtime dependency summary
 
 The following current dependency summary covers the shared PA10 query stack and PA11 MVC/Tomcat/Jackson boundary, with test-only tooling identified by scope; it is not a historical PA10 inventory.
 
@@ -40,7 +41,7 @@ Current validation inventory: **67 Surefire methods in 13 classes; 92 Failsafe m
 No schema/index/ACL/V001–V009 change, mutation/public sharing/evidence service, cloud integration, policy selection or production-readiness claim is included.
 Provisioning/collation/performance remain Platform/Database/Security concerns; transport/authentication and wire cursor serialization remain adapter concerns.
 Evidence: `docs/gateflow/pa10-sharing-application-service-s1-implementation.md` and `docs/gateflow/pa10-sharing-application-service-s1-completion-1.md` (repository-relative).
-## PA11-S1 customer API foundation
+## PA11-S1 / PA12 customer API foundation
 
 Default startup stays non-web and database-free, even with the MVC classes on the classpath. Opt in explicitly:
 
