@@ -46,6 +46,6 @@ public final class CustomerBearerAuthenticator {
         if (!"onecall:customer-session:v1".equals(session.audience())) {
             throw new CustomerContextException(UNAUTHENTICATED);
         }
-        return new TrustedCustomerCaller(session.accountId(), session.channel());
+        return new TrustedCustomerCaller(session.accountId(), session.channel(), session.selectedWorkspace());
     }
 }

@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.modulith.core.ApplicationModules;
+import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
     @Test
@@ -42,8 +44,29 @@ class SharingQueryBoundaryTests {
             assertThat(paths.filter(path -> path.toString().endsWith(".java")).map(path -> path.getFileName().toString()))
                     .containsExactlyInAnyOrder("CustomerShareQueryService.java", "TrustedShareCaller.java", "SharePageRequest.java", "ShareCursor.java",
                             "ShareSummary.java", "SharePage.java", "ShareQueryException.java", "ShareQueryDiagnostic.java", "ShareQueryRepository.java",
-                            "JooqShareQueryRepository.java", "SharingPersistenceConfiguration.java", "SharingPersistenceProperties.java");
+                            "JooqShareQueryRepository.java", "SharingPersistenceConfiguration.java", "SharingPersistenceProperties.java",
+                            "package-info.java");
         }
+        var modules = ApplicationModules.of(com.onecall.core.OneCallApplication.class);
+        var namedInterfaces = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
+        assertThat(namedInterfaces.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
+                .containsExactly("customer-query");
+        var customerQuery = namedInterfaces.getByName("customer-query").orElseThrow();
+        assertThat(customerQuery.asJavaClasses()
+                .filter(type -> !type.getName().contains("$"))
+                .map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
+                .containsExactlyInAnyOrder("CustomerShareQueryService", "TrustedShareCaller", "SharePageRequest",
+                        "ShareCursor", "SharePage", "ShareSummary", "ShareQueryException", "ShareQueryDiagnostic");
+        assertThat(customerQuery.asJavaClasses().map(com.tngtech.archunit.core.domain.JavaClass::getName)
+                .filter(name -> name.contains("$")).map(name -> name.substring(name.lastIndexOf('$') + 1)))
+                .containsExactlyInAnyOrder("VerificationMode", "ShareStatus", "Code");
+        assertThat(namedInterfaces.getByName("customer-qurey")).isEmpty();
+        assertThat(CustomerShareQueryService.class.getDeclaredMethods())
+                .filteredOn(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
+                .extracting(java.lang.reflect.Method::getName).containsExactly("listCustomerShares");
+        assertThat(Files.readString(Path.of("src/main/java/com/onecall/core/sharing/internal/application/package-info.java")))
+                .contains("@org.springframework.modulith.NamedInterface(\"customer-query\")")
+                .doesNotContain("NamedInterface(\"customer-query\", \"", "NamedInterface(\"customer-query\")\n@org");
         assertThat(CustomerShareQueryService.class.getMethod("listCustomerShares", TrustedShareCaller.class, SharePageRequest.class).getReturnType())
                 .isEqualTo(SharePage.class);
         String repository = Files.readString(Path.of("src/main/java/com/onecall/core/sharing/internal/persistence/JooqShareQueryRepository.java"));

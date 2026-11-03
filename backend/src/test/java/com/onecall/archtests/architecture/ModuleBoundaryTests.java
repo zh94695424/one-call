@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.ApplicationModule;
 import org.springframework.modulith.core.ApplicationModules;
+import org.springframework.modulith.core.NamedInterface;
 import org.springframework.modulith.core.Violations;
 
 class ModuleBoundaryTests {
@@ -37,7 +38,7 @@ class ModuleBoundaryTests {
             "operations_audit", "platform_reliability");
 
     private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
-            Map.entry("customer_iam", Set.of()),
+            Map.entry("customer_iam", Set.of("sharing::customer-query")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of()),
@@ -104,17 +105,39 @@ class ModuleBoundaryTests {
                         .uniqueModules()
                         .map(it -> it.getIdentifier().toString())
                         .collect(Collectors.toSet())));
-        discovered.forEach((name, targets) -> assertThat(EXPECTED_ALLOWED.get(name))
+        discovered.forEach((name, targets) -> assertThat(EXPECTED_ALLOWED.get(name).stream()
+                .map(dependency -> dependency.split("::", 2)[0]).collect(Collectors.toSet()))
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("PA0 has no cross-module code edges yet")
-                .isEmpty();
+                .as("exactly one production edge exists: customer_iam -> sharing")
+                .contains("sharing")
+                .hasSize(1);
     }
 
     @Test
     void verifiesNoCyclesOrBoundaryViolations() {
-        ApplicationModules.of(OneCallApplication.class).verify();
+        ApplicationModules modules = ApplicationModules.of(OneCallApplication.class);
+        modules.verify();
+        var allowed = modules.getModuleByName("customer_iam").orElseThrow()
+                .getAllowedDependencies(modules);
+        assertThat(allowed).hasSize(1);
+        assertThat(allowed.iterator().next().getTargetModule().getIdentifier().toString()).isEqualTo("sharing");
+        assertThat(allowed.iterator().next().getTargetNamedInterface().getName()).isEqualTo("customer-query");
+        var sharing = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
+        assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
+                .containsExactly("customer-query");
+        assertThat(sharing.getByName("customer-query")).isPresent();
+        assertThat(sharing.getByName("customer-qurey")).isEmpty();
+        ImportOption withoutCustomerQuery = location -> {
+            String path = location.asURI().getPath();
+            if (path.contains("/com/onecall/archtests/")
+                    || path.contains("/com/onecall/archfixtures/")) return false;
+            return !path.endsWith("/com/onecall/core/sharing/internal/application/package-info.class");
+        };
+        assertThatThrownBy(() -> ApplicationModules.of(OneCallApplication.class, withoutCustomerQuery).verify())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("No named interface named 'customer-query' found!");
     }
 
     @Test
@@ -139,5 +162,22 @@ class ModuleBoundaryTests {
                         .of(InternalFixtureRoot.class, INCLUDE_TEST_FIXTURES)
                         .verify())
                 .isInstanceOf(Violations.class);
+        ApplicationModules fixture = ApplicationModules.of(InternalFixtureRoot.class, INCLUDE_TEST_FIXTURES);
+        var providerInterfaces = fixture.getModuleByName("provider").orElseThrow().getNamedInterfaces();
+        assertThat(providerInterfaces.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
+                .isEmpty();
+        assertThat(providerInterfaces.getUnnamedInterface().asJavaClasses()
+                .map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
+                .contains("Provider")
+                .doesNotContain("Internal");
+        ApplicationModules production = ApplicationModules.of(OneCallApplication.class);
+        var sharing = production.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
+        assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
+                .containsExactly("customer-query");
+        var allowed = production.getModuleByName("customer_iam").orElseThrow()
+                .getAllowedDependencies(production);
+        assertThat(allowed).hasSize(1);
+        assertThat(allowed.iterator().next().getTargetModule().getIdentifier().toString()).isEqualTo("sharing");
+        assertThat(allowed.iterator().next().getTargetNamedInterface().getName()).isEqualTo("customer-query");
     }
 }

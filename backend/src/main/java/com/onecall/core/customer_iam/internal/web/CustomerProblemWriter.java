@@ -34,6 +34,7 @@ public final class CustomerProblemWriter {
             case "FORBIDDEN" -> 403;
             case "NOT_FOUND" -> 404;
             case "VALIDATION_FAILED" -> 422;
+            case "CURSOR_INVALID" -> 400;
             case "RATE_LIMITED" -> 429;
             case "SERVICE_UNAVAILABLE" -> 503;
             default -> 500;
@@ -43,6 +44,7 @@ public final class CustomerProblemWriter {
             case "FORBIDDEN" -> "Access denied";
             case "NOT_FOUND" -> "Not found";
             case "VALIDATION_FAILED" -> "Request validation failed";
+            case "CURSOR_INVALID" -> "Invalid cursor";
             case "RATE_LIMITED" -> "Too many requests";
             case "SERVICE_UNAVAILABLE" -> "Service unavailable";
             default -> "Internal error";
