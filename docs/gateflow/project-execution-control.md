@@ -4,11 +4,27 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa12-customer-share-list-api`
+> Branch: `codex/pa13-sharing-role-least-privilege`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
-> Dispatch providers: PA12 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews remain **A = `ds` / `deepseek-flash`** and, per the user's explicit 2026-11-03 routing update, **B = `qwen38flash` / `qwen3.8-flash`**; A/B use fresh isolated inputs, submit before the controller reads either conclusion, and never mutate source or remote state. Earlier Qwen Max records remain historical. Qwen uses bounded file reads. All planning/implementation artifacts, validation commands, completion reports and controller adjudications follow accepted plan and current control-document scope.
+> Dispatch providers: PA13 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews remain **A = `ds` / `deepseek-flash`** and, per the user's explicit 2026-11-03 routing update, **B = `qwen38flash` / `qwen3.8-flash`**; A/B use fresh isolated inputs, submit before the controller reads either conclusion, and never mutate source or remote state. Earlier Qwen Max records remain historical. Qwen uses bounded file reads. All planning/implementation artifacts, validation commands, completion reports and controller adjudications follow accepted plan and current control-document scope.
+
+## Active resume checkpoint - 2026-11-03
+
+### PA13 sharing role least privilege - goal confirmation accepted
+
+- Active work unit: `PA13-sharing-role-least-privilege`, database ACL/security migration.
+- Start commit: PR #20 was merged at `a7438dfc96f6a7845787ab3ce4007436cf796607`, with parents `b458be9a52bf6f7cd9543355dceb98c9d89b364c` and reviewed head `1271758b3d3fe720fc9718fc59cb7c07604e4de4`; fetched `origin/main` equals the merge commit.
+- Worktree: `C:\Users\Administrator\.codex\worktrees\pa13-sharing-role-least-privilege\codex-call`; branch `codex/pa13-sharing-role-least-privilege`; clean at `a7438df`. The PA12 and all earlier worktrees and private helpers remain preserved and were not copied.
+- Goal confirmed by the user on 2026-11-03: retain V001-V009 byte-for-byte and add a forward-only V010 ACL migration. Redefine `sharing_role` as the least-privilege read-only principal for `GET /api/v1/customer/shares`, and add a separate `sharing_command_role` for future share creation/admission/revoke/rotate work. The list-query role must be able to read only the exact metadata and lifecycle columns required by the current creator-scoped query, while all secret/code/content columns, `share_admission`, `share_access_event`, writes and unrelated functions are denied role-effectively.
+- Success signal: after `SET LOCAL ROLE sharing_role`, the existing `/shares` metadata query and ACTIVE account/organization/membership checks still succeed; direct SELECT of `capability_token_hash`, `code_salt`, `code_hash`, `content_snapshot` and `content_sha256` fails with `42501`; SELECT/INSERT/UPDATE/DELETE/TRUNCATE on `evidence_share_grant`, `share_admission` and `share_access_event` beyond the explicitly granted metadata SELECT fails; the query principal cannot assume `sharing_command_role` and receives no evidence/subject/platform/audit privileges it does not use. PostgreSQL 16 catalog assertions prove the exact roles, memberships, schema USAGE, column grants, function grants and absence of PUBLIC privileges. Existing `/shares`, PA10 query, PA11 `/me`, default startup and all 159 current tests remain green.
+- `sharing_command_role` is a NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE command-side runtime principal. Its grants must be the minimum exact table/column/function privileges needed by the already-frozen future create, admission, revoke, rotate, extend, lock and expiry semantics; it must not be wired to any current endpoint or receive unrelated platform/audit/foreign-table privileges.
+- Non-goals: no edit to V001-V009; no table, column, index, check, trigger, function, OpenAPI, customer API, frontend, Redis, OTP/KDF/TTL, media authorization, share mutation/admission implementation, production login/session/provisioning, cloud/KMS/COS, merge, approval, ready action, reviewer request or external comment.
+- Direct evidence: `backend/src/main/resources/db/migration/V009__sharing.sql:307-315` currently grants table-wide SELECT/INSERT to `sharing_role` on three sharing tables and UPDATE on grant lifecycle/secret columns; `CustomerShareQueryService` invokes `SET LOCAL ROLE sharing_role`; `JooqShareQueryRepository` uses exactly the 11 metadata columns plus creator/workspace predicates and lifecycle joins; `CustomerSharesFixture` proves the role's read-only transaction and `25006` write denial but not secret-column denial; `docs/14-production-data-model-and-flyway-schema-spec.md` section 10.21 currently declares broad owned-table access and must be reconciled to the split-role contract.
+- Slice principle: use the minimum behavioral slices, default to one end-to-end ACL migration plus its executable tests; split only if a distinct independently reviewable safety increment is unavoidable, with no more than three slices.
+- Dispatch protocol: `sub-agents` one-shot runner processes. Current gate is `plan`, routed to GPT `gpt-6.1-sol` / `high`; later independent reviews use A DeepSeek and B Qwen Flash on identical frozen inputs.
+- No blocking open question remains.
 
 ## Active resume checkpoint - 2026-11-02
 
