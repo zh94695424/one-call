@@ -179,6 +179,7 @@
                 <include>**/SharingQueryServiceIT.java</include>
                 <include>**/CustomerMeIT.java</include>
                 <include>**/CustomerSharesIT.java</include>
+                <include>**/SharingRoleLeastPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

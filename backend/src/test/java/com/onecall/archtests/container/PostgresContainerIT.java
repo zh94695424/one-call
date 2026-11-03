@@ -1081,7 +1081,7 @@ class PostgresContainerIT {
                     == 0;
             stagedV007SharingRolesAbsent = queryLong(
                     connection,
-                    "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')")
+                    "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role','sharing_command_role')")
                     == 0;
             stagedV007FunctionWaveStillFive = queryLong(
                     connection,
@@ -1233,7 +1233,7 @@ class PostgresContainerIT {
         assertThat(stagedV007Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV008Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV008FencesVerified).isTrue();
-        assertThat(initialMigration.migrationsExecuted).isEqualTo(1);
+        assertThat(initialMigration.migrationsExecuted).isEqualTo(2);
         assertThat(stagedV004OrphanConsentEvidence)
                 .as("assigned-once V004 orphan-consent probe evidence is present").isNotNull();
         assertThat(stagedV004OrphanConsentEvidence.insertSucceeded())
@@ -1362,6 +1362,12 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("description")).isEqualTo("sharing");
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getString("script")).isEqualTo("V009__sharing.sql");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("010");
+            assertThat(resultSet.getString("description")).isEqualTo("sharing role least privilege");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getString("script")).isEqualTo("V010__sharing_role_least_privilege.sql");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
         }
@@ -3067,7 +3073,7 @@ class PostgresContainerIT {
             connection.setAutoCommit(false);
             try {
                 fixture = v009Fixture(connection, true);
-                switchLocalRole(connection, "sharing_role");
+                switchLocalRole(connection, "sharing_command_role");
                 assertThat(queryLong(connection,
                         "SELECT count(*) FROM (SELECT id FROM sharing.evidence_share_grant "
                                 + "WHERE id = ? FOR UPDATE) locked", fixture.grantId())).isEqualTo(1);
@@ -3139,7 +3145,7 @@ class PostgresContainerIT {
             connection.setAutoCommit(false);
             try {
                 fixture = v009Fixture(connection, false);
-                switchLocalRole(connection, "sharing_role");
+                switchLocalRole(connection, "sharing_command_role");
                 for (String missing : List.of("evidence", "creator_account", "owner_organization")) {
                     UUID evidence = missing.equals("evidence") ? UUID.randomUUID() : fixture.evidenceId();
                     UUID account = missing.equals("creator_account") ? UUID.randomUUID() : fixture.accountId();
@@ -3161,7 +3167,7 @@ class PostgresContainerIT {
                     connection.rollback(guardProbe);
                 }
                 v009AssertTriggerStates(connection);
-                switchLocalRole(connection, "sharing_role");
+                switchLocalRole(connection, "sharing_command_role");
                 v009ExpectConstraint(connection, "23503", "fk_share_access_event_grant", v009EventSql(),
                         UUID.randomUUID(), UUID.randomUUID(), null, "s1-orphan-" + UUID.randomUUID(), randomSha256());
                 v009ExpectConstraint(connection, "23503", "fk_share_access_event_admission", v009EventSql(),
@@ -3240,7 +3246,7 @@ class PostgresContainerIT {
                             "UPDATE sharing." + table + " SET id = id WHERE id = ?", identifier);
                     v009S2Failure(connection, "P0001", "SHARING_ROW_APPEND_ONLY",
                             "DELETE FROM sharing." + table + " WHERE id = ?", identifier);
-                    switchLocalRole(connection, "sharing_role");
+                    switchLocalRole(connection, "sharing_command_role");
                     v009S2Failure(connection, "42501", null,
                             "UPDATE sharing." + table + " SET id = id WHERE id = ?", identifier);
                     v009S2Failure(connection, "42501", null,
@@ -3271,7 +3277,7 @@ class PostgresContainerIT {
                     assertThat(executeUpdate(connection, "UPDATE evidence.evidence_record SET status = 'SOLIDIFIED', "
                             + "solidified_at = now(), revision = revision + 1 WHERE id = ?", evidence.recordId)).isEqualTo(1);
                     execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
-                    switchLocalRole(connection, "sharing_role");
+                    switchLocalRole(connection, "sharing_command_role");
                     UUID active = UUID.randomUUID();
                     grants.add(active);
                     assertThat(executeUpdate(connection, v009GrantSql(), active, "s2-" + active,
@@ -3376,7 +3382,7 @@ class PostgresContainerIT {
             v009S2Mutation(states.get("ACTIVE"), "unknown status edge",
                     Map.of("status", "'INVALID'", "revision", "revision + 1"), "SHARE_GRANT_STATUS_TRANSITION");
             v009S2Mutation(states.get("ACTIVE"), "non-code rotation fails verification shape", v009S2Rotation(),
-                    "sharing_role", "23514", "ck_share_grant_verification_shape");
+                    "sharing_command_role", "23514", "ck_share_grant_verification_shape");
             v009S2Mutation(states.get("ACTIVE"), "expiry shrink",
                     Map.of("expires_at", "expires_at - interval '1 minute'", "revision", "revision + 1"),
                     "SHARE_GRANT_EXPIRY_DECREASE");
@@ -3665,8 +3671,8 @@ class PostgresContainerIT {
     private static void v009S3Configure(Connection connection, String application) throws SQLException {
         connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
         connection.setAutoCommit(false);
-        configureBlockedWriter(connection, "sharing_role", application);
-        assertThat(queryString(connection, "SELECT current_user")).isEqualTo("sharing_role");
+        configureBlockedWriter(connection, "sharing_command_role", application);
+        assertThat(queryString(connection, "SELECT current_user")).isEqualTo("sharing_command_role");
         assertThat(queryString(connection, "SHOW transaction_isolation")).isEqualTo("read committed");
     }
 
@@ -4463,7 +4469,7 @@ class PostgresContainerIT {
         List<String> before = v009S2FixtureRows(connection, fixture);
         Savepoint probe = connection.setSavepoint();
         try {
-            switchLocalRole(connection, "sharing_role");
+            switchLocalRole(connection, "sharing_command_role");
             UUID grantId = UUID.randomUUID();
             assertThat(executeUpdate(connection, v009S2Clone(connection, "evidence_share_grant",
                     Map.of("id", v008S2Literal(grantId)), List.of("code_generation", "valid_from", "admissions_used",
@@ -4567,7 +4573,7 @@ class PostgresContainerIT {
         try (Connection connection = openConnection()) {
             connection.setAutoCommit(false);
             try {
-                switchLocalRole(connection, "sharing_role");
+                switchLocalRole(connection, "sharing_command_role");
                 queryString(connection, "SELECT id::text FROM sharing.evidence_share_grant WHERE id = ? FOR UPDATE", identifier);
                 baseline = v009S2Rows(connection, identifier);
                 int revision = Math.toIntExact(queryLong(connection,
@@ -4602,7 +4608,7 @@ class PostgresContainerIT {
 
     private static void v009S2Mutation(UUID identifier, String label, Map<String, String> changes,
                                        String diagnostic) throws SQLException {
-        v009S2Mutation(identifier, label, changes, "sharing_role", diagnostic == null ? null : "P0001", diagnostic);
+        v009S2Mutation(identifier, label, changes, "sharing_command_role", diagnostic == null ? null : "P0001", diagnostic);
     }
 
     private static void v009S2Mutation(UUID identifier, String label, Map<String, String> changes,
@@ -4678,10 +4684,10 @@ class PostgresContainerIT {
             v009S2Mutation(identifier, "owner frozen " + change.getKey(), Map.of(change.getKey(), change.getValue()),
                     "sharing_owner", "P0001", "SHARE_GRANT_IMMUTABLE");
             v009S2Mutation(identifier, "runtime frozen " + change.getKey(), Map.of(change.getKey(), change.getValue()),
-                    "sharing_role", "42501", null);
+                    "sharing_command_role", "42501", null);
         }
         v009S2Mutation(identifier, "same-state revision-only lower bound", Map.of("revision", "0"),
-                "sharing_role", "23514", "ck_share_grant_revision");
+                "sharing_command_role", "23514", "ck_share_grant_revision");
     }
 
     private static void v009S2Cleanup(V008S2Fixture evidence, UUID accountId, List<UUID> grants) throws Exception {
@@ -5036,139 +5042,130 @@ class PostgresContainerIT {
                 "fk_share_grant_owner_organization|sharing.evidence_share_grant|owner_organization_id|organization_access.organization|id|r|r|s|false|false|true|pk_organization|1|1");
     }
 
-    private static void assertV009AclCatalog(Connection connection) throws SQLException {
+    static void assertV009AclCatalog(Connection connection) throws SQLException {
         assertThat(queryStrings(connection,
-                "SELECT rolname || '|' || rolcanlogin || '|' || rolsuper || '|' || rolcreatedb "
-                        + "|| '|' || rolcreaterole || '|' || rolinherit || '|' || rolreplication "
-                        + "|| '|' || rolbypassrls || '|' || rolconnlimit || '|' || (rolpassword IS NULL) "
-                        + "FROM pg_authid WHERE rolname IN ('sharing_owner','sharing_role') ORDER BY 1"))
-                .containsExactly("sharing_owner|false|false|false|false|true|false|false|-1|true",
+                "SELECT rolname || '|' || rolcanlogin || '|' || rolsuper || '|' || rolcreatedb || '|' || rolcreaterole "
+                        + "|| '|' || rolinherit || '|' || rolreplication || '|' || rolbypassrls || '|' || rolconnlimit "
+                        + "|| '|' || (rolpassword IS NULL) FROM pg_authid WHERE rolname IN "
+                        + "('sharing_owner','sharing_role','sharing_command_role') ORDER BY 1"))
+                .containsExactly("sharing_command_role|false|false|false|false|false|false|false|-1|true",
+                        "sharing_owner|false|false|false|false|true|false|false|-1|true",
                         "sharing_role|false|false|false|false|true|false|false|-1|true");
-        assertThat(queryLong(connection,
-                "SELECT count(*) FROM pg_auth_members WHERE roleid IN "
-                        + "('sharing_owner'::regrole, 'sharing_role'::regrole) OR member IN "
-                        + "('sharing_owner'::regrole, 'sharing_role'::regrole)"))
-                .isZero();
-        for (String aclQuery : List.of(
-                "SELECT n.nspacl AS acl, n.nspowner AS owner FROM pg_namespace n WHERE n.nspname = 'sharing'",
-                "SELECT c.relacl AS acl, c.relowner AS owner FROM pg_class c WHERE c.relnamespace = 'sharing'::regnamespace",
-                "SELECT a.attacl AS acl, c.relowner AS owner FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
-                        + "WHERE c.relnamespace = 'sharing'::regnamespace AND a.attnum > 0",
-                "SELECT p.proacl AS acl, p.proowner AS owner FROM pg_proc p WHERE p.pronamespace = 'sharing'::regnamespace")) {
-            String defaultType = aclQuery.contains("n.nspacl") ? "n" : aclQuery.contains("p.proacl") ? "f"
-                    : aclQuery.contains("a.attacl") ? "c" : "r";
-            assertThat(queryLong(connection, "SELECT count(*) FROM (" + aclQuery + ") objects, "
-                    + "LATERAL aclexplode(coalesce(acl, acldefault('" + defaultType + "', owner))) acl "
-                    + "WHERE acl.grantee = 0 OR acl.is_grantable OR acl.grantee NOT IN "
-                    + "('sharing_owner'::regrole, 'sharing_role'::regrole)"))
-                    .as("PUBLIC zero, no grant options or undeclared sharing grantee").isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_auth_members WHERE member IN "
+                + "('sharing_owner'::regrole,'sharing_role'::regrole,'sharing_command_role'::regrole) "
+                + "OR (roleid IN ('sharing_owner'::regrole,'sharing_command_role'::regrole) "
+                + "AND member NOT IN (SELECT oid FROM pg_roles WHERE rolname LIKE 'command_probe_%'))")).isZero();
+
+        List<String> querySchemas = List.of("customer_iam", "organization_access", "sharing");
+        List<String> commandSchemas = List.of("audit", "customer_iam", "evidence", "organization_access", "platform", "sharing", "subject_number");
+        List<String> appSchemas = List.of("sharing", "evidence", "customer_iam", "organization_access", "subject_number", "platform", "audit", "ivr", "entitlement_metering");
+        for (String schema : appSchemas) {
+            assertThat(hasSchema(connection, "sharing_role", schema, "USAGE")).isEqualTo(querySchemas.contains(schema));
+            assertThat(hasSchema(connection, "sharing_command_role", schema, "USAGE")).isEqualTo(commandSchemas.contains(schema));
+            assertThat(hasSchema(connection, "sharing_role", schema, "CREATE")).isFalse();
+            assertThat(hasSchema(connection, "sharing_command_role", schema, "CREATE")).isFalse();
         }
-        assertThat(queryStrings(connection,
-                "SELECT n.nspname || '|' || a.privilege_type || '|' || a.is_grantable FROM pg_namespace n, "
-                        + "LATERAL aclexplode(n.nspacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
-                .containsExactly("audit|USAGE|false", "customer_iam|USAGE|false", "evidence|USAGE|false",
-                        "organization_access|USAGE|false", "platform|USAGE|false", "sharing|USAGE|false",
-                        "subject_number|USAGE|false");
-        assertThat(queryStrings(connection,
-                "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
-                        + "AND nspname <> 'information_schema' AND nspname <> 'public' "
-                        + "AND has_schema_privilege('sharing_role', oid, 'USAGE') ORDER BY 1"))
-                .containsExactly("audit", "customer_iam", "evidence", "organization_access", "platform",
-                        "sharing", "subject_number");
-        assertThat(queryLong(connection,
-                "SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg%' "
-                        + "AND has_schema_privilege('sharing_role', oid, 'CREATE')"))
-                .isZero();
-        assertThat(queryStrings(connection,
-                "SELECT n.nspname || '.' || c.relname || '|' || a.privilege_type || '|' || a.is_grantable "
-                        + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
-                        + "LATERAL aclexplode(c.relacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
-                .containsExactly("sharing.evidence_share_grant|INSERT|false", "sharing.evidence_share_grant|SELECT|false",
-                        "sharing.share_access_event|INSERT|false", "sharing.share_access_event|SELECT|false",
-                        "sharing.share_admission|INSERT|false", "sharing.share_admission|SELECT|false");
-        List<String> expectedColumnAcls = new ArrayList<>();
-        for (String column : V009_UPDATE_COLUMNS) {
-            expectedColumnAcls.add("sharing.evidence_share_grant." + column + "|UPDATE|false");
-        }
-        for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
-            for (String column : projection.getValue()) {
-                expectedColumnAcls.add(projection.getKey() + "." + column + "|SELECT|false");
-            }
-        }
-        expectedColumnAcls.sort(String::compareTo);
-        assertThat(expectedColumnAcls).hasSize(42);
-        assertThat(queryStrings(connection,
-                "SELECT n.nspname || '.' || c.relname || '.' || column_info.attname || '|' "
-                        + "|| a.privilege_type || '|' || a.is_grantable FROM pg_attribute column_info "
-                        + "JOIN pg_class c ON c.oid = column_info.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace, "
-                        + "LATERAL aclexplode(column_info.attacl) a "
-                        + "WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
-                .containsExactlyElementsOf(expectedColumnAcls);
-        assertThat(queryStrings(connection,
-                "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' "
-                        + "|| '|' || a.privilege_type || '|' || a.is_grantable "
-                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, "
-                        + "LATERAL aclexplode(p.proacl) a WHERE a.grantee = 'sharing_role'::regrole ORDER BY 1"))
-                .containsExactly(
-                        "audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)|EXECUTE|false",
-                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)|EXECUTE|false",
-                        "sharing.guard_share_admission()|EXECUTE|false",
-                        "sharing.guard_share_grant()|EXECUTE|false", "sharing.reject_row_mutation()|EXECUTE|false");
-        assertThat(queryStrings(connection,
-                "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' "
-                        + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
-                        + "WHERE n.nspname NOT LIKE 'pg%' AND n.nspname <> 'information_schema' "
-                        + "AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass "
-                        + "AND d.objid = p.oid AND d.refclassid = 'pg_extension'::regclass AND d.deptype = 'e') "
-                        + "AND has_function_privilege('sharing_role', p.oid, 'EXECUTE') ORDER BY 1"))
-                .containsExactly(
-                        "audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)",
-                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)",
-                        "sharing.guard_share_admission()", "sharing.guard_share_grant()", "sharing.reject_row_mutation()");
-        List<String> previousRoles = new ArrayList<>(S1_ROLES);
-        previousRoles.addAll(V004_ROLES);
-        previousRoles.addAll(V008_ROLES);
-        for (String role : previousRoles) {
-            assertThat(hasSchema(connection, role, "sharing", "USAGE")).as("%s no sharing expansion", role).isFalse();
-            assertThat(hasSchema(connection, role, "sharing", "CREATE")).isFalse();
-            for (String function : List.of("guard_share_grant", "guard_share_admission", "reject_row_mutation")) {
-                assertThat(hasFunction(connection, role, "sharing." + function + "()", "EXECUTE")).isFalse();
-            }
-        }
+
+        List<String> queryColumns = List.of("share_id", "evidence_id", "verification_mode", "status", "valid_from", "expires_at",
+                "max_admissions", "admissions_used", "download_allowed", "code_generation", "revocation_generation",
+                "created_by_account_id", "owner_organization_id");
         for (String table : V009_TABLES) {
             String relation = "sharing." + table;
             for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
-                assertThat(hasTable(connection, "sharing_owner", relation, privilege)).isTrue();
-                assertThat(hasTable(connection, "sharing_role", relation, privilege))
-                        .isEqualTo(List.of("SELECT", "INSERT").contains(privilege));
-                for (String role : previousRoles) {
-                    assertThat(hasTable(connection, role, relation, privilege)).isFalse();
-                }
+                boolean commandExpected = privilege.equals("SELECT") || privilege.equals("INSERT");
+                assertThat(hasTable(connection, "sharing_role", relation, privilege)).isFalse();
+                assertThat(hasTable(connection, "sharing_command_role", relation, privilege)).isEqualTo(commandExpected);
             }
             for (String column : v009Columns(connection, relation)) {
-                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
-                    assertThat(hasColumn(connection, "sharing_role", relation, column, privilege))
-                            .isEqualTo(List.of("SELECT", "INSERT").contains(privilege)
-                                    || (privilege.equals("UPDATE") && table.equals("evidence_share_grant")
-                                    && V009_UPDATE_COLUMNS.contains(column)));
-                    for (String role : previousRoles) {
-                        assertThat(hasColumn(connection, role, relation, column, privilege)).isFalse();
-                    }
-                }
+                assertThat(hasColumn(connection, "sharing_role", relation, column, "SELECT"))
+                        .isEqualTo(table.equals("evidence_share_grant") && queryColumns.contains(column));
+                assertThat(hasColumn(connection, "sharing_command_role", relation, column, "UPDATE"))
+                        .isEqualTo(table.equals("evidence_share_grant") && V009_UPDATE_COLUMNS.contains(column));
+                assertThat(hasColumn(connection, "sharing_command_role", relation, column, "SELECT")).isTrue();
+                assertThat(hasColumn(connection, "sharing_command_role", relation, column, "INSERT")).isTrue();
+                assertThat(hasColumn(connection, "sharing_role", relation, column, "INSERT")).isFalse();
+                assertThat(hasColumn(connection, "sharing_role", relation, column, "UPDATE")).isFalse();
+                assertThat(hasColumn(connection, "sharing_command_role", relation, column, "REFERENCES")).isFalse();
             }
+        }
+
+        Map<String, List<String>> queryForeignColumns = Map.of(
+                "customer_iam.customer_account", List.of("id", "status"),
+                "organization_access.organization", List.of("id", "status"),
+                "organization_access.organization_membership", List.of("organization_id", "account_id", "status"));
+        for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
+            List<String> queryAllowed = queryForeignColumns.getOrDefault(projection.getKey(), List.of());
+            for (String column : v009Columns(connection, projection.getKey())) {
+                assertThat(hasColumn(connection, "sharing_command_role", projection.getKey(), column, "SELECT"))
+                        .isEqualTo(projection.getValue().contains(column));
+                assertThat(hasColumn(connection, "sharing_role", projection.getKey(), column, "SELECT"))
+                        .isEqualTo(queryAllowed.contains(column));
+            }
+        }
+        assertThat(V009_FOREIGN_COLUMNS.values().stream().mapToInt(List::size).sum()).isEqualTo(34);
+        assertThat(queryColumns).hasSize(13);
+
+        assertThat(queryStrings(connection, "SELECT n.nspname || '|' || r.rolname || '|' || a.privilege_type || '|' || a.is_grantable "
+                + "FROM pg_namespace n CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a "
+                + "JOIN pg_roles r ON r.oid=a.grantee WHERE r.rolname IN ('sharing_role','sharing_command_role') ORDER BY 1"))
+                .containsExactly("audit|sharing_command_role|USAGE|false", "customer_iam|sharing_command_role|USAGE|false",
+                        "customer_iam|sharing_role|USAGE|false", "evidence|sharing_command_role|USAGE|false",
+                        "organization_access|sharing_command_role|USAGE|false", "organization_access|sharing_role|USAGE|false",
+                        "platform|sharing_command_role|USAGE|false", "sharing|sharing_command_role|USAGE|false",
+                        "sharing|sharing_role|USAGE|false", "subject_number|sharing_command_role|USAGE|false");
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_namespace n CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND a.grantee IN ('sharing_role'::regrole,'sharing_command_role'::regrole) AND (a.grantor<>n.nspowner OR a.is_grantable)")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_namespace n CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) a WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND a.grantee=0")).isZero();
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || c.relname || '|' || r.rolname || '|' || a.privilege_type || '|' || a.is_grantable "
+                + "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL "
+                + "aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a JOIN pg_roles r ON r.oid=a.grantee "
+                + "WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number') AND r.rolname IN ('sharing_role','sharing_command_role') ORDER BY 1"))
+                .containsExactly("sharing.evidence_share_grant|sharing_command_role|INSERT|false",
+                        "sharing.evidence_share_grant|sharing_command_role|SELECT|false",
+                        "sharing.share_access_event|sharing_command_role|INSERT|false",
+                        "sharing.share_access_event|sharing_command_role|SELECT|false",
+                        "sharing.share_admission|sharing_command_role|INSERT|false",
+                        "sharing.share_admission|sharing_command_role|SELECT|false");
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND c.relkind IN ('r','p','v','m','f') AND a.grantee IN ('sharing_role'::regrole,'sharing_command_role'::regrole) AND (a.grantor<>c.relowner OR a.is_grantable)")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND c.relkind IN ('r','p','v','m','f') AND a.grantee=0")).isZero();
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || c.relname || '|' || x.grantor || '|' || x.grantee || '|' || x.privilege_type || '|' || x.is_grantable FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) x WHERE n.nspname IN ('platform','audit','ivr','entitlement_metering') AND c.relkind IN ('r','p','v','m','f') AND x.grantee IN (0,'sharing_role'::regrole,'sharing_command_role'::regrole) ORDER BY 1")).isEmpty();
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || c.relname || '.' || a.attname || '|' || x.grantor || '|' || x.grantee || '|' || x.privilege_type || '|' || x.is_grantable FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(a.attacl,acldefault('c',c.relowner))) x WHERE n.nspname IN ('platform','audit','ivr','entitlement_metering') AND a.attnum>0 AND NOT a.attisdropped AND x.grantee IN (0,'sharing_role'::regrole,'sharing_command_role'::regrole) ORDER BY 1")).isEmpty();
+
+        List<String> expectedColumnAcls = new ArrayList<>();
+        for (String column : queryColumns) expectedColumnAcls.add("sharing.evidence_share_grant|sharing_role|" + column + "|SELECT|false");
+        for (String column : V009_UPDATE_COLUMNS) expectedColumnAcls.add("sharing.evidence_share_grant|sharing_command_role|" + column + "|UPDATE|false");
+        for (Map.Entry<String, List<String>> projection : queryForeignColumns.entrySet()) {
+            for (String column : projection.getValue()) expectedColumnAcls.add(projection.getKey() + "|sharing_role|" + column + "|SELECT|false");
         }
         for (Map.Entry<String, List<String>> projection : V009_FOREIGN_COLUMNS.entrySet()) {
-            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")) {
-                assertThat(hasTable(connection, "sharing_role", projection.getKey(), privilege)).isFalse();
-            }
-            for (String column : v009Columns(connection, projection.getKey())) {
-                for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "REFERENCES")) {
-                    assertThat(hasColumn(connection, "sharing_role", projection.getKey(), column, privilege))
-                            .isEqualTo(privilege.equals("SELECT") && projection.getValue().contains(column));
-                }
-            }
+            for (String column : projection.getValue()) expectedColumnAcls.add(projection.getKey() + "|sharing_command_role|" + column + "|SELECT|false");
         }
+        expectedColumnAcls.sort(String::compareTo);
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || c.relname || '|' || r.rolname || '|' || a.attname || '|' || x.privilege_type || '|' || x.is_grantable "
+                + "FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace "
+                + "CROSS JOIN LATERAL aclexplode(coalesce(a.attacl,acldefault('c',c.relowner))) x JOIN pg_roles r ON r.oid=x.grantee "
+                + "WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number') "
+                + "AND r.rolname IN ('sharing_role','sharing_command_role') ORDER BY 1"))
+                .containsExactlyElementsOf(expectedColumnAcls);
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(a.attacl,acldefault('c',c.relowner))) x WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND a.attnum>0 AND NOT a.attisdropped AND x.grantee IN ('sharing_role'::regrole,'sharing_command_role'::regrole) AND (x.grantor<>c.relowner OR x.is_grantable)")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(a.attacl,acldefault('c',c.relowner))) x WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND a.attnum>0 AND NOT a.attisdropped AND x.grantee=0")).isZero();
+
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')|' || r.rolname || '|' || x.privilege_type || '|' || x.is_grantable "
+                + "FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN LATERAL "
+                + "aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) x JOIN pg_roles r ON r.oid=x.grantee "
+                + "WHERE r.rolname IN ('sharing_role','sharing_command_role') AND n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') ORDER BY 1"))
+                .containsExactly("audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)|sharing_command_role|EXECUTE|false",
+                        "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)|sharing_command_role|EXECUTE|false");
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) x WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND x.grantee IN ('sharing_role'::regrole,'sharing_command_role'::regrole) AND (x.grantor<>p.proowner OR x.is_grantable)")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) x WHERE ((n.nspname='sharing' AND p.proname IN ('guard_share_grant','guard_share_admission','reject_row_mutation')) OR (n.nspname='platform' AND p.proname='outbox_append') OR (n.nspname='audit' AND p.proname='append_fact')) AND x.grantee=0")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_namespace WHERE nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND has_schema_privilege('sharing_role',oid,'CREATE')")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_namespace WHERE nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND has_schema_privilege('sharing_command_role',oid,'CREATE')")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND c.relkind IN ('r','p','S') AND (has_table_privilege('sharing_role',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_table_privilege('sharing_command_role',c.oid,'DELETE,TRUNCATE,REFERENCES,TRIGGER'))")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='S' AND n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND (has_sequence_privilege('sharing_role',c.oid,'USAGE') OR has_sequence_privilege('sharing_role',c.oid,'SELECT') OR has_sequence_privilege('sharing_role',c.oid,'UPDATE') OR has_sequence_privilege('sharing_command_role',c.oid,'USAGE') OR has_sequence_privilege('sharing_command_role',c.oid,'SELECT') OR has_sequence_privilege('sharing_command_role',c.oid,'UPDATE'))")).isZero();
+        assertThat(queryLong(connection, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('S',c.relowner))) x WHERE c.relkind='S' AND n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND (x.grantee=0 OR (x.grantee IN ('sharing_role'::regrole,'sharing_command_role'::regrole) AND (x.grantor<>c.relowner OR x.is_grantable)))")).isZero();
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND has_function_privilege('sharing_role',p.oid,'EXECUTE') ORDER BY 1")).isEmpty();
+        assertThat(queryStrings(connection, "SELECT n.nspname || '.' || p.proname || '(' || oidvectortypes(p.proargtypes) || ')' FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('sharing','evidence','customer_iam','organization_access','subject_number','platform','audit','ivr','entitlement_metering') AND has_function_privilege('sharing_command_role',p.oid,'EXECUTE') ORDER BY 1")).containsExactly("audit.append_fact(timestamp with time zone, text, uuid, text, text, uuid, text, jsonb, jsonb, text, text)", "platform.outbox_append(text, text, text, uuid, text, jsonb, text, text)");
     }
+
 
     private record V009Fixture(UUID accountId, UUID organizationId, UUID evidenceId, UUID grantId,
                                UUID eventGrantId, UUID admissionId, Map<String, List<String>> rows) {
@@ -5224,7 +5221,7 @@ class PostgresContainerIT {
                     "SELECT id::text FROM evidence.evidence_artifact WHERE evidence_id = ?", evidenceId));
         }
         execute(connection, "SET CONSTRAINTS ALL IMMEDIATE");
-        switchLocalRole(connection, "sharing_role");
+        switchLocalRole(connection, "sharing_command_role");
         for (UUID grant : List.of(grantId, eventGrantId)) {
             assertThat(executeUpdate(connection, v009GrantSql(), grant, "s1-synthetic-" + grant,
                     randomSha256(), evidenceId, accountId, organizationId, randomSha256())).isEqualTo(1);
@@ -8440,6 +8437,7 @@ class PostgresContainerIT {
         }
         expectedRoles.add("sharing_owner:false:false:false:false");
         expectedRoles.add("sharing_role:false:false:false:false");
+        expectedRoles.add("sharing_command_role:false:false:false:false");
         expectedRoles.sort(String::compareTo);
 
         assertThat(queryStrings(
@@ -10601,7 +10599,7 @@ class PostgresContainerIT {
                 .isZero();
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role','sharing_command_role')"))
                 .isZero();
         assertThat(queryLong(
                 connection,
@@ -10678,8 +10676,8 @@ class PostgresContainerIT {
                 .isEqualTo(1);
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
-                .isEqualTo(2);
+                        "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role','sharing_command_role')"))
+                .isEqualTo(3);
         assertThat(queryLong(
                 connection,
                 "SELECT count(*) FROM pg_roles WHERE rolname IN ('evidence_owner','evidence_role')"))
@@ -10743,7 +10741,8 @@ class PostgresContainerIT {
                         "006|V006__trial_entitlement_issuance_reservation_usage.sql|SQL|true",
                         "007|V007__activation_and_consent.sql|SQL|true",
                         "008|V008__evidence_media.sql|SQL|true",
-                        "009|V009__sharing.sql|SQL|true");
+                        "009|V009__sharing.sql|SQL|true",
+                        "010|V010__sharing_role_least_privilege.sql|SQL|true");
         assertThat(java.util.Arrays.stream(flyway.info().all())
                 .map(info -> info.getScript()).toList())
                 .containsExactly(
@@ -10752,7 +10751,8 @@ class PostgresContainerIT {
                         "V003__subject_number_and_claim.sql", "V004__catalog_order_and_payment.sql",
                         "V005__ivr_task_session_call.sql",
                         "V006__trial_entitlement_issuance_reservation_usage.sql",
-                        "V007__activation_and_consent.sql", "V008__evidence_media.sql", "V009__sharing.sql");
+                        "V007__activation_and_consent.sql", "V008__evidence_media.sql", "V009__sharing.sql",
+                        "V010__sharing_role_least_privilege.sql");
     }
 
     /**
@@ -26388,7 +26388,7 @@ class PostgresContainerIT {
                 .as("no sharing schema (V009)").isZero();
         assertThat(queryLong(
                 connection,
-                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role')"))
+                "SELECT count(*) FROM pg_roles WHERE rolname IN ('sharing_owner','sharing_role','sharing_command_role')"))
                 .as("no sharing roles (V009)").isZero();
         for (String name : List.of(
                 "evidence_share_grant", "share_admission", "share_access_event")) {

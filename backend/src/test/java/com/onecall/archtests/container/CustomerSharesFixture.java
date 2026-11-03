@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -344,6 +345,22 @@ final class CustomerSharesFixture implements AutoCloseable {
                 connection.setAutoCommit(true);
                 assertThat(connection.isReadOnly()).isFalse();
                 assertThat(connection.getAutoCommit()).isTrue();
+            }
+        }
+        try (Connection connection = DriverManager.getConnection(base.url, base.sharingLogin, base.password)) {
+            connection.setAutoCommit(false);
+            try {
+                CustomerMeFixture.execute(connection, "SET LOCAL ROLE sharing_role");
+                Savepoint probe = connection.setSavepoint();
+                try {
+                    assertThatThrownBy(() -> CustomerMeFixture.execute(connection,
+                            "UPDATE sharing.evidence_share_grant SET revision=revision+1 WHERE share_id=?", shareId))
+                            .isInstanceOfSatisfying(SQLException.class, failure -> assertThat(failure.getSQLState()).isEqualTo("42501"));
+                } finally {
+                    connection.rollback(probe);
+                }
+            } finally {
+                connection.rollback();
             }
         }
         assertThat(before).isEqualTo(snapshotSharingAndEvidenceRows());

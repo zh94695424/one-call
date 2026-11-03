@@ -283,6 +283,16 @@ jobs:
                   "successfulAndFailedHttpPagesNeverWriteOrProjectSecrets",
                   "missingRolesVerifierAndDatabaseFailuresStaySanitized",
               },
+              "com.onecall.archtests.container.SharingRoleLeastPrivilegeIT": {
+                  "v010MigrationIdentityAndPostgres16",
+                  "v010RoleAttributesAndMembershipContainment",
+                  "v010QueryRoleExactCatalogAcl",
+                  "v010CommandRoleExactCatalogAcl",
+                  "v010QueryRolePositiveAndNegativeBehavior",
+                  "v010CommandRolePositiveAndNegativeBehavior",
+                  "v010PrivilegeFailuresAre42501AndReadOnlyAuthorizedWriteIs25006",
+                  "v010LegacyMigrationDigestsRemainCanonical",
+              },
           }
 
           def exact_inventory(pattern, inventory, total):
@@ -314,8 +324,8 @@ jobs:
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
           exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 67)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 92)
-          print("PA12 exact source/CI/XML inventory passed: Surefire 67; Failsafe 64+10+10+8=92; combined 159; zero skips/errors/failures")
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 100)
+          print("PA13 exact source/CI/XML inventory passed: Surefire 67; Failsafe 64+10+10+8+8=100; combined 167; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
