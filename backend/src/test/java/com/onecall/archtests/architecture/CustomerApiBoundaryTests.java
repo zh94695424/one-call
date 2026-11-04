@@ -48,15 +48,19 @@ class CustomerApiBoundaryTests {
         Path root = Path.of("src/main/java/com/onecall/core/customer_iam/internal");
         try (var files = Files.walk(root)) {
             var paths = files.filter(Files::isRegularFile).toList();
-            assertThat(paths).hasSize(23);
+            assertThat(paths).hasSize(25);
             for (Path path : paths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("com.onecall.core.organization_access",
                         "org.springframework.security", "org.flywaydb", "org.junit", "org.mockito", "io.jsonwebtoken",
                         "ThreadLocal", "getSession(", "RequestContextHolder", "Redis", "SELECT *", "FOR UPDATE", "FOR SHARE", "append_fact");
                 if (!path.endsWith("CustomerSharesController.java") && !path.endsWith("CustomerSharePage.java")
-                        && !path.endsWith("CustomerShareCursorCodec.java")) {
+                        && !path.endsWith("CustomerShareCursorCodec.java") && !path.endsWith("CustomerProblemWriter.java")) {
                     assertThat(source).doesNotContain("com.onecall.core.sharing");
+                }
+                if (path.endsWith("CustomerProblemWriter.java")) {
+                    assertThat(source.lines().filter(line -> line.contains("com.onecall.core.sharing")))
+                            .containsExactly("import com.onecall.core.sharing.internal.command.ShareCommandException;");
                 }
             }
         }
@@ -72,9 +76,18 @@ class CustomerApiBoundaryTests {
                         "import com.onecall.core.sharing.internal.application.SharePage;",
                         "import com.onecall.core.sharing.internal.application.SharePageRequest;",
                         "import com.onecall.core.sharing.internal.application.ShareQueryException;",
-                        "import com.onecall.core.sharing.internal.application.TrustedShareCaller;");
+                        "import com.onecall.core.sharing.internal.application.TrustedShareCaller;",
+                        "import com.onecall.core.sharing.internal.command.CustomerShareCommandService;",
+                        "import com.onecall.core.sharing.internal.command.CustomerShareCommand;",
+                        "import com.onecall.core.sharing.internal.command.CustomerShareCommandResult;",
+                        "import com.onecall.core.sharing.internal.command.ShareCommandCaller;",
+                        "import com.onecall.core.sharing.internal.command.ShareCommandException;");
         assertThat(shares.lines().filter(line -> line.startsWith("import com.onecall.core.sharing.internal.")))
-                .allMatch(line -> line.startsWith("import com.onecall.core.sharing.internal.application."));
+                .allMatch(line -> line.startsWith("import com.onecall.core.sharing.internal.application.")
+                        || line.startsWith("import com.onecall.core.sharing.internal.command."));
+        String binder = Files.readString(root.resolve("web/CustomerShareCommandJsonBinder.java"));
+        assertThat(binder).contains("STRICT_DUPLICATE_DETECTION", "FAIL_ON_TRAILING_TOKENS", "isObject()", "isIntegralNumber()")
+                .doesNotContain("com.onecall.core.sharing");
         String sql = Files.readString(root.resolve("persistence/JooqCustomerContextRepository.java"));
         assertThat(sql).contains("a.id, a.display_name, a.status", "w.organization_id, w.organization_display_name, w.role",
                 "m.status = ? AND o.status = ?", "a.id = ? AND a.status = ?", "ORDER BY w.organization_id ASC");

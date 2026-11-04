@@ -440,7 +440,7 @@ class CustomerSharesWebTests {
     }
 
     @Test
-    void onlyTwoExactGetPathsPassHighestPriorityFilter() throws Exception {
+    void exactGetAndPostRoutesPassHighestPriorityFilter() throws Exception {
         try (var prefixed = new org.springframework.boot.builder.SpringApplicationBuilder(OneCallApplication.class, WebBeans.class)
                 .profiles("web").properties("server.port=0", "server.servlet.context-path=/pa12",
                         "spring.main.banner-mode=off", "spring.main.allow-bean-definition-overriding=true").run()) {
@@ -475,7 +475,7 @@ class CustomerSharesWebTests {
                 assertThat(SELECTION).hasValue(0);
                 assertThat(VERIFICATIONS).hasValue(0);
             }
-            for (String method : List.of("HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE")) {
+            for (String method : List.of("HEAD", "OPTIONS", "PUT", "PATCH", "DELETE")) {
                 SELECTION.set(0);
                 VERIFICATIONS.set(0);
                 assertThat(request(prefixedPort, method, "/pa12/api/v1/customer/shares", "personal", null, null).statusCode())
@@ -483,6 +483,20 @@ class CustomerSharesWebTests {
                 assertThat(SELECTION).hasValue(0);
                 assertThat(VERIFICATIONS).hasValue(0);
             }
+            for (String suffix : List.of("revocations", "code-rotations")) {
+                SELECTION.set(0);
+                VERIFICATIONS.set(0);
+                assertThat(request(prefixedPort, "POST", "/pa12/api/v1/customer/shares/share:fixture/" + suffix,
+                        "personal", null, null).statusCode()).isEqualTo(404);
+                assertThat(SELECTION).hasValue(0);
+                assertThat(VERIFICATIONS).hasValue(0);
+            }
+            var create = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + prefixedPort + "/pa12/api/v1/customer/shares"))
+                    .header("Authorization", "Bearer personal").header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"creationRequestId\":\"route\",\"evidenceId\":\"30000000-0000-0000-0000-000000000001\","
+                            + "\"verificationMode\":\"NONE\",\"expiresAt\":\"2027-01-01T00:00:00Z\",\"downloadAllowed\":false}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertProblem(create, 503, "SERVICE_UNAVAILABLE", "Service unavailable");
             SELECTION.set(0);
             VERIFICATIONS.set(0);
             var me = request(prefixedPort, "GET", "/pa12/api/v1/customer/me", "personal", null, null);

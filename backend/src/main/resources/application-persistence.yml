@@ -3,6 +3,11 @@ onecall:
     url: ${ONECALL_DB_URL:}
     username: ${ONECALL_DB_USERNAME:}
     password: ${ONECALL_DB_PASSWORD:}
+  sharing-command:
+    datasource:
+      url: ${ONECALL_SHARING_COMMAND_DB_URL:}
+      username: ${ONECALL_SHARING_COMMAND_DB_USERNAME:}
+      password: ${ONECALL_SHARING_COMMAND_DB_PASSWORD:}
 logging:
   level:
     org.jooq: 'OFF'

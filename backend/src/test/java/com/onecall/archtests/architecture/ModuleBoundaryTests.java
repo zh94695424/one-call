@@ -38,7 +38,7 @@ class ModuleBoundaryTests {
             "operations_audit", "platform_reliability");
 
     private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
-            Map.entry("customer_iam", Set.of("sharing::customer-query")),
+            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of()),
@@ -48,7 +48,7 @@ class ModuleBoundaryTests {
             Map.entry("catalog_order", Set.of("customer_iam", "subject_number")),
             Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number")),
             Map.entry("evidence", Set.of("entitlement_metering")),
-            Map.entry("sharing", Set.of("evidence")),
+            Map.entry("sharing", Set.of("evidence::share-projection")),
             Map.entry("ai_orchestration", Set.of("evidence", "entitlement_metering")),
             Map.entry("notary", Set.of("evidence")),
             Map.entry("operations_audit", Set.of()),
@@ -110,9 +110,8 @@ class ModuleBoundaryTests {
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("exactly one production edge exists: customer_iam -> sharing")
-                .contains("sharing")
-                .hasSize(1);
+                .as("exactly two production edges exist: customer_iam -> sharing -> evidence")
+                .containsExactlyInAnyOrder("sharing", "evidence");
     }
 
     @Test
@@ -121,12 +120,14 @@ class ModuleBoundaryTests {
         modules.verify();
         var allowed = modules.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(modules);
-        assertThat(allowed).hasSize(1);
-        assertThat(allowed.iterator().next().getTargetModule().getIdentifier().toString()).isEqualTo("sharing");
-        assertThat(allowed.iterator().next().getTargetNamedInterface().getName()).isEqualTo("customer-query");
+        assertThat(allowed).hasSize(2);
+        assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
+                dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
+                        org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
+                        org.assertj.core.api.Assertions.tuple("sharing", "customer-command"));
         var sharing = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactly("customer-query");
+                .containsExactlyInAnyOrder("customer-query", "customer-command");
         assertThat(sharing.getByName("customer-query")).isPresent();
         assertThat(sharing.getByName("customer-qurey")).isEmpty();
         ImportOption withoutCustomerQuery = location -> {
@@ -138,6 +139,14 @@ class ModuleBoundaryTests {
         assertThatThrownBy(() -> ApplicationModules.of(OneCallApplication.class, withoutCustomerQuery).verify())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageStartingWith("No named interface named 'customer-query' found!");
+        ImportOption withoutCustomerCommand = location -> {
+            String path = location.asURI().getPath();
+            if (path.contains("/com/onecall/archtests/") || path.contains("/com/onecall/archfixtures/")) return false;
+            return !path.endsWith("/com/onecall/core/sharing/internal/command/package-info.class");
+        };
+        assertThatThrownBy(() -> ApplicationModules.of(OneCallApplication.class, withoutCustomerCommand).verify())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageStartingWith("No named interface named 'customer-command' found!");
     }
 
     @Test
@@ -173,11 +182,13 @@ class ModuleBoundaryTests {
         ApplicationModules production = ApplicationModules.of(OneCallApplication.class);
         var sharing = production.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactly("customer-query");
+                .containsExactlyInAnyOrder("customer-query", "customer-command");
         var allowed = production.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(production);
-        assertThat(allowed).hasSize(1);
-        assertThat(allowed.iterator().next().getTargetModule().getIdentifier().toString()).isEqualTo("sharing");
-        assertThat(allowed.iterator().next().getTargetNamedInterface().getName()).isEqualTo("customer-query");
+        assertThat(allowed).hasSize(2);
+        assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
+                dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
+                        org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
+                        org.assertj.core.api.Assertions.tuple("sharing", "customer-command"));
     }
 }
