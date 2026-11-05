@@ -138,8 +138,8 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
         }
         ObjectNode content = content(projection);
         ObjectNode scope = mapper.createObjectNode();
-        scope.set("contentObject", content);
-        scope.set("verificationObject", verification);
+        scope.set("content", content);
+        scope.set("verification", verification);
         String scopeDigest = digest(scope);
         String requestDigest = hash(command.creationRequestId());
         ObjectNode creation = mapper.createObjectNode().put("schemaVersion", 1).put("creatorAccountId", caller.accountId().toString());
@@ -156,9 +156,7 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
         snapshot.set("content", content);
         snapshot.set("verification", verification);
         snapshot.set("creation", creation);
-        ObjectNode complete = scope.deepCopy();
-        complete.set("creationObject", creation);
-        String contentHash = digest(complete);
+        String contentHash = digest(snapshot);
         var risk = repository.readRiskOwnership(context, reference).orElseThrow(() -> error(Code.SHARE_RISK_BLOCKED));
         if (!risk.subjectId().equals(reference.subjectId()) || !risk.ownerResolved() || risk.openRisk()
                 || !(risk.resolution().equals("CAPTURED") || risk.resolution().equals("CURRENT"))) throw error(Code.SHARE_RISK_BLOCKED);

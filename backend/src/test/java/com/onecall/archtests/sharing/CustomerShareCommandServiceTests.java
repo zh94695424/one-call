@@ -118,7 +118,7 @@ class CustomerShareCommandServiceTests {
                     + "\",\"mediaSha256\":\"" + "a".repeat(64) + "\",\"mediaSizeBytes\":10,\"validatedDurationSeconds\":1}],\"evidenceId\":\""
                     + EVIDENCE + "\",\"identityAtCapture\":{\"subjectId\":\"" + SUBJECT + "\"},\"schemaVersion\":1,\"sourceRefId\":\"control-source\","
                     + "\"sourceType\":\"CALL_RECORDING\",\"subjectId\":\"" + SUBJECT + "\"}";
-            String expectedScope = "{\"contentObject\":" + expectedContent + ",\"verificationObject\":{\"mode\":\"NONE\"}}";
+            String expectedScope = "{\"content\":" + expectedContent + ",\"verification\":{\"mode\":\"NONE\"}}";
             String expectedCreation = "{\"creationRequestDigest\":\"" + DeterministicShareCommandProviders.digest(requestId)
                     + "\",\"creatorAccountId\":\"" + ACCOUNT + "\",\"downloadAllowed\":false,\"evidenceId\":\"" + EVIDENCE
                     + "\",\"expiresAt\":\"2026-11-05T10:00:00.123456Z\",\"maxAdmissions\":null,\"ownerOrganizationId\":null,\"schemaVersion\":1,"
@@ -126,8 +126,8 @@ class CustomerShareCommandServiceTests {
             String expectedFingerprint = DeterministicShareCommandProviders.digest(expectedCreation);
             String fingerprintedCreation = "{\"creationFingerprint\":\"" + expectedFingerprint + "\"," + expectedCreation.substring(1);
             String expectedSnapshot = "{\"content\":" + expectedContent + ",\"creation\":" + fingerprintedCreation + ",\"verification\":{\"mode\":\"NONE\"}}";
-            String expectedComplete = "{\"contentObject\":" + expectedContent + ",\"creationObject\":" + fingerprintedCreation
-                    + ",\"verificationObject\":{\"mode\":\"NONE\"}}";
+            String expectedComplete = "{\"content\":" + expectedContent + ",\"creation\":" + fingerprintedCreation
+                    + ",\"verification\":{\"mode\":\"NONE\"}}";
             assertThat(controlledGrant.shareId()).isEqualTo("share:" + DeterministicShareCommandProviders.digest(
                     "{\"creationRequestId\":\"" + escapedRequestId + "\",\"creatorAccountId\":\"" + ACCOUNT + "\"}"));
             assertThat(controlledGrant.contentSnapshot().data()).isEqualTo(expectedSnapshot);

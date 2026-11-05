@@ -418,9 +418,9 @@ class CustomerShareCommandsIT {
             var mapper = JsonMapper.builder().build();
             var snapshot = mapper.readTree(row.get("snapshot", String.class));
             ObjectNode scope = mapper.createObjectNode();
-            scope.set("contentObject", snapshot.path("content")); scope.set("verificationObject", snapshot.path("verification"));
+            scope.set("content", snapshot.path("content")); scope.set("verification", snapshot.path("verification"));
             assertThat(snapshot.path("creation").path("scopeDigest").asString()).isEqualTo(DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(scope)));
-            scope.set("creationObject", snapshot.path("creation"));
+            scope.set("creation", snapshot.path("creation"));
             assertThat(row.get("content_sha256")).isEqualTo(DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(scope)));
             ObjectNode creation = (ObjectNode) snapshot.path("creation").deepCopy();
             String fingerprint = creation.remove("creationFingerprint").asString();
@@ -611,8 +611,8 @@ class CustomerShareCommandsIT {
             creation.put("creationFingerprint", DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(creation)));
         }
         ObjectNode complete = mapper.createObjectNode();
-        complete.set("contentObject", snapshot.path("content")); complete.set("verificationObject", snapshot.path("verification"));
-        complete.set("creationObject", snapshot.path("creation"));
+        complete.set("content", snapshot.path("content")); complete.set("verification", snapshot.path("verification"));
+        complete.set("creation", snapshot.path("creation"));
         return new ShareGrant(UUID.randomUUID(), tokenRace ? "share:competitor-" + UUID.randomUUID() : grant.shareId(),
                 tokenRace ? grant.capabilityTokenHash() : DeterministicShareCommandProviders.digest(UUID.randomUUID().toString()),
                 grant.evidenceId(), grant.createdByAccountId(), grant.grantOwnerOrganizationId(), grant.verificationMode(),
