@@ -14,6 +14,15 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
+    private static final java.util.Set<String> QUERY_FILES = java.util.Set.of(
+            "application/CustomerShareQueryService.java", "application/TrustedShareCaller.java", "application/SharePageRequest.java",
+            "application/ShareCursor.java", "application/ShareSummary.java", "application/SharePage.java", "application/ShareQueryException.java",
+            "application/ShareQueryDiagnostic.java", "application/package-info.java", "persistence/ShareQueryRepository.java",
+            "persistence/JooqShareQueryRepository.java", "persistence/SharingPersistenceConfiguration.java", "persistence/SharingPersistenceProperties.java");
+
+    private static boolean queryFile(Path path) {
+        return QUERY_FILES.contains(Path.of("src/main/java/com/onecall/core/sharing/internal").relativize(path).toString().replace('\\', '/'));
+    }
     @Test
     void sharingQueryApiAndProjectionAreExact() throws Exception {
         assertThat(Arrays.stream(CustomerShareQueryService.class.getDeclaredMethods()).filter(method -> Modifier.isPublic(method.getModifiers()))
@@ -41,7 +50,7 @@ class SharingQueryBoundaryTests {
         assertThat(Arrays.stream(ShareQueryDiagnostic.class.getRecordComponents()).map(component -> component.getGenericType().getTypeName()))
                 .containsExactly("java.lang.String", ShareQueryException.Code.class.getName(), "java.lang.String", "java.util.Optional<java.lang.String>", "java.lang.String", "boolean");
         try (var paths = Files.walk(Path.of("src/main/java/com/onecall/core/sharing/internal"))) {
-            assertThat(paths.filter(path -> path.toString().endsWith(".java")).map(path -> path.getFileName().toString()))
+            assertThat(paths.filter(path -> path.toString().endsWith(".java")).filter(SharingQueryBoundaryTests::queryFile).map(path -> path.getFileName().toString()))
                     .containsExactlyInAnyOrder("CustomerShareQueryService.java", "TrustedShareCaller.java", "SharePageRequest.java", "ShareCursor.java",
                             "ShareSummary.java", "SharePage.java", "ShareQueryException.java", "ShareQueryDiagnostic.java", "ShareQueryRepository.java",
                             "JooqShareQueryRepository.java", "SharingPersistenceConfiguration.java", "SharingPersistenceProperties.java",
@@ -50,7 +59,7 @@ class SharingQueryBoundaryTests {
         var modules = ApplicationModules.of(com.onecall.core.OneCallApplication.class);
         var namedInterfaces = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(namedInterfaces.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactly("customer-query");
+                .containsExactlyInAnyOrder("customer-query", "customer-command");
         var customerQuery = namedInterfaces.getByName("customer-query").orElseThrow();
         assertThat(customerQuery.asJavaClasses()
                 .filter(type -> !type.getName().contains("$"))
@@ -74,7 +83,7 @@ class SharingQueryBoundaryTests {
                 "SQLDataType.TIMESTAMPWITHTIMEZONE", "ZoneOffset.UTC", "creator.eq(caller.accountId())", "organization::isNull",
                 "VALID_FROM.lt(anchor).or(VALID_FROM.eq(anchor).and(SHARE_ID.lt(cursor.shareId())))");
         try (var paths = Files.walk(Path.of("src/main/java/com/onecall/core/sharing/internal"))) {
-            for (Path path : paths.filter(Files::isRegularFile).toList()) {
+            for (Path path : paths.filter(Files::isRegularFile).filter(SharingQueryBoundaryTests::queryFile).toList()) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("org.flywaydb", "org.springframework.security", "jakarta.persistence", "org.springframework.web",
                         "com.onecall.core.customer_iam", "com.onecall.core.organization_access", "com.onecall.core.evidence",
@@ -85,6 +94,29 @@ class SharingQueryBoundaryTests {
                 }
             }
         }
+        Path internal = Path.of("src/main/java/com/onecall/core/sharing/internal");
+        try (var paths = Files.walk(internal)) {
+            var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path)).toList();
+            assertThat(commandPaths.stream().map(path -> internal.relativize(path).toString().replace('\\', '/')))
+                    .containsExactlyInAnyOrder("command/package-info.java", "command/CustomerShareCommand.java", "command/CustomerShareCommandResult.java",
+                            "command/CustomerShareCommandService.java", "command/ShareCommandCaller.java", "command/ShareCommandException.java",
+                            "commandservice/DefaultCustomerShareCommandService.java", "persistence/SharingCommandRepository.java",
+                            "persistence/JooqSharingCommandRepository.java", "persistence/SharingCommandPersistenceConfiguration.java",
+                            "persistence/SharingCommandPersistenceProperties.java", "provider/ProviderResult.java", "provider/ShareCreationPolicyProvider.java",
+                            "provider/CapabilityTokenProvider.java", "provider/ShareExtractionCodeProvider.java", "provider/DesignatedMobileBindingProvider.java",
+                            "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java");
+            for (Path path : commandPaths) {
+                String source = Files.readString(path);
+                assertThat(source).doesNotContain("org.flywaydb", "spring.datasource", "ONECALL_MIGRATION", "jdbc:", "SELECT *",
+                        "implements CustomerSessionVerifier", "@TestConfiguration", "@Profile(\"test\")", "@Profile(\"dev\")",
+                        "Logger", "System.out", "printStackTrace", "com.onecall.core.customer_iam", "com.onecall.core.organization_access", "com.onecall.core.subject_number");
+                if (!path.getParent().endsWith("persistence")) assertThat(source).doesNotContain("content_snapshot", "code_salt", "code_hash",
+                        "share_access_event", "FOR UPDATE", "pg_advisory", "selectFrom(");
+            }
+        }
+        var commandApi = namedInterfaces.getByName("customer-command").orElseThrow();
+        assertThat(commandApi.asJavaClasses().filter(type -> !type.getName().contains("$")).map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
+                .containsExactlyInAnyOrder("CustomerShareCommandService", "CustomerShareCommand", "CustomerShareCommandResult", "ShareCommandCaller", "ShareCommandException");
     }
 
     private void components(Class<?> type, String... expected) {

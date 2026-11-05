@@ -146,17 +146,27 @@ class CustomerWebConfigurationTests {
 
     @Test
     void customerAndSharingGraphsUseExactQualifiers() {
-        for (Class<?> configuration : List.of(CustomerPersistenceConfiguration.class, SharingPersistenceConfiguration.class)) {
+        for (Class<?> configuration : List.of(CustomerPersistenceConfiguration.class, SharingPersistenceConfiguration.class,
+                com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class)) {
             Map<String, List<String>> expected = configuration == CustomerPersistenceConfiguration.class
                     ? Map.of("customerQueryDataSource", List.of(), "customerQueryTransactionManager", List.of("customerQueryDataSource"),
                             "customerQueryTransactionTemplate", List.of("customerQueryTransactionManager"),
                             "customerQueryDsl", List.of("customerQueryDataSource"), "customerContextRepository", List.of("customerQueryDsl"),
                             "customerContextService", List.of("customerQueryTransactionTemplate", "customerQueryDsl", "customerContextRepository"))
-                    : Map.of("sharingQueryDataSource", List.of(), "sharingQueryTransactionManager", List.of("sharingQueryDataSource"),
+                    : configuration == SharingPersistenceConfiguration.class
+                    ? Map.of("sharingQueryDataSource", List.of(), "sharingQueryTransactionManager", List.of("sharingQueryDataSource"),
                             "sharingQueryTransactionTemplate", List.of("sharingQueryTransactionManager"),
                             "sharingQueryDsl", List.of("sharingQueryDataSource"), "sharingQueryRepository", List.of("sharingQueryDsl"),
-                            "customerShareQueryService", List.of("sharingQueryTransactionTemplate", "sharingQueryDsl", "sharingQueryRepository"));
+                            "customerShareQueryService", List.of("sharingQueryTransactionTemplate", "sharingQueryDsl", "sharingQueryRepository"))
+                    : Map.of("sharingCommandDataSource", List.of(), "sharingCommandTransactionManager", List.of("sharingCommandDataSource"),
+                            "sharingCommandTransactionTemplate", List.of("sharingCommandTransactionManager"),
+                            "sharingCommandDsl", List.of("sharingCommandDataSource"), "sharingCommandRepository", List.of("sharingCommandDsl"),
+                            "customerShareCommandService", List.of("sharingCommandTransactionTemplate", "sharingCommandDsl", "sharingCommandRepository",
+                                    "shareableEvidenceProjectionReader", "shareCreationPolicyProvider", "capabilityTokenProvider",
+                                    "shareExtractionCodeProvider", "designatedMobileBindingProvider", "sha256Provider"));
             for (var method : configuration.getDeclaredMethods()) {
+                if (configuration == com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class
+                        && !expected.containsKey(method.getName())) continue;
                 assertThat(method.isAnnotationPresent(org.springframework.context.annotation.Primary.class)).isFalse();
                 if (configuration == CustomerPersistenceConfiguration.class) { assertThat(method.isAnnotationPresent(Lazy.class)).isTrue(); }
                 var expectedQualifiers = expected.get(method.getName());
@@ -170,14 +180,28 @@ class CustomerWebConfigurationTests {
                 assertThat(qualifierIndex).isEqualTo(expectedQualifiers.size());
             }
             assertThat(expected.keySet()).containsExactlyInAnyOrderElementsOf(Arrays.stream(configuration.getDeclaredMethods())
+                    .filter(method -> configuration != com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class
+                            || expected.containsKey(method.getName()))
                     .map(java.lang.reflect.Method::getName).toList());
             assertThat(configuration.getAnnotation(org.springframework.context.annotation.Profile.class).value())
                     .containsExactly(configuration == CustomerPersistenceConfiguration.class ? "web" : "persistence");
         }
-        var serviceParameter = Arrays.stream(com.onecall.core.customer_iam.internal.web.CustomerSharesController.class
-                .getDeclaredConstructors()[0].getParameters()).filter(parameter -> parameter.getType().getName().contains("ObjectProvider"))
-                .findFirst().orElseThrow();
-        assertThat(serviceParameter.getAnnotation(Qualifier.class).value()).isEqualTo("customerShareQueryService");
+        var parameters = com.onecall.core.customer_iam.internal.web.CustomerSharesController.class.getDeclaredConstructors()[0].getParameters();
+        assertThat(parameters).hasSize(3);
+        for (var entry : Map.of("CustomerShareQueryService", "customerShareQueryService", "CustomerShareCommandService", "customerShareCommandService").entrySet()) {
+            var serviceParameter = Arrays.stream(parameters).filter(parameter -> parameter.getParameterizedType().getTypeName()
+                    .equals("org.springframework.beans.factory.ObjectProvider<com.onecall.core.sharing.internal."
+                            + (entry.getKey().equals("CustomerShareQueryService") ? "application." : "command.") + entry.getKey() + ">"))
+                    .findFirst().orElseThrow();
+            assertThat(serviceParameter.getAnnotation(Qualifier.class).value()).isEqualTo(entry.getValue());
+        }
+        var condition = com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class
+                .getAnnotation(org.springframework.boot.autoconfigure.condition.ConditionalOnProperty.class);
+        assertThat(condition.prefix()).isEqualTo("onecall.sharing-command");
+        assertThat(condition.name()).containsExactly("enabled");
+        assertThat(condition.havingValue()).isEqualTo("true");
+        assertThat(parameters[0].getAnnotation(Qualifier.class).value()).isEqualTo("customerShareQueryService");
+        assertThat(parameters[1].getAnnotation(Qualifier.class).value()).isEqualTo("customerShareCommandService");
     }
 
     @Test

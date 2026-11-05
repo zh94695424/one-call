@@ -440,7 +440,7 @@ class CustomerSharesWebTests {
     }
 
     @Test
-    void onlyTwoExactGetPathsPassHighestPriorityFilter() throws Exception {
+    void exactGetAndPostRoutesPassHighestPriorityFilter() throws Exception {
         try (var prefixed = new org.springframework.boot.builder.SpringApplicationBuilder(OneCallApplication.class, WebBeans.class)
                 .profiles("web").properties("server.port=0", "server.servlet.context-path=/pa12",
                         "spring.main.banner-mode=off", "spring.main.allow-bean-definition-overriding=true").run()) {
@@ -475,7 +475,7 @@ class CustomerSharesWebTests {
                 assertThat(SELECTION).hasValue(0);
                 assertThat(VERIFICATIONS).hasValue(0);
             }
-            for (String method : List.of("HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE")) {
+            for (String method : List.of("HEAD", "OPTIONS", "PUT", "PATCH", "DELETE")) {
                 SELECTION.set(0);
                 VERIFICATIONS.set(0);
                 assertThat(request(prefixedPort, method, "/pa12/api/v1/customer/shares", "personal", null, null).statusCode())
@@ -483,6 +483,43 @@ class CustomerSharesWebTests {
                 assertThat(SELECTION).hasValue(0);
                 assertThat(VERIFICATIONS).hasValue(0);
             }
+            for (String suffix : List.of("revocations", "code-rotations")) {
+                String transition = "/pa12/api/v1/customer/shares/share:fixture/" + suffix;
+                for (String method : List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE", "POST")) {
+                    SELECTION.set(0);
+                    VERIFICATIONS.set(0);
+                    var rejected = request(prefixedPort, method, transition, "personal", null, null);
+                    if (method.equals("HEAD")) {
+                        assertThat(rejected.statusCode()).isEqualTo(404);
+                        assertThat(rejected.body()).isEmpty();
+                        assertThat(rejected.headers().firstValue("content-type").orElse("")).startsWith("application/problem+json");
+                        assertThat(rejected.headers().firstValue("cache-control")).contains("no-store");
+                        assertThat(rejected.headers().firstValue("pragma")).contains("no-cache");
+                        assertThat(rejected.headers().firstValue("x-content-type-options")).contains("nosniff");
+                    } else assertProblem(rejected, 404, "NOT_FOUND", "Not found");
+                    assertThat(SELECTION).hasValue(0);
+                    assertThat(VERIFICATIONS).hasValue(0);
+                }
+                String encodedSuffix = suffix.equals("revocations") ? "%72evocations" : "%63ode-rotations";
+                for (String path : List.of(transition + "/extra", transition + "/",
+                        "/pa12/api/v1/customer/shares/%73hare:fixture/" + suffix,
+                        "/pa12/api/v1/customer/%73hares/share:fixture/" + suffix,
+                        "/pa12/api/v1/customer/shares/share:fixture;v=1/" + suffix,
+                        "/pa12/api/v1/customer/shares/share:fixture/" + suffix.substring(0, suffix.length() - 1),
+                        "/pa12/api/v1/customer/shares/share:fixture/" + encodedSuffix)) {
+                    SELECTION.set(0);
+                    VERIFICATIONS.set(0);
+                    assertProblem(request(prefixedPort, "POST", path, "personal", null, null), 404, "NOT_FOUND", "Not found");
+                    assertThat(SELECTION).hasValue(0);
+                    assertThat(VERIFICATIONS).hasValue(0);
+                }
+            }
+            var create = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + prefixedPort + "/pa12/api/v1/customer/shares"))
+                    .header("Authorization", "Bearer personal").header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"creationRequestId\":\"route\",\"evidenceId\":\"30000000-0000-0000-0000-000000000001\","
+                            + "\"verificationMode\":\"NONE\",\"expiresAt\":\"2027-01-01T00:00:00Z\",\"downloadAllowed\":false}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertProblem(create, 503, "SERVICE_UNAVAILABLE", "Service unavailable");
             SELECTION.set(0);
             VERIFICATIONS.set(0);
             var me = request(prefixedPort, "GET", "/pa12/api/v1/customer/me", "personal", null, null);

@@ -47,13 +47,25 @@ public final class CustomerBoundaryFilter implements Filter {
         String servletPath = request.getServletPath();
         boolean admittedPath = "/api/v1/customer/me".equals(servletPath)
                 || "/api/v1/customer/shares".equals(servletPath);
-        if (!"GET".equals(request.getMethod()) || !admittedPath
+        boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
+        if (!("GET".equals(request.getMethod()) && admittedPath || create)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }
         try {
             var principal = new CustomerRequestPrincipal(authenticator.authenticate(request.getHeaders("Authorization")));
+            if (create) {
+                try {
+                    var types = java.util.Collections.list(request.getHeaders("Content-Type"));
+                    if (types.size() != 1) throw new IllegalArgumentException();
+                    var type = org.springframework.http.MediaType.parseMediaType(types.getFirst());
+                    if (!"application".equalsIgnoreCase(type.getType()) || !"json".equalsIgnoreCase(type.getSubtype()))
+                        throw new IllegalArgumentException();
+                } catch (IllegalArgumentException invalid) {
+                    throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
+                }
+            }
             var accepted = org.springframework.http.MediaType.parseMediaTypes(java.util.Collections.list(request.getHeaders("Accept")));
             var compatible = accepted.stream().filter(media -> media.isCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
                     .sorted((left, right) -> {

@@ -10,6 +10,11 @@ import com.onecall.core.sharing.internal.application.SharePage;
 import com.onecall.core.sharing.internal.application.SharePageRequest;
 import com.onecall.core.sharing.internal.application.ShareQueryException;
 import com.onecall.core.sharing.internal.application.TrustedShareCaller;
+import com.onecall.core.sharing.internal.command.CustomerShareCommandService;
+import com.onecall.core.sharing.internal.command.CustomerShareCommand;
+import com.onecall.core.sharing.internal.command.CustomerShareCommandResult;
+import com.onecall.core.sharing.internal.command.ShareCommandCaller;
+import com.onecall.core.sharing.internal.command.ShareCommandException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -23,6 +28,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -30,13 +36,51 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class CustomerSharesController {
     private final ObjectProvider<CustomerShareQueryService> service;
+    private final ObjectProvider<CustomerShareCommandService> commands;
+    private final CustomerShareCommandJsonBinder binder = new CustomerShareCommandJsonBinder();
     private final CustomerProblemWriter problems;
     private final CustomerShareCursorCodec cursors = new CustomerShareCursorCodec();
 
     public CustomerSharesController(@Qualifier("customerShareQueryService") ObjectProvider<CustomerShareQueryService> service,
+            @Qualifier("customerShareCommandService") ObjectProvider<CustomerShareCommandService> commands,
             CustomerProblemWriter problems) {
         this.service = service;
+        this.commands = commands;
         this.problems = problems;
+    }
+
+    @PostMapping(path = "/api/v1/customer/shares", produces = "application/json")
+    public Object createCustomerShare(Principal principal, HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (!(principal instanceof CustomerRequestPrincipal customer))
+            throw new ShareCommandException(ShareCommandException.Code.UNAUTHENTICATED);
+        TrustedCustomerCaller caller = customer.caller();
+        SelectedCustomerWorkspace selected = requireSelectedWorkspace(caller);
+        CustomerShareCommandDtos.CreateRequest body;
+        try { body = binder.create(request.getInputStream().readAllBytes()); }
+        catch (IllegalArgumentException invalid) { throw new ShareCommandException(ShareCommandException.Code.VALIDATION_FAILED); }
+        var command = new CustomerShareCommand.Create(body.creationRequestId(), body.evidenceId(),
+                com.onecall.core.sharing.internal.application.ShareSummary.VerificationMode.valueOf(body.verificationMode().name()),
+                body.expiresAt(), body.downloadAllowed(), Optional.of(CustomerBoundaryFilter.trace(request)), body.maxAdmissions(), body.designatedMobile());
+        CustomerShareCommandResult result;
+        try { result = commands.getObject().execute(command, new ShareCommandCaller(caller.accountId(), Optional.ofNullable(selected.organizationId()))); }
+        catch (BeansException failure) { throw new ShareCommandException(ShareCommandException.Code.SERVICE_UNAVAILABLE); }
+        if (result instanceof CustomerShareCommandResult.Created created) {
+            var state = created.state();
+            response.setStatus(201);
+            return new CustomerShareCommandDtos.ShareCreated(state.shareId(), state.evidenceId(),
+                    CustomerShareCommandDtos.VerificationMode.valueOf(state.verificationMode().name()),
+                    CustomerShareCommandDtos.ShareStatus.valueOf(state.status().name()), state.validFrom(), state.expiresAt(),
+                    state.maxAdmissions(), state.admissionsUsed(), state.downloadAllowed(), state.codeGeneration(), state.revocationGeneration(),
+                    created.capabilityToken(), created.extractionCode().orElse(null));
+        }
+        if (result instanceof CustomerShareCommandResult.CreationReplayed replayed) {
+            var state = replayed.state();
+            return new CustomerShareCommandDtos.ShareState(state.shareId(), state.evidenceId(),
+                    CustomerShareCommandDtos.VerificationMode.valueOf(state.verificationMode().name()),
+                    CustomerShareCommandDtos.ShareStatus.valueOf(state.status().name()), state.validFrom(), state.expiresAt(),
+                    state.maxAdmissions(), state.admissionsUsed(), state.downloadAllowed(), state.codeGeneration(), state.revocationGeneration());
+        }
+        throw new ShareCommandException(ShareCommandException.Code.INTERNAL);
     }
 
     @GetMapping(path = "/api/v1/customer/shares", produces = "application/json")
@@ -101,6 +145,11 @@ public class CustomerSharesController {
 
     @ExceptionHandler(CustomerContextException.class)
     void known(CustomerContextException failure, HttpServletRequest request, HttpServletResponse response) throws IOException {
+        problems.write(response, failure.code(), CustomerBoundaryFilter.trace(request));
+    }
+
+    @ExceptionHandler(ShareCommandException.class)
+    void commandFailure(ShareCommandException failure, HttpServletRequest request, HttpServletResponse response) throws IOException {
         problems.write(response, failure.code(), CustomerBoundaryFilter.trace(request));
     }
 

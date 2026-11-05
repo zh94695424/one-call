@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 67:
-              sys.exit("expected exactly 67 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 77:
+              sys.exit("expected exactly 77 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -251,11 +251,29 @@ jobs:
                   "clientSelectorsAndRequestAttributesCannotOverrideTrustedScope",
                   "limitAndCursorValidationHaveDeterministicPrecedence",
                   "queryErrorsUseExactClosedProblems",
-                  "onlyTwoExactGetPathsPassHighestPriorityFilter",
+                  "exactGetAndPostRoutesPassHighestPriorityFilter",
                   "meRemainsCompatibleWithLegacyAndSelectedSessions",
                   "concurrentRequestsKeepAccountAndSelectedWorkspaceIsolated",
                   "negotiationAndBufferedFailuresPreservePa11Boundary",
                   "webWithoutSharingPersistenceFailsClosedAndDefaultStaysDatabaseFree",
+              },
+          })
+          unit_expected.update({
+              "com.onecall.archtests.sharing.CustomerShareCommandServiceTests": {
+                  "createBuildsDeterministicIdentityAndFingerprint",
+                  "createChecksRiskAndPolicyBeforeReplay",
+                  "createReplaysMetadataWithoutSecrets",
+                  "createRejectsChangedFingerprint",
+              },
+              "com.onecall.archtests.CustomerSharesCommandWebTests": {
+                  "createUsesTrustedCallerAndMapsCreatedAndReplay",
+                  "revokeAndRotateMapClosedResponseUnions",
+                  "invalidCommandAndMissingServiceMapToProblemResponses",
+                  "commandRoutesDoNotChangeShareListRoute",
+              },
+              "com.onecall.archtests.SharingCommandPersistenceConfigurationTests": {
+                  "defaultAndWebProfilesCreateNoCommandDatasource",
+                  "commandProfileUsesDistinctPoolAndResetsLocalRole",
               },
           })
           container_expected = {
@@ -293,6 +311,16 @@ jobs:
                   "v010PrivilegeFailuresAre42501AndReadOnlyAuthorizedWriteIs25006",
                   "v010LegacyMigrationDigestsRemainCanonical",
               },
+              "com.onecall.archtests.container.CustomerShareCommandsIT": {
+                  "commandRoleIsAssertedBeforeFirstCommandRead",
+                  "queryRoleCannotAssumeCommandRole",
+                  "createPersistsGrantAuditAndOutboxAtomicallyWithoutAccessEvent",
+                  "createReplayReturnsMetadataAndDoesNotPersistOrReturnSecrets",
+                  "createRiskAndPolicyChecksPrecedeReplay",
+                  "createConcurrentSameAndDifferentIdentities",
+                  "evidenceProjectionUsesCommandTransactionConnection",
+                  "createAppendFailureRollsBackGrantAuditAndOutbox",
+              },
           }
 
           def exact_inventory(pattern, inventory, total):
@@ -323,9 +351,9 @@ jobs:
                   source_classes.add(str(path.relative_to("src/test/java")).removesuffix(".java").replace("/", "."))
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 67)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 100)
-          print("PA13 exact source/CI/XML inventory passed: Surefire 67; Failsafe 64+10+10+8+8=100; combined 167; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 77)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 108)
+          print("PA14 slice 1 exact source/CI/XML inventory passed: Surefire 77; Failsafe 64+10+10+8+8+8=108; combined 185; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
