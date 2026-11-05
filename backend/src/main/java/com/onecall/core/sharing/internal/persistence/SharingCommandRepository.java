@@ -3,6 +3,7 @@ package com.onecall.core.sharing.internal.persistence;
 import com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus;
 import com.onecall.core.sharing.internal.application.ShareSummary.VerificationMode;
 import com.onecall.core.sharing.internal.command.ShareCommandCaller;
+import com.onecall.core.sharing.internal.provider.ExtractionCodeMaterial;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,8 +24,55 @@ public interface SharingCommandRepository {
     Optional<ShareGrant> findCreationIdentity(DSLContext transactionDsl, String shareId);
     Optional<UUID> findGrantIdByTokenHash(DSLContext transactionDsl, String capabilityTokenHash);
     Optional<ShareGrant> insertGrantReturning(DSLContext transactionDsl, ShareGrant grant);
+    Optional<ShareGrant> lockGrant(DSLContext transactionDsl, String shareId, ShareCommandCaller caller);
+    Optional<PersistedTransition> findTransition(DSLContext transactionDsl, UUID grantId, String eventId);
+    void appendAccessEvent(DSLContext transactionDsl, AccessEvent event);
+    TransitionResult transitionGrant(DSLContext transactionDsl, UUID grantId,
+            int expectedRevision, ShareStatus expectedStatus,
+            Optional<Integer> expectedRevocationGeneration, Optional<Integer> expectedCodeGeneration,
+            ShareStatus targetStatus, int targetRevision, int targetCodeGeneration,
+            int targetRevocationGeneration, Optional<ExtractionCodeMaterial> replacement);
     void appendOutbox(DSLContext transactionDsl, OutboxFact outbox);
     void appendAudit(DSLContext transactionDsl, AuditFact audit);
+
+    record PersistedTransition(UUID shareGrantId, String eventId, String actionType,
+            String actionRequestDigest, String actionFingerprint, ShareStatus status,
+            int codeGeneration, int revocationGeneration, int revision, Instant occurredAt) {
+        public PersistedTransition {
+            Objects.requireNonNull(shareGrantId);
+            Objects.requireNonNull(eventId);
+            Objects.requireNonNull(actionType);
+            Objects.requireNonNull(actionRequestDigest);
+            Objects.requireNonNull(actionFingerprint);
+            Objects.requireNonNull(status);
+            Objects.requireNonNull(occurredAt);
+        }
+    }
+
+    record AccessEvent(UUID id, UUID shareGrantId, Optional<UUID> shareAdmissionId,
+            String eventDomain, String eventId, String eventType, String result,
+            Instant occurredAt, Optional<String> riskDigest, JSONB payloadRedacted, String payloadSha256) {
+        public AccessEvent {
+            Objects.requireNonNull(id);
+            Objects.requireNonNull(shareGrantId);
+            Objects.requireNonNull(shareAdmissionId);
+            Objects.requireNonNull(eventDomain);
+            Objects.requireNonNull(eventId);
+            Objects.requireNonNull(eventType);
+            Objects.requireNonNull(result);
+            Objects.requireNonNull(occurredAt);
+            Objects.requireNonNull(riskDigest);
+            Objects.requireNonNull(payloadRedacted);
+            Objects.requireNonNull(payloadSha256);
+        }
+    }
+
+    sealed interface TransitionResult {
+        record Updated(ShareGrant current) implements TransitionResult {
+            public Updated { Objects.requireNonNull(current); }
+        }
+        record NotUpdated() implements TransitionResult { }
+    }
 
     record ShareGrant(UUID id, String shareId, String capabilityTokenHash, UUID evidenceId,
             UUID createdByAccountId, UUID grantOwnerOrganizationId, VerificationMode verificationMode,

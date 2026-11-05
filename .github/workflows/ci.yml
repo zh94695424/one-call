@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 77:
-              sys.exit("expected exactly 77 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 78:
+              sys.exit("expected exactly 78 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -264,6 +264,7 @@ jobs:
                   "createChecksRiskAndPolicyBeforeReplay",
                   "createReplaysMetadataWithoutSecrets",
                   "createRejectsChangedFingerprint",
+                  "revokeReplaysBeforeStatePreconditions",
               },
               "com.onecall.archtests.CustomerSharesCommandWebTests": {
                   "createUsesTrustedCallerAndMapsCreatedAndReplay",
@@ -320,6 +321,11 @@ jobs:
                   "createConcurrentSameAndDifferentIdentities",
                   "evidenceProjectionUsesCommandTransactionConnection",
                   "createAppendFailureRollsBackGrantAuditAndOutbox",
+                  "revokeWritesRegisteredEventAuditAndOutboxAtomically",
+                  "revokeExactReplayAddsNoFactsOrRevision",
+                  "revokeChangedReasonTerminalExpiryAndStaleWitnessConflict",
+                  "revokeConcurrentActionsProduceOneTransition",
+                  "revokeFailureAtEachFactAppendRollsBackAllEffects",
               },
           }
 
@@ -351,9 +357,9 @@ jobs:
                   source_classes.add(str(path.relative_to("src/test/java")).removesuffix(".java").replace("/", "."))
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 77)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 108)
-          print("PA14 slice 1 exact source/CI/XML inventory passed: Surefire 77; Failsafe 64+10+10+8+8+8=108; combined 185; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 78)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 113)
+          print("PA14 revoke slice exact source/CI/XML inventory passed: Surefire 78; Failsafe 64+10+10+8+8+13=113; combined 191; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |

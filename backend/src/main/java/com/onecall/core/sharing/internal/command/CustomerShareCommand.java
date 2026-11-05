@@ -6,8 +6,17 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-public sealed interface CustomerShareCommand permits CustomerShareCommand.Create {
+public sealed interface CustomerShareCommand permits CustomerShareCommand.Create, CustomerShareCommand.Revoke {
     Optional<UUID> traceId();
+
+    record Revoke(String shareId, String actionRequestId, Optional<UUID> traceId,
+            Integer expectedRevocationGeneration, String reason) implements CustomerShareCommand {
+        public Revoke {
+            Objects.requireNonNull(shareId);
+            Objects.requireNonNull(actionRequestId);
+            Objects.requireNonNull(traceId);
+        }
+    }
 
     record Create(String creationRequestId, UUID evidenceId, VerificationMode verificationMode,
             Instant expiresAt, boolean downloadAllowed, Optional<UUID> traceId,

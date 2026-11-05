@@ -16,6 +16,8 @@ import com.onecall.core.sharing.internal.persistence.SharingCommandRepository;
 import com.onecall.core.sharing.internal.persistence.SharingCommandRepository.AuditFact;
 import com.onecall.core.sharing.internal.persistence.SharingCommandRepository.OutboxFact;
 import com.onecall.core.sharing.internal.persistence.SharingCommandRepository.ShareGrant;
+import com.onecall.core.sharing.internal.persistence.SharingCommandRepository.AccessEvent;
+import com.onecall.core.sharing.internal.persistence.SharingCommandRepository.TransitionResult;
 import com.onecall.core.sharing.internal.provider.CapabilityTokenProvider;
 import com.onecall.core.sharing.internal.provider.DesignatedMobileBindingProvider;
 import com.onecall.core.sharing.internal.provider.ExtractionCodeMaterial;
@@ -71,9 +73,11 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
 
     @Override
     public CustomerShareCommandResult execute(CustomerShareCommand command, ShareCommandCaller caller) {
-        if (!(command instanceof CustomerShareCommand.Create create) || caller == null) throw error(Code.VALIDATION_FAILED);
-        validate(create);
-        try { return Objects.requireNonNull(template.execute(status -> create(create, caller))); }
+        if (command == null || caller == null) throw error(Code.VALIDATION_FAILED);
+        if (command instanceof CustomerShareCommand.Create create) validate(create);
+        else if (command instanceof CustomerShareCommand.Revoke revoke) validate(revoke);
+        try { return Objects.requireNonNull(template.execute(status -> command instanceof CustomerShareCommand.Create create
+                ? create(create, caller) : revoke((CustomerShareCommand.Revoke) command, caller))); }
         catch (ShareCommandException failure) { throw failure; }
         catch (org.springframework.transaction.CannotCreateTransactionException failure) { throw error(Code.SERVICE_UNAVAILABLE); }
         catch (RuntimeException failure) { throw error(databaseFailureCode(failure)); }
@@ -207,6 +211,77 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
                 || !caller.organizationId().equals(Optional.ofNullable(grant.grantOwnerOrganizationId()))
                 || !fingerprint.equals(creation.path("creationFingerprint").asString())) throw error(Code.SHARE_CREATION_CONFLICT);
         return new CustomerShareCommandResult.CreationReplayed(state(grant));
+    }
+
+    private CustomerShareCommandResult revoke(CustomerShareCommand.Revoke command, ShareCommandCaller caller) {
+        repository.assertCommandRole(context);
+        repository.acquireCreatorWorkspaceLocks(context, caller);
+        repository.readActiveCallerContext(context, caller).orElseThrow(() -> error(Code.FORBIDDEN));
+        ShareGrant grant = repository.lockGrant(context, command.shareId(), caller).orElseThrow(() -> error(Code.NOT_FOUND));
+        Instant occurredAt = repository.sampleDatabaseTime(context);
+        if (occurredAt == null || occurredAt.getNano() % 1000 != 0) throw error(Code.SERVICE_UNAVAILABLE);
+        String requestDigest = hash(command.actionRequestId());
+        ObjectNode source = mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", command.actionRequestId());
+        ObjectNode identity = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "REVOKE");
+        identity.set("sourceIdentity", source);
+        String eventId = "share-transition:" + digest(identity);
+        ObjectNode semantics = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "REVOKE")
+                .put("reasonCode", command.reason()).putNull("newExpiresAt").put("actionRequestDigest", requestDigest);
+        String fingerprint = digest(semantics);
+        var persisted = repository.findTransition(context, grant.id(), eventId);
+        if (persisted.isPresent()) {
+            var transition = persisted.get();
+            if (!fingerprint.equals(transition.actionFingerprint())) throw error(Code.SHARE_TRANSITION_CONFLICT);
+            return new CustomerShareCommandResult.Revoked(new ShareState(grant.shareId(), grant.evidenceId(), grant.verificationMode(),
+                    transition.status(), grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(),
+                    grant.downloadAllowed(), transition.codeGeneration(), transition.revocationGeneration()));
+        }
+        checkRevokePreconditions(grant, occurredAt, command.expectedRevocationGeneration());
+        int revision = Math.addExact(grant.revision(), 1);
+        int generation = Math.addExact(grant.revocationGeneration(), 1);
+        ObjectNode payload = mapper.createObjectNode().put("actionType", "REVOKE").put("actionRequestDigest", requestDigest)
+                .put("actionFingerprint", fingerprint).put("status", "REVOKED").put("codeGeneration", grant.codeGeneration())
+                .put("revocationGeneration", generation).put("revision", revision);
+        repository.appendAccessEvent(context, new AccessEvent(UUID.randomUUID(), grant.id(), Optional.empty(), "SHARE_ACCESS",
+                eventId, "REVOKED", "SUCCESS", occurredAt, Optional.empty(), json(payload), digest(payload)));
+        TransitionResult result = repository.transitionGrant(context, grant.id(), grant.revision(), grant.status(),
+                Optional.ofNullable(command.expectedRevocationGeneration()), Optional.empty(), ShareStatus.REVOKED, revision,
+                grant.codeGeneration(), generation, Optional.empty());
+        if (result instanceof TransitionResult.NotUpdated) {
+            repository.lockGrant(context, command.shareId(), caller)
+                    .ifPresent(current -> checkRevokePreconditions(current, occurredAt, command.expectedRevocationGeneration()));
+            throw error(Code.SHARE_TRANSITION_CONFLICT);
+        }
+        ShareGrant updated = ((TransitionResult.Updated) result).current();
+        ShareGrant intended = new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(),
+                grant.createdByAccountId(), grant.grantOwnerOrganizationId(), grant.verificationMode(), grant.codeSalt(), grant.codeHash(),
+                grant.codeGeneration(), grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(),
+                grant.downloadAllowed(), grant.contentSnapshot(), grant.contentSha256(), ShareStatus.REVOKED, generation, revision);
+        if (!intended.equals(updated)) throw error(Code.INTERNAL);
+        ObjectNode outbox = payload.deepCopy();
+        outbox.put("shareId", grant.shareId()).put("grantId", grant.id().toString()).put("occurredAt", utc(occurredAt));
+        repository.appendOutbox(context, new OutboxFact("SHARE_ACCESS", "share-transition:" + eventId, "EVIDENCE_SHARE_GRANT",
+                grant.id(), "SHARE_REVOKED", Optional.of(json(outbox)), Optional.empty(), digest(outbox)));
+        repository.appendAudit(context, new AuditFact(occurredAt, "ACCOUNT", Optional.of(caller.accountId()), "SHARE_GRANT_REVOKE",
+                "EVIDENCE_SHARE_GRANT", Optional.of(grant.id()), Optional.ofNullable(command.reason()),
+                Optional.of(json(mapper.createObjectNode().put("status", grant.status().name()).put("revision", grant.revision()))),
+                Optional.of(json(mapper.createObjectNode().put("status", "REVOKED").put("revision", revision).put("reasonCode", command.reason()))),
+                Optional.of(requestDigest), command.traceId().map(UUID::toString)));
+        return new CustomerShareCommandResult.Revoked(state(updated));
+    }
+
+    private static void checkRevokePreconditions(ShareGrant grant, Instant occurredAt, Integer witness) {
+        if (grant.status() == ShareStatus.REVOKED) throw error(Code.SHARE_REVOKED);
+        if (grant.status() == ShareStatus.EXPIRED || !occurredAt.isBefore(grant.expiresAt())) throw error(Code.SHARE_TRANSITION_CONFLICT);
+        if (witness != null && witness != grant.revocationGeneration()) throw error(Code.SHARE_GENERATION_STALE);
+    }
+
+    private static void validate(CustomerShareCommand.Revoke command) {
+        if (!length(command.shareId(), 1, 128) || command.shareId().isBlank()
+                || !length(command.actionRequestId(), 1, 128) || command.actionRequestId().isBlank()
+                || command.expectedRevocationGeneration() != null && command.expectedRevocationGeneration() < 0
+                || command.reason() != null && (!length(command.reason(), 1, 128) || command.reason().isBlank()))
+            throw error(Code.VALIDATION_FAILED);
     }
 
     private ShareState state(ShareGrant grant) {

@@ -15,6 +15,8 @@ public final class CustomerShareCommandDtos {
     public enum VerificationMode { NONE, EXTRACTION_CODE, DESIGNATED_MOBILE, ORGANIZATION_MEMBER }
     public enum ShareStatus { ACTIVE, EXPIRED, REVOKED, LOCKED }
 
+    public record RevokeRequest(Integer expectedRevocationGeneration, String reason) { }
+
     public record CreateRequest(String creationRequestId, UUID evidenceId, VerificationMode verificationMode,
             Instant expiresAt, boolean downloadAllowed, Integer maxAdmissions, String designatedMobile) { }
 

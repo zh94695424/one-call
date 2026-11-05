@@ -621,6 +621,505 @@ class CustomerShareCommandsIT {
                 DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(complete)), grant.status(), grant.revocationGeneration(), grant.revision());
     }
 
+    @Test
+    void revokeWritesRegisteredEventAuditAndOutboxAtomically() throws Exception {
+        for (VerificationMode mode : VerificationMode.values()) {
+            for (boolean locked : List.of(false, true)) {
+                var created = (CustomerShareCommandResult.Created) create("revoke-facts-" + mode + locked, mode, Optional.empty());
+                String shareId = created.state().shareId();
+                ShareCommandCaller selected = new ShareCommandCaller(base.account,
+                        mode == VerificationMode.ORGANIZATION_MEMBER ? Optional.of(base.org) : Optional.empty());
+                prepareGrant(shareId, locked ? "LOCKED" : "ACTIVE", locked ? 2 : 0);
+                var before = grantSnapshot(shareId);
+                UUID grantId = (UUID) before.get("id");
+                UUID trace = UUID.randomUUID();
+                String reason = locked ? " exact reason 😀 " : null;
+                var command = new CustomerShareCommand.Revoke(shareId, "revoke,raw-key", locked ? Optional.of(trace) : Optional.empty(),
+                        locked ? 2 : null, reason);
+                int oldTokens = tokens.get();
+                int oldCodes = codes.get();
+                executions.clear();
+                var result = (CustomerShareCommandResult.Revoked) service.execute(command, selected);
+                assertThat(result.state().status().name()).isEqualTo("REVOKED");
+                assertThat(result.state().revocationGeneration()).isEqualTo(locked ? 3 : 1);
+                assertThat(tokens).hasValue(oldTokens);
+                assertThat(codes).hasValue(oldCodes);
+                assertRevokeHead(before, grantSnapshot(shareId));
+                assertRevokeExecution(selected);
+                try (Connection admin = base.admin()) {
+                    DSLContext facts = DSL.using(admin);
+                    var event = facts.fetchOne("SELECT id, share_grant_id, share_admission_id, event_domain, event_id, event_type, result, occurred_at,"
+                            + " risk_digest, payload_redacted, payload_sha256 FROM sharing.share_access_event WHERE share_grant_id = ?", grantId);
+                    var mapper = JsonMapper.builder().build();
+                    String requestDigest = DeterministicShareCommandProviders.digest("revoke,raw-key");
+                    var identity = mapper.createObjectNode().put("shareGrantId", grantId.toString()).put("actionType", "REVOKE");
+                    identity.set("sourceIdentity", mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", "revoke,raw-key"));
+                    String eventId = "share-transition:" + DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(identity));
+                    var semantics = mapper.createObjectNode().put("shareGrantId", grantId.toString()).put("actionType", "REVOKE")
+                            .put("reasonCode", reason).putNull("newExpiresAt").put("actionRequestDigest", requestDigest);
+                    String fingerprint = DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(semantics));
+                    assertThat(event.get("id", UUID.class)).isNotNull();
+                    assertThat(event.get("event_domain")).isEqualTo("SHARE_ACCESS");
+                    assertThat(event.get("event_id")).isEqualTo(eventId);
+                    assertThat(event.get("event_type")).isEqualTo("REVOKED");
+                    assertThat(event.get("result")).isEqualTo("SUCCESS");
+                    assertThat(event.get("share_admission_id")).isNull();
+                    assertThat(event.get("risk_digest")).isNull();
+                    var expected = mapper.createObjectNode().put("actionType", "REVOKE").put("actionRequestDigest", requestDigest)
+                            .put("actionFingerprint", fingerprint).put("status", "REVOKED").put("codeGeneration", created.state().codeGeneration())
+                            .put("revocationGeneration", locked ? 3 : 1).put("revision", ((Integer) before.get("revision")) + 1);
+                    var payload = mapper.readTree(event.get("payload_redacted", JSONB.class).data());
+                    assertThat(payload).isEqualTo(expected);
+                    assertThat(event.get("payload_sha256")).isEqualTo(DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(expected)));
+                    Instant occurred = event.get("occurred_at", java.time.OffsetDateTime.class).toInstant();
+                    var outbox = facts.fetchOne("SELECT event_domain, aggregate_type, aggregate_id, event_type, dedupe_key, payload_redacted,"
+                            + " payload_ciphertext, payload_sha256 FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = 'SHARE_REVOKED'", grantId);
+                    assertThat(outbox.get("event_domain")).isEqualTo("SHARE_ACCESS");
+                    assertThat(outbox.get("aggregate_type")).isEqualTo("EVIDENCE_SHARE_GRANT");
+                    assertThat(outbox.get("aggregate_id")).isEqualTo(grantId);
+                    assertThat(outbox.get("event_type")).isEqualTo("SHARE_REVOKED");
+                    assertThat(outbox.get("dedupe_key")).isEqualTo("share-transition:" + eventId);
+                    assertThat(outbox.get("payload_ciphertext")).isNull();
+                    var expectedOutbox = expected.deepCopy().put("shareId", shareId).put("grantId", grantId.toString())
+                            .put("occurredAt", DefaultCustomerShareCommandService.utc(occurred));
+                    assertThat(mapper.readTree(outbox.get("payload_redacted", JSONB.class).data())).isEqualTo(expectedOutbox);
+                    assertThat(outbox.get("payload_sha256")).isEqualTo(DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(expectedOutbox)));
+                    var audit = facts.fetchOne("SELECT occurred_at, actor_type, actor_id, action_code, object_type, object_id, reason_code,"
+                            + " before_snapshot, after_snapshot, request_id, trace_id FROM audit.audit_fact WHERE object_id = ? AND action_code = 'SHARE_GRANT_REVOKE'", grantId);
+                    assertThat(audit.get("occurred_at", java.time.OffsetDateTime.class).toInstant()).isEqualTo(occurred);
+                    assertThat(audit.get("actor_type")).isEqualTo("ACCOUNT");
+                    assertThat(audit.get("actor_id")).isEqualTo(base.account);
+                    assertThat(audit.get("action_code")).isEqualTo("SHARE_GRANT_REVOKE");
+                    assertThat(audit.get("object_type")).isEqualTo("EVIDENCE_SHARE_GRANT");
+                    assertThat(audit.get("object_id")).isEqualTo(grantId);
+                    assertThat(audit.get("reason_code")).isEqualTo(reason);
+                    assertThat(audit.get("request_id")).isEqualTo(requestDigest);
+                    assertThat(audit.get("trace_id")).isEqualTo(locked ? trace.toString() : null);
+                    assertThat(mapper.readTree(audit.get("before_snapshot", JSONB.class).data())).isEqualTo(mapper.createObjectNode()
+                            .put("status", locked ? "LOCKED" : "ACTIVE").put("revision", (Integer) before.get("revision")));
+                    assertThat(mapper.readTree(audit.get("after_snapshot", JSONB.class).data())).isEqualTo(mapper.createObjectNode()
+                            .put("status", "REVOKED").put("revision", ((Integer) before.get("revision")) + 1).put("reasonCode", reason));
+                    assertThat(event.toString() + outbox).doesNotContain("revoke,raw-key", "exact reason", created.capabilityToken());
+                }
+                assertRevokeCounts(grantId, 1);
+                var revokedHead = grantSnapshot(shareId);
+                List<String> durable = revokeFacts(grantId);
+                fails(() -> service.execute(new CustomerShareCommand.Revoke(shareId, "different-key", Optional.empty(), 99, null), selected),
+                        ShareCommandException.Code.SHARE_REVOKED);
+                assertThat(grantSnapshot(shareId)).isEqualTo(revokedHead);
+                assertThat(revokeFacts(grantId)).isEqualTo(durable);
+            }
+        }
+    }
+
+    @Test
+    void revokeExactReplayAddsNoFactsOrRevision() throws Exception {
+        var created = (CustomerShareCommandResult.Created) create("replay-create", VerificationMode.EXTRACTION_CODE, Optional.empty());
+        String shareId = created.state().shareId();
+        var first = revoke(shareId, "replay-key", 0, " reason ");
+        var original = grantSnapshot(shareId);
+        UUID grantId = (UUID) original.get("id");
+        List<String> durable = revokeFacts(grantId);
+        var seam = spy(repository);
+        doReturn(expiry.plusSeconds(1)).when(seam).sampleDatabaseTime(any());
+        service = service(context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class), seam);
+        int oldTokens = tokens.get();
+        int oldCodes = codes.get();
+        for (Integer witness : new Integer[] {null, 0, 1, 100}) {
+            executions.clear();
+            assertThat(revoke(shareId, "replay-key", witness, " reason ")).isEqualTo(first);
+            assertThat(executions).noneMatch(execution -> execution.sql().startsWith("INSERT") || execution.sql().startsWith("UPDATE")
+                    || execution.sql().contains("outbox_append") || execution.sql().contains("append_fact"));
+            assertThat(grantSnapshot(shareId)).isEqualTo(original);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+        }
+        assertThat(tokens).hasValue(oldTokens);
+        assertThat(codes).hasValue(oldCodes);
+        assertRevokeCounts(grantId, 1);
+        fails(() -> service.execute(new CustomerShareCommand.Revoke(shareId, "replay-key", Optional.empty(), 0, " reason "),
+                new ShareCommandCaller(base.account, Optional.of(base.org))), ShareCommandException.Code.NOT_FOUND);
+        try (Connection admin = base.admin()) { SharingQueryFixture.execute(admin,
+                "UPDATE customer_iam.customer_account SET status = 'DISABLED', revision = revision + 1 WHERE id = ?", base.account); }
+        executions.clear();
+        fails(() -> revoke(shareId, "replay-key", 0, " reason "), ShareCommandException.Code.FORBIDDEN);
+        assertThat(executions).noneMatch(execution -> execution.sql().contains("FROM sharing.evidence_share_grant"));
+        assertThat(grantSnapshot(shareId)).isEqualTo(original);
+        assertThat(revokeFacts(grantId)).isEqualTo(durable);
+    }
+
+    @Test
+    void revokeChangedReasonTerminalExpiryAndStaleWitnessConflict() throws Exception {
+        var normal = context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class);
+        CustomerShareCommandService real = service;
+        for (String status : List.of("ACTIVE", "LOCKED", "REVOKED", "EXPIRED")) {
+            for (boolean elapsed : List.of(false, true)) {
+                for (Integer witness : new Integer[] {null, 0, 2, 3}) {
+                    String key = status + elapsed + witness;
+                    if (status.equals("EXPIRED")) {
+                        var expired = spy(repository);
+                        doAnswer(invocation -> {
+                            ShareGrant proposed = invocation.getArgument(1);
+                            return repository.insertGrantReturning(invocation.getArgument(0), new ShareGrant(proposed.id(), proposed.shareId(),
+                                    proposed.capabilityTokenHash(), proposed.evidenceId(), proposed.createdByAccountId(), proposed.grantOwnerOrganizationId(),
+                                    proposed.verificationMode(), proposed.codeSalt(), proposed.codeHash(), proposed.codeGeneration(),
+                                    proposed.validFrom().minusSeconds(7200), proposed.validFrom().minusSeconds(3600), proposed.maxAdmissions(),
+                                    proposed.admissionsUsed(), proposed.downloadAllowed(), proposed.contentSnapshot(), proposed.contentSha256(),
+                                    proposed.status(), proposed.revocationGeneration(), proposed.revision()));
+                        }).when(expired).insertGrantReturning(any(), any());
+                        service = service(normal, expired);
+                    }
+                    var created = (CustomerShareCommandResult.Created) create("matrix-" + key, VerificationMode.NONE, Optional.empty());
+                    String shareId = created.state().shareId();
+                    prepareGrant(shareId, status, 2);
+                    var before = grantSnapshot(shareId);
+                    UUID grantId = (UUID) before.get("id");
+                    var seam = spy(repository);
+                    Instant expires = ((java.time.OffsetDateTime) before.get("expires_at")).toInstant();
+                    doReturn(elapsed || status.equals("EXPIRED") ? expires : expires.minusSeconds(1)).when(seam).sampleDatabaseTime(any());
+                    service = service(normal, seam);
+                    var expected = status.equals("REVOKED") ? ShareCommandException.Code.SHARE_REVOKED
+                            : status.equals("EXPIRED") || elapsed ? ShareCommandException.Code.SHARE_TRANSITION_CONFLICT
+                            : witness != null && witness != 2 ? ShareCommandException.Code.SHARE_GENERATION_STALE : null;
+                    if (expected == null) {
+                        assertThat(revoke(shareId, key, witness, null)).isInstanceOf(CustomerShareCommandResult.Revoked.class);
+                        assertRevokeHead(before, grantSnapshot(shareId));
+                        assertRevokeCounts(grantId, 1);
+                    } else {
+                        fails(() -> revoke(shareId, key, witness, null), expected);
+                        assertThat(grantSnapshot(shareId)).isEqualTo(before);
+                        assertRevokeCounts(grantId, 0);
+                    }
+                    service = real;
+                }
+            }
+        }
+        var created = (CustomerShareCommandResult.Created) create("conflicts", VerificationMode.NONE, Optional.empty());
+        String shareId = created.state().shareId();
+        revoke(shareId, "original", null, " reason ");
+        var terminal = grantSnapshot(shareId);
+        List<String> durable = revokeFacts((UUID) terminal.get("id"));
+        fails(() -> revoke(shareId, "original", 99, "reason"), ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+        fails(() -> revoke(shareId, "new", 99, null), ShareCommandException.Code.SHARE_REVOKED);
+        for (ShareCommandCaller wrong : List.of(new ShareCommandCaller(base.account, Optional.of(base.org)),
+                new ShareCommandCaller(base.other, Optional.empty()))) {
+            fails(() -> service.execute(new CustomerShareCommand.Revoke(shareId, "original", Optional.empty(), null, " reason "), wrong),
+                    ShareCommandException.Code.NOT_FOUND);
+        }
+        fails(() -> revoke("valid-absent", "x", null, null), ShareCommandException.Code.NOT_FOUND);
+        for (String sql : List.of("customer_iam.customer_account", "FOR UPDATE", "FROM sharing.share_access_event")) {
+            failOn = sql;
+            fails(() -> revoke(shareId, "original", null, " reason "), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+            failOn = null;
+        }
+        assertThat(grantSnapshot(shareId)).isEqualTo(terminal);
+        assertThat(revokeFacts((UUID) terminal.get("id"))).isEqualTo(durable);
+        var organizationCreated = (CustomerShareCommandResult.Created) create("organization-denials", VerificationMode.ORGANIZATION_MEMBER, Optional.empty());
+        String organizationShare = organizationCreated.state().shareId();
+        var organizationHead = grantSnapshot(organizationShare);
+        UUID organizationGrantId = (UUID) organizationHead.get("id");
+        List<String> organizationFacts = revokeFacts(organizationGrantId);
+        var organizationCommand = new CustomerShareCommand.Revoke(organizationShare, "denied", Optional.empty(), null, null);
+        for (ShareCommandCaller wrong : List.of(caller(), new ShareCommandCaller(base.account, Optional.of(base.org2)),
+                new ShareCommandCaller(base.other, Optional.of(base.org)))) {
+            fails(() -> service.execute(organizationCommand, wrong), ShareCommandException.Code.NOT_FOUND);
+            assertThat(grantSnapshot(organizationShare)).isEqualTo(organizationHead);
+            assertThat(revokeFacts(organizationGrantId)).isEqualTo(organizationFacts);
+        }
+        for (ShareCommandCaller inactive : List.of(new ShareCommandCaller(UUID.randomUUID(), Optional.empty()),
+                new ShareCommandCaller(base.account, Optional.of(UUID.randomUUID())), new ShareCommandCaller(base.other, Optional.of(base.org2)))) {
+            executions.clear();
+            fails(() -> service.execute(organizationCommand, inactive), ShareCommandException.Code.FORBIDDEN);
+            assertThat(executions).noneMatch(execution -> execution.sql().contains("FROM sharing.evidence_share_grant"));
+            assertThat(grantSnapshot(organizationShare)).isEqualTo(organizationHead);
+            assertThat(revokeFacts(organizationGrantId)).isEqualTo(organizationFacts);
+        }
+        for (String boundary : List.of("account", "organization", "membership")) {
+            try (Connection admin = base.admin()) {
+                if (boundary.equals("account")) SharingQueryFixture.execute(admin,
+                        "UPDATE customer_iam.customer_account SET status = 'DISABLED', revision = revision + 1 WHERE id = ?", base.account);
+                if (boundary.equals("organization")) SharingQueryFixture.execute(admin,
+                        "UPDATE organization_access.organization SET status = 'SUSPENDED', revision = revision + 1 WHERE id = ?", base.org);
+                if (boundary.equals("membership")) SharingQueryFixture.execute(admin,
+                        "UPDATE organization_access.organization_membership SET status = 'SUSPENDED', revision = revision + 1 WHERE id = ?", base.membership);
+            }
+            try {
+                executions.clear();
+                fails(() -> service.execute(organizationCommand, new ShareCommandCaller(base.account, Optional.of(base.org))), ShareCommandException.Code.FORBIDDEN);
+                assertThat(executions).noneMatch(execution -> execution.sql().contains("FROM sharing.evidence_share_grant"));
+                assertThat(grantSnapshot(organizationShare)).isEqualTo(organizationHead);
+                assertThat(revokeFacts(organizationGrantId)).isEqualTo(organizationFacts);
+            } finally {
+                try (Connection admin = base.admin()) {
+                    SharingQueryFixture.execute(admin, "UPDATE customer_iam.customer_account SET status = 'ACTIVE', revision = revision + 1 WHERE id = ?", base.account);
+                    SharingQueryFixture.execute(admin, "UPDATE organization_access.organization SET status = 'ACTIVE', revision = revision + 1 WHERE id = ?", base.org);
+                    SharingQueryFixture.execute(admin, "UPDATE organization_access.organization_membership SET status = 'ACTIVE', revision = revision + 1 WHERE id = ?", base.membership);
+                }
+            }
+        }
+        for (Integer witness : new Integer[] {null, 0}) {
+            for (String reread : List.of("ACTIVE", "REVOKED", "EXPIRED", "STALE", "ABSENT")) {
+                var fresh = (CustomerShareCommandResult.Created) create("not-updated-" + witness + reread, VerificationMode.NONE, Optional.empty());
+                var before = grantSnapshot(fresh.state().shareId());
+                var seam = spy(repository);
+                AtomicInteger reads = new AtomicInteger();
+                doAnswer(invocation -> {
+                    Optional<ShareGrant> current = repository.lockGrant(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2));
+                    if (reads.incrementAndGet() == 1 || reread.equals("ACTIVE")) return current;
+                    if (reread.equals("ABSENT")) return Optional.empty();
+                    ShareGrant grant = current.orElseThrow();
+                    return Optional.of(new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(), grant.createdByAccountId(),
+                            grant.grantOwnerOrganizationId(), grant.verificationMode(), grant.codeSalt(), grant.codeHash(), grant.codeGeneration(),
+                            grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(), grant.downloadAllowed(),
+                            grant.contentSnapshot(), grant.contentSha256(), reread.equals("STALE") ? grant.status()
+                                    : com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.valueOf(reread),
+                            reread.equals("STALE") ? grant.revocationGeneration() + 1 : grant.revocationGeneration(), grant.revision()));
+                }).when(seam).lockGrant(any(), eq(fresh.state().shareId()), eq(caller()));
+                doAnswer(invocation -> repository.transitionGrant(invocation.getArgument(0), invocation.getArgument(1),
+                        invocation.<Integer>getArgument(2) + 1, invocation.getArgument(3), invocation.getArgument(4), invocation.getArgument(5),
+                        invocation.getArgument(6), invocation.getArgument(7), invocation.getArgument(8), invocation.getArgument(9), invocation.getArgument(10)))
+                        .when(seam).transitionGrant(any(), any(), anyInt(), any(), any(), any(), any(), anyInt(), anyInt(), anyInt(), any());
+                service = service(normal, seam);
+                executions.clear();
+                var expected = reread.equals("REVOKED") ? ShareCommandException.Code.SHARE_REVOKED
+                        : reread.equals("STALE") && witness != null ? ShareCommandException.Code.SHARE_GENERATION_STALE
+                        : ShareCommandException.Code.SHARE_TRANSITION_CONFLICT;
+                fails(() -> revoke(fresh.state().shareId(), "zero-row", witness, null), expected);
+                assertThat(reads).hasValue(2);
+                verify(seam, times(2)).lockGrant(any(), eq(fresh.state().shareId()), eq(caller()));
+                verify(seam).transitionGrant(any(), eq((UUID) before.get("id")), anyInt(), any(), eq(Optional.ofNullable(witness)), eq(Optional.empty()),
+                        any(), anyInt(), anyInt(), anyInt(), eq(Optional.empty()));
+                verify(seam, never()).appendOutbox(any(), any());
+                verify(seam, never()).appendAudit(any(), any());
+                verify(seam).appendAccessEvent(any(), any());
+                verify(seam).findTransition(any(), any(), any());
+                assertThat(executions.stream().filter(execution -> execution.sql().startsWith("UPDATE sharing.evidence_share_grant")))
+                        .singleElement().satisfies(execution -> assertThat(execution.sql().contains("AND revocation_generation = ?")).isEqualTo(witness != null));
+                assertThat(grantSnapshot(fresh.state().shareId())).isEqualTo(before);
+                assertRevokeCounts((UUID) before.get("id"), 0);
+                service = real;
+            }
+        }
+    }
+
+    @Test
+    void revokeConcurrentActionsProduceOneTransition() throws Exception {
+        for (boolean organization : List.of(false, true)) {
+            for (boolean sameKey : List.of(false, true)) {
+                var created = (CustomerShareCommandResult.Created) create("concurrent-" + organization + sameKey,
+                        VerificationMode.NONE, Optional.empty(), false, null, organization);
+                String shareId = created.state().shareId();
+                var before = grantSnapshot(shareId);
+                ShareCommandCaller selected = new ShareCommandCaller(base.account, organization ? Optional.of(base.org) : Optional.empty());
+                var barrier = new java.util.concurrent.CyclicBarrier(2);
+                var seam = spy(repository);
+                doAnswer(invocation -> {
+                    barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    return invocation.callRealMethod();
+                }).when(seam).acquireCreatorWorkspaceLocks(any(), eq(selected));
+                var concurrent = service(context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class), seam);
+                var executor = Executors.newFixedThreadPool(2);
+                executions.clear();
+                try {
+                    var first = executor.submit(() -> revokeOutcome(concurrent, shareId, "first", selected));
+                    var second = executor.submit(() -> revokeOutcome(concurrent, shareId, sameKey ? "first" : "second", selected));
+                    Object firstResult = first.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                    Object secondResult = second.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                    if (sameKey) {
+                        assertThat(firstResult).isInstanceOf(CustomerShareCommandResult.Revoked.class).isEqualTo(secondResult);
+                    } else {
+                        assertThat(List.of(firstResult, secondResult).stream().filter(CustomerShareCommandResult.Revoked.class::isInstance)).hasSize(1);
+                        assertThat(List.of(firstResult, secondResult)).contains(ShareCommandException.Code.SHARE_REVOKED);
+                    }
+                } finally {
+                    executor.shutdownNow();
+                    assertThat(executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                }
+                for (var operation : executions.stream().collect(java.util.stream.Collectors.groupingBy(Execution::pid)).values()) {
+                    assertRevokeExecution(selected, operation, operation.stream().anyMatch(execution -> execution.sql().startsWith("INSERT")));
+                }
+                assertThat(executions.stream().map(Execution::pid).distinct()).hasSize(2);
+                assertThat(executions.stream().filter(execution -> execution.sql().startsWith("UPDATE sharing.evidence_share_grant"))).hasSize(1);
+                assertRevokeHead(before, grantSnapshot(shareId));
+                assertRevokeCounts((UUID) before.get("id"), 1);
+                String winner;
+                try (Connection admin = base.admin()) {
+                    String digest = JsonMapper.builder().build().readTree(DSL.using(admin).fetchOne(
+                            "SELECT payload_redacted FROM sharing.share_access_event WHERE share_grant_id = ?", before.get("id"))
+                            .get(0, JSONB.class).data()).path("actionRequestDigest").asString();
+                    winner = digest.equals(DeterministicShareCommandProviders.digest("first")) ? "first" : "second";
+                }
+                fails(() -> service.execute(new CustomerShareCommand.Revoke(shareId, winner, Optional.empty(), null, "changed"), selected),
+                        ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+                assertRevokeCounts((UUID) before.get("id"), 1);
+            }
+        }
+    }
+
+    @Test
+    void revokeFailureAtEachFactAppendRollsBackAllEffects() throws Exception {
+        var normal = context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class);
+        CustomerShareCommandService real = service;
+        for (String boundary : List.of("before-event", "after-event", "before-update", "after-update", "before-outbox", "after-outbox",
+                "before-audit", "after-audit", "commit")) {
+            var created = (CustomerShareCommandResult.Created) create("rollback-" + boundary, VerificationMode.NONE, Optional.empty());
+            String shareId = created.state().shareId();
+            var before = grantSnapshot(shareId);
+            UUID grantId = (UUID) before.get("id");
+            List<String> durable = revokeFacts(grantId);
+            var seam = spy(repository);
+            if (boundary.contains("event")) doAnswer(invocation -> {
+                if (boundary.equals("after-event")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).appendAccessEvent(any(), any());
+            if (boundary.endsWith("update")) doAnswer(invocation -> {
+                if (boundary.equals("after-update")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).transitionGrant(any(), any(), anyInt(), any(), any(), any(), any(), anyInt(), anyInt(), anyInt(), any());
+            if (boundary.endsWith("outbox")) doAnswer(invocation -> {
+                if (boundary.equals("after-outbox")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).appendOutbox(any(), any());
+            if (boundary.endsWith("audit")) doAnswer(invocation -> {
+                if (boundary.equals("after-audit")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).appendAudit(any(), any());
+            var manager = context.getBean("sharingCommandTransactionManager", DataSourceTransactionManager.class);
+            var pool = context.getBean("sharingCommandDataSource", HikariDataSource.class);
+            var connectionProvider = dsl.configuration().connectionProvider();
+            AtomicInteger commits = new AtomicInteger();
+            AtomicInteger rollbacks = new AtomicInteger();
+            if (boundary.equals("commit")) {
+                var failing = new org.springframework.jdbc.datasource.DelegatingDataSource(pool) {
+                    @Override
+                    public Connection getConnection() throws java.sql.SQLException {
+                        Connection connection = super.getConnection();
+                        return (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class},
+                                (proxy, method, arguments) -> {
+                                    if (method.getName().equals("commit")) {
+                                        commits.incrementAndGet(); throw new java.sql.SQLException("TEST_COMMIT_CANARY", "08006");
+                                    }
+                                    if (method.getName().equals("rollback")) rollbacks.incrementAndGet();
+                                    try { return method.invoke(connection, arguments); }
+                                    catch (java.lang.reflect.InvocationTargetException failure) { throw failure.getCause(); }
+                                });
+                    }
+                };
+                manager.setDataSource(failing);
+                dsl.configuration().set(new org.jooq.impl.DataSourceConnectionProvider(
+                        new org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy(failing)));
+            }
+            service = service(normal, seam);
+            executions.clear();
+            try {
+                fails(() -> revoke(shareId, "retry-key", null, null), ShareCommandException.Code.INTERNAL);
+                if (boundary.equals("commit")) {
+                    assertThat(commits).hasValue(1);
+                    assertThat(rollbacks).hasValue(1);
+                    assertThat(executions).anyMatch(execution -> execution.sql().contains("audit.append_fact"));
+                }
+            } finally {
+                manager.setDataSource(pool);
+                dsl.configuration().set(connectionProvider);
+                service = real;
+            }
+            assertThat(grantSnapshot(shareId)).isEqualTo(before);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+            assertRevokeCounts(grantId, 0);
+            revoke(shareId, "retry-key", null, null);
+            assertRevokeHead(before, grantSnapshot(shareId));
+            assertRevokeCounts(grantId, 1);
+        }
+    }
+
+    private CustomerShareCommandResult revoke(String shareId, String key, Integer witness, String reason) {
+        return service.execute(new CustomerShareCommand.Revoke(shareId, key, Optional.empty(), witness, reason), caller());
+    }
+
+    private Object revokeOutcome(CustomerShareCommandService selectedService, String shareId, String key, ShareCommandCaller selected) {
+        try { return selectedService.execute(new CustomerShareCommand.Revoke(shareId, key, Optional.empty(), null, null), selected); }
+        catch (ShareCommandException failure) { return failure.code(); }
+    }
+
+    private java.util.Map<String, Object> grantSnapshot(String shareId) throws Exception {
+        try (Connection admin = base.admin()) {
+            return DSL.using(admin).fetchOne("SELECT id, share_id, capability_token_hash, evidence_id, created_by_account_id, owner_organization_id,"
+                    + " verification_mode, code_salt, code_hash, code_generation, valid_from, expires_at, max_admissions, admissions_used, download_allowed,"
+                    + " content_snapshot, content_sha256, status, revocation_generation, revision FROM sharing.evidence_share_grant WHERE share_id = ?", shareId).intoMap();
+        }
+    }
+
+    private void prepareGrant(String shareId, String status, int generation) throws Exception {
+        try (Connection admin = base.admin()) {
+            DSLContext facts = DSL.using(admin);
+            facts.execute("UPDATE sharing.evidence_share_grant SET revocation_generation = ?, revision = revision + 1 WHERE share_id = ?",
+                    status.equals("EXPIRED") || status.equals("REVOKED") ? generation - 1 : generation, shareId);
+            if (!status.equals("ACTIVE")) {
+                facts.execute("UPDATE sharing.evidence_share_grant SET status = ?, revocation_generation = revocation_generation + ?,"
+                        + " revision = revision + 1 WHERE share_id = ?", status, status.equals("REVOKED") || status.equals("EXPIRED") ? 1 : 0, shareId);
+            }
+        }
+    }
+
+    private void assertRevokeHead(java.util.Map<String, Object> before, java.util.Map<String, Object> after) {
+        var expected = new java.util.HashMap<>(before);
+        expected.put("status", "REVOKED");
+        expected.put("revision", ((Integer) before.get("revision")) + 1);
+        expected.put("revocation_generation", ((Integer) before.get("revocation_generation")) + 1);
+        assertThat(after).hasSize(20).isEqualTo(expected);
+    }
+
+    private List<String> revokeFacts(UUID grantId) throws Exception {
+        try (Connection admin = base.admin()) {
+            DSLContext facts = DSL.using(admin);
+            return List.of(facts.fetch("SELECT row_to_json(e)::text FROM sharing.share_access_event e WHERE share_grant_id = ? ORDER BY id", grantId).formatJSON(),
+                    facts.fetch("SELECT row_to_json(o)::text FROM platform.outbox_event o WHERE aggregate_id = ? ORDER BY id", grantId).formatJSON(),
+                    facts.fetch("SELECT row_to_json(a)::text FROM audit.audit_fact a WHERE object_id = ? ORDER BY id", grantId).formatJSON());
+        }
+    }
+
+    private void assertRevokeCounts(UUID grantId, int transitions) throws Exception {
+        try (Connection admin = base.admin()) {
+            DSLContext facts = DSL.using(admin);
+            assertThat(count(facts, "sharing.share_access_event", "share_grant_id", grantId)).isEqualTo(transitions);
+            assertThat(count(facts, "platform.outbox_event", "aggregate_id", grantId)).isEqualTo(1 + transitions);
+            assertThat(count(facts, "audit.audit_fact", "object_id", grantId)).isEqualTo(1 + transitions);
+            assertThat(count(facts, "sharing.share_admission", "share_grant_id", grantId)).isZero();
+        }
+    }
+
+    private void assertRevokeExecution(ShareCommandCaller selected) {
+        assertRevokeExecution(selected, executions, true);
+    }
+
+    private void assertRevokeExecution(ShareCommandCaller selected, List<Execution> operation, boolean writes) {
+        assertThat(operation.getFirst().sql()).isEqualTo("SET LOCAL ROLE sharing_command_role");
+        assertThat(operation.get(1).sql()).isEqualTo("SELECT current_user");
+        assertThat(operation.stream().skip(1)).allMatch(execution -> execution.role().equals("sharing_command_role"));
+        assertThat(operation.stream().map(Execution::pid).distinct()).hasSize(1);
+        var locks = operation.stream().filter(execution -> execution.sql().contains("pg_advisory_xact_lock")).map(execution -> execution.bindings().getFirst()).toList();
+        if (selected.organizationId().isPresent()) assertThat(locks).containsExactly("organization_access.organization:" + base.org,
+                "organization_access.membership:" + base.org + ":" + base.account, "customer_iam.account:" + base.account);
+        else assertThat(locks).containsExactly("customer_iam.account:" + base.account);
+        assertThat(operation.stream().filter(execution -> execution.sql().equals("SELECT clock_timestamp()"))).hasSize(1);
+        assertThat(operation).noneMatch(execution -> execution.sql().contains("SET LOCAL ROLE evidence_role") || execution.sql().contains("evidence.evidence_record"));
+        int contextIndex = java.util.stream.IntStream.range(0, operation.size()).filter(index -> operation.get(index).sql().contains("customer_iam.customer_account")).findFirst().orElseThrow();
+        int grantIndex = java.util.stream.IntStream.range(0, operation.size()).filter(index -> operation.get(index).sql().endsWith("FOR UPDATE")).findFirst().orElseThrow();
+        assertThat(grantIndex).isGreaterThan(contextIndex);
+        int lastLock = java.util.stream.IntStream.range(0, operation.size())
+                .filter(index -> operation.get(index).sql().contains("pg_advisory_xact_lock")).max().orElseThrow();
+        assertThat(contextIndex).isGreaterThan(lastLock);
+        assertThat(operation.stream().filter(execution -> execution.sql().contains("FOR UPDATE"))).hasSize(1);
+        if (writes) {
+            var writeOrder = operation.stream().map(Execution::sql).filter(sql -> sql.startsWith("INSERT") || sql.startsWith("UPDATE")
+                    || sql.contains("outbox_append") || sql.contains("append_fact")).toList();
+            assertThat(writeOrder).hasSize(4);
+            assertThat(writeOrder.get(0)).startsWith("INSERT INTO sharing.share_access_event");
+            assertThat(writeOrder.get(1)).startsWith("UPDATE sharing.evidence_share_grant");
+            assertThat(writeOrder.get(2)).contains("platform.outbox_append");
+            assertThat(writeOrder.get(3)).contains("audit.append_fact");
+        }
+    }
+
     private CustomerShareCommandResult create(String key, VerificationMode mode, Optional<UUID> trace) {
         return create(key, mode, trace, false, null, mode == VerificationMode.ORGANIZATION_MEMBER);
     }

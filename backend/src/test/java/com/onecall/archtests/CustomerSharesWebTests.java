@@ -23,6 +23,10 @@ import com.onecall.core.sharing.internal.application.SharePageRequest;
 import com.onecall.core.sharing.internal.application.ShareQueryException;
 import com.onecall.core.sharing.internal.application.ShareSummary;
 import com.onecall.core.sharing.internal.application.TrustedShareCaller;
+import com.onecall.core.sharing.internal.command.CustomerShareCommand;
+import com.onecall.core.sharing.internal.command.CustomerShareCommandResult;
+import com.onecall.core.sharing.internal.command.CustomerShareCommandService;
+import com.onecall.core.sharing.internal.command.ShareCommandCaller;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -483,9 +487,20 @@ class CustomerSharesWebTests {
                 assertThat(SELECTION).hasValue(0);
                 assertThat(VERIFICATIONS).hasValue(0);
             }
+            SELECTION.set(0);
+            VERIFICATIONS.set(0);
+            var revoke = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + prefixedPort
+                            + "/pa12/api/v1/customer/shares/share:fixture/revocations"))
+                    .header("Authorization", "Bearer personal").header("Idempotency-Key", "revoke-key")
+                    .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertProblem(revoke, 503, "SERVICE_UNAVAILABLE", "Service unavailable");
+            assertThat(SELECTION).hasValue(0);
+            assertThat(VERIFICATIONS).hasValue(1);
             for (String suffix : List.of("revocations", "code-rotations")) {
                 String transition = "/pa12/api/v1/customer/shares/share:fixture/" + suffix;
-                for (String method : List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE", "POST")) {
+                for (String method : suffix.equals("revocations") ? List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE")
+                        : List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE", "POST")) {
                     SELECTION.set(0);
                     VERIFICATIONS.set(0);
                     var rejected = request(prefixedPort, method, transition, "personal", null, null);
@@ -551,6 +566,21 @@ class CustomerSharesWebTests {
             boundary.doFilter(traceRequest, traceResponse, traceChain);
             assertThat(traceResponse.getStatus()).isEqualTo(404);
             verifyNoInteractions(traceChain);
+            var commands = mock(CustomerShareCommandService.class);
+            var item = summary("share:fixture", Instant.parse("2026-01-02T03:04:05.123456Z"));
+            when(commands.execute(any(), any())).thenReturn(new CustomerShareCommandResult.Revoked(new CustomerShareCommandResult.ShareState(
+                    item.shareId(), item.evidenceId(), item.verificationMode(), ShareSummary.ShareStatus.REVOKED, item.validFrom(), item.expiresAt(),
+                    item.maxAdmissions(), item.admissionsUsed(), item.downloadAllowed(), item.codeGeneration(), 1)));
+            prefixed.getBeanFactory().registerSingleton("customerShareCommandService", commands);
+            var available = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + prefixedPort
+                            + "/pa12/api/v1/customer/shares/share:fixture/revocations"))
+                    .header("Authorization", "Bearer personal").header("Idempotency-Key", "revoke-key")
+                    .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(available.statusCode()).isEqualTo(200);
+            assertThat(available.body()).contains("\"status\":\"REVOKED\"", "\"revocationGeneration\":1")
+                    .doesNotContain("capabilityToken", "extractionCode", "revoke-key");
+            verify(commands).execute(any(CustomerShareCommand.Revoke.class), org.mockito.ArgumentMatchers.eq(new ShareCommandCaller(ACCOUNT, Optional.empty())));
         }
     }
 

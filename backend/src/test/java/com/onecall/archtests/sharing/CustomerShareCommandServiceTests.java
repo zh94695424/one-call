@@ -238,9 +238,98 @@ class CustomerShareCommandServiceTests {
         assertThatThrownBy(action::run).isInstanceOfSatisfying(ShareCommandException.class, failure -> assertThat(failure.code()).isEqualTo(code));
     }
 
+    @Test
+    void revokeReplaysBeforeStatePreconditions() {
+        Fixture fixture = new Fixture(VerificationMode.NONE);
+        fixture.execute("create", EXPIRY);
+        ShareGrant grant = fixture.stored.get();
+        when(fixture.repository.readActiveCallerContext(any(), any())).thenReturn(Optional.of(new ActiveCallerContext(
+                ACCOUNT, "ACTIVE", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
+        when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(grant));
+        var mapper = JsonMapper.builder().build();
+        String raw = "revoke,raw-key";
+        String requestDigest = DeterministicShareCommandProviders.digest(raw);
+        var identity = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "REVOKE");
+        identity.set("sourceIdentity", mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", "revoke,raw-key"));
+        String eventId = "share-transition:" + DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(identity));
+        var semantics = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "REVOKE")
+                .put("reasonCode", " exact reason ").putNull("newExpiresAt").put("actionRequestDigest", requestDigest);
+        String fingerprint = DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(semantics));
+        var transition = new PersistedTransition(grant.id(), eventId, "REVOKE", requestDigest, fingerprint,
+                com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.REVOKED, 0, 1, 2, NOW);
+        when(fixture.repository.findTransition(any(), eq(grant.id()), eq(eventId))).thenReturn(Optional.of(transition));
+        clearInvocations(fixture.repository, fixture.reader, fixture.policy, fixture.tokens, fixture.codes, fixture.mobiles);
+        for (var status : com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.values()) {
+            ShareGrant current = grantWithState(grant, status, 9);
+            when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(current));
+            when(fixture.repository.sampleDatabaseTime(any())).thenReturn(EXPIRY.plusSeconds(1));
+            for (Integer witness : new Integer[] {null, 0, 9, 10}) {
+                var result = (CustomerShareCommandResult.Revoked) fixture.service.execute(new CustomerShareCommand.Revoke(
+                        grant.shareId(), raw, Optional.of(UUID.randomUUID()), witness, " exact reason "), fixture.caller);
+                assertThat(result.state().status()).isEqualTo(transition.status());
+                assertThat(result.state().revocationGeneration()).isEqualTo(1);
+            }
+        }
+        var order = inOrder(fixture.repository);
+        order.verify(fixture.repository).assertCommandRole(fixture.dsl);
+        order.verify(fixture.repository).acquireCreatorWorkspaceLocks(fixture.dsl, fixture.caller);
+        order.verify(fixture.repository).readActiveCallerContext(fixture.dsl, fixture.caller);
+        order.verify(fixture.repository).lockGrant(fixture.dsl, grant.shareId(), fixture.caller);
+        order.verify(fixture.repository).sampleDatabaseTime(fixture.dsl);
+        order.verify(fixture.repository).findTransition(fixture.dsl, grant.id(), eventId);
+        fails(() -> fixture.service.execute(new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), 0,
+                "exact reason"), fixture.caller), ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+        when(fixture.repository.readActiveCallerContext(any(), any())).thenReturn(Optional.empty());
+        fails(() -> fixture.service.execute(new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), null,
+                " exact reason "), fixture.caller), ShareCommandException.Code.FORBIDDEN);
+        when(fixture.repository.readActiveCallerContext(any(), any())).thenReturn(Optional.of(new ActiveCallerContext(
+                ACCOUNT, "ACTIVE", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
+        when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.empty());
+        fails(() -> fixture.service.execute(new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), null,
+                " exact reason "), fixture.caller), ShareCommandException.Code.NOT_FOUND);
+        when(fixture.repository.findTransition(any(), any(), any())).thenReturn(Optional.empty());
+        for (var status : com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.values()) {
+            when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(grantWithState(grant, status, 2)));
+            for (Instant sampled : List.of(NOW, EXPIRY, EXPIRY.plusSeconds(1))) {
+                when(fixture.repository.sampleDatabaseTime(any())).thenReturn(sampled);
+                var expected = status.name().equals("REVOKED") ? ShareCommandException.Code.SHARE_REVOKED
+                        : status.name().equals("EXPIRED") || !sampled.isBefore(EXPIRY) ? ShareCommandException.Code.SHARE_TRANSITION_CONFLICT
+                        : ShareCommandException.Code.SHARE_GENERATION_STALE;
+                fails(() -> fixture.service.execute(new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), 0, null), fixture.caller), expected);
+            }
+        }
+        verify(fixture.repository, never()).appendAccessEvent(any(), any());
+        verify(fixture.repository, never()).transitionGrant(any(), any(), anyInt(), any(), any(), any(), any(), anyInt(), anyInt(), anyInt(), any());
+        verify(fixture.repository, never()).appendOutbox(any(), any());
+        verify(fixture.repository, never()).appendAudit(any(), any());
+        verifyNoInteractions(fixture.reader, fixture.policy, fixture.tokens, fixture.codes, fixture.mobiles);
+        clearInvocations(fixture.repository, fixture.template);
+        for (var invalid : List.of(new CustomerShareCommand.Revoke(" ", raw, Optional.empty(), null, null),
+                new CustomerShareCommand.Revoke("x".repeat(129), raw, Optional.empty(), null, null),
+                new CustomerShareCommand.Revoke(grant.shareId(), " ", Optional.empty(), null, null),
+                new CustomerShareCommand.Revoke(grant.shareId(), "😀".repeat(129), Optional.empty(), null, null),
+                new CustomerShareCommand.Revoke(grant.shareId(), "bad\0", Optional.empty(), null, null),
+                new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), -1, null),
+                new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), null, " "),
+                new CustomerShareCommand.Revoke(grant.shareId(), raw, Optional.empty(), null, "x".repeat(129)))) {
+            fails(() -> fixture.service.execute(invalid, fixture.caller), ShareCommandException.Code.VALIDATION_FAILED);
+        }
+        verifyNoInteractions(fixture.repository);
+        verifyNoInteractions(fixture.template);
+    }
+
+    private static ShareGrant grantWithState(ShareGrant grant,
+            com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus status, int generation) {
+        return new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(), grant.createdByAccountId(),
+                grant.grantOwnerOrganizationId(), grant.verificationMode(), grant.codeSalt(), grant.codeHash(), grant.codeGeneration(),
+                grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(), grant.downloadAllowed(),
+                grant.contentSnapshot(), grant.contentSha256(), status, generation, grant.revision());
+    }
+
     static final class Fixture {
         final DSLContext dsl = mock(DSLContext.class);
         final SharingCommandRepository repository = mock(SharingCommandRepository.class);
+        final TransactionTemplate template = mock(TransactionTemplate.class);
         final ShareableEvidenceProjectionReader reader = mock(ShareableEvidenceProjectionReader.class);
         final ShareCreationPolicyProvider policy = mock(ShareCreationPolicyProvider.class);
         final CapabilityTokenProvider tokens = mock(CapabilityTokenProvider.class);
@@ -259,7 +348,6 @@ class CustomerShareCommandServiceTests {
             caller = new ShareCommandCaller(ACCOUNT, mode == VerificationMode.ORGANIZATION_MEMBER ? Optional.of(UUID.randomUUID()) : Optional.empty());
             risk = new RiskOwnershipSnapshot(SUBJECT, Optional.of(ACCOUNT), caller.organizationId(), true,
                     Optional.empty(), Optional.of(UUID.randomUUID()), true, false, "CURRENT");
-            TransactionTemplate template = mock(TransactionTemplate.class);
             when(template.execute(any())).thenAnswer(invocation -> ((TransactionCallback<?>) invocation.getArgument(0)).doInTransaction(new SimpleTransactionStatus()));
             when(repository.readCommandContext(any(), any(), any())).thenReturn(Optional.of(new CommandContext(ACCOUNT, "ACTIVE", caller.organizationId(),
                     Optional.empty(), Optional.empty(), Optional.empty(), reference)));

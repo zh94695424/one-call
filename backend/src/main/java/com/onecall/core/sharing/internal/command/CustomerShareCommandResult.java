@@ -7,6 +7,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public sealed interface CustomerShareCommandResult {
+    record Revoked(ShareState state) implements CustomerShareCommandResult {
+        public Revoked { Objects.requireNonNull(state); }
+    }
+
     record ShareState(String shareId, UUID evidenceId, ShareSummary.VerificationMode verificationMode,
             ShareSummary.ShareStatus status, Instant validFrom, Instant expiresAt, Integer maxAdmissions,
             int admissionsUsed, boolean downloadAllowed, int codeGeneration, int revocationGeneration) { }
