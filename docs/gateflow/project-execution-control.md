@@ -4,11 +4,27 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa14-sharing-code-rotation`
+> Branch: `codex/pa15-sharing-public-share-read`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
-> Dispatch providers: PA14 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews use **A = `ds` / `deepseek-flash`** and, per the user's latest routing updates, **B = `glm53flash` / `glm-5.3-flash` primary**, with **`hy4` / HY4 as the preferred code-review fallback** using the same TokenHub credential and 983616-token context. Prefer `hy4` over Qwen when GLM fails. GLM large reviews must respect the server's 1,000,000 input-token-per-minute limit: serialize large requests and leave at least 60 seconds between consecutive large GLM runs; do not immediately retry a 429. A/B use fresh isolated inputs, submit before the Controller reads either conclusion, and never mutate source or remote state. All artifacts and adjudications follow the accepted plan and current control-document scope.
+> Dispatch providers: PA15 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews use **A = `ds` / `deepseek-flash`** and **B = `mimo26flash` / MiMo V2.6 Flash**. A/B use fresh isolated inputs, submit before the Controller reads either conclusion, and never mutate source or remote state. All artifacts and adjudications follow the accepted plan and current control-document scope.
+
+## Active resume checkpoint - 2026-11-06
+
+### PA15 sharing public share read - goal confirmation accepted
+
+- Active work unit: `PA15-sharing-public-share-read`; backend public-sharing feature, one externally verifiable read behavior.
+- Start state: PR #24 is merged at `b93d39052195f530518a7351b27ba4953fdfa5fe`; fetched `origin/main` equals that merge commit. PA14 is complete at final closeout pass.
+- Worktree: `C:\Users\Administrator\.codex\worktrees\pa15-sharing-public-share-read\codex-call`; branch `codex/pa15-sharing-public-share-read`; clean at `b93d390`. The PA14 worktree, snapshots and private `.codex` files remain preserved and were not copied.
+- Goal confirmed by the user on 2026-11-06: implement only `GET /api/v1/public/shares/{capabilityToken}`.
+- Required behavior: capability-token-only public read with the frozen 1–512 token contract; server-side token digest lookup; observation-free page/prefetch semantics with no admission, count, generation, ticket, Redis, media or `share_access_event` write; uniform invalid/missing/retired-token concealment; frozen revoked/expired behavior; optional customer session only for the `ORGANIZATION_MEMBER` content projection and strict current account/organization/membership matching; nonmatching/missing member session returns only safe page metadata plus `verificationChallenge.customerSessionRequired=true`; no `shareId`, `evidenceId`, subject identity, token/hash, object key/version/URL, unshared content or media identity leakage.
+- Success signal: exact route/filter/controller behavior for the one public GET; capability-token hash lookup and safe metadata projection; organization-member content projection only after a current matching trusted customer session; no writes or side effects; exact 404/410/422/503 problem mappings and redaction; create/revoke/rotate/list/`me` regressions remain green; plan must derive the precise implementation allowlist, test names, SQL/provider seams and source=CI=XML test delta from the frozen contracts rather than inventing counts.
+- Non-goals: `POST /admissions`, admission counting, ticket/session issuance, Redis, media authorization/playback/seek/renewal, object storage/COS/KMS/SMS, share-code verification, lock/failure policy, V001–V010 changes, OpenAPI changes, frontend/public UI, production TTL/KDF/rate-limit values, merge/approval/ready/reviewer-request/external-comment/issue mutation.
+- Direct code evidence: frozen OpenAPI contains `getPublicShare`, but `backend/src/main/java` currently has customer share query/command web paths only and no public capability controller, filter, query service or projection. V009 already contains `sharing.evidence_share_grant`, `sharing.share_admission` and `sharing.share_access_event`; this read slice must not write them. The existing customer session verifier and evidence-owner share projection provide reusable stable boundaries.
+- Over-design boundary: one public read slice; no generic public API framework, admission command, ticket abstraction, cache or future endpoint scaffolding. A production dependency that is unavailable must fail closed rather than be guessed.
+- No blocking open question remains. Dispatch protocol remains `sub-agents`; planning and later implementation/fixes route to GPT `gpt-6.1-sol` / `high`; independent reviews use A DeepSeek and B fresh MiMo V2.6 Flash.
+- Current gate / next entry point: `plan`. Dispatch GPT `gpt-6.1-sol` / `high` to write only `docs/gateflow/pa15-sharing-public-share-read-plan.md`, deriving a code-generation-ready minimal plan from this Goal Confirmation, OpenAPI, docs/12, docs/14, V009/V010 and current code. No source, test, Control, schema, OpenAPI, dependency, configuration or later-gate edit is authorized.
 
 ## Active resume checkpoint - 2026-11-05
 
