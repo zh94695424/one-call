@@ -3,6 +3,7 @@ package com.onecall.core.sharing.internal.persistence;
 import com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus;
 import com.onecall.core.sharing.internal.application.ShareSummary.VerificationMode;
 import com.onecall.core.sharing.internal.command.ShareCommandCaller;
+import com.onecall.core.sharing.internal.provider.ExtractionCodeMaterial;
 import com.onecall.core.sharing.internal.command.ShareCommandException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -175,6 +176,76 @@ public final class JooqSharingCommandRepository implements SharingCommandReposit
                 row.get("expires_at", OffsetDateTime.class).toInstant(), row.get("max_admissions", Integer.class), row.get("admissions_used", Integer.class),
                 row.get("download_allowed", Boolean.class), row.get("content_snapshot", JSONB.class), row.get("content_sha256", String.class),
                 ShareStatus.valueOf(row.get("status", String.class)), row.get("revocation_generation", Integer.class), row.get("revision", Integer.class));
+    }
+
+    @Override
+    public Optional<ShareGrant> lockGrant(DSLContext transactionDsl, String shareId, ShareCommandCaller caller) {
+        try {
+            return Optional.ofNullable(transactionDsl.fetchOne("SELECT " + COLUMNS
+                    + " FROM sharing.evidence_share_grant WHERE share_id = ? AND created_by_account_id = ?"
+                    + " AND owner_organization_id IS NOT DISTINCT FROM ?::uuid FOR UPDATE",
+                    shareId, caller.accountId(), caller.organizationId().orElse(null))).map(this::grant);
+        } catch (RuntimeException failure) { throw unavailable(); }
+    }
+
+    @Override
+    public Optional<PersistedTransition> findTransition(DSLContext transactionDsl, UUID grantId, String eventId) {
+        try {
+            Record row = transactionDsl.fetchOne("SELECT share_grant_id, event_domain, event_id, event_type, result, occurred_at,"
+                    + " payload_redacted, payload_sha256 FROM sharing.share_access_event"
+                    + " WHERE share_grant_id = ? AND event_domain = ? AND event_id = ?", grantId, "SHARE_ACCESS", eventId);
+            if (row == null) return Optional.empty();
+            JsonNode payload = mapper.readTree(row.get("payload_redacted", JSONB.class).data());
+            if (!"REVOKED".equals(row.get("event_type", String.class)) || !"SUCCESS".equals(row.get("result", String.class))
+                    || !payload.isObject() || payload.size() != 7
+                    || !"REVOKE".equals(payload.path("actionType").asString())
+                    || !"REVOKED".equals(payload.path("status").asString())) throw unavailable();
+            for (String key : java.util.List.of("actionRequestDigest", "actionFingerprint")) {
+                if (!payload.path(key).isString() || !payload.path(key).asString().matches("[0-9a-f]{64}")) throw unavailable();
+            }
+            for (String key : java.util.List.of("codeGeneration", "revocationGeneration", "revision")) {
+                JsonNode value = payload.path(key);
+                if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < (key.equals("codeGeneration") ? 0 : 1))
+                    throw unavailable();
+            }
+            String canonical = com.onecall.core.sharing.internal.commandservice.DefaultCustomerShareCommandService.canonical(payload);
+            String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            if (!digest.equals(row.get("payload_sha256", String.class))) throw unavailable();
+            return Optional.of(new PersistedTransition(row.get("share_grant_id", UUID.class), row.get("event_id", String.class),
+                    "REVOKE", payload.path("actionRequestDigest").asString(), payload.path("actionFingerprint").asString(),
+                    ShareStatus.REVOKED, payload.path("codeGeneration").asInt(), payload.path("revocationGeneration").asInt(),
+                    payload.path("revision").asInt(), row.get("occurred_at", OffsetDateTime.class).toInstant()));
+        } catch (Exception failure) { throw unavailable(); }
+    }
+
+    @Override
+    public void appendAccessEvent(DSLContext transactionDsl, AccessEvent event) {
+        transactionDsl.execute("INSERT INTO sharing.share_access_event (id, share_grant_id, share_admission_id, event_domain,"
+                + " event_id, event_type, result, occurred_at, risk_digest, payload_redacted, payload_sha256)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?, ?::jsonb, ?)", event.id(), event.shareGrantId(),
+                event.shareAdmissionId().orElse(null), event.eventDomain(), event.eventId(), event.eventType(), event.result(),
+                event.occurredAt().atOffset(ZoneOffset.UTC), event.riskDigest().orElse(null), event.payloadRedacted().data(), event.payloadSha256());
+    }
+
+    @Override
+    public TransitionResult transitionGrant(DSLContext transactionDsl, UUID grantId, int expectedRevision, ShareStatus expectedStatus,
+            Optional<Integer> expectedRevocationGeneration, Optional<Integer> expectedCodeGeneration,
+            ShareStatus targetStatus, int targetRevision, int targetCodeGeneration,
+            int targetRevocationGeneration, Optional<ExtractionCodeMaterial> replacement) {
+        Objects.requireNonNull(expectedRevocationGeneration);
+        Objects.requireNonNull(expectedCodeGeneration);
+        Objects.requireNonNull(replacement);
+        if (targetStatus != ShareStatus.REVOKED || expectedCodeGeneration.isPresent() || replacement.isPresent()) throw unavailable();
+        var bindings = new java.util.ArrayList<Object>(java.util.List.of(targetStatus.name(), targetRevocationGeneration,
+                targetRevision, grantId, expectedRevision, expectedStatus.name()));
+        String witness = expectedRevocationGeneration.map(value -> {
+            bindings.add(value);
+            return " AND revocation_generation = ?";
+        }).orElse("");
+        Record row = transactionDsl.fetchOne("UPDATE sharing.evidence_share_grant SET status = ?, revocation_generation = ?, revision = ?"
+                + " WHERE id = ? AND revision = ? AND status = ?" + witness + " RETURNING " + COLUMNS, bindings.toArray());
+        return row == null ? new TransitionResult.NotUpdated() : new TransitionResult.Updated(grant(row));
     }
 
     @Override

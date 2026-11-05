@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -75,6 +76,34 @@ public class CustomerSharesController {
         }
         if (result instanceof CustomerShareCommandResult.CreationReplayed replayed) {
             var state = replayed.state();
+            return new CustomerShareCommandDtos.ShareState(state.shareId(), state.evidenceId(),
+                    CustomerShareCommandDtos.VerificationMode.valueOf(state.verificationMode().name()),
+                    CustomerShareCommandDtos.ShareStatus.valueOf(state.status().name()), state.validFrom(), state.expiresAt(),
+                    state.maxAdmissions(), state.admissionsUsed(), state.downloadAllowed(), state.codeGeneration(), state.revocationGeneration());
+        }
+        throw new ShareCommandException(ShareCommandException.Code.INTERNAL);
+    }
+
+    @PostMapping(path = "/api/v1/customer/shares/{shareId}/revocations", produces = "application/json")
+    public Object revokeCustomerShare(@PathVariable("shareId") String shareId, Principal principal,
+            HttpServletRequest request) throws IOException {
+        if (!(principal instanceof CustomerRequestPrincipal customer))
+            throw new ShareCommandException(ShareCommandException.Code.UNAUTHENTICATED);
+        if (shareId.isBlank() || shareId.codePointCount(0, shareId.length()) > 128 || shareId.indexOf('\0') >= 0
+                || !java.nio.charset.StandardCharsets.UTF_8.newEncoder().canEncode(shareId))
+            throw new ShareCommandException(ShareCommandException.Code.VALIDATION_FAILED);
+        TrustedCustomerCaller caller = customer.caller();
+        SelectedCustomerWorkspace selected = requireSelectedWorkspace(caller);
+        CustomerShareCommandDtos.RevokeRequest body;
+        try { body = binder.revoke(request.getInputStream().readAllBytes()); }
+        catch (IllegalArgumentException invalid) { throw new ShareCommandException(ShareCommandException.Code.VALIDATION_FAILED); }
+        var command = new CustomerShareCommand.Revoke(shareId, CustomerBoundaryFilter.idempotencyKey(request),
+                Optional.of(CustomerBoundaryFilter.trace(request)), body.expectedRevocationGeneration(), body.reason());
+        CustomerShareCommandResult result;
+        try { result = commands.getObject().execute(command, new ShareCommandCaller(caller.accountId(), Optional.ofNullable(selected.organizationId()))); }
+        catch (BeansException failure) { throw new ShareCommandException(ShareCommandException.Code.SERVICE_UNAVAILABLE); }
+        if (result instanceof CustomerShareCommandResult.Revoked revoked) {
+            var state = revoked.state();
             return new CustomerShareCommandDtos.ShareState(state.shareId(), state.evidenceId(),
                     CustomerShareCommandDtos.VerificationMode.valueOf(state.verificationMode().name()),
                     CustomerShareCommandDtos.ShareStatus.valueOf(state.status().name()), state.validFrom(), state.expiresAt(),

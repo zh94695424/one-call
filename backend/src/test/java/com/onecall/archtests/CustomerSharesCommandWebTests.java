@@ -95,13 +95,58 @@ class CustomerSharesCommandWebTests {
             assertThat(json.size()).isEqualTo(5);
         }
         Fixture fixture = new Fixture(true);
-        for (String suffix : List.of("revocations", "code-rotations")) {
+        for (boolean organization : List.of(false, true)) {
+            fixture.organization = organization ? Optional.of(UUID.randomUUID()) : Optional.empty();
+            var active = state("EXTRACTION_CODE");
+            var revoked = new CustomerShareCommandResult.ShareState(active.shareId(), active.evidenceId(), active.verificationMode(),
+                    ShareSummary.ShareStatus.REVOKED, active.validFrom(), active.expiresAt(), active.maxAdmissions(),
+                    active.admissionsUsed(), active.downloadAllowed(), active.codeGeneration(), 1);
+            when(fixture.commands.execute(any(), any())).thenReturn(new CustomerShareCommandResult.Revoked(revoked));
+            String first = null;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var response = fixture.mvc.perform(fixture.revoke().header("Idempotency-Key", "revoke,raw-key")
+                        .contentType("application/json").content("{\"expectedRevocationGeneration\":0,\"reason\":\" raw reason \"}"))
+                        .andReturn().getResponse();
+                assertThat(response.getStatus()).isEqualTo(200);
+                var json = mapper.readTree(response.getContentAsString());
+                assertThat(json.properties().stream().map(Map.Entry::getKey)).containsExactlyInAnyOrder("shareId", "evidenceId",
+                        "verificationMode", "status", "validFrom", "expiresAt", "maxAdmissions", "admissionsUsed", "downloadAllowed",
+                        "codeGeneration", "revocationGeneration");
+                assertThat(json.path("status").asString()).isEqualTo("REVOKED");
+                assertThat(json.path("maxAdmissions").isNull()).isTrue();
+                assertThat(json.path("expiresAt").asString()).isEqualTo("2026-11-05T10:00:00.123456Z");
+                assertThat(response.getContentAsString()).doesNotContain("revoke,raw-key", "raw reason", "token", "hash", "salt");
+                assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+                if (first == null) first = response.getContentAsString();
+                else assertThat(response.getContentAsString()).isEqualTo(first);
+                var invocation = mockingDetails(fixture.commands).getInvocations().stream().reduce((left, right) -> right).orElseThrow();
+                var command = invocation.getArgument(0, CustomerShareCommand.Revoke.class);
+                assertThat(command.actionRequestId()).isEqualTo("revoke,raw-key");
+                assertThat(command.shareId()).isEqualTo("share:fixture");
+                assertThat(command.reason()).isEqualTo(" raw reason ");
+                assertThat(command.expectedRevocationGeneration()).isZero();
+                assertThat(command.traceId()).contains(fixture.trace.get());
+                assertThat(invocation.getArgument(1, ShareCommandCaller.class)).isEqualTo(new ShareCommandCaller(ACCOUNT, fixture.organization));
+            }
+        }
+        for (var row : Map.of(ShareCommandException.Code.UNAUTHENTICATED, 401, ShareCommandException.Code.FORBIDDEN, 403,
+                ShareCommandException.Code.NOT_FOUND, 404, ShareCommandException.Code.VALIDATION_FAILED, 422,
+                ShareCommandException.Code.SHARE_TRANSITION_CONFLICT, 409, ShareCommandException.Code.SHARE_GENERATION_STALE, 409,
+                ShareCommandException.Code.SHARE_REVOKED, 410, ShareCommandException.Code.RATE_LIMITED, 429,
+                ShareCommandException.Code.SERVICE_UNAVAILABLE, 503, ShareCommandException.Code.INTERNAL, 500).entrySet()) {
+            doThrow(new ShareCommandException(row.getKey())).when(fixture.commands).execute(any(), any());
+            problem(fixture.mvc.perform(fixture.revoke().header("Idempotency-Key", "revoke,raw-key").contentType("application/json")
+                    .content("{}")).andReturn().getResponse(), row.getValue(), row.getKey().name());
+        }
+        verifyNoInteractions(fixture.query);
+        Fixture rotate = new Fixture(true);
+        for (String suffix : List.of("code-rotations")) {
             String path = PATH + "/share:fixture/" + suffix;
-            var response = fixture.mvc.perform(post(path).servletPath(path).contentType("application/json").content("{}"))
+            var response = rotate.mvc.perform(post(path).servletPath(path).contentType("application/json").content("{}"))
                     .andReturn().getResponse();
             problem(response, 404, "NOT_FOUND");
         }
-        verifyNoInteractions(fixture.commands);
+        verifyNoInteractions(rotate.commands);
     }
 
     @Test
@@ -124,7 +169,60 @@ class CustomerSharesCommandWebTests {
             problem(fixture.mvc.perform(request).andReturn().getResponse(), 422, "VALIDATION_FAILED");
         }
         verifyNoInteractions(fixture.commands);
+        for (String[] keys : List.of(new String[] {}, new String[] {""}, new String[] {" "}, new String[] {"😀".repeat(129)},
+                new String[] {"same", "same"}, new String[] {"first", "second"}, new String[] {"bad\0"})) {
+            var request = fixture.revoke().header("Content-Type", "text/plain").content("{");
+            if (keys.length > 0) request.header("Idempotency-Key", (Object[]) keys);
+            problem(fixture.mvc.perform(request).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        }
+        for (String body : List.of("", "null", "[]", "true", "{", "{} {}", "{\"reason\":null}", "{\"reason\":\" \"}",
+                "{\"reason\":1}", "{\"reason\":\"" + "😀".repeat(129) + "\"}", "{\"reason\":\"x\",\"reason\":\"x\"}",
+                "{\"reason\":\"\\u0000\"}", "{\"reason\":\"\\uD800\"}", "{\"expectedRevocationGeneration\":null}",
+                "{\"expectedRevocationGeneration\":-1}", "{\"expectedRevocationGeneration\":1.0}", "{\"expectedRevocationGeneration\":2147483648}",
+                "{\"expectedRevocationGeneration\":\"0\"}", "{\"expectedRevocationGeneration\":true}", "{\"expectedCodeGeneration\":0}",
+                "{\"actionRequestId\":\"client\"}", "{\"traceId\":\"client\"}", "{\"organizationId\":\"client\"}")) {
+            problem(fixture.mvc.perform(fixture.revoke().header("Idempotency-Key", "valid").contentType("application/json").content(body))
+                    .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        }
+        problem(fixture.mvc.perform(fixture.revoke().header("Idempotency-Key", "valid").contentType("application/json")
+                .content(new byte[] {(byte) 0xff})).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        for (String type : List.of("ABSENT", "text/plain", "application/*", "application/*+json", "application/problem+json", "broken;")) {
+            var request = fixture.revoke().header("Idempotency-Key", "valid").content("{}");
+            if (!type.equals("ABSENT")) request.header("Content-Type", type);
+            problem(fixture.mvc.perform(request).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        }
+        String overlong = PATH + "/" + "x".repeat(129) + "/revocations";
+        problem(fixture.mvc.perform(post(overlong).servletPath(overlong).header("Authorization", "Bearer test")
+                .header("Idempotency-Key", "valid").contentType("application/json").content("{}"))
+                .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        problem(fixture.mvc.perform(post(PATH + "/share:fixture/revocations").servletPath(PATH + "/share:fixture/revocations")
+                .content("{")).andReturn().getResponse(), 401, "UNAUTHENTICATED");
+        verifyNoInteractions(fixture.commands, fixture.query);
+        assertThat(fixture.commandResolutions).hasValue(0);
+        Fixture malformedWorkspace = new Fixture(true);
+        for (var selected : List.of(new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.PERSONAL, UUID.randomUUID()),
+                new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.ORGANIZATION, null))) {
+            malformedWorkspace.workspace = selected;
+            problem(malformedWorkspace.mvc.perform(malformedWorkspace.revoke().contentType("text/plain").content("{"))
+                    .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+            problem(malformedWorkspace.mvc.perform(malformedWorkspace.revoke().header("Idempotency-Key", "valid")
+                    .contentType("text/plain").content("{")).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+            problem(malformedWorkspace.mvc.perform(malformedWorkspace.revoke().header("Idempotency-Key", "valid")
+                    .contentType("application/json").content("{")).andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
+        }
+        assertThat(malformedWorkspace.commandResolutions).hasValue(0);
+        verifyNoInteractions(malformedWorkspace.commands, malformedWorkspace.query);
         Fixture missing = new Fixture(false);
+        problem(missing.mvc.perform(missing.revoke().header("Idempotency-Key", "valid").contentType("application/json").content("{}"))
+                .andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
+        for (String key : List.of("😀".repeat(128), " raw ключ 😀 ", "revoke,raw-key")) {
+            when(fixture.commands.execute(any(), any())).thenReturn(new CustomerShareCommandResult.Revoked(state("NONE")));
+            assertThat(fixture.mvc.perform(fixture.revoke().header("iDeMpOtEnCy-KeY", key).contentType("application/json")
+                    .content("{\"expectedRevocationGeneration\":0,\"reason\":\"" + "😀".repeat(128) + "\"}"))
+                    .andReturn().getResponse().getStatus()).isEqualTo(200);
+            var invocation = mockingDetails(fixture.commands).getInvocations().stream().reduce((left, right) -> right).orElseThrow();
+            assertThat(invocation.getArgument(0, CustomerShareCommand.Revoke.class).actionRequestId()).isEqualTo(key);
+        }
         problem(missing.mvc.perform(missing.post().contentType("application/json").content(BODY)).andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
         for (var code : List.of(ShareCommandException.Code.INTERNAL, ShareCommandException.Code.RATE_LIMITED,
                 ShareCommandException.Code.VALIDATION_FAILED, ShareCommandException.Code.SHARE_RISK_BLOCKED,
@@ -154,9 +252,15 @@ class CustomerSharesCommandWebTests {
         var json = mapper.readTree(response.getContentAsString());
         assertThat(json.path("code").asString()).isEqualTo(code);
         assertThat(json.path("type").asString()).isEqualTo("about:blank");
+        assertThat(json.path("status").asInt()).isEqualTo(status);
+        assertThat(response.getContentType()).startsWith("application/problem+json");
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(response.getHeader("Pragma")).isEqualTo("no-cache");
+        assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
+        if (status == 401) assertThat(response.getHeader("WWW-Authenticate")).isEqualTo("Bearer");
         assertThat(json.size()).isEqualTo(5);
         assertThatCode(() -> UUID.fromString(json.path("traceId").asString())).doesNotThrowAnyException();
-        assertThat(response.getContentAsString()).doesNotContain("Exception", "jdbc:", "one-time", "raw 😀");
+        assertThat(response.getContentAsString()).doesNotContain("Exception", "jdbc:", "one-time", "raw 😀", "revoke,raw-key", "salt", "codeHash", "capabilityToken");
     }
 
     private static CustomerShareCommandResult.ShareState state(String mode) {
@@ -170,6 +274,8 @@ class CustomerSharesCommandWebTests {
         final CustomerShareQueryService query = mock(CustomerShareQueryService.class);
         final java.util.concurrent.atomic.AtomicReference<UUID> trace = new java.util.concurrent.atomic.AtomicReference<>();
         Optional<UUID> organization = Optional.empty();
+        SelectedCustomerWorkspace workspace;
+        final java.util.concurrent.atomic.AtomicInteger commandResolutions = new java.util.concurrent.atomic.AtomicInteger();
         final MockMvc mvc;
 
         Fixture(boolean commandPresent) {
@@ -177,11 +283,16 @@ class CustomerSharesCommandWebTests {
             beans.registerSingleton("customerShareQueryService", query);
             if (commandPresent) beans.registerSingleton("customerShareCommandService", commands);
             beans.registerSingleton("verifier", (CustomerSessionVerifier) (bearer, audience) -> new VerifiedCustomerSession(ACCOUNT,
-                    TrustedCustomerCaller.Channel.WEB, audience, new SelectedCustomerWorkspace(organization.isPresent()
+                    TrustedCustomerCaller.Channel.WEB, audience, workspace != null ? workspace : new SelectedCustomerWorkspace(organization.isPresent()
                             ? CustomerContext.WorkspaceType.ORGANIZATION : CustomerContext.WorkspaceType.PERSONAL, organization.orElse(null))));
             CustomerProblemWriter problems = new CustomerProblemWriter();
+            var commandProvider = spy(beans.getBeanProvider(CustomerShareCommandService.class));
+            doAnswer(invocation -> {
+                commandResolutions.incrementAndGet();
+                return invocation.callRealMethod();
+            }).when(commandProvider).getObject();
             var controller = new CustomerSharesController(beans.getBeanProvider(CustomerShareQueryService.class),
-                    beans.getBeanProvider(CustomerShareCommandService.class), problems);
+                    commandProvider, problems);
             mvc = MockMvcBuilders.standaloneSetup(controller).addFilters(new CustomerBoundaryFilter(
                     new CustomerBearerAuthenticator(beans.getBeanProvider(CustomerSessionVerifier.class)), problems),
                     (jakarta.servlet.Filter) (request, response, chain) -> {
@@ -192,5 +303,10 @@ class CustomerSharesCommandWebTests {
 
         MockHttpServletRequestBuilder post() { return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(PATH)
                 .servletPath(PATH).header("Authorization", "Bearer test"); }
+
+        MockHttpServletRequestBuilder revoke() {
+            String path = PATH + "/share:fixture/revocations";
+            return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path).servletPath(path).header("Authorization", "Bearer test");
+        }
     }
 }

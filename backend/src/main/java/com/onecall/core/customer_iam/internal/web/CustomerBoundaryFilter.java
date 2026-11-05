@@ -36,6 +36,10 @@ public final class CustomerBoundaryFilter implements Filter {
         return value instanceof UUID traceId ? traceId : UUID.randomUUID();
     }
 
+    static String idempotencyKey(HttpServletRequest request) {
+        return (String) request.getAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey");
+    }
+
     @Override
     public void doFilter(ServletRequest incoming, ServletResponse outgoing, FilterChain chain)
             throws IOException, ServletException {
@@ -48,14 +52,25 @@ public final class CustomerBoundaryFilter implements Filter {
         boolean admittedPath = "/api/v1/customer/me".equals(servletPath)
                 || "/api/v1/customer/shares".equals(servletPath);
         boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
-        if (!("GET".equals(request.getMethod()) && admittedPath || create)
+        boolean revoke = "POST".equals(request.getMethod())
+                && servletPath.matches("/api/v1/customer/shares/[^/;%]+/revocations");
+        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }
         try {
             var principal = new CustomerRequestPrincipal(authenticator.authenticate(request.getHeaders("Authorization")));
-            if (create) {
+            if (revoke) {
+                var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
+                if (keys.size() != 1) throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
+                String key = keys.getFirst();
+                if (key.isBlank() || key.codePointCount(0, key.length()) > 128 || key.indexOf('\0') >= 0
+                        || !StandardCharsets.UTF_8.newEncoder().canEncode(key))
+                    throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
+                request.setAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey", key);
+            }
+            if (create || revoke) {
                 try {
                     var types = java.util.Collections.list(request.getHeaders("Content-Type"));
                     if (types.size() != 1) throw new IllegalArgumentException();

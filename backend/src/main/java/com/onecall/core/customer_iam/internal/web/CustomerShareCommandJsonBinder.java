@@ -15,6 +15,21 @@ public final class CustomerShareCommandJsonBinder {
     private final JsonMapper mapper = JsonMapper.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(tools.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
 
+    public CustomerShareCommandDtos.RevokeRequest revoke(byte[] body) {
+        try {
+            JsonNode root = mapper.readTree(body);
+            if (root == null || !root.isObject() || root.properties().stream()
+                    .anyMatch(entry -> !Set.of("expectedRevocationGeneration", "reason").contains(entry.getKey()))) throw invalid();
+            Integer generation = null;
+            if (root.has("expectedRevocationGeneration")) {
+                JsonNode value = root.get("expectedRevocationGeneration");
+                if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < 0) throw invalid();
+                generation = value.asInt();
+            }
+            return new CustomerShareCommandDtos.RevokeRequest(generation, root.has("reason") ? text(root, "reason", 128) : null);
+        } catch (RuntimeException failure) { throw invalid(); }
+    }
+
     public CustomerShareCommandDtos.CreateRequest create(byte[] body) {
         try {
             JsonNode parsed = mapper.readTree(body);
