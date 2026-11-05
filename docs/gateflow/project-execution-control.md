@@ -4,11 +4,28 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa14-sharing-command-revocation`
+> Branch: `codex/pa14-sharing-code-rotation`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
 > Dispatch providers: PA14 planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent reviews use **A = `ds` / `deepseek-flash`** and, per the user's latest routing updates, **B = `glm53flash` / `glm-5.3-flash` primary**, with **`hy4` / HY4 as the preferred code-review fallback** using the same TokenHub credential and 983616-token context. Prefer `hy4` over Qwen when GLM fails. GLM large reviews must respect the server's 1,000,000 input-token-per-minute limit: serialize large requests and leave at least 60 seconds between consecutive large GLM runs; do not immediately retry a 429. A/B use fresh isolated inputs, submit before the Controller reads either conclusion, and never mutate source or remote state. All artifacts and adjudications follow the accepted plan and current control-document scope.
+
+## Active resume checkpoint - 2026-11-05
+
+### PA14 sharing command code rotation - goal confirmation accepted
+
+- Active work unit: `PA14-sharing-command-code-rotation`, the final backend sharing-command behavior slice from the accepted PA14 full plan.
+- Start state: PR #23 is merged at `d9cc5bd22f6eda0523f989348f66b09137087fc0`; fetched `origin/main` equals that merge commit. The revoke closeout at `5ec8e9067e06d3a0cf7fdffcfe32b514333bbfc0` is its second parent.
+- Worktree: `C:\Users\Administrator\.codex\worktrees\pa14-sharing-code-rotation\codex-call`; branch `codex/pa14-sharing-code-rotation`; clean and created from the merge commit. The prior PA14 worktree, snapshots and private `.codex` files remain preserved and were not copied.
+- Goal confirmed by the user on 2026-11-05: implement only `POST /api/v1/customer/shares/{shareId}/code-rotations`, preserving create, revoke, share-list and `/me`.
+- Required behavior: trusted customer boundary and strict single `Idempotency-Key`; opaque 1–128 code-point shareId; closed JSON `{}` or optional non-negative `expectedCodeGeneration`; extraction-code mode only; source `LOCKED` -> target `ACTIVE`; exact persisted replay before current-state checks; exact replay returns `REPLAYED` metadata and never reissues the code; new actions validate status/mode/expiry/witness, invoke rotation policy before code generation, and return the server-generated code once as `ROTATED`; policy deny is 403 and unavailable is 503; one command transaction with role assertion, ordered advisory locks, active caller context and owner/workspace-filtered grant lock; exact deterministic identity/fingerprint; one conditional update that increments code generation, revocation generation and revision once; exact redacted `CODE_ROTATED` access event, `SHARE_CODE_ROTATED` Outbox and `SHARE_GRANT_CODE_ROTATE` audit in the frozen order; any failure rolls all facts/state back; bounded concurrency produces one transition.
+- Success signal: one new Surefire and five new Failsafe methods advance the merged 78+113=191 inventory to **79 Surefire + 118 Failsafe = 197**, with zero failures/errors/skips; PostgreSQL 16 proves role, lock/context/ownership, replay/state/witness, policy/material ordering, exact code and generation updates, one-time-secret response, exact facts, rollback and concurrency; create/revoke/list/`me`, JAR smokes, firewall and synchronized source=CI=XML remain green.
+- Non-goals: schema/V001–V010, OpenAPI or design-doc changes; capability-token regeneration; non-`EXTRACTION_CODE` unlock or other state transitions; public admission/ticket/media; Redis/COS/KMS/SMS; frontend; production policy/KDF/TTL/HMAC/provider/provisioning values; merge, approval, ready action, reviewer request, external comment or issue mutation.
+- Direct code evidence: `CustomerShareCommand` permits only Create/Revoke; `CustomerShareCommandResult` has no rotation variants; the Filter and Controller admit only create/revoke/list/`me`; `transitionGrant` currently rejects code-witness/replacement rotate shapes; `ShareRotationPolicyProvider` is absent, while `ShareExtractionCodeProvider` and deterministic test code generation already exist. V009 lifecycle generation guards and V010 command-role grants already support the frozen `LOCKED -> ACTIVE` update.
+- Planned architecture boundary: add only the missing internal rotation-policy contract and fail-closed adapter/config relationship required by the accepted full plan, plus rotation command/result, closed web binding/controller/filter, transition execution, exact facts and tests. Do not select or invent a production policy, KDF, TTL, key, provider or deployment setting.
+- Slice principle: one end-to-end rotation behavior slice, matching the accepted full plan's third slice; split by externally verifiable behavior rather than file or module.
+- No blocking open question remains. Dispatch protocol remains `sub-agents`; planning, implementation and fixes route to GPT `gpt-6.1-sol` / `high`; independent reviews use A DeepSeek and the currently configured Reviewer B routing against identical frozen inputs.
+- Current gate / next entry point: `plan`. The Agent may write only `docs/gateflow/pa14-sharing-command-code-rotation-plan.md`, must derive a code-generation-ready exact allowlist from the accepted full plan and current merged source, and must not edit implementation, Control or any other path. No commit, push, PR, merge, approval, ready action, reviewer request or external comment is authorized.
 
 ## Active resume checkpoint - 2026-11-05
 
