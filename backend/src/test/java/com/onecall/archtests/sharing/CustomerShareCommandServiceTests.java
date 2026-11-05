@@ -68,6 +68,28 @@ class CustomerShareCommandServiceTests {
             order.verify(fixture.repository).insertGrantReturning(fixture.dsl, grant);
             order.verify(fixture.repository).appendOutbox(eq(fixture.dsl), any());
             order.verify(fixture.repository).appendAudit(eq(fixture.dsl), any());
+            Instant offsetExpiry = java.time.OffsetDateTime.parse("2026-11-05T12:00:00.123456+02:00").toInstant();
+            clearInvocations(fixture.repository, fixture.tokens, fixture.codes);
+            var replay = (CustomerShareCommandResult.CreationReplayed) fixture.execute(" raw ключ 😀 ", offsetExpiry);
+            assertThat(replay.state()).isEqualTo(created.state());
+            assertThat(replay.state().expiresAt()).isEqualTo(EXPIRY);
+            assertThat(fixture.stored.get()).isSameAs(grant);
+            verifyNoInteractions(fixture.tokens, fixture.codes);
+            verify(fixture.repository, never()).insertGrantReturning(any(), any());
+            verify(fixture.repository, never()).appendOutbox(any(), any());
+            verify(fixture.repository, never()).appendAudit(any(), any());
+            fixture.stored.set(null);
+            var offsetCreated = (CustomerShareCommandResult.Created) fixture.execute(" raw ключ 😀 ", offsetExpiry);
+            ShareGrant offsetGrant = fixture.stored.get();
+            var offsetSnapshot = mapper.readTree(offsetGrant.contentSnapshot().data());
+            assertThat(offsetGrant.shareId()).isEqualTo(grant.shareId());
+            assertThat(offsetSnapshot.path("creation").path("creationFingerprint").asString()).isEqualTo(fingerprint);
+            assertThat(offsetSnapshot.path("creation").path("scopeDigest")).isEqualTo(snapshot.path("creation").path("scopeDigest"));
+            assertThat(offsetSnapshot.path("creation").path("expiresAt").asString()).isEqualTo("2026-11-05T10:00:00.123456Z");
+            assertThat(offsetGrant.expiresAt()).isEqualTo(grant.expiresAt()).isEqualTo(EXPIRY);
+            assertThat(offsetCreated.state()).isEqualTo(created.state());
+            assertThat(((CustomerShareCommandResult.CreationReplayed) fixture.execute(" raw ключ 😀 ", EXPIRY)).state())
+                    .isEqualTo(created.state());
         }
         assertThat(DefaultCustomerShareCommandService.utc(Instant.parse("2026-11-05T10:00:00.1Z"))).isEqualTo("2026-11-05T10:00:00.100000Z");
         assertThat(DefaultCustomerShareCommandService.utc(NOW)).isEqualTo("2026-11-04T10:00:00Z");
@@ -75,6 +97,48 @@ class CustomerShareCommandServiceTests {
         assertThat(DefaultCustomerShareCommandService.canonical(canonicalMapper.readTree(
                 "[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001,4.9e-324,-0.0]")))
                 .isEqualTo("[333333333.3333333,1e+30,4.5,0.002,1e-27,5e-324,0]");
+        String controls = java.util.stream.IntStream.rangeClosed(0, 31)
+                .mapToObj(codePoint -> String.valueOf((char) codePoint)).collect(java.util.stream.Collectors.joining());
+        String escapedControls = "\\u0000\\u0001\\u0002\\u0003\\u0004\\u0005\\u0006\\u0007\\b\\t\\n\\u000b\\f\\r\\u000e\\u000f"
+                + "\\u0010\\u0011\\u0012\\u0013\\u0014\\u0015\\u0016\\u0017\\u0018\\u0019\\u001a\\u001b\\u001c\\u001d\\u001e\\u001f";
+        assertThat(DefaultCustomerShareCommandService.canonical(canonicalMapper.createObjectNode()
+                .put("z", " ordinary ключ 😀 ").put(controls, controls)))
+                .isEqualTo("{\"" + escapedControls + "\":\"" + escapedControls + "\",\"z\":\" ordinary ключ 😀 \"}");
+        for (String requestId : List.of(" raw ключ 😀 ", " raw\013\037 ключ 😀 ")) {
+            Fixture controlled = new Fixture(VerificationMode.NONE);
+            String escapedRequestId = requestId.equals(" raw ключ 😀 ") ? requestId : " raw\\u000b\\u001f ключ 😀 ";
+            String escapedMimeType = "audio/\\u000b\\u001fwav";
+            when(controlled.reader.readShareableProjection(any(), any())).thenReturn(
+                    new ShareableEvidenceProjectionReader.ReadResult.Found(new ShareableEvidenceProjection(
+                            EVIDENCE, SUBJECT, "SOLIDIFIED", "CALL_RECORDING", "control-source", controlled.reference.identityAtCapture(), List.of(
+                                    new ShareableEvidenceProjection.ArtifactProjection("ORIGINAL", "a".repeat(64), 10, "audio/\013\037wav", 1)))));
+            var controlledCreated = (CustomerShareCommandResult.Created) controlled.execute(requestId, EXPIRY);
+            ShareGrant controlledGrant = controlled.stored.get();
+            String expectedContent = "{\"artifacts\":[{\"artifactRole\":\"ORIGINAL\",\"mediaMimeType\":\"" + escapedMimeType
+                    + "\",\"mediaSha256\":\"" + "a".repeat(64) + "\",\"mediaSizeBytes\":10,\"validatedDurationSeconds\":1}],\"evidenceId\":\""
+                    + EVIDENCE + "\",\"identityAtCapture\":{\"subjectId\":\"" + SUBJECT + "\"},\"schemaVersion\":1,\"sourceRefId\":\"control-source\","
+                    + "\"sourceType\":\"CALL_RECORDING\",\"subjectId\":\"" + SUBJECT + "\"}";
+            String expectedScope = "{\"contentObject\":" + expectedContent + ",\"verificationObject\":{\"mode\":\"NONE\"}}";
+            String expectedCreation = "{\"creationRequestDigest\":\"" + DeterministicShareCommandProviders.digest(requestId)
+                    + "\",\"creatorAccountId\":\"" + ACCOUNT + "\",\"downloadAllowed\":false,\"evidenceId\":\"" + EVIDENCE
+                    + "\",\"expiresAt\":\"2026-11-05T10:00:00.123456Z\",\"maxAdmissions\":null,\"ownerOrganizationId\":null,\"schemaVersion\":1,"
+                    + "\"scopeDigest\":\"" + DeterministicShareCommandProviders.digest(expectedScope) + "\",\"verificationMode\":\"NONE\"}";
+            String expectedFingerprint = DeterministicShareCommandProviders.digest(expectedCreation);
+            String fingerprintedCreation = "{\"creationFingerprint\":\"" + expectedFingerprint + "\"," + expectedCreation.substring(1);
+            String expectedSnapshot = "{\"content\":" + expectedContent + ",\"creation\":" + fingerprintedCreation + ",\"verification\":{\"mode\":\"NONE\"}}";
+            String expectedComplete = "{\"contentObject\":" + expectedContent + ",\"creationObject\":" + fingerprintedCreation
+                    + ",\"verificationObject\":{\"mode\":\"NONE\"}}";
+            assertThat(controlledGrant.shareId()).isEqualTo("share:" + DeterministicShareCommandProviders.digest(
+                    "{\"creationRequestId\":\"" + escapedRequestId + "\",\"creatorAccountId\":\"" + ACCOUNT + "\"}"));
+            assertThat(controlledGrant.contentSnapshot().data()).isEqualTo(expectedSnapshot);
+            assertThat(controlledGrant.contentSha256()).isEqualTo(DeterministicShareCommandProviders.digest(expectedComplete));
+            assertThat(((CustomerShareCommandResult.CreationReplayed) controlled.execute(requestId, EXPIRY)).state()).isEqualTo(controlledCreated.state());
+            controlled.stored.set(null);
+            controlled.execute(requestId, EXPIRY);
+            assertThat(controlled.stored.get().shareId()).isEqualTo(controlledGrant.shareId());
+            assertThat(controlled.stored.get().contentSnapshot()).isEqualTo(controlledGrant.contentSnapshot());
+            assertThat(controlled.stored.get().contentSha256()).isEqualTo(controlledGrant.contentSha256());
+        }
         Fixture invalid = new Fixture(VerificationMode.NONE);
         fails(() -> invalid.execute("key", EXPIRY.plusNanos(1)), ShareCommandException.Code.VALIDATION_FAILED);
         verifyNoInteractions(invalid.repository, invalid.tokens);

@@ -52,7 +52,9 @@ public class SharingCommandPersistenceConfiguration {
 
     @Bean
     DataSourceTransactionManager sharingCommandTransactionManager(@Qualifier("sharingCommandDataSource") DataSource dataSource) {
-        return new DataSourceTransactionManager(dataSource);
+        DataSourceTransactionManager manager = new DataSourceTransactionManager(dataSource);
+        manager.setRollbackOnCommitFailure(true);
+        return manager;
     }
 
     @Bean

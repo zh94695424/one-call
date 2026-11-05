@@ -26,6 +26,7 @@ import com.onecall.core.sharing.internal.provider.ShareCreationPolicyProvider.Cr
 import com.onecall.core.sharing.internal.provider.ShareCreationPolicyProvider.CreationPolicyRequest;
 import com.onecall.core.sharing.internal.provider.ShareExtractionCodeProvider;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.format.DateTimeFormatterBuilder;
 import java.util.Comparator;
@@ -36,6 +37,7 @@ import java.util.UUID;
 import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.json.JsonWriteFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -50,7 +52,7 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
     private final ShareExtractionCodeProvider codes;
     private final DesignatedMobileBindingProvider mobiles;
     private final Sha256Provider sha256;
-    private final JsonMapper mapper = JsonMapper.builder().build();
+    private static final JsonMapper mapper = JsonMapper.builder().disable(JsonWriteFeature.WRITE_HEX_UPPER_CASE).build();
 
     public DefaultCustomerShareCommandService(TransactionTemplate template, DSLContext context,
             SharingCommandRepository repository, ShareableEvidenceProjectionReader reader,
@@ -74,7 +76,34 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
         try { return Objects.requireNonNull(template.execute(status -> create(create, caller))); }
         catch (ShareCommandException failure) { throw failure; }
         catch (org.springframework.transaction.CannotCreateTransactionException failure) { throw error(Code.SERVICE_UNAVAILABLE); }
-        catch (RuntimeException failure) { throw error(Code.INTERNAL); }
+        catch (RuntimeException failure) { throw error(databaseFailureCode(failure)); }
+    }
+
+    private static Code databaseFailureCode(RuntimeException failure) {
+        var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        var pending = new java.util.ArrayDeque<Throwable>();
+        pending.add(failure);
+        boolean materialViolation = false;
+        while (!pending.isEmpty()) {
+            Throwable current = pending.removeFirst();
+            if (!seen.add(current)) continue;
+            if (current instanceof SQLException sql) {
+                if ("23505".equals(sql.getSQLState())) return Code.INTERNAL;
+                if ("23514".equals(sql.getSQLState())) materialViolation = true;
+                if ("P0001".equals(sql.getSQLState()) && sql.getMessage() != null) {
+                    String guard = sql.getMessage().split("\\R", 2)[0].replaceFirst("^ERROR: ", "");
+                    if (java.util.Set.of("SHARE_GRANT_IMMUTABLE", "SHARE_GRANT_EXPIRY_DECREASE",
+                            "SHARE_GRANT_GENERATION_INVALID", "SHARE_GRANT_CODE_ROTATION_INVALID",
+                            "SHARE_GRANT_STATUS_TERMINAL", "SHARE_GRANT_STATUS_TRANSITION",
+                            "SHARE_GRANT_EXPIRY_INVALID", "SHARE_GRANT_EXTENSION_INVALID",
+                            "SHARE_GRANT_REVISION_INVALID", "SHARE_ADMISSION_REFUSED",
+                            "SHARING_ROW_APPEND_ONLY").contains(guard)) materialViolation = true;
+                }
+                if (sql.getNextException() != null) pending.add(sql.getNextException());
+            }
+            if (current.getCause() != null) pending.add(current.getCause());
+        }
+        return materialViolation ? Code.SERVICE_UNAVAILABLE : Code.INTERNAL;
     }
 
     private CustomerShareCommandResult create(CustomerShareCommand.Create command, ShareCommandCaller caller) {
@@ -310,7 +339,7 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
 
     private static String quote(String value) {
         if (!StandardCharsets.UTF_8.newEncoder().canEncode(value)) throw error(Code.SERVICE_UNAVAILABLE);
-        return JsonMapper.builder().build().writeValueAsString(value);
+        return mapper.writeValueAsString(value);
     }
 
     private static ShareCommandException error(Code code) { return new ShareCommandException(code); }
