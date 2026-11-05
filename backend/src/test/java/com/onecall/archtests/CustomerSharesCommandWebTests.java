@@ -140,18 +140,89 @@ class CustomerSharesCommandWebTests {
         }
         verifyNoInteractions(fixture.query);
         Fixture rotate = new Fixture(true);
-        for (String suffix : List.of("code-rotations")) {
-            String path = PATH + "/share:fixture/" + suffix;
-            var response = rotate.mvc.perform(post(path).servletPath(path).contentType("application/json").content("{}"))
-                    .andReturn().getResponse();
-            problem(response, 404, "NOT_FOUND");
+        for (boolean organization : List.of(false, true)) {
+            rotate.organization = organization ? Optional.of(UUID.randomUUID()) : Optional.empty();
+            var state = state("EXTRACTION_CODE");
+            for (String body : List.of("{}", "{\"expectedCodeGeneration\":0}", "{\"expectedCodeGeneration\":2147483647}")) {
+                for (boolean replay : List.of(false, true)) {
+                    when(rotate.commands.execute(any(), any())).thenReturn(replay ? new CustomerShareCommandResult.RotationReplayed(
+                            state.shareId(), state.verificationMode(), state.status(), state.codeGeneration(), state.revocationGeneration())
+                            : new CustomerShareCommandResult.Rotated(state.shareId(), state.verificationMode(), state.status(),
+                                    state.codeGeneration(), state.revocationGeneration(), "one-time-code"));
+                    var response = rotate.mvc.perform(rotate.rotate().header("Idempotency-Key", " raw ключ,😀 ")
+                            .contentType("application/json; charset=UTF-8").content(body)).andReturn().getResponse();
+                    assertThat(response.getStatus()).isEqualTo(200);
+                    var json = mapper.readTree(response.getContentAsString());
+                    var fields = new java.util.ArrayList<>(List.of("result", "shareId", "verificationMode", "status", "codeGeneration", "revocationGeneration"));
+                    if (!replay) fields.add("extractionCode");
+                    assertThat(json.properties().stream().map(Map.Entry::getKey)).containsExactlyInAnyOrderElementsOf(fields);
+                    assertThat(json.path("result").asString()).isEqualTo(replay ? "REPLAYED" : "ROTATED");
+                    assertThat(json.path("status").asString()).isEqualTo("ACTIVE");
+                    assertThat(json.path("verificationMode").asString()).isEqualTo("EXTRACTION_CODE");
+                    assertThat(json.has("extractionCode")).isEqualTo(!replay);
+                    assertThat(response.getContentAsString()).doesNotContain("capabilityToken", "salt", "hash", "evidenceId", "revision", "traceId", " raw ");
+                    if (replay) assertThat(response.getContentAsString()).doesNotContain("one-time-code");
+                    assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+                    var invocation = mockingDetails(rotate.commands).getInvocations().stream().reduce((left, right) -> right).orElseThrow();
+                    var command = invocation.getArgument(0, CustomerShareCommand.Rotate.class);
+                    assertThat(command.actionRequestId()).isEqualTo(" raw ключ,😀 ");
+                    assertThat(command.shareId()).isEqualTo("share:fixture");
+                    assertThat(command.expectedCodeGeneration()).isEqualTo(body.equals("{}") ? null : body.contains("2147483647") ? Integer.MAX_VALUE : 0);
+                    assertThat(command.traceId()).contains(rotate.trace.get());
+                    assertThat(invocation.getArgument(1, ShareCommandCaller.class)).isEqualTo(new ShareCommandCaller(ACCOUNT, rotate.organization));
+                }
+            }
         }
-        verifyNoInteractions(rotate.commands);
+        for (var row : Map.of(ShareCommandException.Code.UNAUTHENTICATED, 401,
+                ShareCommandException.Code.FORBIDDEN, 403, ShareCommandException.Code.NOT_FOUND, 404,
+                ShareCommandException.Code.SHARE_TRANSITION_CONFLICT, 409, ShareCommandException.Code.VALIDATION_FAILED, 422,
+                ShareCommandException.Code.RATE_LIMITED, 429, ShareCommandException.Code.SERVICE_UNAVAILABLE, 503,
+                ShareCommandException.Code.INTERNAL, 500).entrySet()) {
+            doThrow(new ShareCommandException(row.getKey())).when(rotate.commands).execute(any(), any());
+            problem(rotate.mvc.perform(rotate.rotate().header("Idempotency-Key", "valid").contentType("application/json")
+                    .content("{}")).andReturn().getResponse(), row.getValue(), row.getKey().name());
+        }
+        doReturn(new CustomerShareCommandResult.Revoked(state("NONE"))).when(rotate.commands).execute(any(), any());
+        problem(rotate.mvc.perform(rotate.rotate().header("Idempotency-Key", "valid").contentType("application/json")
+                .content("{}")).andReturn().getResponse(), 500, "INTERNAL");
+        verifyNoInteractions(rotate.query);
     }
 
     @Test
     void invalidCommandAndMissingServiceMapToProblemResponses() throws Exception {
         Fixture fixture = new Fixture(true);
+        for (String body : List.of("", "null", "[]", "true", "1", "\"x\"", "{", "{} {}",
+                "{\"expectedCodeGeneration\":null}", "{\"expectedCodeGeneration\":-1}", "{\"expectedCodeGeneration\":1.0}",
+                "{\"expectedCodeGeneration\":2147483648}", "{\"expectedCodeGeneration\":\"0\"}", "{\"expectedCodeGeneration\":true}",
+                "{\"expectedCodeGeneration\":0,\"expectedCodeGeneration\":0}", "{\"reason\":\"x\"}", "{\"expectedRevocationGeneration\":0}",
+                "{\"actionRequestId\":\"x\"}", "{\"code\":\"x\"}", "{\"salt\":\"x\"}", "{\"hash\":\"x\"}", "{\"token\":\"x\"}",
+                "{\"accountId\":\"x\"}", "{\"workspace\":\"x\"}", "{\"traceId\":\"x\"}"))
+            problem(fixture.mvc.perform(fixture.rotate().header("Idempotency-Key", "valid").contentType("application/json")
+                    .content(body)).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        for (String[] keys : List.of(new String[] {}, new String[] {""}, new String[] {" "}, new String[] {"😀".repeat(129)},
+                new String[] {"same", "same"}, new String[] {"first", "second"}, new String[] {"bad\0"}, new String[] {"\uD800"})) {
+            var request = fixture.rotate().contentType("text/plain").content("{");
+            if (keys.length > 0) request.header("iDeMpOtEnCy-KeY", (Object[]) keys);
+            problem(fixture.mvc.perform(request).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        }
+        for (String type : List.of("ABSENT", "text/plain", "application/*", "application/*+json", "application/problem+json", "broken;")) {
+            var request = fixture.rotate().header("Idempotency-Key", "valid").content("{}");
+            if (!type.equals("ABSENT")) request.header("Content-Type", type);
+            problem(fixture.mvc.perform(request).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        }
+        problem(fixture.mvc.perform(fixture.rotate().header("Idempotency-Key", "valid").contentType("application/json")
+                .content("{}").with(request -> {
+                    var duplicate = spy(request);
+                    doReturn(java.util.Collections.enumeration(List.of("application/json", "application/json"))).when(duplicate).getHeaders("Content-Type");
+                    return duplicate;
+                }))
+                .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        for (String id : List.of(" ", "x".repeat(129))) {
+            String path = PATH + "/" + id + "/code-rotations";
+            problem(fixture.mvc.perform(fixture.rotate().header("Idempotency-Key", "valid").contentType("application/json").content("{}")
+                    .with(request -> { request.setRequestURI(path); request.setServletPath(path); return request; }))
+                    .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        }
         for (String body : List.of("", "null", "[]", "true", "{", BODY + " {}", BODY.replace("\"downloadAllowed\":false", "\"downloadAllowed\":0"),
                 BODY.replace("\"downloadAllowed\":false", "\"downloadAllowed\":null"), BODY.replace(",\"downloadAllowed\":false", ""),
                 BODY.replace(" raw 😀 ", " "), BODY.replace(" raw 😀 ", "😀".repeat(129)), BODY.replace(EVIDENCE.toString(), "1-1-1-1-1"),
@@ -203,6 +274,15 @@ class CustomerSharesCommandWebTests {
         for (var selected : List.of(new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.PERSONAL, UUID.randomUUID()),
                 new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.ORGANIZATION, null))) {
             malformedWorkspace.workspace = selected;
+            for (String id : List.of(" ", "x".repeat(129))) {
+                String path = PATH + "/" + id + "/code-rotations";
+                problem(malformedWorkspace.mvc.perform(malformedWorkspace.rotate().header("Idempotency-Key", "valid")
+                        .contentType("application/json").content("{")
+                        .with(request -> { request.setRequestURI(path); request.setServletPath(path); return request; }))
+                        .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+            }
+            problem(malformedWorkspace.mvc.perform(malformedWorkspace.rotate().header("Idempotency-Key", "valid")
+                    .contentType("application/json").content("{")).andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
             problem(malformedWorkspace.mvc.perform(malformedWorkspace.revoke().contentType("text/plain").content("{"))
                     .andReturn().getResponse(), 422, "VALIDATION_FAILED");
             problem(malformedWorkspace.mvc.perform(malformedWorkspace.revoke().header("Idempotency-Key", "valid")
@@ -213,6 +293,8 @@ class CustomerSharesCommandWebTests {
         assertThat(malformedWorkspace.commandResolutions).hasValue(0);
         verifyNoInteractions(malformedWorkspace.commands, malformedWorkspace.query);
         Fixture missing = new Fixture(false);
+        problem(missing.mvc.perform(missing.rotate().header("Idempotency-Key", "valid").contentType("application/json").content("{}"))
+                .andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
         problem(missing.mvc.perform(missing.revoke().header("Idempotency-Key", "valid").contentType("application/json").content("{}"))
                 .andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
         for (String key : List.of("😀".repeat(128), " raw ключ 😀 ", "revoke,raw-key")) {
@@ -306,6 +388,11 @@ class CustomerSharesCommandWebTests {
 
         MockHttpServletRequestBuilder revoke() {
             String path = PATH + "/share:fixture/revocations";
+            return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path).servletPath(path).header("Authorization", "Bearer test");
+        }
+
+        MockHttpServletRequestBuilder rotate() {
+            String path = PATH + "/share:fixture/code-rotations";
             return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path).servletPath(path).header("Authorization", "Bearer test");
         }
     }

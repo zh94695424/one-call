@@ -10,6 +10,7 @@ import com.onecall.core.sharing.internal.provider.ProviderResult;
 import com.onecall.core.sharing.internal.provider.Sha256Provider;
 import com.onecall.core.sharing.internal.provider.ShareCreationPolicyProvider;
 import com.onecall.core.sharing.internal.provider.ShareExtractionCodeProvider;
+import com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.security.MessageDigest;
@@ -88,11 +89,18 @@ public class SharingCommandPersistenceConfiguration {
             @Qualifier("sharingCommandRepository") SharingCommandRepository repository,
             @Qualifier("shareableEvidenceProjectionReader") ShareableEvidenceProjectionReader reader,
             @Qualifier("shareCreationPolicyProvider") ShareCreationPolicyProvider policy,
+            @Qualifier("shareRotationPolicyProvider") ShareRotationPolicyProvider rotationPolicy,
             @Qualifier("capabilityTokenProvider") CapabilityTokenProvider tokens,
             @Qualifier("shareExtractionCodeProvider") ShareExtractionCodeProvider codes,
             @Qualifier("designatedMobileBindingProvider") DesignatedMobileBindingProvider mobiles,
             @Qualifier("sha256Provider") Sha256Provider sha256) {
-        return new DefaultCustomerShareCommandService(template, context, repository, reader, policy, tokens, codes, mobiles, sha256);
+        return new DefaultCustomerShareCommandService(template, context, repository, reader, policy, rotationPolicy, tokens, codes, mobiles, sha256);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ShareRotationPolicyProvider.class)
+    ShareRotationPolicyProvider shareRotationPolicyProvider() {
+        return request -> new ProviderResult.Unavailable<>(Code.SERVICE_UNAVAILABLE);
     }
 
     @Bean

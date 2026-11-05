@@ -26,7 +26,9 @@ public final class DeterministicShareCommandProviders {
 
     public static ShareExtractionCodeProvider codes() {
         return (grantId, generation) -> new ProviderResult.Allowed<>(new ExtractionCodeMaterial(
-                "test-code", "test_salt_abcdefghijklmnop", digest(grantId + ":" + generation)));
+                generation == 1 ? "test-code" : "test-code-" + grantId + "-" + generation,
+                generation == 1 ? "test_salt_abcdefghijklmnop" : "test_salt_" + digest(grantId + ":salt:" + generation),
+                digest(grantId + ":" + generation)));
     }
 
     public static DesignatedMobileBindingProvider mobiles() {
@@ -35,5 +37,9 @@ public final class DeterministicShareCommandProviders {
 
     public static ShareCreationPolicyProvider policy() {
         return request -> new ProviderResult.Allowed<>(ShareCreationPolicyProvider.CreationPolicyDecision.ALLOW);
+    }
+
+    public static ShareRotationPolicyProvider rotationPolicy() {
+        return request -> new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.ALLOW);
     }
 }

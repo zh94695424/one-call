@@ -499,8 +499,7 @@ class CustomerSharesWebTests {
             assertThat(VERIFICATIONS).hasValue(1);
             for (String suffix : List.of("revocations", "code-rotations")) {
                 String transition = "/pa12/api/v1/customer/shares/share:fixture/" + suffix;
-                for (String method : suffix.equals("revocations") ? List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE")
-                        : List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE", "POST")) {
+                for (String method : List.of("GET", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE")) {
                     SELECTION.set(0);
                     VERIFICATIONS.set(0);
                     var rejected = request(prefixedPort, method, transition, "personal", null, null);
@@ -515,6 +514,11 @@ class CustomerSharesWebTests {
                     assertThat(SELECTION).hasValue(0);
                     assertThat(VERIFICATIONS).hasValue(0);
                 }
+                var rotation = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + prefixedPort + transition))
+                        .header("Authorization", "Bearer personal").header("Idempotency-Key", "valid")
+                        .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+                assertProblem(rotation, 503, "SERVICE_UNAVAILABLE", "Service unavailable");
                 String encodedSuffix = suffix.equals("revocations") ? "%72evocations" : "%63ode-rotations";
                 for (String path : List.of(transition + "/extra", transition + "/",
                         "/pa12/api/v1/customer/shares/%73hare:fixture/" + suffix,
@@ -581,6 +585,17 @@ class CustomerSharesWebTests {
             assertThat(available.body()).contains("\"status\":\"REVOKED\"", "\"revocationGeneration\":1")
                     .doesNotContain("capabilityToken", "extractionCode", "revoke-key");
             verify(commands).execute(any(CustomerShareCommand.Revoke.class), org.mockito.ArgumentMatchers.eq(new ShareCommandCaller(ACCOUNT, Optional.empty())));
+            when(commands.execute(any(), any())).thenReturn(new CustomerShareCommandResult.Rotated(
+                    item.shareId(), ShareSummary.VerificationMode.EXTRACTION_CODE, ShareSummary.ShareStatus.ACTIVE, 2, 2, "rotation-one-time"));
+            var rotated = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + prefixedPort
+                            + "/pa12/api/v1/customer/shares/share:fixture/code-rotations"))
+                    .header("Authorization", "Bearer personal").header("Idempotency-Key", "rotate-key")
+                    .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(rotated.statusCode()).isEqualTo(200);
+            assertThat(rotated.body()).contains("\"result\":\"ROTATED\"", "\"extractionCode\":\"rotation-one-time\"")
+                    .doesNotContain("capabilityToken", "rotate-key", "salt", "hash");
+            verify(commands).execute(any(CustomerShareCommand.Rotate.class), org.mockito.ArgumentMatchers.eq(new ShareCommandCaller(ACCOUNT, Optional.empty())));
         }
     }
 

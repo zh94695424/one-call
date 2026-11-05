@@ -162,7 +162,7 @@ class CustomerWebConfigurationTests {
                             "sharingCommandTransactionTemplate", List.of("sharingCommandTransactionManager"),
                             "sharingCommandDsl", List.of("sharingCommandDataSource"), "sharingCommandRepository", List.of("sharingCommandDsl"),
                             "customerShareCommandService", List.of("sharingCommandTransactionTemplate", "sharingCommandDsl", "sharingCommandRepository",
-                                    "shareableEvidenceProjectionReader", "shareCreationPolicyProvider", "capabilityTokenProvider",
+                                    "shareableEvidenceProjectionReader", "shareCreationPolicyProvider", "shareRotationPolicyProvider", "capabilityTokenProvider",
                                     "shareExtractionCodeProvider", "designatedMobileBindingProvider", "sha256Provider"));
             for (var method : configuration.getDeclaredMethods()) {
                 if (configuration == com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class
