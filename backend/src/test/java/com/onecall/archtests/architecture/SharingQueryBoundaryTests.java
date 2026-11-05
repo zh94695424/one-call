@@ -104,7 +104,7 @@ class SharingQueryBoundaryTests {
                             "persistence/JooqSharingCommandRepository.java", "persistence/SharingCommandPersistenceConfiguration.java",
                             "persistence/SharingCommandPersistenceProperties.java", "provider/ProviderResult.java", "provider/ShareCreationPolicyProvider.java",
                             "provider/CapabilityTokenProvider.java", "provider/ShareExtractionCodeProvider.java", "provider/DesignatedMobileBindingProvider.java",
-                            "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java");
+                            "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java", "provider/ShareRotationPolicyProvider.java");
             for (Path path : commandPaths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("org.flywaydb", "spring.datasource", "ONECALL_MIGRATION", "jdbc:", "SELECT *",
@@ -115,6 +115,14 @@ class SharingQueryBoundaryTests {
             }
         }
         var commandApi = namedInterfaces.getByName("customer-command").orElseThrow();
+        components(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyRequest.class,
+                "caller", "grantId", "verificationMode", "status", "codeGeneration", "revocationGeneration");
+        components(com.onecall.core.sharing.internal.command.CustomerShareCommandResult.Rotated.class,
+                "shareId", "verificationMode", "status", "codeGeneration", "revocationGeneration", "extractionCode");
+        components(com.onecall.core.sharing.internal.command.CustomerShareCommandResult.RotationReplayed.class,
+                "shareId", "verificationMode", "status", "codeGeneration", "revocationGeneration");
+        assertThat(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyDecision.values())
+                .extracting(Enum::name).containsExactly("ALLOW", "DENY");
         assertThat(commandApi.asJavaClasses().filter(type -> !type.getName().contains("$")).map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
                 .containsExactlyInAnyOrder("CustomerShareCommandService", "CustomerShareCommand", "CustomerShareCommandResult", "ShareCommandCaller", "ShareCommandException");
     }

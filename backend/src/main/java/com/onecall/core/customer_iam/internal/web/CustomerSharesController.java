@@ -112,6 +112,40 @@ public class CustomerSharesController {
         throw new ShareCommandException(ShareCommandException.Code.INTERNAL);
     }
 
+    @PostMapping(path = "/api/v1/customer/shares/{shareId}/code-rotations", produces = "application/json")
+    public Object rotateCustomerShareCode(@PathVariable("shareId") String shareId, Principal principal,
+            HttpServletRequest request) throws IOException {
+        if (!(principal instanceof CustomerRequestPrincipal customer))
+            throw new ShareCommandException(ShareCommandException.Code.UNAUTHENTICATED);
+        if (shareId.isBlank() || shareId.codePointCount(0, shareId.length()) > 128 || shareId.indexOf('\0') >= 0
+                || !java.nio.charset.StandardCharsets.UTF_8.newEncoder().canEncode(shareId))
+            throw new ShareCommandException(ShareCommandException.Code.VALIDATION_FAILED);
+        TrustedCustomerCaller caller = customer.caller();
+        SelectedCustomerWorkspace selected = requireSelectedWorkspace(caller);
+        CustomerShareCommandDtos.CodeRotationRequest body;
+        try { body = binder.rotate(request.getInputStream().readAllBytes()); }
+        catch (IllegalArgumentException invalid) { throw new ShareCommandException(ShareCommandException.Code.VALIDATION_FAILED); }
+        var command = new CustomerShareCommand.Rotate(shareId, CustomerBoundaryFilter.idempotencyKey(request),
+                Optional.of(CustomerBoundaryFilter.trace(request)), body.expectedCodeGeneration());
+        CustomerShareCommandResult result;
+        try { result = commands.getObject().execute(command, new ShareCommandCaller(caller.accountId(), Optional.ofNullable(selected.organizationId()))); }
+        catch (BeansException failure) { throw new ShareCommandException(ShareCommandException.Code.SERVICE_UNAVAILABLE); }
+        if (result instanceof CustomerShareCommandResult.Rotated rotated) {
+            var state = rotated;
+            return new CustomerShareCommandDtos.ShareCodeRotationRotated("ROTATED", state.shareId(),
+                    CustomerShareCommandDtos.VerificationMode.valueOf(state.verificationMode().name()),
+                    CustomerShareCommandDtos.ShareStatus.valueOf(state.status().name()), state.codeGeneration(),
+                    state.revocationGeneration(), rotated.extractionCode());
+        }
+        if (result instanceof CustomerShareCommandResult.RotationReplayed replayed) {
+            var state = replayed;
+            return new CustomerShareCommandDtos.ShareCodeRotationReplayed("REPLAYED", state.shareId(),
+                    CustomerShareCommandDtos.VerificationMode.valueOf(state.verificationMode().name()),
+                    CustomerShareCommandDtos.ShareStatus.valueOf(state.status().name()), state.codeGeneration(), state.revocationGeneration());
+        }
+        throw new ShareCommandException(ShareCommandException.Code.INTERNAL);
+    }
+
     @GetMapping(path = "/api/v1/customer/shares", produces = "application/json")
     public CustomerSharePage getCustomerShares(Principal principal, HttpServletRequest request) {
         if (!(principal instanceof CustomerRequestPrincipal customer))

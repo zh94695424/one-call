@@ -29,6 +29,7 @@ class SharingCommandPersistenceConfigurationTests {
                 assertThat(context).hasNotFailed();
                 assertThat(context.getBeansOfType(javax.sql.DataSource.class)).isEmpty();
                 assertThat(context.getBeansOfType(SharingCommandRepository.class)).isEmpty();
+                assertThat(context.getBeansOfType(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.class)).isEmpty();
             });
         }
         runner.withPropertyValues("spring.profiles.active=web", "onecall.sharing-command.enabled=true").run(context -> {
@@ -61,8 +62,26 @@ class SharingCommandPersistenceConfigurationTests {
                         assertThat(template.getIsolationLevel()).isEqualTo(TransactionDefinition.ISOLATION_READ_COMMITTED);
                         assertThat(template.getPropagationBehavior()).isEqualTo(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
                         assertThat(context.getBean("sharingCommandDataSource")).isSameAs(construction.constructed().getFirst());
+                        var policy = context.getBean("shareRotationPolicyProvider", com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.class);
+                        var result = policy.evaluate(new com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyRequest(
+                                new com.onecall.core.sharing.internal.command.ShareCommandCaller(java.util.UUID.randomUUID(), java.util.Optional.empty()),
+                                java.util.UUID.randomUUID(), com.onecall.core.sharing.internal.application.ShareSummary.VerificationMode.EXTRACTION_CODE,
+                                com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.LOCKED, 1, 0));
+                        assertThat(result).isEqualTo(new com.onecall.core.sharing.internal.provider.ProviderResult.Unavailable<>(
+                                com.onecall.core.sharing.internal.command.ShareCommandException.Code.SERVICE_UNAVAILABLE));
                     });
             verify(construction.constructed().getFirst()).close();
+            var override = com.onecall.archtests.sharing.DeterministicShareCommandProviders.rotationPolicy();
+            runner.withBean("shareRotationPolicyProvider", com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.class, () -> override)
+                    .withPropertyValues("spring.profiles.active=persistence", "onecall.sharing-command.enabled=true",
+                            "onecall.sharing-command.datasource.url=jdbc:postgresql://unused/command",
+                            "onecall.sharing-command.datasource.username=command-test", "onecall.sharing-command.datasource.password=test-only")
+                    .run(context -> {
+                        assertThat(context).hasNotFailed();
+                        assertThat(context.getBeansOfType(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.class))
+                                .containsOnlyKeys("shareRotationPolicyProvider");
+                        assertThat(context.getBean("shareRotationPolicyProvider")).isSameAs(override);
+                    });
         }
         var annotation = JooqShareableEvidenceProjectionReader.class.getMethod("readShareableProjection", DSLContext.class, java.util.UUID.class)
                 .getAnnotation(Transactional.class);

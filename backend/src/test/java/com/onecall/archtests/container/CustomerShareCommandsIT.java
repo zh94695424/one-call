@@ -53,7 +53,9 @@ class CustomerShareCommandsIT {
     private final AtomicInteger tokens = new AtomicInteger();
     private final AtomicInteger codes = new AtomicInteger();
     private volatile ProviderResult<ShareCreationPolicyProvider.CreationPolicyDecision> policy = new ProviderResult.Allowed<>(ShareCreationPolicyProvider.CreationPolicyDecision.ALLOW);
+    private volatile ProviderResult<ShareRotationPolicyProvider.RotationPolicyDecision> rotationPolicy = new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.ALLOW);
     private volatile String failOn;
+    private volatile String rotationMiss;
 
     record Execution(String sql, String role, int pid, List<Object> bindings) { }
 
@@ -97,6 +99,7 @@ class CustomerShareCommandsIT {
                 "onecall.sharing-command.enabled", "true", "onecall.sharing-command.datasource.url", base.url,
                 "onecall.sharing-command.datasource.username", login, "onecall.sharing-command.datasource.password", base.password)));
         context.registerBean("shareCreationPolicyProvider", ShareCreationPolicyProvider.class, () -> request -> policy);
+        context.registerBean("shareRotationPolicyProvider", ShareRotationPolicyProvider.class, () -> request -> rotationPolicy);
         context.registerBean("capabilityTokenProvider", CapabilityTokenProvider.class, () -> grantId -> {
             tokens.incrementAndGet(); return DeterministicShareCommandProviders.tokens().issue(grantId);
         });
@@ -115,6 +118,13 @@ class CustomerShareCommandsIT {
                     rows.next(); executions.add(new Execution(execution.sql(), rows.getString(1), rows.getInt(2),
                             execution.query() == null ? List.of() : new java.util.ArrayList<>(execution.query().getBindValues())));
                 } catch (java.sql.SQLException failure) { throw new IllegalStateException("Probe failed", failure); }
+                if (rotationMiss != null && execution.sql().startsWith("UPDATE sharing.evidence_share_grant SET status = ?, code_salt")) {
+                    try {
+                        if (rotationMiss.equals("revision")) execution.statement().setInt(8, Integer.MAX_VALUE);
+                        if (rotationMiss.equals("status")) execution.statement().setString(9, "ACTIVE");
+                        if (rotationMiss.equals("code")) execution.statement().setInt(10, 0);
+                    } catch (java.sql.SQLException failure) { throw new IllegalStateException("Conditional probe failed", failure); }
+                }
                 if (failOn != null && execution.sql().contains(failOn)) throw new IllegalStateException("TEST_INTERNAL_CANARY");
             }
         }));
@@ -596,7 +606,7 @@ class CustomerShareCommandsIT {
 
     private CustomerShareCommandService service(TransactionTemplate template, SharingCommandRepository selectedRepository, CapabilityTokenProvider selectedTokens) {
         return new DefaultCustomerShareCommandService(template, dsl, selectedRepository, context.getBean(ShareableEvidenceProjectionReader.class),
-                context.getBean(ShareCreationPolicyProvider.class), selectedTokens, context.getBean(ShareExtractionCodeProvider.class),
+                context.getBean(ShareCreationPolicyProvider.class), context.getBean(ShareRotationPolicyProvider.class), selectedTokens, context.getBean(ShareExtractionCodeProvider.class),
                 context.getBean(DesignatedMobileBindingProvider.class), context.getBean(Sha256Provider.class));
     }
 
@@ -1028,6 +1038,609 @@ class CustomerShareCommandsIT {
             revoke(shareId, "retry-key", null, null);
             assertRevokeHead(before, grantSnapshot(shareId));
             assertRevokeCounts(grantId, 1);
+        }
+    }
+
+    @Test
+    void rotateWritesRegisteredEventAuditAndOutboxAtomically() throws Exception {
+        try (Connection admin = base.admin(); Statement statement = admin.createStatement();
+                ResultSet version = statement.executeQuery("SELECT version(), current_setting('server_version')")) {
+            assertThat(version.next()).isTrue();
+            assertThat(version.getString(2)).startsWith("16.");
+            System.out.println("PA14 PostgreSQL version: " + version.getString(1) + "; server_version=" + version.getString(2));
+        }
+        CustomerShareCommandService real = service;
+        for (Integer witness : new Integer[] {null, 1}) {
+            var created = (CustomerShareCommandResult.Created) create("rotate-facts-" + witness, VerificationMode.EXTRACTION_CODE, Optional.empty());
+            String shareId = created.state().shareId();
+            prepareGrant(shareId, "LOCKED", 4);
+            var before = grantSnapshot(shareId);
+            UUID grantId = (UUID) before.get("id");
+            UUID trace = UUID.randomUUID();
+            Optional<UUID> selectedTrace = witness == null ? Optional.empty() : Optional.of(trace);
+            var sampled = new java.util.concurrent.atomic.AtomicReference<Instant>();
+            var seam = spy(repository);
+            doAnswer(invocation -> {
+                Instant value = (Instant) invocation.callRealMethod();
+                sampled.set(value);
+                return value;
+            }).when(seam).sampleDatabaseTime(any());
+            var policyProbe = mock(ShareRotationPolicyProvider.class);
+            when(policyProbe.evaluate(any())).thenAnswer(invocation -> {
+                assertThat(executions).noneMatch(execution -> execution.sql().startsWith("INSERT") || execution.sql().startsWith("UPDATE"));
+                assertThat(invocation.getArgument(0, ShareRotationPolicyProvider.RotationPolicyRequest.class)).isEqualTo(
+                        new ShareRotationPolicyProvider.RotationPolicyRequest(caller(), grantId, VerificationMode.EXTRACTION_CODE,
+                                com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.LOCKED, 1, 4));
+                return DeterministicShareCommandProviders.rotationPolicy().evaluate(invocation.getArgument(0));
+            });
+            var codeProbe = mock(ShareExtractionCodeProvider.class);
+            when(codeProbe.generate(any(), anyInt())).thenAnswer(invocation -> {
+                verify(policyProbe).evaluate(any());
+                assertThat(executions).noneMatch(execution -> execution.sql().startsWith("INSERT") || execution.sql().startsWith("UPDATE"));
+                return context.getBean(ShareExtractionCodeProvider.class).generate(invocation.getArgument(0), invocation.getArgument(1));
+            });
+            service = rotationService(seam, policyProbe, codeProbe);
+            int oldTokens = tokens.get();
+            int oldCodes = codes.get();
+            executions.clear();
+            var rotated = (CustomerShareCommandResult.Rotated) service.execute(new CustomerShareCommand.Rotate(shareId, " raw ключ,😀 ", selectedTrace, witness), caller());
+            assertThat(rotated.status().name()).isEqualTo("ACTIVE");
+            assertThat(rotated.codeGeneration()).isEqualTo(2);
+            assertThat(rotated.revocationGeneration()).isEqualTo(5);
+            assertThat(rotated.extractionCode()).isNotEqualTo(created.extractionCode().orElseThrow());
+            assertThat(tokens).hasValue(oldTokens);
+            assertThat(codes).hasValue(oldCodes + 1);
+            var after = grantSnapshot(shareId);
+            assertRotateHead(before, after);
+            assertRevokeExecution(caller());
+            var update = executions.stream().filter(execution -> execution.sql().startsWith("UPDATE sharing.evidence_share_grant")).findFirst().orElseThrow();
+            assertThat(update.sql().contains("AND code_generation = ?")).isEqualTo(witness != null);
+            assertThat(update.bindings().subList(0, 9)).containsExactly("ACTIVE", after.get("code_salt"), after.get("code_hash"), 2, 5,
+                    after.get("revision"), grantId, before.get("revision"), "LOCKED");
+            assertRotationFacts(before, " raw ключ,😀 ", selectedTrace, sampled.get(), rotated.extractionCode(), created.capabilityToken());
+            assertRevokeCounts(grantId, 1);
+            service = real;
+        }
+        var created = (CustomerShareCommandResult.Created) create("rotate-refusal", VerificationMode.EXTRACTION_CODE, Optional.empty());
+        String shareId = created.state().shareId();
+        prepareGrant(shareId, "LOCKED", 0);
+        var before = grantSnapshot(shareId);
+        UUID grantId = (UUID) before.get("id");
+        List<String> durable = revokeFacts(grantId);
+        var policyProbe = mock(ShareRotationPolicyProvider.class);
+        var codeProbe = mock(ShareExtractionCodeProvider.class);
+        service = rotationService(repository, policyProbe, codeProbe);
+        for (var outcome : java.util.Arrays.<ProviderResult<ShareRotationPolicyProvider.RotationPolicyDecision>>asList(
+                new ProviderResult.Denied<>(ShareCommandException.Code.INTERNAL),
+                new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.DENY),
+                new ProviderResult.Unavailable<>(ShareCommandException.Code.INTERNAL), null,
+                mock(ProviderResult.Allowed.class))) {
+            doReturn(outcome).when(policyProbe).evaluate(any());
+            fails(() -> rotate(shareId, "retry-key", null), outcome instanceof ProviderResult.Denied<?>
+                    || outcome instanceof ProviderResult.Allowed<?> allowed && allowed.value() == ShareRotationPolicyProvider.RotationPolicyDecision.DENY
+                    ? ShareCommandException.Code.FORBIDDEN : ShareCommandException.Code.SERVICE_UNAVAILABLE);
+            assertThat(grantSnapshot(shareId)).isEqualTo(before);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+        }
+        when(policyProbe.evaluate(any())).thenThrow(new IllegalStateException("POLICY_CANARY"));
+        fails(() -> rotate(shareId, "retry-key", null), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        verifyNoInteractions(codeProbe);
+        doReturn(new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.ALLOW)).when(policyProbe).evaluate(any());
+        for (var material : List.of(new ExtractionCodeMaterial("", "valid_salt_abcdefghijklmnop", "b".repeat(64)),
+                new ExtractionCodeMaterial("code", "short", "b".repeat(64)),
+                new ExtractionCodeMaterial("code", "valid_salt_abcdefghijklmnop", "INVALID"),
+                new ExtractionCodeMaterial("code", (String) before.get("code_salt"), "b".repeat(64)),
+                new ExtractionCodeMaterial("code", "valid_salt_abcdefghijklmnop", (String) before.get("code_hash")))) {
+            when(codeProbe.generate(any(), anyInt())).thenReturn(new ProviderResult.Allowed<>(material));
+            executions.clear();
+            fails(() -> rotate(shareId, "retry-key", null), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+            assertThat(executions).noneMatch(execution -> execution.sql().startsWith("INSERT") || execution.sql().startsWith("UPDATE"));
+            assertThat(grantSnapshot(shareId)).isEqualTo(before);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+        }
+        for (var outcome : java.util.Arrays.<ProviderResult<ExtractionCodeMaterial>>asList(null,
+                new ProviderResult.Denied<>(ShareCommandException.Code.FORBIDDEN), new ProviderResult.Unavailable<>(ShareCommandException.Code.INTERNAL),
+                mock(ProviderResult.Allowed.class))) {
+            doReturn(outcome).when(codeProbe).generate(any(), anyInt());
+            fails(() -> rotate(shareId, "retry-key", null), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        }
+        when(codeProbe.generate(any(), anyInt())).thenThrow(new IllegalStateException("CODE_CANARY"));
+        fails(() -> rotate(shareId, "retry-key", null), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        assertThat(grantSnapshot(shareId)).isEqualTo(before);
+        assertThat(revokeFacts(grantId)).isEqualTo(durable);
+        try (var missingPolicy = new AnnotationConfigApplicationContext()) {
+            missingPolicy.getEnvironment().setActiveProfiles("persistence");
+            missingPolicy.getEnvironment().getPropertySources().addFirst(new MapPropertySource("missing-policy", java.util.Map.of(
+                    "onecall.sharing-command.enabled", "true", "onecall.sharing-command.datasource.url", base.url,
+                    "onecall.sharing-command.datasource.username", login, "onecall.sharing-command.datasource.password", base.password)));
+            missingPolicy.register(SharingCommandPersistenceConfiguration.class, ShareProjectionReaderConfiguration.class);
+            missingPolicy.refresh();
+            fails(() -> missingPolicy.getBean(CustomerShareCommandService.class).execute(new CustomerShareCommand.Rotate(
+                    shareId, "retry-key", Optional.empty(), null), caller()), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+            assertThat(grantSnapshot(shareId)).isEqualTo(before);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+        }
+        service = real;
+        assertThat(rotate(shareId, "retry-key", null)).isInstanceOf(CustomerShareCommandResult.Rotated.class);
+        service = rotationService(repository, policyProbe, codeProbe);
+        doReturn(new ProviderResult.Unavailable<>(ShareCommandException.Code.SERVICE_UNAVAILABLE)).when(policyProbe).evaluate(any());
+        clearInvocations(policyProbe, codeProbe);
+        assertThat(rotate(shareId, "retry-key", 99)).isInstanceOf(CustomerShareCommandResult.RotationReplayed.class);
+        verifyNoInteractions(policyProbe, codeProbe);
+        assertRevokeCounts(grantId, 1);
+    }
+
+    @Test
+    void rotateReplayReturnsNoCodeOrCapabilityToken() throws Exception {
+        var created = (CustomerShareCommandResult.Created) create("rotate-replay", VerificationMode.EXTRACTION_CODE, Optional.empty());
+        String shareId = created.state().shareId();
+        prepareGrant(shareId, "LOCKED", 0);
+        var rotated = (CustomerShareCommandResult.Rotated) rotate(shareId, "original-key", 1);
+        var normal = context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class);
+        CustomerShareCommandService real = service;
+        for (String later : List.of("ACTIVE", "LOCKED", "ROTATED", "REVOKED", "ELAPSED")) {
+            service = real;
+            if (later.equals("LOCKED")) prepareGrant(shareId, "LOCKED", 1);
+            if (later.equals("ROTATED")) rotate(shareId, "later-key", 2);
+            if (later.equals("REVOKED")) revoke(shareId, "later-revoke", null, null);
+            var seam = spy(repository);
+            if (later.equals("ELAPSED")) doReturn(expiry.plusSeconds(1)).when(seam).sampleDatabaseTime(any());
+            service = service(normal, seam);
+            var before = grantSnapshot(shareId);
+            UUID grantId = (UUID) before.get("id");
+            List<String> durable = revokeFacts(grantId);
+            int oldTokens = tokens.get();
+            int oldCodes = codes.get();
+            rotationPolicy = new ProviderResult.Denied<>(ShareCommandException.Code.FORBIDDEN);
+            for (Integer witness : new Integer[] {null, 0, 1, 2, 99}) {
+                executions.clear();
+                var replay = (CustomerShareCommandResult.RotationReplayed) service.execute(new CustomerShareCommand.Rotate(
+                        shareId, "original-key", Optional.of(UUID.randomUUID()), witness), caller());
+                assertThat(replay).isEqualTo(new CustomerShareCommandResult.RotationReplayed(rotated.shareId(), rotated.verificationMode(),
+                        rotated.status(), rotated.codeGeneration(), rotated.revocationGeneration()));
+                assertThat(JsonMapper.builder().build().writeValueAsString(replay)).doesNotContain("extractionCode", "capabilityToken", rotated.extractionCode());
+                assertThat(grantSnapshot(shareId)).isEqualTo(before);
+                assertThat(revokeFacts(grantId)).isEqualTo(durable);
+                assertThat(executions).noneMatch(execution -> execution.sql().startsWith("INSERT") || execution.sql().startsWith("UPDATE")
+                        || execution.sql().contains("outbox_append") || execution.sql().contains("append_fact"));
+            }
+            assertThat(tokens).hasValue(oldTokens);
+            assertThat(codes).hasValue(oldCodes);
+            rotationPolicy = new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.ALLOW);
+        }
+        fails(() -> service.execute(new CustomerShareCommand.Rotate(shareId, "original-key", Optional.empty(), null),
+                new ShareCommandCaller(base.account, Optional.of(base.org))), ShareCommandException.Code.NOT_FOUND);
+        var conflict = spy(repository);
+        doAnswer(invocation -> {
+            var persisted = repository.findTransition(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)).orElseThrow();
+            return Optional.of(new SharingCommandRepository.PersistedTransition(persisted.shareGrantId(), persisted.eventId(), persisted.actionType(),
+                    persisted.actionRequestDigest(), "a".repeat(64), persisted.status(), persisted.codeGeneration(), persisted.revocationGeneration(),
+                    persisted.revision(), persisted.occurredAt()));
+        }).when(conflict).findTransition(any(), any(), any());
+        service = service(normal, conflict);
+        var beforeConflict = grantSnapshot(shareId);
+        var factsBeforeConflict = revokeFacts((UUID) beforeConflict.get("id"));
+        fails(() -> rotate(shareId, "original-key", null), ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+        assertThat(grantSnapshot(shareId)).isEqualTo(beforeConflict);
+        assertThat(revokeFacts((UUID) beforeConflict.get("id"))).isEqualTo(factsBeforeConflict);
+        for (String corruption : List.of("hash", "extra", "action", "status", "counter", "digest", "fraction", "event")) {
+            service = real;
+            String key = "corrupt-" + corruption;
+            var candidate = (CustomerShareCommandResult.Created) create(key, VerificationMode.EXTRACTION_CODE, Optional.empty());
+            prepareGrant(candidate.state().shareId(), "LOCKED", 0);
+            var before = grantSnapshot(candidate.state().shareId());
+            UUID grantId = (UUID) before.get("id");
+            var mapper = JsonMapper.builder().build();
+            var identity = mapper.createObjectNode().put("shareGrantId", grantId.toString()).put("actionType", "CODE_ROTATE");
+            identity.set("sourceIdentity", mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", key));
+            String eventId = "share-transition:" + DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(identity));
+            var payload = mapper.createObjectNode().put("actionType", "CODE_ROTATE").put("actionRequestDigest", "b".repeat(64))
+                    .put("actionFingerprint", "c".repeat(64)).put("status", "ACTIVE").put("codeGeneration", 2).put("revocationGeneration", 1).put("revision", 3);
+            switch (corruption) {
+                case "extra" -> payload.put("extra", "x");
+                case "action" -> payload.put("actionType", "REVOKE");
+                case "status" -> payload.put("status", "LOCKED");
+                case "counter" -> payload.put("codeGeneration", 0);
+                case "digest" -> payload.put("actionRequestDigest", "INVALID");
+                case "fraction" -> payload.put("revision", 1.5);
+                default -> { }
+            }
+            var durable = revokeFacts(grantId);
+            var malformed = spy(repository);
+            doAnswer(invocation -> {
+                DSLContext transaction = invocation.getArgument(0);
+                repository.appendAccessEvent(transaction, new SharingCommandRepository.AccessEvent(UUID.randomUUID(), grantId, Optional.empty(),
+                        "SHARE_ACCESS", eventId, corruption.equals("event") ? "REVOKED" : "CODE_ROTATED", "SUCCESS", base.timestamp,
+                        Optional.empty(), JSONB.valueOf(payload.toString()), corruption.equals("hash") ? "a".repeat(64)
+                                : DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(payload))));
+                return repository.findTransition(transaction, grantId, eventId);
+            }).when(malformed).findTransition(any(), eq(grantId), eq(eventId));
+            service = service(normal, malformed);
+            int oldCodes = codes.get();
+            fails(() -> rotate(candidate.state().shareId(), key, null), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+            assertThat(grantSnapshot(candidate.state().shareId())).isEqualTo(before);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+            assertThat(codes).hasValue(oldCodes);
+        }
+    }
+
+    @Test
+    void rotateFailureAtEachFactAppendRollsBackAllEffects() throws Exception {
+        var normal = context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class);
+        CustomerShareCommandService real = service;
+        for (String boundary : List.of("before-event", "after-event", "before-update", "after-update", "before-outbox", "after-outbox",
+                "before-audit", "after-audit", "commit")) {
+            var created = (CustomerShareCommandResult.Created) create("rollback-" + boundary, VerificationMode.EXTRACTION_CODE, Optional.empty());
+            String shareId = created.state().shareId();
+            prepareGrant(shareId, "LOCKED", 2);
+            var before = grantSnapshot(shareId);
+            UUID grantId = (UUID) before.get("id");
+            List<String> durable = revokeFacts(grantId);
+            var seam = spy(repository);
+            if (boundary.contains("event")) doAnswer(invocation -> {
+                if (boundary.equals("after-event")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).appendAccessEvent(any(), any());
+            if (boundary.endsWith("update")) doAnswer(invocation -> {
+                if (boundary.equals("after-update")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).transitionGrant(any(), any(), anyInt(), any(), any(), any(), any(), anyInt(), anyInt(), anyInt(), any());
+            if (boundary.endsWith("outbox")) doAnswer(invocation -> {
+                if (boundary.equals("after-outbox")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).appendOutbox(any(), any());
+            if (boundary.endsWith("audit")) doAnswer(invocation -> {
+                if (boundary.equals("after-audit")) invocation.callRealMethod();
+                throw new IllegalStateException("TEST_INTERNAL_CANARY");
+            }).when(seam).appendAudit(any(), any());
+            var manager = context.getBean("sharingCommandTransactionManager", DataSourceTransactionManager.class);
+            var pool = context.getBean("sharingCommandDataSource", HikariDataSource.class);
+            var connectionProvider = dsl.configuration().connectionProvider();
+            AtomicInteger commits = new AtomicInteger();
+            AtomicInteger rollbacks = new AtomicInteger();
+            if (boundary.equals("commit")) {
+                var failing = new org.springframework.jdbc.datasource.DelegatingDataSource(pool) {
+                    @Override
+                    public Connection getConnection() throws java.sql.SQLException {
+                        Connection connection = super.getConnection();
+                        return (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class},
+                                (proxy, method, arguments) -> {
+                                    if (method.getName().equals("commit")) {
+                                        commits.incrementAndGet(); throw new java.sql.SQLException("TEST_COMMIT_CANARY", "08006");
+                                    }
+                                    if (method.getName().equals("rollback")) rollbacks.incrementAndGet();
+                                    try { return method.invoke(connection, arguments); }
+                                    catch (java.lang.reflect.InvocationTargetException failure) { throw failure.getCause(); }
+                                });
+                    }
+                };
+                manager.setDataSource(failing);
+                dsl.configuration().set(new org.jooq.impl.DataSourceConnectionProvider(
+                        new org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy(failing)));
+            }
+            service = service(normal, seam);
+            executions.clear();
+            try {
+                fails(() -> rotate(shareId, "retry-key", null), ShareCommandException.Code.INTERNAL);
+                if (boundary.equals("commit")) {
+                    assertThat(commits).hasValue(1);
+                    assertThat(rollbacks).hasValue(1);
+                    assertThat(executions).anyMatch(execution -> execution.sql().contains("audit.append_fact"));
+                }
+            } finally {
+                manager.setDataSource(pool);
+                dsl.configuration().set(connectionProvider);
+                service = real;
+            }
+            assertThat(grantSnapshot(shareId)).isEqualTo(before);
+            assertThat(revokeFacts(grantId)).isEqualTo(durable);
+            assertRevokeCounts(grantId, 0);
+            rotate(shareId, "retry-key", null);
+            assertRotateHead(before, grantSnapshot(shareId));
+            assertRevokeCounts(grantId, 1);
+            assertThat(rotate(shareId, "retry-key", 99)).isInstanceOf(CustomerShareCommandResult.RotationReplayed.class);
+            assertRevokeCounts(grantId, 1);
+        }
+    }
+
+    @Test
+    void rotateConcurrentActionsProduceOneTransition() throws Exception {
+        for (boolean organization : List.of(false, true)) {
+            for (boolean sameKey : List.of(false, true)) {
+                var created = (CustomerShareCommandResult.Created) create("concurrent-" + organization + sameKey,
+                        VerificationMode.EXTRACTION_CODE, Optional.empty(), false, null, organization);
+                String shareId = created.state().shareId();
+                prepareGrant(shareId, "LOCKED", 2);
+                var before = grantSnapshot(shareId);
+                ShareCommandCaller selected = new ShareCommandCaller(base.account, organization ? Optional.of(base.org) : Optional.empty());
+                var barrier = new java.util.concurrent.CyclicBarrier(2);
+                var seam = spy(repository);
+                doAnswer(invocation -> {
+                    invocation.callRealMethod();
+                    invocation.<DSLContext>getArgument(0).connection(connection -> {
+                        try (Statement statement = connection.createStatement()) {
+                            statement.execute("SET LOCAL lock_timeout = '10s'");
+                            statement.execute("SET LOCAL statement_timeout = '15s'");
+                        }
+                    });
+                    return null;
+                }).when(seam).assertCommandRole(any());
+                doAnswer(invocation -> {
+                    barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    return invocation.callRealMethod();
+                }).when(seam).acquireCreatorWorkspaceLocks(any(), eq(selected));
+                var concurrent = service(context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class), seam);
+                var executor = Executors.newFixedThreadPool(2);
+                executions.clear();
+                try {
+                    var first = executor.submit(() -> rotateOutcome(concurrent, shareId, "first", selected));
+                    var second = executor.submit(() -> rotateOutcome(concurrent, shareId, sameKey ? "first" : "second", selected));
+                    Object firstResult = first.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                    Object secondResult = second.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                    if (sameKey) {
+                        assertThat(List.of(firstResult, secondResult).stream().filter(CustomerShareCommandResult.Rotated.class::isInstance)).hasSize(1);
+                        assertThat(List.of(firstResult, secondResult).stream().filter(CustomerShareCommandResult.RotationReplayed.class::isInstance)).hasSize(1);
+                    } else {
+                        assertThat(List.of(firstResult, secondResult).stream().filter(CustomerShareCommandResult.Rotated.class::isInstance)).hasSize(1);
+                        assertThat(List.of(firstResult, secondResult)).contains(ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+                    }
+                } finally {
+                    executor.shutdownNow();
+                    assertThat(executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                }
+                for (var operation : executions.stream().collect(java.util.stream.Collectors.groupingBy(Execution::pid)).values()) {
+                    assertRevokeExecution(selected, operation, operation.stream().anyMatch(execution -> execution.sql().startsWith("INSERT")));
+                }
+                assertThat(executions.stream().map(Execution::pid).distinct()).hasSize(2);
+                assertThat(executions.stream().filter(execution -> execution.sql().startsWith("UPDATE sharing.evidence_share_grant"))).hasSize(1);
+                assertRotateHead(before, grantSnapshot(shareId));
+                assertRevokeCounts((UUID) before.get("id"), 1);
+            }
+        }
+    }
+
+    @Test
+    void rotateRequiresExactLockedStateAndGenerationWitness() throws Exception {
+        var normal = context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class);
+        CustomerShareCommandService real = service;
+        var policyProbe = mock(ShareRotationPolicyProvider.class);
+        var codeProbe = mock(ShareExtractionCodeProvider.class);
+        when(policyProbe.evaluate(any())).thenAnswer(invocation -> DeterministicShareCommandProviders.rotationPolicy().evaluate(invocation.getArgument(0)));
+        when(codeProbe.generate(any(), anyInt())).thenAnswer(invocation -> DeterministicShareCommandProviders.codes().generate(invocation.getArgument(0), invocation.getArgument(1)));
+        for (VerificationMode mode : VerificationMode.values()) {
+            for (String status : List.of("ACTIVE", "LOCKED", "REVOKED", "EXPIRED")) {
+                for (int time : new int[] {-1, 0, 1}) {
+                    for (Integer witness : new Integer[] {null, 1, 0}) {
+                        String key = mode + status + time + witness;
+                        service = real;
+                        if (status.equals("EXPIRED")) {
+                            var expired = spy(repository);
+                            doAnswer(invocation -> {
+                                ShareGrant proposed = invocation.getArgument(1);
+                                return repository.insertGrantReturning(invocation.getArgument(0), new ShareGrant(proposed.id(), proposed.shareId(),
+                                        proposed.capabilityTokenHash(), proposed.evidenceId(), proposed.createdByAccountId(), proposed.grantOwnerOrganizationId(),
+                                        proposed.verificationMode(), proposed.codeSalt(), proposed.codeHash(), proposed.codeGeneration(),
+                                        proposed.validFrom().minusSeconds(7200), proposed.validFrom().minusSeconds(3600), proposed.maxAdmissions(),
+                                        proposed.admissionsUsed(), proposed.downloadAllowed(), proposed.contentSnapshot(), proposed.contentSha256(),
+                                        proposed.status(), proposed.revocationGeneration(), proposed.revision()));
+                            }).when(expired).insertGrantReturning(any(), any());
+                            service = service(normal, expired);
+                        }
+                        var created = (CustomerShareCommandResult.Created) create("rotate-matrix-" + key, mode, Optional.empty());
+                        String shareId = created.state().shareId();
+                        prepareGrant(shareId, status, 3);
+                        var before = grantSnapshot(shareId);
+                        var seam = spy(repository);
+                        Instant expires = ((java.time.OffsetDateTime) before.get("expires_at")).toInstant();
+                        doReturn(expires.plusSeconds(time)).when(seam).sampleDatabaseTime(any());
+                        service = rotationService(seam, policyProbe, codeProbe);
+                        var selected = new ShareCommandCaller(base.account, mode == VerificationMode.ORGANIZATION_MEMBER ? Optional.of(base.org) : Optional.empty());
+                        var command = new CustomerShareCommand.Rotate(shareId, key, Optional.empty(), witness);
+                        clearInvocations(policyProbe, codeProbe);
+                        executions.clear();
+                        if (mode == VerificationMode.EXTRACTION_CODE && status.equals("LOCKED") && time < 0 && (witness == null || witness == 1)) {
+                            assertThat(service.execute(command, selected)).isInstanceOf(CustomerShareCommandResult.Rotated.class);
+                            assertRotateHead(before, grantSnapshot(shareId));
+                            assertRevokeCounts((UUID) before.get("id"), 1);
+                        } else {
+                            fails(() -> service.execute(command, selected), ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+                            verifyNoInteractions(policyProbe, codeProbe);
+                            assertThat(grantSnapshot(shareId)).isEqualTo(before);
+                            assertRevokeCounts((UUID) before.get("id"), 0);
+                            assertThat(executions).noneMatch(execution -> execution.sql().startsWith("INSERT") || execution.sql().startsWith("UPDATE"));
+                        }
+                    }
+                }
+            }
+        }
+        service = real;
+        var created = (CustomerShareCommandResult.Created) create("rotate-faults", VerificationMode.EXTRACTION_CODE, Optional.empty());
+        String shareId = created.state().shareId();
+        prepareGrant(shareId, "LOCKED", 0);
+        var head = grantSnapshot(shareId);
+        var durable = revokeFacts((UUID) head.get("id"));
+        for (String sql : List.of("SET LOCAL ROLE", "SELECT current_user", "pg_advisory_xact_lock", "customer_iam.customer_account", "FOR UPDATE",
+                "SELECT clock_timestamp()", "FROM sharing.share_access_event")) {
+            failOn = sql;
+            try { fails(() -> rotate(shareId, "fault", null), ShareCommandException.Code.SERVICE_UNAVAILABLE); }
+            finally { failOn = null; }
+            assertThat(grantSnapshot(shareId)).isEqualTo(head);
+            assertThat(revokeFacts((UUID) head.get("id"))).isEqualTo(durable);
+        }
+        for (Instant badClock : new Instant[] {null, Instant.parse("2026-11-05T00:00:00.123456789Z")}) {
+            var seam = spy(repository);
+            doReturn(badClock).when(seam).sampleDatabaseTime(any());
+            service = service(normal, seam);
+            fails(() -> rotate(shareId, "fault", null), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        }
+        service = real;
+        fails(() -> rotate("opaque-absent", "fault", null), ShareCommandException.Code.NOT_FOUND);
+        for (ShareCommandCaller wrong : List.of(new ShareCommandCaller(base.other, Optional.empty()), new ShareCommandCaller(base.account, Optional.of(base.org))))
+            fails(() -> service.execute(new CustomerShareCommand.Rotate(shareId, "fault", Optional.empty(), null), wrong), ShareCommandException.Code.NOT_FOUND);
+        for (ShareCommandCaller inactive : List.of(new ShareCommandCaller(UUID.randomUUID(), Optional.empty()),
+                new ShareCommandCaller(base.account, Optional.of(UUID.randomUUID())), new ShareCommandCaller(base.other, Optional.of(base.org2)))) {
+            executions.clear();
+            fails(() -> service.execute(new CustomerShareCommand.Rotate(shareId, "fault", Optional.empty(), null), inactive), ShareCommandException.Code.FORBIDDEN);
+            assertThat(executions).noneMatch(execution -> execution.sql().contains("FROM sharing.evidence_share_grant"));
+        }
+        for (Integer witness : new Integer[] {null, 1}) {
+            for (String miss : List.of("revision", "status", "code")) {
+                if (witness == null && miss.equals("code")) continue;
+                for (String reread : List.of("same", "changed", "absent")) {
+                    var seam = spy(repository);
+                    AtomicInteger reads = new AtomicInteger();
+                    doAnswer(invocation -> {
+                        Optional<ShareGrant> found = repository.lockGrant(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2));
+                        if (reads.incrementAndGet() == 1 || reread.equals("same")) return found;
+                        if (reread.equals("absent")) return Optional.empty();
+                        ShareGrant grant = found.orElseThrow();
+                        return Optional.of(new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(), grant.createdByAccountId(),
+                                grant.grantOwnerOrganizationId(), grant.verificationMode(), grant.codeSalt(), grant.codeHash(), grant.codeGeneration() + 1,
+                                grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(), grant.downloadAllowed(), grant.contentSnapshot(),
+                                grant.contentSha256(), com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.REVOKED, grant.revocationGeneration() + 1, grant.revision() + 1));
+                    }).when(seam).lockGrant(any(), eq(shareId), eq(caller()));
+                    service = service(normal, seam);
+                    executions.clear();
+                    rotationMiss = miss;
+                    try { fails(() -> rotate(shareId, "zero-row", witness), ShareCommandException.Code.SHARE_TRANSITION_CONFLICT); }
+                    finally { rotationMiss = null; }
+                    assertThat(reads).hasValue(2);
+                    verify(seam).transitionGrant(any(), eq((UUID) head.get("id")), eq((Integer) head.get("revision")),
+                            eq(com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.LOCKED), eq(Optional.empty()), eq(Optional.ofNullable(witness)),
+                            eq(com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.ACTIVE), eq(((Integer) head.get("revision")) + 1),
+                            eq(2), eq(1), any());
+                    verify(seam).appendAccessEvent(any(), any());
+                    verify(seam, never()).appendOutbox(any(), any());
+                    verify(seam, never()).appendAudit(any(), any());
+                    verify(seam).findTransition(any(), any(), any());
+                    assertThat(executions.stream().filter(execution -> execution.sql().startsWith("UPDATE sharing.evidence_share_grant"))).hasSize(1);
+                    assertThat(grantSnapshot(shareId)).isEqualTo(head);
+                    assertThat(revokeFacts((UUID) head.get("id"))).isEqualTo(durable);
+                }
+            }
+        }
+        service = real;
+        var organizationCreated = (CustomerShareCommandResult.Created) create("rotate-organization", VerificationMode.EXTRACTION_CODE, Optional.empty(), false, null, true);
+        String organizationShare = organizationCreated.state().shareId();
+        prepareGrant(organizationShare, "LOCKED", 0);
+        for (ShareCommandCaller wrong : List.of(caller(), new ShareCommandCaller(base.account, Optional.of(base.org2)), new ShareCommandCaller(base.other, Optional.of(base.org))))
+            fails(() -> service.execute(new CustomerShareCommand.Rotate(organizationShare, "fault", Optional.empty(), null), wrong), ShareCommandException.Code.NOT_FOUND);
+        for (String boundary : List.of("account", "organization", "membership")) {
+            try (Connection admin = base.admin()) {
+                if (boundary.equals("account")) SharingQueryFixture.execute(admin,
+                        "UPDATE customer_iam.customer_account SET status = 'DISABLED', revision = revision + 1 WHERE id = ?", base.account);
+                if (boundary.equals("organization")) SharingQueryFixture.execute(admin,
+                        "UPDATE organization_access.organization SET status = 'SUSPENDED', revision = revision + 1 WHERE id = ?", base.org);
+                if (boundary.equals("membership")) SharingQueryFixture.execute(admin,
+                        "UPDATE organization_access.organization_membership SET status = 'SUSPENDED', revision = revision + 1 WHERE id = ?", base.membership);
+            }
+            try {
+                executions.clear();
+                fails(() -> service.execute(new CustomerShareCommand.Rotate(organizationShare, "fault", Optional.empty(), null),
+                        new ShareCommandCaller(base.account, Optional.of(base.org))), ShareCommandException.Code.FORBIDDEN);
+                assertThat(executions).noneMatch(execution -> execution.sql().contains("FROM sharing.evidence_share_grant"));
+            } finally {
+                try (Connection admin = base.admin()) {
+                    SharingQueryFixture.execute(admin, "UPDATE customer_iam.customer_account SET status = 'ACTIVE', revision = revision + 1 WHERE id = ?", base.account);
+                    SharingQueryFixture.execute(admin, "UPDATE organization_access.organization SET status = 'ACTIVE', revision = revision + 1 WHERE id = ?", base.org);
+                    SharingQueryFixture.execute(admin, "UPDATE organization_access.organization_membership SET status = 'ACTIVE', revision = revision + 1 WHERE id = ?", base.membership);
+                }
+            }
+        }
+        assertThat(grantSnapshot(shareId)).isEqualTo(head);
+        assertThat(revokeFacts((UUID) head.get("id"))).isEqualTo(durable);
+    }
+
+    private Object rotateOutcome(CustomerShareCommandService selectedService, String shareId, String key, ShareCommandCaller selected) {
+        try { return selectedService.execute(new CustomerShareCommand.Rotate(shareId, key, Optional.empty(), null), selected); }
+        catch (ShareCommandException failure) { return failure.code(); }
+    }
+
+    private CustomerShareCommandResult rotate(String shareId, String key, Integer witness) {
+        return service.execute(new CustomerShareCommand.Rotate(shareId, key, Optional.empty(), witness), caller());
+    }
+
+    private CustomerShareCommandService rotationService(SharingCommandRepository selectedRepository,
+            ShareRotationPolicyProvider selectedPolicy, ShareExtractionCodeProvider selectedCodes) {
+        return new DefaultCustomerShareCommandService(context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class),
+                dsl, selectedRepository, context.getBean(ShareableEvidenceProjectionReader.class), context.getBean(ShareCreationPolicyProvider.class),
+                selectedPolicy, context.getBean(CapabilityTokenProvider.class), selectedCodes,
+                context.getBean(DesignatedMobileBindingProvider.class), context.getBean(Sha256Provider.class));
+    }
+
+    private void assertRotateHead(java.util.Map<String, Object> before, java.util.Map<String, Object> after) {
+        var expected = new java.util.HashMap<>(before);
+        expected.put("status", "ACTIVE");
+        expected.put("revision", ((Integer) before.get("revision")) + 1);
+        expected.put("code_generation", ((Integer) before.get("code_generation")) + 1);
+        expected.put("revocation_generation", ((Integer) before.get("revocation_generation")) + 1);
+        expected.put("code_salt", after.get("code_salt"));
+        expected.put("code_hash", after.get("code_hash"));
+        assertThat(after.get("code_salt")).isNotNull().isNotEqualTo(before.get("code_salt"));
+        assertThat(after.get("code_hash")).isNotNull().isNotEqualTo(before.get("code_hash"));
+        assertThat(after).hasSize(20).isEqualTo(expected);
+    }
+
+    private void assertRotationFacts(java.util.Map<String, Object> before, String rawKey, Optional<UUID> trace, Instant occurred,
+            String code, String token) throws Exception {
+        UUID grantId = (UUID) before.get("id");
+        try (Connection admin = base.admin()) {
+            DSLContext facts = DSL.using(admin);
+            var mapper = JsonMapper.builder().build();
+            String requestDigest = DeterministicShareCommandProviders.digest(rawKey);
+            var identity = mapper.createObjectNode().put("shareGrantId", grantId.toString()).put("actionType", "CODE_ROTATE");
+            identity.set("sourceIdentity", mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", rawKey));
+            String eventId = "share-transition:" + DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(identity));
+            var semantics = mapper.createObjectNode().put("shareGrantId", grantId.toString()).put("actionType", "CODE_ROTATE")
+                    .putNull("reasonCode").putNull("newExpiresAt").put("actionRequestDigest", requestDigest);
+            String fingerprint = DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(semantics));
+            var expected = mapper.createObjectNode().put("actionType", "CODE_ROTATE").put("actionRequestDigest", requestDigest)
+                    .put("actionFingerprint", fingerprint).put("status", "ACTIVE").put("codeGeneration", ((Integer) before.get("code_generation")) + 1)
+                    .put("revocationGeneration", ((Integer) before.get("revocation_generation")) + 1).put("revision", ((Integer) before.get("revision")) + 1);
+            var event = facts.fetchOne("SELECT id, share_grant_id, share_admission_id, event_domain, event_id, event_type, result, occurred_at,"
+                    + " risk_digest, payload_redacted, payload_sha256 FROM sharing.share_access_event WHERE share_grant_id = ?", grantId);
+            assertThat(event.get("id", UUID.class)).isNotNull();
+            assertThat(event.get("share_grant_id")).isEqualTo(grantId);
+            assertThat(event.get("event_domain")).isEqualTo("SHARE_ACCESS");
+            assertThat(event.get("event_id")).isEqualTo(eventId);
+            assertThat(event.get("event_type")).isEqualTo("CODE_ROTATED");
+            assertThat(event.get("result")).isEqualTo("SUCCESS");
+            assertThat(event.get("share_admission_id")).isNull();
+            assertThat(event.get("risk_digest")).isNull();
+            assertThat(event.get("occurred_at", java.time.OffsetDateTime.class).toInstant()).isEqualTo(occurred);
+            assertThat(occurred.getNano() % 1000).isZero();
+            assertThat(mapper.readTree(event.get("payload_redacted", JSONB.class).data())).isEqualTo(expected);
+            assertThat(event.get("payload_sha256")).isEqualTo(DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(expected)));
+            var outbox = facts.fetchOne("SELECT event_domain, aggregate_type, aggregate_id, event_type, dedupe_key, payload_redacted, payload_ciphertext, payload_sha256"
+                    + " FROM platform.outbox_event WHERE aggregate_id = ? AND event_type = 'SHARE_CODE_ROTATED'", grantId);
+            assertThat(outbox.get("event_domain")).isEqualTo("SHARE_ACCESS");
+            assertThat(outbox.get("aggregate_type")).isEqualTo("EVIDENCE_SHARE_GRANT");
+            assertThat(outbox.get("aggregate_id")).isEqualTo(grantId);
+            assertThat(outbox.get("event_type")).isEqualTo("SHARE_CODE_ROTATED");
+            assertThat(outbox.get("dedupe_key")).isEqualTo("share-transition:" + eventId);
+            assertThat(outbox.get("payload_ciphertext")).isNull();
+            var expectedOutbox = expected.deepCopy().put("shareId", (String) before.get("share_id")).put("grantId", grantId.toString())
+                    .put("occurredAt", DefaultCustomerShareCommandService.utc(occurred));
+            assertThat(mapper.readTree(outbox.get("payload_redacted", JSONB.class).data())).isEqualTo(expectedOutbox);
+            assertThat(outbox.get("payload_sha256")).isEqualTo(DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(expectedOutbox)));
+            var audit = facts.fetchOne("SELECT occurred_at, actor_type, actor_id, action_code, object_type, object_id, reason_code, before_snapshot,"
+                    + " after_snapshot, request_id, trace_id FROM audit.audit_fact WHERE object_id = ? AND action_code = 'SHARE_GRANT_CODE_ROTATE'", grantId);
+            assertThat(audit.get("occurred_at", java.time.OffsetDateTime.class).toInstant()).isEqualTo(occurred);
+            assertThat(audit.get("actor_type")).isEqualTo("ACCOUNT");
+            assertThat(audit.get("actor_id")).isEqualTo(base.account);
+            assertThat(audit.get("action_code")).isEqualTo("SHARE_GRANT_CODE_ROTATE");
+            assertThat(audit.get("object_type")).isEqualTo("EVIDENCE_SHARE_GRANT");
+            assertThat(audit.get("object_id")).isEqualTo(grantId);
+            assertThat(audit.get("reason_code")).isNull();
+            assertThat(audit.get("request_id")).isEqualTo(requestDigest);
+            assertThat(audit.get("trace_id")).isEqualTo(trace.map(UUID::toString).orElse(null));
+            assertThat(mapper.readTree(audit.get("before_snapshot", JSONB.class).data())).isEqualTo(mapper.createObjectNode()
+                    .put("status", "LOCKED").put("revision", (Integer) before.get("revision")));
+            assertThat(mapper.readTree(audit.get("after_snapshot", JSONB.class).data())).isEqualTo(mapper.createObjectNode()
+                    .put("status", "ACTIVE").put("revision", ((Integer) before.get("revision")) + 1));
+            assertThat(revokeFacts(grantId).toString()).doesNotContain(code, token, rawKey, (String) before.get("code_salt"), (String) before.get("code_hash"));
+            assertThat(facts.fetchOne("SELECT row_to_json(g)::text FROM sharing.evidence_share_grant g WHERE id = ?", grantId).get(0, String.class))
+                    .doesNotContain(code, token, rawKey);
         }
     }
 

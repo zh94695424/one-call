@@ -196,16 +196,22 @@ public final class JooqSharingCommandRepository implements SharingCommandReposit
                     + " WHERE share_grant_id = ? AND event_domain = ? AND event_id = ?", grantId, "SHARE_ACCESS", eventId);
             if (row == null) return Optional.empty();
             JsonNode payload = mapper.readTree(row.get("payload_redacted", JSONB.class).data());
-            if (!"REVOKED".equals(row.get("event_type", String.class)) || !"SUCCESS".equals(row.get("result", String.class))
-                    || !payload.isObject() || payload.size() != 7
-                    || !"REVOKE".equals(payload.path("actionType").asString())
-                    || !"REVOKED".equals(payload.path("status").asString())) throw unavailable();
+            boolean rotate = "CODE_ROTATED".equals(row.get("event_type", String.class))
+                    && "CODE_ROTATE".equals(payload.path("actionType").asString())
+                    && "ACTIVE".equals(payload.path("status").asString());
+            boolean revoke = "REVOKED".equals(row.get("event_type", String.class))
+                    && "REVOKE".equals(payload.path("actionType").asString())
+                    && "REVOKED".equals(payload.path("status").asString());
+            if (!grantId.equals(row.get("share_grant_id", UUID.class)) || !eventId.equals(row.get("event_id", String.class))
+                    || !"SHARE_ACCESS".equals(row.get("event_domain", String.class))
+                    || !"SUCCESS".equals(row.get("result", String.class)) || !payload.isObject() || payload.size() != 7
+                    || !(rotate || revoke)) throw unavailable();
             for (String key : java.util.List.of("actionRequestDigest", "actionFingerprint")) {
                 if (!payload.path(key).isString() || !payload.path(key).asString().matches("[0-9a-f]{64}")) throw unavailable();
             }
             for (String key : java.util.List.of("codeGeneration", "revocationGeneration", "revision")) {
                 JsonNode value = payload.path(key);
-                if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < (key.equals("codeGeneration") ? 0 : 1))
+                if (!value.isIntegralNumber() || !value.canConvertToInt() || value.asInt() < (key.equals("codeGeneration") && !rotate ? 0 : 1))
                     throw unavailable();
             }
             String canonical = com.onecall.core.sharing.internal.commandservice.DefaultCustomerShareCommandService.canonical(payload);
@@ -213,8 +219,8 @@ public final class JooqSharingCommandRepository implements SharingCommandReposit
                     .digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             if (!digest.equals(row.get("payload_sha256", String.class))) throw unavailable();
             return Optional.of(new PersistedTransition(row.get("share_grant_id", UUID.class), row.get("event_id", String.class),
-                    "REVOKE", payload.path("actionRequestDigest").asString(), payload.path("actionFingerprint").asString(),
-                    ShareStatus.REVOKED, payload.path("codeGeneration").asInt(), payload.path("revocationGeneration").asInt(),
+                    payload.path("actionType").asString(), payload.path("actionRequestDigest").asString(), payload.path("actionFingerprint").asString(),
+                    rotate ? ShareStatus.ACTIVE : ShareStatus.REVOKED, payload.path("codeGeneration").asInt(), payload.path("revocationGeneration").asInt(),
                     payload.path("revision").asInt(), row.get("occurred_at", OffsetDateTime.class).toInstant()));
         } catch (Exception failure) { throw unavailable(); }
     }
@@ -236,6 +242,23 @@ public final class JooqSharingCommandRepository implements SharingCommandReposit
         Objects.requireNonNull(expectedRevocationGeneration);
         Objects.requireNonNull(expectedCodeGeneration);
         Objects.requireNonNull(replacement);
+        Objects.requireNonNull(grantId);
+        Objects.requireNonNull(expectedStatus);
+        Objects.requireNonNull(targetStatus);
+        if (targetStatus == ShareStatus.ACTIVE) {
+            if (expectedStatus != ShareStatus.LOCKED || replacement.isEmpty() || expectedRevocationGeneration.isPresent()) throw unavailable();
+            var material = replacement.get();
+            var rotationBindings = new java.util.ArrayList<Object>(java.util.List.of(targetStatus.name(), material.salt(), material.codeHash(),
+                    targetCodeGeneration, targetRevocationGeneration, targetRevision, grantId, expectedRevision, expectedStatus.name()));
+            String codeWitness = expectedCodeGeneration.map(value -> {
+                rotationBindings.add(value);
+                return " AND code_generation = ?";
+            }).orElse("");
+            Record rotated = transactionDsl.fetchOne("UPDATE sharing.evidence_share_grant SET status = ?, code_salt = ?, code_hash = ?,"
+                    + " code_generation = ?, revocation_generation = ?, revision = ? WHERE id = ? AND revision = ? AND status = ?"
+                    + codeWitness + " RETURNING " + COLUMNS, rotationBindings.toArray());
+            return rotated == null ? new TransitionResult.NotUpdated() : new TransitionResult.Updated(grant(rotated));
+        }
         if (targetStatus != ShareStatus.REVOKED || expectedCodeGeneration.isPresent() || replacement.isPresent()) throw unavailable();
         var bindings = new java.util.ArrayList<Object>(java.util.List.of(targetStatus.name(), targetRevocationGeneration,
                 targetRevision, grantId, expectedRevision, expectedStatus.name()));

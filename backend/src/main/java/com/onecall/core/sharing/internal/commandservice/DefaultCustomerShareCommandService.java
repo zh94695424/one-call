@@ -27,6 +27,9 @@ import com.onecall.core.sharing.internal.provider.ShareCreationPolicyProvider;
 import com.onecall.core.sharing.internal.provider.ShareCreationPolicyProvider.CreationPolicyDecision;
 import com.onecall.core.sharing.internal.provider.ShareCreationPolicyProvider.CreationPolicyRequest;
 import com.onecall.core.sharing.internal.provider.ShareExtractionCodeProvider;
+import com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider;
+import com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyDecision;
+import com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyRequest;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -50,6 +53,7 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
     private final SharingCommandRepository repository;
     private final ShareableEvidenceProjectionReader reader;
     private final ShareCreationPolicyProvider policy;
+    private final ShareRotationPolicyProvider rotationPolicy;
     private final CapabilityTokenProvider tokens;
     private final ShareExtractionCodeProvider codes;
     private final DesignatedMobileBindingProvider mobiles;
@@ -58,13 +62,15 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
 
     public DefaultCustomerShareCommandService(TransactionTemplate template, DSLContext context,
             SharingCommandRepository repository, ShareableEvidenceProjectionReader reader,
-            ShareCreationPolicyProvider policy, CapabilityTokenProvider tokens, ShareExtractionCodeProvider codes,
+            ShareCreationPolicyProvider policy, ShareRotationPolicyProvider rotationPolicy,
+            CapabilityTokenProvider tokens, ShareExtractionCodeProvider codes,
             DesignatedMobileBindingProvider mobiles, Sha256Provider sha256) {
         this.template = Objects.requireNonNull(template);
         this.context = Objects.requireNonNull(context);
         this.repository = Objects.requireNonNull(repository);
         this.reader = Objects.requireNonNull(reader);
         this.policy = Objects.requireNonNull(policy);
+        this.rotationPolicy = Objects.requireNonNull(rotationPolicy);
         this.tokens = Objects.requireNonNull(tokens);
         this.codes = Objects.requireNonNull(codes);
         this.mobiles = Objects.requireNonNull(mobiles);
@@ -76,8 +82,10 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
         if (command == null || caller == null) throw error(Code.VALIDATION_FAILED);
         if (command instanceof CustomerShareCommand.Create create) validate(create);
         else if (command instanceof CustomerShareCommand.Revoke revoke) validate(revoke);
+        else if (command instanceof CustomerShareCommand.Rotate rotate) validate(rotate);
         try { return Objects.requireNonNull(template.execute(status -> command instanceof CustomerShareCommand.Create create
-                ? create(create, caller) : revoke((CustomerShareCommand.Revoke) command, caller))); }
+                ? create(create, caller) : command instanceof CustomerShareCommand.Revoke revoke
+                ? revoke(revoke, caller) : rotate((CustomerShareCommand.Rotate) command, caller))); }
         catch (ShareCommandException failure) { throw failure; }
         catch (org.springframework.transaction.CannotCreateTransactionException failure) { throw error(Code.SERVICE_UNAVAILABLE); }
         catch (RuntimeException failure) { throw error(databaseFailureCode(failure)); }
@@ -268,6 +276,92 @@ public final class DefaultCustomerShareCommandService implements CustomerShareCo
                 Optional.of(json(mapper.createObjectNode().put("status", "REVOKED").put("revision", revision).put("reasonCode", command.reason()))),
                 Optional.of(requestDigest), command.traceId().map(UUID::toString)));
         return new CustomerShareCommandResult.Revoked(state(updated));
+    }
+
+    private CustomerShareCommandResult rotate(CustomerShareCommand.Rotate command, ShareCommandCaller caller) {
+        repository.assertCommandRole(context);
+        repository.acquireCreatorWorkspaceLocks(context, caller);
+        repository.readActiveCallerContext(context, caller).orElseThrow(() -> error(Code.FORBIDDEN));
+        ShareGrant grant = repository.lockGrant(context, command.shareId(), caller).orElseThrow(() -> error(Code.NOT_FOUND));
+        Instant occurredAt = repository.sampleDatabaseTime(context);
+        if (occurredAt == null || occurredAt.getNano() % 1000 != 0) throw error(Code.SERVICE_UNAVAILABLE);
+        String requestDigest = hash(command.actionRequestId());
+        ObjectNode source = mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", command.actionRequestId());
+        ObjectNode identity = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "CODE_ROTATE");
+        identity.set("sourceIdentity", source);
+        String eventId = "share-transition:" + digest(identity);
+        ObjectNode semantics = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "CODE_ROTATE")
+                .putNull("reasonCode").putNull("newExpiresAt").put("actionRequestDigest", requestDigest);
+        String fingerprint = digest(semantics);
+        var persisted = repository.findTransition(context, grant.id(), eventId);
+        if (persisted.isPresent()) {
+            var transition = persisted.get();
+            if (!fingerprint.equals(transition.actionFingerprint())) throw error(Code.SHARE_TRANSITION_CONFLICT);
+            return new CustomerShareCommandResult.RotationReplayed(grant.shareId(), grant.verificationMode(),
+                    transition.status(), transition.codeGeneration(), transition.revocationGeneration());
+        }
+        if (grant.status() != ShareStatus.LOCKED || grant.verificationMode() != VerificationMode.EXTRACTION_CODE
+                || !occurredAt.isBefore(grant.expiresAt())
+                || command.expectedCodeGeneration() != null && command.expectedCodeGeneration() != grant.codeGeneration())
+            throw error(Code.SHARE_TRANSITION_CONFLICT);
+        ProviderResult<RotationPolicyDecision> decision;
+        try { decision = rotationPolicy.evaluate(new RotationPolicyRequest(caller, grant.id(), grant.verificationMode(),
+                grant.status(), grant.codeGeneration(), grant.revocationGeneration())); }
+        catch (RuntimeException failure) { throw error(Code.SERVICE_UNAVAILABLE); }
+        if (decision instanceof ProviderResult.Denied<?>
+                || decision instanceof ProviderResult.Allowed<?> allowed && allowed.value() == RotationPolicyDecision.DENY)
+            throw error(Code.FORBIDDEN);
+        if (!(decision instanceof ProviderResult.Allowed<?> allowed) || allowed.value() != RotationPolicyDecision.ALLOW)
+            throw error(Code.SERVICE_UNAVAILABLE);
+        int revision;
+        int codeGeneration;
+        int revocationGeneration;
+        ExtractionCodeMaterial material;
+        try {
+            revision = Math.addExact(grant.revision(), 1);
+            codeGeneration = Math.addExact(grant.codeGeneration(), 1);
+            revocationGeneration = Math.addExact(grant.revocationGeneration(), 1);
+            material = requireMaterial(codes.generate(grant.id(), codeGeneration));
+            if (!length(material.code(), 1, 128) || !material.salt().matches("[A-Za-z0-9_-]{22,256}")
+                    || !material.codeHash().matches("[0-9a-f]{64}") || material.salt().equals(grant.codeSalt())
+                    || material.codeHash().equals(grant.codeHash())) throw error(Code.SERVICE_UNAVAILABLE);
+        } catch (RuntimeException failure) { throw error(Code.SERVICE_UNAVAILABLE); }
+        ObjectNode payload = mapper.createObjectNode().put("actionType", "CODE_ROTATE").put("actionRequestDigest", requestDigest)
+                .put("actionFingerprint", fingerprint).put("status", "ACTIVE").put("codeGeneration", codeGeneration)
+                .put("revocationGeneration", revocationGeneration).put("revision", revision);
+        repository.appendAccessEvent(context, new AccessEvent(UUID.randomUUID(), grant.id(), Optional.empty(), "SHARE_ACCESS",
+                eventId, "CODE_ROTATED", "SUCCESS", occurredAt, Optional.empty(), json(payload), digest(payload)));
+        TransitionResult result = repository.transitionGrant(context, grant.id(), grant.revision(), ShareStatus.LOCKED,
+                Optional.empty(), Optional.ofNullable(command.expectedCodeGeneration()), ShareStatus.ACTIVE, revision,
+                codeGeneration, revocationGeneration, Optional.of(material));
+        if (result instanceof TransitionResult.NotUpdated) {
+            repository.lockGrant(context, command.shareId(), caller);
+            throw error(Code.SHARE_TRANSITION_CONFLICT);
+        }
+        ShareGrant updated = ((TransitionResult.Updated) result).current();
+        ShareGrant intended = new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(),
+                grant.createdByAccountId(), grant.grantOwnerOrganizationId(), grant.verificationMode(), material.salt(), material.codeHash(),
+                codeGeneration, grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(),
+                grant.downloadAllowed(), grant.contentSnapshot(), grant.contentSha256(), ShareStatus.ACTIVE, revocationGeneration, revision);
+        if (!intended.equals(updated)) throw error(Code.INTERNAL);
+        ObjectNode outbox = payload.deepCopy();
+        outbox.put("shareId", grant.shareId()).put("grantId", grant.id().toString()).put("occurredAt", utc(occurredAt));
+        repository.appendOutbox(context, new OutboxFact("SHARE_ACCESS", "share-transition:" + eventId, "EVIDENCE_SHARE_GRANT",
+                grant.id(), "SHARE_CODE_ROTATED", Optional.of(json(outbox)), Optional.empty(), digest(outbox)));
+        repository.appendAudit(context, new AuditFact(occurredAt, "ACCOUNT", Optional.of(caller.accountId()), "SHARE_GRANT_CODE_ROTATE",
+                "EVIDENCE_SHARE_GRANT", Optional.of(grant.id()), Optional.empty(),
+                Optional.of(json(mapper.createObjectNode().put("status", "LOCKED").put("revision", grant.revision()))),
+                Optional.of(json(mapper.createObjectNode().put("status", "ACTIVE").put("revision", revision))),
+                Optional.of(requestDigest), command.traceId().map(UUID::toString)));
+        return new CustomerShareCommandResult.Rotated(updated.shareId(), updated.verificationMode(), updated.status(),
+                updated.codeGeneration(), updated.revocationGeneration(), material.code());
+    }
+
+    private static void validate(CustomerShareCommand.Rotate command) {
+        if (!length(command.shareId(), 1, 128) || command.shareId().isBlank()
+                || !length(command.actionRequestId(), 1, 128) || command.actionRequestId().isBlank()
+                || command.expectedCodeGeneration() != null && command.expectedCodeGeneration() < 0)
+            throw error(Code.VALIDATION_FAILED);
     }
 
     private static void checkRevokePreconditions(ShareGrant grant, Instant occurredAt, Integer witness) {

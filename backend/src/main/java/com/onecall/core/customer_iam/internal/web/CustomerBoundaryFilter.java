@@ -54,14 +54,16 @@ public final class CustomerBoundaryFilter implements Filter {
         boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
         boolean revoke = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/customer/shares/[^/;%]+/revocations");
-        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke)
+        boolean rotate = "POST".equals(request.getMethod())
+                && servletPath.matches("/api/v1/customer/shares/[^/;%]+/code-rotations");
+        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }
         try {
             var principal = new CustomerRequestPrincipal(authenticator.authenticate(request.getHeaders("Authorization")));
-            if (revoke) {
+            if (revoke || rotate) {
                 var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
                 if (keys.size() != 1) throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 String key = keys.getFirst();
@@ -70,7 +72,7 @@ public final class CustomerBoundaryFilter implements Filter {
                     throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 request.setAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey", key);
             }
-            if (create || revoke) {
+            if (create || revoke || rotate) {
                 try {
                     var types = java.util.Collections.list(request.getHeaders("Content-Type"));
                     if (types.size() != 1) throw new IllegalArgumentException();

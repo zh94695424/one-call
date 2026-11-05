@@ -17,6 +17,14 @@ public final class CustomerShareCommandDtos {
 
     public record RevokeRequest(Integer expectedRevocationGeneration, String reason) { }
 
+    public record CodeRotationRequest(Integer expectedCodeGeneration) { }
+
+    public record ShareCodeRotationRotated(String result, String shareId, VerificationMode verificationMode,
+            ShareStatus status, int codeGeneration, int revocationGeneration, String extractionCode) { }
+
+    public record ShareCodeRotationReplayed(String result, String shareId, VerificationMode verificationMode,
+            ShareStatus status, int codeGeneration, int revocationGeneration) { }
+
     public record CreateRequest(String creationRequestId, UUID evidenceId, VerificationMode verificationMode,
             Instant expiresAt, boolean downloadAllowed, Integer maxAdmissions, String designatedMobile) { }
 

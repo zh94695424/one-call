@@ -6,8 +6,17 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-public sealed interface CustomerShareCommand permits CustomerShareCommand.Create, CustomerShareCommand.Revoke {
+public sealed interface CustomerShareCommand permits CustomerShareCommand.Create, CustomerShareCommand.Revoke, CustomerShareCommand.Rotate {
     Optional<UUID> traceId();
+
+    record Rotate(String shareId, String actionRequestId, Optional<UUID> traceId,
+            Integer expectedCodeGeneration) implements CustomerShareCommand {
+        public Rotate {
+            Objects.requireNonNull(shareId);
+            Objects.requireNonNull(actionRequestId);
+            Objects.requireNonNull(traceId);
+        }
+    }
 
     record Revoke(String shareId, String actionRequestId, Optional<UUID> traceId,
             Integer expectedRevocationGeneration, String reason) implements CustomerShareCommand {

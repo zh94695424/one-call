@@ -318,6 +318,142 @@ class CustomerShareCommandServiceTests {
         verifyNoInteractions(fixture.template);
     }
 
+    @Test
+    void rotateReplayNeverReturnsCode() {
+        Fixture fixture = new Fixture(VerificationMode.EXTRACTION_CODE);
+        fixture.execute("rotation-create", EXPIRY);
+        ShareGrant grant = grantWithState(fixture.stored.get(),
+                com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.LOCKED, 4);
+        when(fixture.repository.readActiveCallerContext(any(), any())).thenReturn(Optional.of(new ActiveCallerContext(
+                ACCOUNT, "ACTIVE", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
+        when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(grant));
+        String raw = " raw ключ,😀 \u0001";
+        String requestDigest = DeterministicShareCommandProviders.digest(raw);
+        var mapper = JsonMapper.builder().build();
+        var identity = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "CODE_ROTATE");
+        identity.set("sourceIdentity", mapper.createObjectNode().put("kind", "REQUEST").put("actionRequestId", raw));
+        String eventId = "share-transition:" + DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(identity));
+        var semantics = mapper.createObjectNode().put("shareGrantId", grant.id().toString()).put("actionType", "CODE_ROTATE")
+                .putNull("reasonCode").putNull("newExpiresAt").put("actionRequestDigest", requestDigest);
+        String fingerprint = DeterministicShareCommandProviders.digest(DefaultCustomerShareCommandService.canonical(semantics));
+        var transition = new PersistedTransition(grant.id(), eventId, "CODE_ROTATE", requestDigest, fingerprint,
+                com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.ACTIVE, 2, 5, 3, NOW);
+        when(fixture.repository.findTransition(any(), eq(grant.id()), eq(eventId))).thenReturn(Optional.of(transition));
+        clearInvocations(fixture.repository, fixture.reader, fixture.policy, fixture.rotationPolicy, fixture.tokens, fixture.codes, fixture.mobiles);
+        for (var status : com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus.values()) {
+            when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(grantWithState(grant, status, 99)));
+            when(fixture.repository.sampleDatabaseTime(any())).thenReturn(EXPIRY.plusSeconds(1));
+            for (Integer witness : new Integer[] {null, 0, 1, 99}) {
+                var result = (CustomerShareCommandResult.RotationReplayed) fixture.service.execute(new CustomerShareCommand.Rotate(
+                        grant.shareId(), raw, Optional.of(UUID.randomUUID()), witness), fixture.caller);
+                assertThat(result.status()).isEqualTo(transition.status());
+                assertThat(result.codeGeneration()).isEqualTo(2);
+                assertThat(result.revocationGeneration()).isEqualTo(5);
+                assertThat(mapper.writeValueAsString(result)).doesNotContain("extractionCode", "capabilityToken", "test-code", "test-token");
+            }
+        }
+        var replayOrder = inOrder(fixture.repository);
+        replayOrder.verify(fixture.repository).assertCommandRole(fixture.dsl);
+        replayOrder.verify(fixture.repository).acquireCreatorWorkspaceLocks(fixture.dsl, fixture.caller);
+        replayOrder.verify(fixture.repository).readActiveCallerContext(fixture.dsl, fixture.caller);
+        replayOrder.verify(fixture.repository).lockGrant(fixture.dsl, grant.shareId(), fixture.caller);
+        replayOrder.verify(fixture.repository).sampleDatabaseTime(fixture.dsl);
+        replayOrder.verify(fixture.repository).findTransition(fixture.dsl, grant.id(), eventId);
+        verifyNoInteractions(fixture.reader, fixture.policy, fixture.rotationPolicy, fixture.tokens, fixture.codes, fixture.mobiles);
+        verify(fixture.repository, never()).appendAccessEvent(any(), any());
+        when(fixture.repository.findTransition(any(), any(), any())).thenReturn(Optional.of(new PersistedTransition(
+                grant.id(), eventId, "CODE_ROTATE", requestDigest, "a".repeat(64), transition.status(), 2, 5, 3, NOW)));
+        fails(() -> fixture.service.execute(new CustomerShareCommand.Rotate(grant.shareId(), raw, Optional.empty(), null), fixture.caller),
+                ShareCommandException.Code.SHARE_TRANSITION_CONFLICT);
+        when(fixture.repository.readActiveCallerContext(any(), any())).thenReturn(Optional.empty());
+        fails(() -> fixture.service.execute(new CustomerShareCommand.Rotate(grant.shareId(), raw, Optional.empty(), null), fixture.caller),
+                ShareCommandException.Code.FORBIDDEN);
+        when(fixture.repository.readActiveCallerContext(any(), any())).thenReturn(Optional.of(new ActiveCallerContext(
+                ACCOUNT, "ACTIVE", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
+        when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.empty());
+        fails(() -> fixture.service.execute(new CustomerShareCommand.Rotate(grant.shareId(), raw, Optional.empty(), null), fixture.caller),
+                ShareCommandException.Code.NOT_FOUND);
+        when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(grant));
+        when(fixture.repository.findTransition(any(), any(), any())).thenReturn(Optional.empty());
+        when(fixture.repository.sampleDatabaseTime(any())).thenReturn(NOW);
+        var command = new CustomerShareCommand.Rotate(grant.shareId(), raw, Optional.empty(), 1);
+        for (var refusal : List.<ProviderResult<ShareRotationPolicyProvider.RotationPolicyDecision>>of(
+                new ProviderResult.Denied<>(ShareCommandException.Code.INTERNAL),
+                new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.DENY),
+                new ProviderResult.Unavailable<>(ShareCommandException.Code.INTERNAL))) {
+            when(fixture.rotationPolicy.evaluate(any())).thenReturn(refusal);
+            fails(() -> fixture.service.execute(command, fixture.caller), refusal instanceof ProviderResult.Unavailable<?>
+                    ? ShareCommandException.Code.SERVICE_UNAVAILABLE : ShareCommandException.Code.FORBIDDEN);
+        }
+        when(fixture.rotationPolicy.evaluate(any())).thenReturn(null);
+        fails(() -> fixture.service.execute(command, fixture.caller), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        when(fixture.rotationPolicy.evaluate(any())).thenThrow(new IllegalStateException("POLICY_CANARY"));
+        fails(() -> fixture.service.execute(command, fixture.caller), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        verifyNoInteractions(fixture.codes);
+        doReturn(new ProviderResult.Allowed<>(ShareRotationPolicyProvider.RotationPolicyDecision.ALLOW)).when(fixture.rotationPolicy).evaluate(any());
+        for (var material : List.of(new ExtractionCodeMaterial("", "valid_salt_abcdefghijklmnop", "b".repeat(64)),
+                new ExtractionCodeMaterial("code", "short", "b".repeat(64)),
+                new ExtractionCodeMaterial("code", "valid_salt_abcdefghijklmnop", "INVALID"),
+                new ExtractionCodeMaterial("code", grant.codeSalt(), "b".repeat(64)),
+                new ExtractionCodeMaterial("code", "valid_salt_abcdefghijklmnop", grant.codeHash()))) {
+            when(fixture.codes.generate(any(), anyInt())).thenReturn(new ProviderResult.Allowed<>(material));
+            fails(() -> fixture.service.execute(command, fixture.caller), ShareCommandException.Code.SERVICE_UNAVAILABLE);
+        }
+        verify(fixture.repository, never()).appendAccessEvent(any(), any());
+        when(fixture.codes.generate(any(), anyInt())).thenAnswer(invocation -> DeterministicShareCommandProviders.codes()
+                .generate(invocation.getArgument(0), invocation.getArgument(1)));
+        when(fixture.repository.transitionGrant(any(), any(), anyInt(), any(), any(), any(), any(), anyInt(), anyInt(), anyInt(), any()))
+                .thenAnswer(invocation -> {
+                    ExtractionCodeMaterial material = ((Optional<ExtractionCodeMaterial>) invocation.getArgument(10)).orElseThrow();
+                    return new TransitionResult.Updated(new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(),
+                            grant.createdByAccountId(), grant.grantOwnerOrganizationId(), grant.verificationMode(), material.salt(), material.codeHash(),
+                            2, grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(), grant.downloadAllowed(),
+                            grant.contentSnapshot(), grant.contentSha256(), transition.status(), 5, grant.revision() + 1));
+                });
+        clearInvocations(fixture.repository, fixture.rotationPolicy, fixture.codes);
+        var rotated = (CustomerShareCommandResult.Rotated) fixture.service.execute(command, fixture.caller);
+        assertThat(rotated.extractionCode()).isEqualTo("test-code-" + grant.id() + "-2");
+        var order = inOrder(fixture.repository, fixture.rotationPolicy, fixture.codes);
+        order.verify(fixture.repository).assertCommandRole(fixture.dsl);
+        order.verify(fixture.repository).acquireCreatorWorkspaceLocks(fixture.dsl, fixture.caller);
+        order.verify(fixture.repository).readActiveCallerContext(fixture.dsl, fixture.caller);
+        order.verify(fixture.repository).lockGrant(fixture.dsl, grant.shareId(), fixture.caller);
+        order.verify(fixture.repository).sampleDatabaseTime(fixture.dsl);
+        order.verify(fixture.repository).findTransition(fixture.dsl, grant.id(), eventId);
+        order.verify(fixture.rotationPolicy).evaluate(new ShareRotationPolicyProvider.RotationPolicyRequest(fixture.caller,
+                grant.id(), grant.verificationMode(), grant.status(), 1, 4));
+        order.verify(fixture.codes).generate(grant.id(), 2);
+        order.verify(fixture.repository).appendAccessEvent(eq(fixture.dsl), any());
+        order.verify(fixture.repository).transitionGrant(eq(fixture.dsl), eq(grant.id()), eq(grant.revision()), eq(grant.status()),
+                eq(Optional.empty()), eq(Optional.of(1)), eq(transition.status()), eq(grant.revision() + 1), eq(2), eq(5), any());
+        order.verify(fixture.repository).appendOutbox(eq(fixture.dsl), any());
+        order.verify(fixture.repository).appendAudit(eq(fixture.dsl), any());
+        for (String overflow : List.of("revision", "code", "revocation")) {
+            ShareGrant maximum = new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(), grant.createdByAccountId(),
+                    grant.grantOwnerOrganizationId(), grant.verificationMode(), grant.codeSalt(), grant.codeHash(), overflow.equals("code") ? Integer.MAX_VALUE : 1,
+                    grant.validFrom(), grant.expiresAt(), grant.maxAdmissions(), grant.admissionsUsed(), grant.downloadAllowed(), grant.contentSnapshot(),
+                    grant.contentSha256(), grant.status(), overflow.equals("revocation") ? Integer.MAX_VALUE : 4,
+                    overflow.equals("revision") ? Integer.MAX_VALUE : grant.revision());
+            when(fixture.repository.lockGrant(any(), any(), any())).thenReturn(Optional.of(maximum));
+            clearInvocations(fixture.codes, fixture.repository);
+            fails(() -> fixture.service.execute(new CustomerShareCommand.Rotate(grant.shareId(), raw, Optional.empty(), null), fixture.caller),
+                    ShareCommandException.Code.SERVICE_UNAVAILABLE);
+            verifyNoInteractions(fixture.codes);
+            verify(fixture.repository, never()).appendAccessEvent(any(), any());
+        }
+        clearInvocations(fixture.repository, fixture.template);
+        for (var invalid : List.of(new CustomerShareCommand.Rotate(" ", raw, Optional.empty(), null),
+                new CustomerShareCommand.Rotate("x".repeat(129), raw, Optional.empty(), null),
+                new CustomerShareCommand.Rotate(grant.shareId(), " ", Optional.empty(), null),
+                new CustomerShareCommand.Rotate(grant.shareId(), "😀".repeat(129), Optional.empty(), null),
+                new CustomerShareCommand.Rotate(grant.shareId(), "bad\0", Optional.empty(), null),
+                new CustomerShareCommand.Rotate(grant.shareId(), "\uD800", Optional.empty(), null),
+                new CustomerShareCommand.Rotate(grant.shareId(), raw, Optional.empty(), -1)))
+            fails(() -> fixture.service.execute(invalid, fixture.caller), ShareCommandException.Code.VALIDATION_FAILED);
+        assertThatThrownBy(() -> new CustomerShareCommand.Rotate(grant.shareId(), raw, null, null)).isInstanceOf(NullPointerException.class);
+        verifyNoInteractions(fixture.repository, fixture.template);
+    }
+
     private static ShareGrant grantWithState(ShareGrant grant,
             com.onecall.core.sharing.internal.application.ShareSummary.ShareStatus status, int generation) {
         return new ShareGrant(grant.id(), grant.shareId(), grant.capabilityTokenHash(), grant.evidenceId(), grant.createdByAccountId(),
@@ -332,6 +468,7 @@ class CustomerShareCommandServiceTests {
         final TransactionTemplate template = mock(TransactionTemplate.class);
         final ShareableEvidenceProjectionReader reader = mock(ShareableEvidenceProjectionReader.class);
         final ShareCreationPolicyProvider policy = mock(ShareCreationPolicyProvider.class);
+        final ShareRotationPolicyProvider rotationPolicy = mock(ShareRotationPolicyProvider.class);
         final CapabilityTokenProvider tokens = mock(CapabilityTokenProvider.class);
         final ShareExtractionCodeProvider codes = mock(ShareExtractionCodeProvider.class);
         final DesignatedMobileBindingProvider mobiles = mock(DesignatedMobileBindingProvider.class);
@@ -345,6 +482,7 @@ class CustomerShareCommandServiceTests {
         Fixture(VerificationMode mode) {
             this.mode = mode;
             when(policy.evaluate(any())).thenAnswer(invocation -> DeterministicShareCommandProviders.policy().evaluate(invocation.getArgument(0)));
+            when(rotationPolicy.evaluate(any())).thenAnswer(invocation -> DeterministicShareCommandProviders.rotationPolicy().evaluate(invocation.getArgument(0)));
             caller = new ShareCommandCaller(ACCOUNT, mode == VerificationMode.ORGANIZATION_MEMBER ? Optional.of(UUID.randomUUID()) : Optional.empty());
             risk = new RiskOwnershipSnapshot(SUBJECT, Optional.of(ACCOUNT), caller.organizationId(), true,
                     Optional.empty(), Optional.of(UUID.randomUUID()), true, false, "CURRENT");
@@ -363,7 +501,7 @@ class CustomerShareCommandServiceTests {
             when(tokens.issue(any())).thenAnswer(invocation -> DeterministicShareCommandProviders.tokens().issue(invocation.getArgument(0)));
             when(codes.generate(any(), anyInt())).thenAnswer(invocation -> DeterministicShareCommandProviders.codes().generate(invocation.getArgument(0), invocation.getArgument(1)));
             when(mobiles.bind(anyString())).thenAnswer(invocation -> DeterministicShareCommandProviders.mobiles().bind(invocation.getArgument(0)));
-            service = new DefaultCustomerShareCommandService(template, dsl, repository, reader, policy, tokens, codes, mobiles, DeterministicShareCommandProviders.sha256());
+            service = new DefaultCustomerShareCommandService(template, dsl, repository, reader, policy, rotationPolicy, tokens, codes, mobiles, DeterministicShareCommandProviders.sha256());
         }
 
         CustomerShareCommandResult execute(String key, Instant expiry) {
