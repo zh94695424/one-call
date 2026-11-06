@@ -3,6 +3,7 @@ package com.onecall.core.customer_iam.internal.web;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.onecall.core.customer_iam.internal.application.CustomerContextException;
 import com.onecall.core.sharing.internal.command.ShareCommandException;
+import com.onecall.core.sharing.internal.publicquery.PublicShareQueryException;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.UUID;
@@ -28,6 +29,10 @@ public final class CustomerProblemWriter {
         write(response, "NOT_FOUND", traceId);
     }
 
+    public void write(HttpServletResponse response, PublicShareQueryException.Code code, UUID traceId) throws IOException {
+        write(response, code.name(), traceId);
+    }
+
     public void write(HttpServletResponse response, ShareCommandException.Code code, UUID traceId) throws IOException {
         write(response, code.name(), traceId);
     }
@@ -37,20 +42,22 @@ public final class CustomerProblemWriter {
         int status = switch (code) {
             case "UNAUTHENTICATED" -> 401;
             case "FORBIDDEN" -> 403;
-            case "NOT_FOUND" -> 404;
+            case "NOT_FOUND", "SHARE_TOKEN_INVALID" -> 404;
             case "VALIDATION_FAILED" -> 422;
             case "CURSOR_INVALID" -> 400;
             case "RATE_LIMITED" -> 429;
             case "SERVICE_UNAVAILABLE" -> 503;
             case "SHARE_RISK_BLOCKED", "SHARE_ACCESS_POLICY_UNAVAILABLE" -> 403;
             case "SHARE_CREATION_CONFLICT", "SHARE_TRANSITION_CONFLICT", "SHARE_GENERATION_STALE" -> 409;
-            case "SHARE_REVOKED" -> 410;
+            case "SHARE_REVOKED", "SHARE_EXPIRED" -> 410;
             default -> 500;
         };
         String title = switch (code) {
             case "UNAUTHENTICATED" -> "Authentication required";
             case "FORBIDDEN" -> "Access denied";
             case "NOT_FOUND" -> "Not found";
+            case "SHARE_TOKEN_INVALID" -> "Invalid share token";
+            case "SHARE_EXPIRED" -> "Share expired";
             case "VALIDATION_FAILED" -> "Request validation failed";
             case "CURSOR_INVALID" -> "Invalid cursor";
             case "RATE_LIMITED" -> "Too many requests";
