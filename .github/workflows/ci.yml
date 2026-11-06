@@ -312,6 +312,10 @@ jobs:
                   "v010CommandRolePositiveAndNegativeBehavior",
                   "v010PrivilegeFailuresAre42501AndReadOnlyAuthorizedWriteIs25006",
                   "v010LegacyMigrationDigestsRemainCanonical",
+                  "v011UpgradeIsPrivilegeOnlyAtomicAndRejectsIncompatibleState",
+                  "v011PublicReadRoleAndAclAllowlistAreExact",
+                  "v011PublicReadAllowsOnlyProjectionAndDeniesWritesAndEscalation",
+                  "v011LegacyMigrationBytesRemainUnchanged",
               },
               "com.onecall.archtests.container.CustomerShareCommandsIT": {
                   "commandRoleIsAssertedBeforeFirstCommandRead",
@@ -352,14 +356,14 @@ jobs:
               },
               "com.onecall.archtests.PublicSharePersistenceConfigurationTests": {
                   "defaultWebAndDisabledCommandProfilesStayDatabaseFree",
-                  "publicReadUsesExistingQualifiedManagerAndEnforcedReadOnlyTemplate",
+                  "publicReadUsesIsolatedQualifiedManagerAndEnforcedReadOnlyTemplate",
               },
           })
           container_expected["com.onecall.archtests.container.PublicSharesIT"] = {
               "publicGetResolvesOnlyExactTokenDigestAndRedactsEveryResponse",
               "publicGetKeepsRevokedExpiredAndLockedPageSemantics",
               "organizationPageRechecksCurrentAccountTenantAndMembership",
-              "publicProjectionUsesEvidenceOwnerOnSameReadOnlyConnection",
+              "publicProjectionUsesDedicatedRoleOnSameReadOnlyConnection",
               "publicProjectionAndDependencyFailuresFailClosedWithoutPartialContent",
               "repeatedPageAndPrefetchLeaveAllPersistentFactsUnchanged",
               "publicReadIsPostgresEnforcedAndRestoresPoolRoleAndTransactionState",
@@ -395,8 +399,8 @@ jobs:
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
           exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 91)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 126)
-          print("PA15 exact source=CI=XML inventory passed: 19 Surefire classes/91 methods; 7 Failsafe classes/126 methods (64+10+10+8+8+18+8=126); combined 217; zero skips/errors/failures")
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 130)
+          print("PA16 exact source=CI=XML inventory passed: 19 Surefire classes/91 methods; 7 Failsafe classes/130 methods (64+10+10+8+12+18+8=130); combined 221; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |

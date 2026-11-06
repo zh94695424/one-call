@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 public final class JooqPublicShareQueryRepository implements PublicShareQueryRepository {
     private final DSLContext context;
 
-    public JooqPublicShareQueryRepository(@Qualifier("sharingCommandDsl") DSLContext context) {
+    public JooqPublicShareQueryRepository(@Qualifier("publicShareQueryDsl") DSLContext context) {
         this.context = context;
     }
 

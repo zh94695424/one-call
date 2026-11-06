@@ -90,15 +90,27 @@ class PublicShareQueryServiceTests {
         var order = inOrder(fixture.dsl, fixture.repository, fixture.reader);
         order.verify(fixture.dsl).execute("SET TRANSACTION READ ONLY");
         order.verify(fixture.dsl).fetchOne("SELECT current_setting('transaction_read_only')");
-        order.verify(fixture.dsl).execute("SET LOCAL ROLE sharing_command_role");
-        order.verify(fixture.dsl).fetchOne("SELECT current_user");
+        order.verify(fixture.dsl).fetchOne("SELECT current_user, session_user");
         order.verify(fixture.repository).findByTokenDigest(anyString());
         order.verify(fixture.repository).sampleDatabaseTime();
-        order.verify(fixture.dsl).execute("SET LOCAL ROLE evidence_role");
-        order.verify(fixture.dsl).fetchOne("SELECT current_user");
+        order.verify(fixture.dsl).fetchOne("SELECT current_user, session_user");
         order.verify(fixture.dsl).fetchOne("SELECT current_setting('transaction_read_only')");
         order.verify(fixture.reader).readShareableProjection(fixture.dsl, EVIDENCE);
-        order.verify(fixture.dsl).execute("SET LOCAL ROLE sharing_command_role");
+        order.verify(fixture.dsl).fetchOne("SELECT current_user, session_user");
+        order.verify(fixture.dsl).fetchOne("SELECT current_setting('transaction_read_only')");
+        for (boolean wrongSession : List.of(false, true)) {
+            Fixture wrongIdentity = new Fixture(VerificationMode.NONE);
+            if (wrongSession) wrongIdentity.sessionRole = "wrong_session";
+            else wrongIdentity.currentRole = "wrong_current";
+            denied(wrongIdentity::read, PublicShareQueryException.Code.SERVICE_UNAVAILABLE);
+            verifyNoInteractions(wrongIdentity.repository, wrongIdentity.reader);
+        }
+        Fixture changedIdentity = new Fixture(VerificationMode.NONE);
+        when(changedIdentity.reader.readShareableProjection(any(), any())).thenAnswer(invocation -> {
+            changedIdentity.sessionRole = "wrong_session";
+            return new ShareableEvidenceProjectionReader.ReadResult.Found(changedIdentity.projection("SOLIDIFIED"));
+        });
+        denied(changedIdentity::read, PublicShareQueryException.Code.SERVICE_UNAVAILABLE);
         for (var result : List.of(new ShareableEvidenceProjectionReader.ReadResult.Missing(),
                 new ShareableEvidenceProjectionReader.ReadResult.Unavailable(),
                 new ShareableEvidenceProjectionReader.ReadResult.Found(fixture.projection("QUARANTINED")))) {
@@ -129,7 +141,8 @@ class PublicShareQueryServiceTests {
                 .thenReturn(new ShareableEvidenceProjectionReader.ReadResult.Found(malformedProjection));
         denied(malformedCapture::read, PublicShareQueryException.Code.SERVICE_UNAVAILABLE);
         verify(malformedCapture.reader).readShareableProjection(malformedCapture.dsl, EVIDENCE);
-        assertThat(malformedCapture.role).isEqualTo("sharing_command_role");
+        assertThat(malformedCapture.currentRole).isEqualTo("sharing_public_read_role");
+        assertThat(malformedCapture.sessionRole).isEqualTo("sharing_public_read_role");
         for (var malformedArtifacts : List.of(
                 List.of(new ShareableEvidenceProjection.ArtifactProjection("ORIGINAL", "a".repeat(64), 20, "audio/mp3", 12)),
                 List.of(new ShareableEvidenceProjection.ArtifactProjection("ORIGINAL", "a".repeat(64), 20, "audio/wav", -1)),
@@ -152,12 +165,7 @@ class PublicShareQueryServiceTests {
         absentDuration.grant(Status.ACTIVE, NOW.minusSeconds(1), NOW.plusSeconds(60), absentDuration.snapshot);
         when(absentDuration.reader.readShareableProjection(any(), any())).thenAnswer(invocation -> new ShareableEvidenceProjectionReader.ReadResult.Found(absentDuration.projection("SOLIDIFIED")));
         assertThat(absentDuration.read().content().validatedDurationSeconds()).isNull();
-        var restores = new java.util.concurrent.atomic.AtomicInteger();
-        doAnswer(invocation -> {
-            if (restores.incrementAndGet() > 1) throw new IllegalStateException("RESTORE_CANARY");
-            absentDuration.role = "sharing_command_role";
-            return 0;
-        }).when(absentDuration.dsl).execute("SET LOCAL ROLE sharing_command_role");
+        when(absentDuration.dsl.fetchOne("SELECT current_setting('transaction_read_only')")).thenReturn(null);
         denied(absentDuration::read, PublicShareQueryException.Code.SERVICE_UNAVAILABLE);
     }
 
@@ -216,19 +224,22 @@ class PublicShareQueryServiceTests {
         final String identity = "{\"capturedAt\":\"2026-11-05T23:58:20Z\"}";
         PublicGrant grant;
         String snapshot;
-        String role = "sharing_command_role";
+        String currentRole = "sharing_public_read_role";
+        String sessionRole = "sharing_public_read_role";
 
         Fixture(VerificationMode mode) {
             when(transaction.execute(any())).thenAnswer(invocation -> invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(new SimpleTransactionStatus()));
             when(sha.digest(any())).thenAnswer(invocation -> DeterministicShareCommandProviders.digest(new String(invocation.<byte[]>getArgument(0), StandardCharsets.UTF_8)));
             when(dsl.execute(anyString())).thenAnswer(invocation -> {
                 String sql = invocation.getArgument(0);
-                if (sql.startsWith("SET LOCAL ROLE ")) role = sql.substring("SET LOCAL ROLE ".length());
+                assertThat(sql).doesNotContain("SET ROLE", "SET LOCAL ROLE", "sharing_command_role", "evidence_role");
                 return 0;
             });
             when(dsl.fetchOne(anyString())).thenAnswer(invocation -> {
                 Record record = mock(Record.class);
-                when(record.get(0, String.class)).thenReturn(invocation.<String>getArgument(0).contains("current_user") ? role : "on");
+                assertThat(invocation.<String>getArgument(0)).doesNotContain("SET ROLE", "SET LOCAL ROLE", "sharing_command_role", "evidence_role");
+                when(record.get(0, String.class)).thenReturn(invocation.<String>getArgument(0).contains("current_user") ? currentRole : "on");
+                when(record.get(1, String.class)).thenReturn(sessionRole);
                 return record;
             });
             when(repository.sampleDatabaseTime()).thenReturn(NOW);
