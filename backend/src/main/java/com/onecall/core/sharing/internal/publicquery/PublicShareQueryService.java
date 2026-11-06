@@ -34,9 +34,9 @@ public final class PublicShareQueryService {
     private final JsonMapper mapper = JsonMapper.builder().build();
 
     public PublicShareQueryService(@Qualifier("publicShareQueryTransactionTemplate") TransactionTemplate transaction,
-            @Qualifier("sharingCommandDsl") DSLContext context,
+            @Qualifier("publicShareQueryDsl") DSLContext context,
             @Qualifier("publicShareQueryRepository") PublicShareQueryRepository repository,
-            @Qualifier("shareableEvidenceProjectionReader") ShareableEvidenceProjectionReader reader,
+            @Qualifier("publicShareableEvidenceProjectionReader") ShareableEvidenceProjectionReader reader,
             @Qualifier("sha256Provider") Sha256Provider sha256) {
         this.transaction = transaction;
         this.context = context;
@@ -52,7 +52,7 @@ public final class PublicShareQueryService {
             PublicShareView result = transaction.execute(status -> {
                 context.execute("SET TRANSACTION READ ONLY");
                 requireReadOnly();
-                sharingRole();
+                requirePublicReadIdentity();
                 PublicGrant grant = repository.findByTokenDigest(digest).orElseThrow(() -> error(SHARE_TOKEN_INVALID));
                 Instant now = repository.sampleDatabaseTime();
                 require(grant.evidenceId() != null && grant.ownerOrganizationId() != null && grant.status() != null
@@ -128,13 +128,12 @@ public final class PublicShareQueryService {
     private PublicShareView.Content content(PublicGrant grant, JsonNode content) {
         ShareableEvidenceProjectionReader.ReadResult result;
         try {
-            context.execute("SET LOCAL ROLE evidence_role");
-            role("evidence_role");
+            requirePublicReadIdentity();
             requireReadOnly();
             try { result = reader.readShareableProjection(context, grant.evidenceId()); }
             catch (RuntimeException failure) { throw error(SERVICE_UNAVAILABLE); }
         } finally {
-            sharingRole();
+            requirePublicReadIdentity();
             requireReadOnly();
         }
         if (result instanceof ShareableEvidenceProjectionReader.ReadResult.Missing) throw error(FORBIDDEN);
@@ -183,14 +182,10 @@ public final class PublicShareQueryService {
         return new PublicShareView.Content(capturedAt, duration, projected);
     }
 
-    private void sharingRole() {
-        context.execute("SET LOCAL ROLE sharing_command_role");
-        role("sharing_command_role");
-    }
-
-    private void role(String expected) {
-        var row = context.fetchOne("SELECT current_user");
-        require(row != null && expected.equals(row.get(0, String.class)));
+    private void requirePublicReadIdentity() {
+        var row = context.fetchOne("SELECT current_user, session_user");
+        require(row != null && "sharing_public_read_role".equals(row.get(0, String.class))
+                && "sharing_public_read_role".equals(row.get(1, String.class)));
     }
 
     private void requireReadOnly() {

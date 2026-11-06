@@ -6,6 +6,7 @@ import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import com.onecall.core.OneCallApplication;
 import com.onecall.core.customer_iam.internal.application.*;
 import com.onecall.core.customer_iam.internal.security.*;
+import com.onecall.core.evidence.shareprojection.ShareableEvidenceProjectionReader;
 import com.onecall.core.sharing.internal.application.ShareSummary.VerificationMode;
 import com.onecall.core.sharing.internal.command.*;
 import com.onecall.core.sharing.internal.persistence.*;
@@ -19,6 +20,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jooq.DSLContext;
 import org.jooq.ExecuteContext;
@@ -30,6 +33,8 @@ import org.springframework.boot.web.server.servlet.context.ServletWebServerAppli
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -38,6 +43,7 @@ final class PublicSharesFixture implements AutoCloseable {
     final JsonMapper mapper = JsonMapper.builder().build();
     final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     final List<Execution> executions = new CopyOnWriteArrayList<>();
+    final List<Execution> commandExecutions = new CopyOnWriteArrayList<>();
     final AtomicInteger verifications = new AtomicInteger();
     final AtomicInteger digests = new AtomicInteger();
     final AtomicInteger policies = new AtomicInteger();
@@ -49,6 +55,8 @@ final class PublicSharesFixture implements AutoCloseable {
     ConfigurableApplicationContext context;
     DSLContext dsl;
     HikariDataSource pool;
+    DSLContext commandDsl;
+    HikariDataSource commandPool;
     CustomerShareCommandService commands;
     UUID subject;
     UUID binding;
@@ -57,10 +65,10 @@ final class PublicSharesFixture implements AutoCloseable {
     String writeState;
     volatile String failOn;
     volatile boolean tryWrite;
-    volatile boolean failRestore;
+    volatile boolean failIdentity;
     final Map<VerificationMode, CustomerShareCommandResult.Created> created = new EnumMap<>(VerificationMode.class);
 
-    record Execution(String sql, String role, String readOnly, int pid, boolean prepared, int bindings) { }
+    record Execution(String sql, String role, String sessionUser, String readOnly, int pid, boolean prepared, int bindings) { }
 
     void start() throws Exception {
         base.start();
@@ -72,7 +80,11 @@ final class PublicSharesFixture implements AutoCloseable {
     }
 
     void reset() throws Exception {
-        if (context != null) context.close();
+        if (context != null) {
+            context.close();
+            assertThat(pool.isClosed()).isTrue();
+            assertThat(commandPool.isClosed()).isTrue();
+        }
         context = null;
         base.reset();
         commandLogin = "public_command_" + UUID.randomUUID().toString().replace("-", "");
@@ -82,6 +94,11 @@ final class PublicSharesFixture implements AutoCloseable {
             admin.setAutoCommit(false);
             SharingQueryFixture.execute(admin, "CREATE ROLE " + commandLogin + " LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '" + base.password + "'");
             SharingQueryFixture.execute(admin, "GRANT sharing_command_role, evidence_role TO " + commandLogin);
+            try (var passwordStatement = admin.prepareStatement("SELECT set_config('pa16.fixture_password', ?, true)")) {
+                passwordStatement.setString(1, base.password);
+                passwordStatement.execute();
+            }
+            SharingQueryFixture.execute(admin, "DO $auth$ BEGIN EXECUTE format('ALTER ROLE sharing_public_read_role PASSWORD %L', current_setting('pa16.fixture_password')); END $auth$");
             SharingQueryFixture.execute(admin, "CREATE ROLE " + customerLogin + " LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '" + base.password + "'");
             SharingQueryFixture.execute(admin, "GRANT customer_iam_role TO " + customerLogin);
             var evidence = DSL.using(admin).fetchOne("SELECT subject_id, source_ref_id, call_id FROM evidence.evidence_record WHERE id = ?", base.evidence);
@@ -109,7 +126,9 @@ final class PublicSharesFixture implements AutoCloseable {
                             Map.entry("onecall.customer.persistence.password", base.password), Map.entry("onecall.persistence.url", base.url),
                             Map.entry("onecall.persistence.username", base.login), Map.entry("onecall.persistence.password", base.password),
                             Map.entry("onecall.sharing-command.enabled", "true"), Map.entry("onecall.sharing-command.datasource.url", base.url),
-                            Map.entry("onecall.sharing-command.datasource.username", commandLogin), Map.entry("onecall.sharing-command.datasource.password", base.password))));
+                            Map.entry("onecall.sharing-public-read.datasource.url", base.url),
+                            Map.entry("onecall.sharing-command.datasource.username", commandLogin), Map.entry("onecall.sharing-command.datasource.password", base.password),
+                            Map.entry("onecall.sharing-public-read.datasource.username", "sharing_public_read_role"), Map.entry("onecall.sharing-public-read.datasource.password", base.password))));
                     var generic = (GenericApplicationContext) application;
                     generic.registerBean("customerSessionVerifier", CustomerSessionVerifier.class, () -> (bearer, audience) -> {
                         verifications.incrementAndGet();
@@ -137,16 +156,15 @@ final class PublicSharesFixture implements AutoCloseable {
                         digests.incrementAndGet(); return DeterministicShareCommandProviders.sha256().digest(bytes);
                     });
                 }).run();
-        pool = context.getBean("sharingCommandDataSource", HikariDataSource.class);
+        pool = context.getBean("publicShareQueryDataSource", HikariDataSource.class);
         pool.setMaximumPoolSize(1);
         pool.setMinimumIdle(1);
         pool.setConnectionTimeout(5000);
-        dsl = context.getBean("sharingCommandDsl", DSLContext.class);
+        dsl = context.getBean("publicShareQueryDsl", DSLContext.class);
         dsl.configuration().set(new DefaultExecuteListenerProvider(new DefaultExecuteListener() {
             @Override
             public void executeStart(ExecuteContext execution) {
-                if (failRestore && execution.sql().equals("SET LOCAL ROLE sharing_command_role")
-                        && executions.stream().anyMatch(observed -> observed.role().equals("evidence_role"))) throw new IllegalStateException("RESTORE_CANARY");
+                if (failIdentity && execution.sql().equals("SELECT current_user, session_user")) throw new IllegalStateException("IDENTITY_CANARY");
                 if (failOn != null && execution.sql().contains(failOn)) throw new IllegalStateException("DEPENDENCY_CANARY");
                 if (tryWrite && execution.sql().contains("WHERE capability_token_hash = ?")) {
                     try {
@@ -164,13 +182,27 @@ final class PublicSharesFixture implements AutoCloseable {
             @Override
             public void executeEnd(ExecuteContext execution) {
                 try (var statement = execution.connection().createStatement(); var rows = statement.executeQuery(
-                        "SELECT current_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
+                        "SELECT current_user, session_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
                     rows.next();
-                    executions.add(new Execution(execution.sql(), rows.getString(1), rows.getString(2), rows.getInt(3),
+                    executions.add(new Execution(execution.sql(), rows.getString(1), rows.getString(2), rows.getString(3), rows.getInt(4),
                             execution.statement() instanceof PreparedStatement, execution.query() == null ? 0 : execution.query().getBindValues().size()));
                 } catch (SQLException failure) { throw new IllegalStateException("Observation failed"); }
             }
         }));
+        commandPool = context.getBean("sharingCommandDataSource", HikariDataSource.class);
+        commandDsl = context.getBean("sharingCommandDsl", DSLContext.class);
+        commandDsl.configuration().set(
+                new DefaultExecuteListenerProvider(new DefaultExecuteListener() {
+                    @Override
+                    public void executeEnd(ExecuteContext execution) {
+                        try (var statement = execution.connection().createStatement(); var rows = statement.executeQuery(
+                                "SELECT current_user, session_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
+                            rows.next();
+                            commandExecutions.add(new Execution(execution.sql(), rows.getString(1), rows.getString(2), rows.getString(3), rows.getInt(4),
+                                    execution.statement() instanceof PreparedStatement, execution.query() == null ? 0 : execution.query().getBindValues().size()));
+                        } catch (SQLException failure) { throw new IllegalStateException("Command observation failed"); }
+                    }
+                }));
         commands = context.getBean(CustomerShareCommandService.class);
         created.clear();
         for (VerificationMode mode : VerificationMode.values()) created.put(mode, create(mode, "seed-" + mode));
@@ -184,11 +216,84 @@ final class PublicSharesFixture implements AutoCloseable {
         return new CustomerShareCommand.Create(key, base.evidence, mode, Instant.now().plusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.SECONDS),
                 false, Optional.empty(), 1, mode == VerificationMode.DESIGNATED_MOBILE ? "13800138000" : null);
     }
+    Execution heldPublicRead(CyclicBarrier barrier) {
+        var identity = context.getBean("publicShareQueryTransactionTemplate", TransactionTemplate.class).execute(status -> {
+            try (var connection = new TransactionAwareDataSourceProxy(pool).getConnection()) {
+                try {
+                    dsl.execute("SET LOCAL statement_timeout = '10s'");
+                    var heldIdentity = observe(connection);
+                    assertThat(heldIdentity.role()).isEqualTo("sharing_public_read_role");
+                    assertThat(heldIdentity.sessionUser()).isEqualTo("sharing_public_read_role");
+                    assertThat(heldIdentity.readOnly()).isEqualTo("on");
+                    barrier.await(15, TimeUnit.SECONDS);
+                    var repository = context.getBean(PublicShareQueryRepository.class);
+                    var grant = repository.findByTokenDigest(DeterministicShareCommandProviders.digest(
+                            created.get(VerificationMode.NONE).capabilityToken())).orElseThrow();
+                    assertThat(grant.evidenceId()).isEqualTo(base.evidence);
+                    var reader = context.getBean("publicShareableEvidenceProjectionReader", ShareableEvidenceProjectionReader.class);
+                    assertThat(reader.readShareableProjection(dsl, grant.evidenceId()))
+                            .isInstanceOfSatisfying(ShareableEvidenceProjectionReader.ReadResult.Found.class, found -> {
+                                assertThat(found.projection().evidenceId()).isEqualTo(base.evidence);
+                                assertThat(found.projection().artifacts()).isNotEmpty();
+                            });
+                    assertThat(observe(connection)).isEqualTo(heldIdentity);
+                    barrier.await(15, TimeUnit.SECONDS);
+                    return heldIdentity;
+                } finally {
+                    status.setRollbackOnly();
+                    connection.rollback();
+                }
+            } catch (Exception failure) { throw new IllegalStateException("Concurrent public read failed", failure); }
+        });
+        assertBorrowReset(pool, identity.pid(), "sharing_public_read_role");
+        return identity;
+    }
+    Execution heldCommandRead(CyclicBarrier barrier) throws Exception {
+        Execution identity;
+        try (var connection = commandPool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (var statement = connection.createStatement()) {
+                    statement.setQueryTimeout(10);
+                    statement.execute("SET LOCAL ROLE sharing_command_role");
+                }
+                identity = observe(connection);
+                assertThat(identity.role()).isEqualTo("sharing_command_role");
+                assertThat(identity.sessionUser()).isEqualTo(commandLogin);
+                assertThat(identity.readOnly()).isEqualTo("off");
+                barrier.await(15, TimeUnit.SECONDS);
+                assertThat(observe(connection)).isEqualTo(identity);
+                barrier.await(15, TimeUnit.SECONDS);
+            } finally { connection.rollback(); }
+        }
+        assertBorrowReset(commandPool, identity.pid(), commandLogin);
+        return identity;
+    }
+    private void assertBorrowReset(HikariDataSource dataSource, int pid, String login) {
+        try (var connection = dataSource.getConnection()) {
+            var identity = observe(connection);
+            assertThat(identity.pid()).isEqualTo(pid);
+            assertThat(identity.role()).isEqualTo(login);
+            assertThat(identity.sessionUser()).isEqualTo(login);
+            assertThat(identity.readOnly()).isEqualTo("off");
+            assertThat(connection.getAutoCommit()).isTrue();
+            assertThat(connection.isReadOnly()).isFalse();
+        } catch (SQLException failure) { throw new IllegalStateException("Concurrent pool reset failed", failure); }
+    }
+    Execution observe(Connection connection) throws SQLException {
+        try (var statement = connection.createStatement()) {
+            statement.setQueryTimeout(10);
+            try (var rows = statement.executeQuery("SELECT current_user, session_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
+                assertThat(rows.next()).isTrue();
+                return new Execution("identity", rows.getString(1), rows.getString(2), rows.getString(3), rows.getInt(4), false, 0);
+            }
+        }
+    }
     ShareCommandCaller caller() { return new ShareCommandCaller(base.account, Optional.of(base.org)); }
     void clearObservations() {
-        executions.clear(); verifications.set(0); digests.set(0); policies.set(0);
+        executions.clear(); commandExecutions.clear(); verifications.set(0); digests.set(0); policies.set(0);
         tokenIssuances.set(0); extractionCodes.set(0); designatedMobiles.set(0); rotationPolicies.set(0);
-        failOn = null; tryWrite = false; failRestore = false; writeState = null;
+        failOn = null; tryWrite = false; failIdentity = false; writeState = null;
     }
     HttpResponse<String> get(String token, String session, String... headers) throws Exception {
         return request("GET", "/api/v1/public/shares/" + token, session, headers);
@@ -217,7 +322,11 @@ final class PublicSharesFixture implements AutoCloseable {
     }
     @Override
     public void close() {
-        if (context != null) context.close();
+        if (context != null) {
+            context.close();
+            assertThat(pool.isClosed()).isTrue();
+            assertThat(commandPool.isClosed()).isTrue();
+        }
         client.close();
         base.close();
     }

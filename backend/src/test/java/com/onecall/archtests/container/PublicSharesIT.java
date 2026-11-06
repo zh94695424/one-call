@@ -14,7 +14,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.*;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -128,7 +128,7 @@ class PublicSharesIT {
     }
 
     @Test
-    void publicProjectionUsesEvidenceOwnerOnSameReadOnlyConnection() throws Exception {
+    void publicProjectionUsesDedicatedRoleOnSameReadOnlyConnection() throws Exception {
         var before = fixture.snapshot();
         var response = fixture.get(token(VerificationMode.NONE), null);
         assertThat(response.statusCode()).isEqualTo(200);
@@ -138,14 +138,30 @@ class PublicSharesIT {
         assertThat(content.path("artifacts").get(0).path("artifactRole").asString()).isEqualTo("ORIGINAL");
         assertThat(content.path("artifacts").get(1).path("artifactRole").asString()).isEqualTo("DERIVED");
         assertThat(fixture.executions.stream().map(PublicSharesFixture.Execution::pid).distinct()).hasSize(1);
-        assertThat(fixture.executions).allMatch(execution -> execution.readOnly().equals("on"));
+        assertThat(fixture.executions).allMatch(execution -> execution.readOnly().equals("on")
+                && execution.role().equals("sharing_public_read_role") && execution.sessionUser().equals("sharing_public_read_role"));
+        assertThat(fixture.executions).noneMatch(execution -> execution.sql().contains("SET ROLE") || execution.sql().contains("SET LOCAL ROLE"));
         assertThat(fixture.executions.stream().filter(execution -> execution.sql().contains("FROM sharing.evidence_share_grant")))
-                .allMatch(execution -> execution.role().equals("sharing_command_role") && execution.prepared() && execution.bindings() == 1);
+                .hasSize(1).allMatch(execution -> execution.role().equals("sharing_public_read_role") && execution.prepared() && execution.bindings() == 1);
         assertThat(fixture.executions.stream().filter(execution -> execution.sql().contains("FROM evidence.")))
-                .hasSize(2).allMatch(execution -> execution.role().equals("evidence_role"));
-        assertThat(fixture.executions.get(fixture.executions.size() - 2).role()).isEqualTo("sharing_command_role");
+                .hasSize(2).allMatch(execution -> execution.role().equals("sharing_public_read_role"));
+        var publicReader = fixture.context.getBean("publicShareableEvidenceProjectionReader", ShareableEvidenceProjectionReader.class);
+        assertThat(fixture.context.getBeansOfType(ShareableEvidenceProjectionReader.class).keySet())
+                .containsExactlyInAnyOrder("shareableEvidenceProjectionReader", "publicShareableEvidenceProjectionReader");
+        assertThat(org.springframework.aop.support.AopUtils.isAopProxy(publicReader)).isTrue();
+        var untouched = org.mockito.Mockito.mock(org.jooq.DSLContext.class);
+        int commandConnections = fixture.commandPool.getHikariPoolMXBean().getActiveConnections();
+        assertThatThrownBy(() -> publicReader.readShareableProjection(untouched, fixture.base.evidence))
+                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+        assertThat(fixture.commandPool.getHikariPoolMXBean().getActiveConnections()).isEqualTo(commandConnections);
+        fixture.context.getBean("sharingCommandTransactionTemplate", TransactionTemplate.class).execute(status -> {
+            assertThatThrownBy(() -> publicReader.readShareableProjection(untouched, fixture.base.evidence))
+                    .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+            return null;
+        });
+        org.mockito.Mockito.verifyNoInteractions(untouched);
         assertThat(fixture.snapshot()).isEqualTo(before);
-        System.out.println("PA15 same-connection pid=" + fixture.executions.getFirst().pid() + " readOnly=on roles=sharing_command_role/evidence_role/sharing_command_role noWrite=true");
+        System.out.println("PA16 same-connection pid=" + fixture.executions.getFirst().pid() + " readOnly=on current=session=sharing_public_read_role noWrite=true");
     }
 
     @Test
@@ -158,16 +174,19 @@ class PublicSharesIT {
         denied(() -> missingReader.getPublicShare(new OpaqueCapabilityToken(token(VerificationMode.NONE)),
                 organization -> PublicShareQueryService.MemberMatch.MATCH), PublicShareQueryException.Code.SERVICE_UNAVAILABLE);
         assertThat(fixture.snapshot()).isEqualTo(before);
-        for (String failing : List.of("SET LOCAL ROLE evidence_role", "FROM evidence.evidence_record", "SELECT clock_timestamp()")) {
+        for (String failing : List.of("SELECT current_user, session_user", "FROM evidence.evidence_record", "SELECT clock_timestamp()")) {
             fixture.failOn = failing;
             problem(fixture.get(token(VerificationMode.NONE), null), 503, "SERVICE_UNAVAILABLE");
         }
         fixture.failOn = null;
         fixture.sql("REVOKE evidence_role FROM " + fixture.commandLogin);
-        try { problem(fixture.get(token(VerificationMode.NONE), null), 503, "SERVICE_UNAVAILABLE"); }
+        try { assertThat(fixture.get(token(VerificationMode.NONE), null).statusCode()).isEqualTo(200); }
         finally { fixture.sql("GRANT evidence_role TO " + fixture.commandLogin); }
         fixture.clearObservations();
-        fixture.failRestore = true;
+        fixture.sql("REVOKE SELECT (identity_at_capture) ON evidence.evidence_record FROM sharing_public_read_role");
+        try { problem(fixture.get(token(VerificationMode.NONE), null), 503, "SERVICE_UNAVAILABLE"); }
+        finally { fixture.sql("SET ROLE evidence_owner; GRANT SELECT (identity_at_capture) ON evidence.evidence_record TO sharing_public_read_role; RESET ROLE"); }
+        fixture.failIdentity = true;
         problem(fixture.get(token(VerificationMode.NONE), null), 503, "SERVICE_UNAVAILABLE");
         fixture.clearObservations();
         assertThat(fixture.get(token(VerificationMode.NONE), null).statusCode()).isEqualTo(200);
@@ -182,7 +201,7 @@ class PublicSharesIT {
                     result instanceof ShareableEvidenceProjectionReader.ReadResult.Missing ? PublicShareQueryException.Code.FORBIDDEN : PublicShareQueryException.Code.SERVICE_UNAVAILABLE);
         }
         assertThat(fixture.snapshot()).isEqualTo(before);
-        var ownerReader = fixture.context.getBean(ShareableEvidenceProjectionReader.class);
+        var ownerReader = fixture.context.getBean("publicShareableEvidenceProjectionReader", ShareableEvidenceProjectionReader.class);
         var nonSolidified = service(grant -> grant, null, (dsl, evidence) -> {
             var found = (ShareableEvidenceProjectionReader.ReadResult.Found) ownerReader.readShareableProjection(dsl, evidence);
             var projection = found.projection();
@@ -234,12 +253,14 @@ class PublicSharesIT {
         assertThat(fixture.writeState).isEqualTo("25006");
         assertThat(fixture.executions.getFirst().sql()).isEqualTo("SET TRANSACTION READ ONLY");
         int pid = fixture.executions.getFirst().pid();
-        try (var connection = fixture.pool.getConnection(); var rows = connection.createStatement().executeQuery("SELECT current_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
+        try (var connection = fixture.pool.getConnection(); var rows = connection.createStatement().executeQuery("SELECT current_user, session_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
             rows.next();
-            assertThat(rows.getString(1)).isEqualTo(fixture.commandLogin);
-            assertThat(rows.getString(2)).isEqualTo("off");
-            assertThat(rows.getInt(3)).isEqualTo(pid);
+            assertThat(rows.getString(1)).isEqualTo("sharing_public_read_role");
+            assertThat(rows.getString(2)).isEqualTo("sharing_public_read_role");
+            assertThat(rows.getString(3)).isEqualTo("off");
+            assertThat(rows.getInt(4)).isEqualTo(pid);
             assertThat(connection.isReadOnly()).isFalse();
+            assertThat(connection.getAutoCommit()).isTrue();
         }
         for (String login : List.of(fixture.base.login, fixture.commandLogin)) {
             try (var connection = DriverManager.getConnection(fixture.base.url, login, fixture.base.password)) {
@@ -250,17 +271,105 @@ class PublicSharesIT {
             }
         }
         fixture.tryWrite = false;
+        assertConcurrentPoolEvidence();
         try (var executor = Executors.newFixedThreadPool(3)) {
             var futures = new ArrayList<java.util.concurrent.Future<Integer>>();
             for (int index = 0; index < 6; index++) futures.add(executor.submit(() -> fixture.get(token(VerificationMode.NONE), null).statusCode()));
             for (var future : futures) assertThat(future.get(30, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
         }
+        assertPublicPoolReset();
+        assertThat(fixture.pool.getHikariPoolMXBean().getTotalConnections()).isEqualTo(1);
+        assertThat(fixture.executions).isNotEmpty().allMatch(execution -> execution.role().equals("sharing_public_read_role")
+                && execution.sessionUser().equals("sharing_public_read_role") && execution.readOnly().equals("on"));
+        assertThat(fixture.executions).noneMatch(execution -> execution.sql().matches("(?is).*\\bSET\\s+(LOCAL\\s+|SESSION\\s+)?ROLE\\b.*"));
         assertThat(fixture.snapshot()).isEqualTo(before);
+        var publicExecutions = List.copyOf(fixture.executions);
+        fixture.commandExecutions.clear();
         var command = fixture.create(VerificationMode.NONE, "after-public");
         assertThat(command).isNotNull();
-        assertThat(fixture.executions.stream().filter(execution -> execution.sql().startsWith("INSERT INTO sharing.evidence_share_grant")))
-                .allMatch(execution -> execution.readOnly().equals("off"));
-        System.out.println("PA15 SQLSTATE=25006 pidReuse=" + pid + " poolResetRole=true transaction_read_only=off subsequentCommandWritable=true");
+        assertThat(fixture.commandExecutions.stream().filter(execution -> execution.sql().startsWith("INSERT INTO sharing.evidence_share_grant")))
+                .isNotEmpty().allMatch(execution -> execution.readOnly().equals("off")
+                        && execution.role().equals("sharing_command_role") && execution.sessionUser().equals(fixture.commandLogin));
+        assertThat(fixture.executions).containsExactlyElementsOf(publicExecutions);
+        assertThat(fixture.pool).isNotSameAs(fixture.context.getBean("sharingCommandDataSource"));
+        System.out.println("PA16 SQLSTATE=25006 pidReuse=" + pid + " poolResetIdentity=true transaction_read_only=off positiveCommandINSERT=true commandReadOnly=off publicStreamUnchanged=true");
+    }
+
+    private static void assertConcurrentPoolEvidence() throws Exception {
+        int maximum = fixture.pool.getMaximumPoolSize();
+        var executor = Executors.newFixedThreadPool(2);
+        var futures = new ArrayList<Future<PublicSharesFixture.Execution>>();
+        try {
+            fixture.pool.setMaximumPoolSize(2);
+            int observationStart = fixture.executions.size();
+            var publicBarrier = new CyclicBarrier(2);
+            var first = executor.submit(() -> fixture.heldPublicRead(publicBarrier));
+            futures.add(first);
+            var second = executor.submit(() -> fixture.heldPublicRead(publicBarrier));
+            futures.add(second);
+            var firstIdentity = first.get(40, TimeUnit.SECONDS);
+            var secondIdentity = second.get(40, TimeUnit.SECONDS);
+            assertThat(firstIdentity.pid()).isNotEqualTo(secondIdentity.pid());
+            var publicPids = Set.of(firstIdentity.pid(), secondIdentity.pid());
+            var concurrentExecutions = List.copyOf(fixture.executions.subList(observationStart, fixture.executions.size()));
+            assertThat(concurrentExecutions).isNotEmpty().allMatch(execution -> publicPids.contains(execution.pid())
+                    && execution.role().equals("sharing_public_read_role") && execution.sessionUser().equals("sharing_public_read_role")
+                    && execution.readOnly().equals("on"));
+            assertThat(concurrentExecutions).noneMatch(execution -> execution.sql().matches("(?is).*\\bSET\\s+(LOCAL\\s+|SESSION\\s+)?ROLE\\b.*"));
+            for (int publicPid : publicPids) {
+                assertThat(concurrentExecutions.stream().filter(execution -> execution.pid() == publicPid
+                        && execution.sql().contains("FROM sharing.evidence_share_grant"))).hasSize(1);
+                assertThat(concurrentExecutions.stream().filter(execution -> execution.pid() == publicPid
+                        && execution.sql().contains("FROM evidence."))).hasSize(2);
+            }
+            try (var firstReset = fixture.pool.getConnection(); var secondReset = fixture.pool.getConnection()) {
+                assertThat(Set.of(fixture.observe(firstReset).pid(), fixture.observe(secondReset).pid())).isEqualTo(publicPids);
+                for (var connection : List.of(firstReset, secondReset)) {
+                    var identity = fixture.observe(connection);
+                    assertThat(identity.role()).isEqualTo("sharing_public_read_role");
+                    assertThat(identity.sessionUser()).isEqualTo("sharing_public_read_role");
+                    assertThat(identity.readOnly()).isEqualTo("off");
+                    assertThat(connection.getAutoCommit()).isTrue();
+                    assertThat(connection.isReadOnly()).isFalse();
+                }
+            }
+            System.out.println("PA16 twoPublicBarrier=passed pids=" + publicPids
+                    + " distinct=true current=session=sharing_public_read_role readOnly=on projections=2 noRoleTransitions=true bothReset=true");
+            var dualPoolBarrier = new CyclicBarrier(2);
+            var publicRead = executor.submit(() -> fixture.heldPublicRead(dualPoolBarrier));
+            futures.add(publicRead);
+            var commandRead = executor.submit(() -> fixture.heldCommandRead(dualPoolBarrier));
+            futures.add(commandRead);
+            var publicIdentity = publicRead.get(40, TimeUnit.SECONDS);
+            var commandIdentity = commandRead.get(40, TimeUnit.SECONDS);
+            assertThat(publicIdentity.pid()).isNotEqualTo(commandIdentity.pid());
+            try (var publicReset = fixture.pool.getConnection(); var commandReset = fixture.commandPool.getConnection()) {
+                var publicState = fixture.observe(publicReset);
+                assertThat(publicState.role()).isEqualTo("sharing_public_read_role");
+                assertThat(publicState.sessionUser()).isEqualTo("sharing_public_read_role");
+                assertThat(publicState.readOnly()).isEqualTo("off");
+                var commandState = fixture.observe(commandReset);
+                assertThat(commandState.role()).isEqualTo(fixture.commandLogin);
+                assertThat(commandState.sessionUser()).isEqualTo(fixture.commandLogin);
+                assertThat(commandState.readOnly()).isEqualTo("off");
+                assertThat(publicState.pid()).isNotEqualTo(commandState.pid());
+                for (var connection : List.of(publicReset, commandReset)) {
+                    assertThat(connection.getAutoCommit()).isTrue();
+                    assertThat(connection.isReadOnly()).isFalse();
+                }
+            }
+            System.out.println("PA16 simultaneousPoolBarrier=passed publicPid=" + publicIdentity.pid() + " commandPid=" + commandIdentity.pid()
+                    + " distinct=true publicReadOnly=on commandReadOnly=off commandRole=sharing_command_role commandSession=login bothReset=true");
+        } finally {
+            futures.forEach(future -> future.cancel(true));
+            executor.shutdownNow();
+            try { assertThat(executor.awaitTermination(15, TimeUnit.SECONDS)).isTrue(); }
+            finally {
+                fixture.pool.setMaximumPoolSize(maximum);
+                fixture.pool.getHikariPoolMXBean().softEvictConnections();
+            }
+        }
+        assertThat(fixture.pool.getMaximumPoolSize()).isEqualTo(maximum);
     }
 
     @Test
@@ -296,7 +405,7 @@ class PublicSharesIT {
             public Instant sampleDatabaseTime() { return time == null ? repository.sampleDatabaseTime() : time; }
         };
         return new PublicShareQueryService(fixture.context.getBean("publicShareQueryTransactionTemplate", TransactionTemplate.class), fixture.dsl, seam,
-                reader == null ? fixture.context.getBean(ShareableEvidenceProjectionReader.class) : reader, DeterministicShareCommandProviders.sha256());
+                reader == null ? fixture.context.getBean("publicShareableEvidenceProjectionReader", ShareableEvidenceProjectionReader.class) : reader, DeterministicShareCommandProviders.sha256());
     }
     private static String token(VerificationMode mode) { return fixture.created.get(mode).capabilityToken(); }
     private static void denied(Runnable action, PublicShareQueryException.Code code) {
@@ -318,5 +427,19 @@ class PublicSharesIT {
         assertThat(json.path("code").asString()).isEqualTo(code);
         assertThat(UUID.fromString(json.path("traceId").asString())).isNotNull();
         assertThat(response.body()).doesNotContain("CANARY", "test-token-", fixture.base.account.toString(), "/api/", "<html");
+        assertPublicPoolReset();
+    }
+
+    private static void assertPublicPoolReset() {
+        try (var connection = fixture.pool.getConnection(); var statement = connection.createStatement(); var rows = statement.executeQuery(
+                "SELECT current_user, session_user, current_setting('transaction_read_only'), pg_backend_pid()")) {
+            assertThat(rows.next()).isTrue();
+            assertThat(rows.getString(1)).isEqualTo("sharing_public_read_role");
+            assertThat(rows.getString(2)).isEqualTo("sharing_public_read_role");
+            assertThat(rows.getString(3)).isEqualTo("off");
+            if (!fixture.executions.isEmpty()) assertThat(rows.getInt(4)).isEqualTo(fixture.executions.getLast().pid());
+            assertThat(connection.isReadOnly()).isFalse();
+            assertThat(connection.getAutoCommit()).isTrue();
+        } catch (SQLException failure) { throw new AssertionError("Public pool reset observation failed"); }
     }
 }
