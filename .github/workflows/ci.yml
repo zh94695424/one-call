@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 79:
-              sys.exit("expected exactly 79 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 91:
+              sys.exit("expected exactly 91 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -335,6 +335,37 @@ jobs:
               },
           }
 
+          unit_expected.update({
+              "com.onecall.archtests.PublicShareWebTests": {
+                  "exactPublicGetRoutePrecedesOptionalAuthentication",
+                  "optionalBearerFailuresKeepFrozenPrecedence",
+                  "tokenShapeAndLookupFailuresUseClosedProblems",
+                  "publicDtoIsClosedAndContentIsOmittedForNonmembers",
+                  "memberSessionMatchAndNonmatchNeverLeakContent",
+                  "prefetchAndNegotiationHaveNoAuthorizationSideEffects",
+              },
+              "com.onecall.archtests.sharing.PublicShareQueryServiceTests": {
+                  "exactUtf8DigestLookupConcealsUnknownTokens",
+                  "stateAndDatabaseTimeChecksNeverMutateGrant",
+                  "immutableEvidenceProjectionIsOrderedAndFailClosed",
+                  "organizationContentRequiresCurrentMatchingMember",
+              },
+              "com.onecall.archtests.PublicSharePersistenceConfigurationTests": {
+                  "defaultWebAndDisabledCommandProfilesStayDatabaseFree",
+                  "publicReadUsesExistingQualifiedManagerAndEnforcedReadOnlyTemplate",
+              },
+          })
+          container_expected["com.onecall.archtests.container.PublicSharesIT"] = {
+              "publicGetResolvesOnlyExactTokenDigestAndRedactsEveryResponse",
+              "publicGetKeepsRevokedExpiredAndLockedPageSemantics",
+              "organizationPageRechecksCurrentAccountTenantAndMembership",
+              "publicProjectionUsesEvidenceOwnerOnSameReadOnlyConnection",
+              "publicProjectionAndDependencyFailuresFailClosedWithoutPartialContent",
+              "repeatedPageAndPrefetchLeaveAllPersistentFactsUnchanged",
+              "publicReadIsPostgresEnforcedAndRestoresPoolRoleAndTransactionState",
+              "publicReadPreservesCreateRevokeRotateListAndMeBehavior",
+          }
+
           def exact_inventory(pattern, inventory, total):
               reports = suites(pattern)
               if len(reports) != len(inventory) or {report.get("name") for report in reports} != set(inventory):
@@ -363,9 +394,9 @@ jobs:
                   source_classes.add(str(path.relative_to("src/test/java")).removesuffix(".java").replace("/", "."))
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 79)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 118)
-          print("PA14 exact source/CI/XML inventory passed: Surefire 79; Failsafe 64+10+10+8+8+18=118; combined 197; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 91)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 126)
+          print("PA15 exact source=CI=XML inventory passed: 19 Surefire classes/91 methods; 7 Failsafe classes/126 methods (64+10+10+8+8+18+8=126); combined 217; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
@@ -404,14 +435,19 @@ jobs:
                       assert time.monotonic() < deadline, "web startup timed out"
                       time.sleep(0.2)
                   traces = set()
-                  probes = [("/api/v1/customer/me", {}, 401, "UNAUTHENTICATED", "Authentication required"),
-                            ("/api/v1/customer/me", {"Authorization": "Bearer smoke-opaque"}, 503,
+                  probes = [("GET", "/api/v1/customer/me", {}, 401, "UNAUTHENTICATED", "Authentication required"),
+                            ("GET", "/api/v1/customer/me", {"Authorization": "Bearer smoke-opaque"}, 503,
                              "SERVICE_UNAVAILABLE", "Service unavailable"),
-                            ("/api/v1/customer/me", {"Accept": "text/html", "X-Trace-Id": "untrusted"}, 401,
+                            ("GET", "/api/v1/customer/me", {"Accept": "text/html", "X-Trace-Id": "untrusted"}, 401,
                              "UNAUTHENTICATED", "Authentication required"),
-                            ("/error", {"Accept": "text/html"}, 404, "NOT_FOUND", "Not found")]
-                  for path, headers, status, code, title in probes:
-                      request = urllib.request.Request(f"http://127.0.0.1:{port.group(1)}{path}", headers=headers)
+                            ("GET", "/error", {"Accept": "text/html"}, 404, "NOT_FOUND", "Not found"),
+                            ("GET", "/api/v1/public/shares/synthetic", {}, 503, "SERVICE_UNAVAILABLE", "Service unavailable"),
+                            ("GET", "/api/v1/public/shares/synthetic", {"Authorization": "bad"}, 401, "UNAUTHENTICATED", "Authentication required"),
+                            ("POST", "/api/v1/public/shares/synthetic", {}, 404, "NOT_FOUND", "Not found"),
+                            ("GET", "/api/v1/public/shares/a%2Fb", {}, 404, "NOT_FOUND", "Not found"),
+                            ("GET", "/api/v1/public/shares/a%2Fb", {"Authorization": "bad", "Accept": "text/html", "X-Trace-Id": "untrusted"}, 404, "NOT_FOUND", "Not found")]
+                  for method, path, headers, status, code, title in probes:
+                      request = urllib.request.Request(f"http://127.0.0.1:{port.group(1)}{path}", headers=headers, method=method)
                       try:
                           response = urllib.request.urlopen(request, timeout=10)
                       except urllib.error.HTTPError as error:

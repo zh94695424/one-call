@@ -1,171 +1,490 @@
-# PA15 Public Share Read — Blocked Implementation Intake
+# PA15 Public Share Read — Implementation Report
 
-- Task: `pa15-public-share-read-implementation-gpt-20261106`.
-- Work unit: `PA15-sharing-public-share-read`.
-- Gate: `implementation`; status: **BLOCKED before production/test implementation**.
-- Date: 2026-11-06, Asia/Shanghai.
-- Accepted plan: `docs/gateflow/pa15-sharing-public-share-read-plan.md`, 372 lines, SHA256 `07605141492b281337fc37046c01cd5995c071867970d5fa7bb17ec7b38d26ae`.
-- Live HEAD observed: `ffadc2eceebd5cf80f68f5e864750ac7727510e2`.
-- This is a stop-condition report, not a completed candidate, review, gate advancement or production-readiness claim.
+## 1. Identity, Authority And Status
 
-## 1. Reproduced Contract Blocker
-
-The accepted plan §4, item 3, explicitly requires an encoded slash to receive a sanitized **404 NOT_FOUND**, before authentication, service lookup or database access. It also requires the established REQUEST-only filter registration to stay unchanged. Section 3 permits only the public-route/optional-authentication change in `CustomerBoundaryFilter` and expressly excludes web configuration, error-controller and settings changes. Its stop rule requires a bounded plan correction when the necessary implementation is outside the authorized design.
-
-The unchanged packaged application instead rejects an encoded slash **before the servlet filter**:
-
-| Synthetic GET presentation | Actual status | Actual content type | Cache-Control | Required PA15 result |
-| --- | --- | --- | --- | --- |
-| `/api/v1/public/shares/a%2Fb` | 400 | `text/html;charset=utf-8` | Absent | Closed 404 NOT_FOUND Problem, no-store |
-| `/api/v1/public/shares/a%2fb` | 400 | `text/html;charset=utf-8` | Absent | Closed 404 NOT_FOUND Problem, no-store |
-| `/api/v1/public/shares/a%252Fb` | 404 | `application/problem+json` | no-store | Closed 404 NOT_FOUND Problem |
-| `/api/v1/public/shares/a%20b` | 404 | `application/problem+json` | no-store | Closed 404 NOT_FOUND Problem |
-| `/api/v1/public/shares/a;b` | 404 | `application/problem+json` | no-store | Closed 404 NOT_FOUND Problem |
-
-The canonical synthetic public path also returns a closed 404 on this baseline, because the public endpoint has not been implemented; it is a negative control, not a successful public read. The existing customer path with an encoded slash likewise receives HTML 400.
-
-The first diagnostic made seven HTTP requests. A separate confirmation made 24 requests: two context paths (root and `/pa15`), three header combinations (no headers; malformed supplied Authorization; that Authorization plus `Accept: text/html`), and four token-segment presentations (`synthetic`, `a%2Fb`, `a%2fb`, `a%252Fb`). All 12 encoded-slash requests returned HTML 400 with no Cache-Control. All 12 control requests returned closed 404 NOT_FOUND Problems with no-store. The context prefix and optional credentials therefore do not account for the discrepancy. All three diagnostic web JVMs were terminated and reaped; each exited 143 after termination, with graceful-shutdown messages.
-
-This is a connector-layer limitation, not an unimplemented public matcher:
-
-- The packaged dependency is Apache Tomcat **11.0.27**, confirmed by the JAR inventory and startup log.
-- Local `javap -c -p` inspection of that exact `tomcat-embed-core` JAR shows `Connector` initializes `encodedSolidusHandling` to `EncodedSolidusHandling.REJECT`.
-- `CoyoteAdapter.postParseRequest` calls `UDecoder.convert` with the connector's encoded-solidus setting and catches the decoding IOException by sending status 400. This occurs during container URI processing, before servlet filtering.
-- `CustomerBoundaryFilter.doFilter` sets the Problem writer's headers unconditionally before routing (`CustomerBoundaryFilter.java:48`). The encoded-slash responses have neither those headers nor the closed Problem body. Ordinary rejected paths have both.
-- `CustomerWebConfiguration.java:22` registers only REQUEST dispatches at highest precedence. A servlet-filter whitelist change or MVC controller cannot rewrite a response generated before that filter is entered. The existing error controller did not convert these responses during the packaged probes.
-
-No connector customization, extra filter, container valve, system-property workaround, dependency change, deployment change or permissive test substitution was attempted. Hiding a container customizer in an allowlisted controller/filter/persistence file would violate that file's frozen responsibility and the accepted design, even if its filename were allowlisted.
-
-**Required owner decision:** Controller/Backend must provide a bounded plan correction that either authorizes appropriate pre-servlet handling/configuration and its regression proof, or explicitly distinguishes container-rejected URI presentations from servlet-admitted route rejections. This report does not select or implement either alternative. No existing or planned assertion is weakened. In particular, the supplied prompt's prepared-statement clarification is accepted and is not the blocker.
-
-## 2. Exact Write Boundary
-
-The only task-authored repository file is:
-
-`docs/gateflow/pa15-sharing-public-share-read-implementation.md`
-
-All 23 accepted candidate paths below remain untouched. Before implementation, nine existed and fourteen were absent; those counts remain unchanged.
-
-1. `backend/src/main/java/com/onecall/core/customer_iam/internal/web/CustomerBoundaryFilter.java`
-2. `backend/src/main/java/com/onecall/core/customer_iam/internal/web/CustomerProblemWriter.java`
-3. `backend/src/main/java/com/onecall/core/customer_iam/internal/web/PublicSharesController.java`
-4. `backend/src/main/java/com/onecall/core/customer_iam/package-info.java`
-5. `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/package-info.java`
-6. `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/OpaqueCapabilityToken.java`
-7. `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/PublicShareQueryException.java`
-8. `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/PublicShareView.java`
-9. `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/PublicShareQueryService.java`
-10. `backend/src/main/java/com/onecall/core/sharing/internal/persistence/PublicShareQueryRepository.java`
-11. `backend/src/main/java/com/onecall/core/sharing/internal/persistence/JooqPublicShareQueryRepository.java`
-12. `backend/src/main/java/com/onecall/core/sharing/internal/persistence/PublicSharePersistenceConfiguration.java`
-13. `backend/src/test/java/com/onecall/archtests/PublicShareWebTests.java`
-14. `backend/src/test/java/com/onecall/archtests/sharing/PublicShareQueryServiceTests.java`
-15. `backend/src/test/java/com/onecall/archtests/PublicSharePersistenceConfigurationTests.java`
-16. `backend/src/test/java/com/onecall/archtests/container/PublicSharesFixture.java`
-17. `backend/src/test/java/com/onecall/archtests/container/PublicSharesIT.java`
-18. `backend/src/test/java/com/onecall/archtests/architecture/CustomerApiBoundaryTests.java`
-19. `backend/src/test/java/com/onecall/archtests/architecture/SharingQueryBoundaryTests.java`
-20. `backend/src/test/java/com/onecall/archtests/architecture/ModuleBoundaryTests.java`
-21. `backend/pom.xml`
-22. `.github/workflows/ci.yml`
-23. `backend/README.md`
-
-Generated compilation, XML and baseline diagnostic boot-log outputs are confined to ignored `backend/target/`; they are not source changes or a completed implementation candidate. The accepted plan, fixes, Control, reviews, V001–V010, OpenAPI/generated API, deployment files and existing source/tests remain unchanged. The pre-existing untracked private `.codex` entry was observed in Git status only; its contents and old worktrees were not inspected or changed.
-
-## 3. One-Slice Mapping And Production Decisions
-
-The authorized slice remains exactly `GET /api/v1/public/shares/{capabilityToken}`. No independent lower-layer implementation was started after discovering the HTTP acceptance blocker.
-
-| Slice segment | Actual implementation status |
+| Item | Value |
 | --- | --- |
-| Canonical route and optional strict customer authentication | Not implemented; encoded-slash pre-filter contradiction reproduced |
-| Token shape, exact UTF-8 SHA-256 lookup and unresolved-token concealment | Not implemented |
-| PostgreSQL-enforced command-pool read-only transaction and role assertions | Not implemented |
-| REVOKED/EXPIRED/time precedence and lazy current grant-tenant membership | Not implemented |
-| Immutable evidence-owner comparison and closed omitted-field projection | Not implemented |
-| No-write observations, regressions, exact architecture partition and CI inventories | Not implemented or certified |
+| Report task | `pa15-public-share-read-implementation-report-gpt-20261106` |
+| Work unit | `PA15-sharing-public-share-read` |
+| Gate | `implementation` |
+| Candidate status | **implementation-complete** |
+| Evidence date | 2026-11-06, Asia/Shanghai (`UTC+08:00`) |
+| Accepted plan | `docs/gateflow/pa15-sharing-public-share-read-plan.md` |
+| Plan identity | **399 lines**, SHA256 `EED82E23743C07B71AFAE09C5183757DBAFDFC44E3B71FEA55CF67C2518A8012` |
+| Accepted checkpoint authority supplied by task and Control | `7bd5d28449880c0b89ab26b40f36bbf35b2f0cb7` |
+| Reporting artifact | `docs/gateflow/pa15-sharing-public-share-read-implementation.md` |
 
-No production transaction/role/digest/member/projection decision is claimed as implemented. The frozen choices remain binding for a future authorized retry: String or Jackson JsonNode snapshot carrier; service-only DSLContext exception; no-DSL repository interface; MANDATORY evidence reader; indexed PREPARED_STATEMENT binding with SQL/execute/bind logging disabled; current ACTIVE account plus ACTIVE grant-tenant membership independent of selected workspace; and absent rather than null optional content. No dependency, token format/generator, verifier, KDF, TTL, rate limit or deployment value was invented.
+The current 25-path implementation candidate, retained successful validation logs, current test source, CI inventories and fresh XML reports agree. The single authorized public-read slice is implemented and locally validated. This status is an implementation result, **not production readiness, independent review acceptance, gate advancement or release authorization**.
 
-## 4. Environment And Baseline
+This report is authored as the final response for the runner to persist. This reporting task edits no repository file and runs no additional Maven or Docker tests. The implementation artifact is separate Gateflow reporting authority, not a 26th production/test/configuration candidate path.
 
-Before source editing, captured `java -version`, the wrapper invocation, `docker info`, current test inventory and Git status/path baseline.
+### Historical Attempts And Retries
 
-- The initial shell resolved Java to the Windows executable through `/mnt/d/tools/jdk21/bin/java`: Temurin **21.0.12.1**. Linux execution was recovered using the already-installed `/opt/jdk21`, without changing files or machine configuration.
-- Actual Maven/test/JAR runtime: Temurin **21.0.13+9**, OpenJDK 64-bit, Linux amd64.
-- Actual Maven: **3.9.9**, wrapper distribution `/root/.m2/wrapper/dists/apache-maven-3.9.9/3477a4f1`.
-- Docker client/server: **29.1.3 / 29.1.3**; default context; server reports Ubuntu 22.04.5 LTS, WSL2 kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64. `docker info` succeeded. No task PostgreSQL/Testcontainers instance was started.
-- PostgreSQL 16 runtime version: **not measured**. Docker availability is not PostgreSQL evidence.
-- Bare Git initially failed because `.git` contains the Windows-form pointer `D:/codex-call/.git/worktrees/codex-call15`. Process-local `GIT_DIR`, `GIT_WORK_TREE` and `GIT_OPTIONAL_LOCKS=0` resolved the live Git directory to exactly `/mnt/d/codex-call/.git/worktrees/codex-call15`; `.git` was not rewritten.
-- Initial tracked diff was empty. Initial status contained only the pre-existing untracked `.codex` entry. The implementation artifact was confirmed absent before creation.
-- `./mvnw -v` at repository root failed because the wrapper is under `backend/`. Direct `backend/./mvnw -v` then failed with `/bin/sh^M: bad interpreter` because its existing checkout has CRLF. The wrapper was executed from an in-memory LF-normalized script with its original `$0`; no wrapper/POM/property edit was made.
-- The accepted plan was read through EOF and its exact hash/line count verified. Intake examined active Control/Goal Confirmation, fix/review material, the frozen public OpenAPI schemas and relevant filter, error, authentication, context, persistence, evidence, architecture-test and CI sources. The blocker was established before completing the remaining full prerequisite schema/code/test intake; this report does not claim an exhaustive read of every requested authority.
+The active implementation retry state in `docs/gateflow/project-execution-control.md` records:
 
-## 5. Commands And Results Actually Obtained
+1. **Initial implementation attempt:** stopped without edits because “prepared statements disabled” conflicted with the accepted indexed prepared-binding requirement. The Controller clarified that prepared statements remain enabled; SQL/bind/secret logging must be disabled.
+2. **Retry 1:** reproduced Tomcat 11.0.27 rejecting encoded slash before the servlet filter with HTML 400, contrary to the required closed 404. Only the blocked implementation report was written. The subsequent accepted fix-4 plan authorized the bounded connector customizer and expanded the candidate boundary from 23 to 25 paths.
+3. **Retry 2:** stopped without writes because its prompt still pinned the superseded 372-line plan, SHA256 `07605141492B281337FC37046C01CD5995C071867970D5FA7BB17EC7B38D26AE`, while Control accepted the 399-line fix-4 plan.
+4. **Retry 3:** implemented and validated the candidate. Its final handoff remained blocked only on replacing the durable report because the required dedicated patch interface was unavailable.
+5. **This reporting task:** independently inspects the candidate and retained evidence and supplies the complete replacement report.
 
-Linux environment and wrapper invocation used for the successful commands:
+Before runner persistence, the existing report remains the historical 171-line blocked artifact, SHA256 `73E1EB3AE835252F7BC273004866463642495A8EBF010603CE4F0D3896803DA2`. Its earlier blocker and baseline results are historical, not the current candidate’s acceptance evidence.
 
-```sh
+### Local Git Provenance Qualification
+
+The accepted checkpoint identifier above is preserved exactly as supplied by the task and Control. Read-only inspection of the available local Git history instead shows:
+
+- Current HEAD: `175f9c2bd8d848808d0dcbf30eba36e46f40a0e5`, `gateflow: retry PA15 implementation 3`.
+- Previous entry: `98e964a8b4f68ed46267abf5e041a32671b06f4f`, `gateflow: enter PA15 implementation retry 2`.
+- Local fix-4 entry: `7bd5d284013def5b1e9dc63eabe6c61bad320524`, `gateflow: accept plan fix 4 for PA15-sharing-public-share-read`.
+
+The plan blob at that local fix-4 entry independently hashes to the exact accepted plan SHA256. The two full checkpoint identifiers are **not asserted to be identical**. Controller owns reconciling this provenance discrepancy before checkpoint-based acceptance; it does not alter the verified plan contents or local candidate/test results.
+
+## 2. Exact Candidate Boundary
+
+Expanded `git status --short` and the retained final audit identify exactly **25 candidate files: 11 modified tracked files and 14 new files**. `M` means modified; `N` means new.
+
+| # | State | Exact path |
+| --- | --- | --- |
+| 1 | M | `backend/src/main/java/com/onecall/core/customer_iam/internal/web/CustomerBoundaryFilter.java` |
+| 2 | M | `backend/src/main/java/com/onecall/core/customer_iam/internal/web/CustomerProblemWriter.java` |
+| 3 | N | `backend/src/main/java/com/onecall/core/customer_iam/internal/web/PublicSharesController.java` |
+| 4 | M | `backend/src/main/java/com/onecall/core/customer_iam/package-info.java` |
+| 5 | N | `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/package-info.java` |
+| 6 | N | `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/OpaqueCapabilityToken.java` |
+| 7 | N | `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/PublicShareQueryException.java` |
+| 8 | N | `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/PublicShareView.java` |
+| 9 | N | `backend/src/main/java/com/onecall/core/sharing/internal/publicquery/PublicShareQueryService.java` |
+| 10 | N | `backend/src/main/java/com/onecall/core/sharing/internal/persistence/PublicShareQueryRepository.java` |
+| 11 | N | `backend/src/main/java/com/onecall/core/sharing/internal/persistence/JooqPublicShareQueryRepository.java` |
+| 12 | N | `backend/src/main/java/com/onecall/core/sharing/internal/persistence/PublicSharePersistenceConfiguration.java` |
+| 13 | N | `backend/src/test/java/com/onecall/archtests/PublicShareWebTests.java` |
+| 14 | N | `backend/src/test/java/com/onecall/archtests/sharing/PublicShareQueryServiceTests.java` |
+| 15 | N | `backend/src/test/java/com/onecall/archtests/PublicSharePersistenceConfigurationTests.java` |
+| 16 | N | `backend/src/test/java/com/onecall/archtests/container/PublicSharesFixture.java` |
+| 17 | N | `backend/src/test/java/com/onecall/archtests/container/PublicSharesIT.java` |
+| 18 | M | `backend/src/test/java/com/onecall/archtests/architecture/CustomerApiBoundaryTests.java` |
+| 19 | M | `backend/src/test/java/com/onecall/archtests/architecture/SharingQueryBoundaryTests.java` |
+| 20 | M | `backend/src/test/java/com/onecall/archtests/architecture/ModuleBoundaryTests.java` |
+| 21 | M | `backend/pom.xml` |
+| 22 | M | `.github/workflows/ci.yml` |
+| 23 | M | `backend/README.md` |
+| 24 | M | `backend/src/main/java/com/onecall/core/customer_iam/internal/web/CustomerWebConfiguration.java` |
+| 25 | M | `backend/src/test/java/com/onecall/archtests/CustomerWebConfigurationTests.java` |
+
+The raw status also contains the private untracked `.codex` entry and collapses the new `publicquery` directory. Expanding that directory yields the individual files above; `.codex` is excluded from the candidate and was not opened.
+
+`git diff --check` passes. Git emits LF/CRLF conversion warnings, but no whitespace-error failure. The staged diff is empty. The retained final audit records an unchanged index.
+
+## 3. One-Slice Implementation And Production Decisions
+
+The implementation is one end-to-end behavior:
+
+`GET /api/v1/public/shares/{capabilityToken}` → existing boundary filter → public controller → public-query service → digest lookup and conditional evidence projection → closed response.
+
+The files are responsibility partitions within that slice, not independently completed feature slices.
+
+### Route, Optional Authentication And Error Precedence
+
+- The existing highest-precedence `/*`, **REQUEST-only** filter remains the sole admission gate.
+- Only the exact public GET is admitted. Method/path/canonical-URI rejection occurs before authentication, token construction, service resolution or database access.
+- The canonical gate excludes slash, semicolon and percent presentations in the token segment and requires `contextPath + servletPath == requestURI`. Encoded/noncanonical presentations receive sanitized `404 NOT_FOUND`.
+- Absence of Authorization on an admitted public GET permits anonymous access. A supplied Authorization header uses the existing strict authenticator; malformed or invalid credentials never downgrade to anonymous. Unavailable verification fails closed.
+- Authentication retains precedence over negotiation and controller/service work. Token shape validation precedes public-service lookup; missing, ambiguous or unavailable service resolution returns 503 rather than partial content.
+- The controller is web-profile and servlet-conditional. Its only route returns `PublicShareView`; it lazily resolves qualified `publicShareQueryService` and, only when membership is actually required, qualified `customerContextService`.
+
+`OpaqueCapabilityToken` validates 1–512 Unicode code points, rejects NUL and invalid UTF-8-encodable Java strings, and redacts `toString()`. Digesting uses the existing SHA-256 provider over **exact UTF-8 bytes**: no trimming, case folding, Unicode normalization or service-side decoding. Lookup binds the resulting lowercase 64-hex digest through an indexed prepared statement; it never binds the raw token.
+
+Unknown and retired tokens share `404 SHARE_TOKEN_INVALID`. Route rejection is separately `404 NOT_FOUND`. Typed mappings include 401 unauthenticated, 403 forbidden, 410 revoked/expired, 422 validation, 429 rate-limited, 503 unavailable and sanitized 500 internal.
+
+Problems retain exactly `{type,title,status,code,traceId}`, `type: "about:blank"`, server-generated UUID trace IDs and `application/problem+json`. Responses retain `Cache-Control: no-store`, `Pragma: no-cache` and `X-Content-Type-Options: nosniff`. No request URI, exception detail, client trace echo, redirect, cookie, session or media hint is introduced.
+
+### Tomcat Encoded-Solidus Correction
+
+`CustomerWebConfiguration` adds the accepted, web-profile:
+
+`WebServerFactoryCustomizer<TomcatServletWebServerFactory>`
+
+Its connector customizer calls:
+
+`connector.setEncodedSolidusHandling(EncodedSolidusHandling.PASS_THROUGH.getValue())`
+
+This is verified against Boot **4.1.2** and Tomcat **11.0.27**. It prevents Tomcat’s earlier HTML 400 rejection from bypassing the application’s closed Problem contract. It does **not** authorize encoded slash: the preserved canonical filter gate sees and rejects that presentation with closed 404 before credentials or lookup.
+
+No second filter, ERROR-dispatch registration, valve, dependency change, deployment setting or permissive route replacement is added. Existing real-server tests are strengthened in place, without increasing their method count.
+
+### Enforced Read-Only Command-Pool Transaction
+
+The public query reuses the existing qualified `sharingCommandDsl`, transaction manager and command datasource. V010’s list role cannot read the token predicate or snapshot; its privileges are not widened.
+
+The dedicated `publicShareQueryTransactionTemplate` is:
+
+- `PROPAGATION_REQUIRES_NEW`;
+- `ISOLATION_READ_COMMITTED`;
+- Spring read-only.
+
+Inside the transaction, the first service SQL is `SET TRANSACTION READ ONLY`, followed by an assertion that `transaction_read_only` is `on`. The service selects and verifies `sharing_command_role` before grant lookup.
+
+The repository exposes exactly:
+
+- `findByTokenDigest(String) -> Optional<PublicGrant>`;
+- `sampleDatabaseTime() -> Instant`.
+
+No repository method accepts `DSLContext`. Its immutable internal `PublicGrant` contains exactly evidence ID, optional owner organization ID, verification mode, status, validity bounds, download flag and snapshot; its diagnostic representation is redacted. SQL selects only those required columns by digest and samples `clock_timestamp()`, with no locking query.
+
+The service’s DSL dependency is the explicit, bounded **service-only exception** for read-only/role orchestration and passing the same transaction-aware DSL to the existing evidence collaborator. It is not a general SQL escape hatch for controllers or DTOs.
+
+### Evidence Reader, Membership And State
+
+Content uses the existing **MANDATORY** `ShareableEvidenceProjectionReader.readShareableProjection(DSLContext, UUID)` on the same transaction-aware connection. The service switches locally to `evidence_role`, verifies role and read-only state, and restores/verifies `sharing_command_role` in `finally`. Sharing adds no direct evidence/media/IAM/organization/subject SQL.
+
+Membership is a lazy controller-owned bridge:
+
+`MemberAccess.check(UUID grantOrganizationId) -> MemberMatch`
+
+`MemberMatch` is exactly `MATCH`, `NONMATCH`, `UNAUTHENTICATED`, `UNAVAILABLE`, `INTERNAL`. No servlet or customer-module type crosses into sharing.
+
+Only `ORGANIZATION_MEMBER` invokes that bridge. Current trusted account/context and active membership in the **grant organization** determine eligibility, not client identity or selected workspace. Anonymous and nonmatching callers receive metadata plus `verificationChallenge.customerSessionRequired=true`, with `content` absent. Disabled/missing account and dependency failures remain fail-closed. Nonmember-mode and terminal/invalid requests do not perform unnecessary customer-context lookup.
+
+After digest resolution, database time determines state precedence:
+
+1. REVOKED → `410 SHARE_REVOKED`.
+2. Persisted EXPIRED, or database time at/after expiry → `410 SHARE_EXPIRED`.
+3. Before `validFrom` → concealed `404 SHARE_TOKEN_INVALID`.
+4. Otherwise ACTIVE or LOCKED remains readable under the page projection rules.
+
+LOCKED does not become an admission error. NONE, EXTRACTION_CODE and DESIGNATED_MOBILE do not require code/mobile verification for this GET. No observed expiry or lock transition is persisted.
+
+### Closed Immutable Projection And No Side Effects
+
+The public root has only `verificationMode`, `status`, `expiresAt`, `downloadAllowed`, optional `content` and optional `verificationChallenge`.
+
+- Content: `capturedAt`, optional ORIGINAL `validatedDurationSeconds`, immutable artifact list.
+- Artifact: `artifactRole`, `mimeType`, `sizeBytes`, `sha256`.
+- Challenge: only `customerSessionRequired`.
+
+Absent optional values are omitted, not serialized as null. No persistence entity, arbitrary map, JSONB, extension bag or internal record reaches the wire.
+
+The frozen grant snapshot is the scope ceiling. The service validates its binding and compares authoritative evidence identity and complete artifact tuples. Artifacts sort by ORIGINAL rank 0, DERIVED rank 1, then SHA-256, numeric size and MIME. Mismatch, malformed projection or unavailable dependency fails closed without returning partial content or rebuilding the grant.
+
+No share/evidence/subject/account/organization/media ID, token/hash, source identity, object key/version/URL, verification secret or unshared content is exposed. Artifact SHA-256 is allowed content metadata, not the capability digest.
+
+The GET performs no admission, count, generation, ticket, session, cache/Redis, media, audit, Outbox or access-event mutation. Purpose/prefetch headers do not change authorization. Subject-risk CLEAR/OPEN does not change the public envelope or invoke creation/rotation policy.
+
+## 4. Test Evidence And Exact Arithmetic
+
+### Retained Successful Runs
+
+| Validation | Result | Evidence |
+| --- | --- | --- |
+| Focused six-class Surefire | **24 tests**, zero failures/errors/skips | `/tmp/pa15-focused-final.log` |
+| Targeted `PublicSharesIT` | **8 tests**, real PostgreSQL 16, zero failures/errors/skips | `/tmp/pa15-targeted.log` |
+| Fresh clean full verify | **91 Surefire + 126 Failsafe = 217**, zero failures/errors/skips | `/tmp/pa15-clean-verify.log` |
+| Exact inventory checker | Source = CI expected classes/methods = current XML | `/tmp/pa15-inventory-final.log` |
+
+The targeted verify finished at **2026-11-06T07:15:53+08:00**. The fresh clean verify finished at **2026-11-06T07:22:33+08:00**, with `BUILD SUCCESS`.
+
+The focused classes contribute:
+
+`PublicShareWebTests 6 + PublicShareQueryServiceTests 4 + PublicSharePersistenceConfigurationTests 2 + CustomerApiBoundaryTests 3 + SharingQueryBoundaryTests 1 + ModuleBoundaryTests 8 = 24`.
+
+These are overlapping validation runs, not additional methods to add to 217.
+
+### Current Surefire Inventory
+
+Class names below omit the common `com.onecall.` prefix.
+
+| Suite | Methods |
+| --- | ---: |
+| `archtests.CustomerMeWebTests` | 8 |
+| `archtests.CustomerSharesCommandWebTests` | 4 |
+| `archtests.CustomerSharesWebTests` | 10 |
+| `archtests.CustomerWebConfigurationTests` | 6 |
+| `archtests.OneCallApplicationTests` | 1 |
+| `archtests.PublicSharePersistenceConfigurationTests` | 2 |
+| `archtests.PublicShareWebTests` | 6 |
+| `archtests.SharingCommandPersistenceConfigurationTests` | 2 |
+| `archtests.SharingPersistenceConfigurationTests` | 2 |
+| `archtests.architecture.BootstrapDependencyBoundaryTests` | 1 |
+| `archtests.architecture.CustomerApiBoundaryTests` | 3 |
+| `archtests.architecture.ModuleBoundaryTests` | 8 |
+| `archtests.architecture.SharingQueryBoundaryTests` | 1 |
+| `archtests.sharing.CustomerShareCommandServiceTests` | 6 |
+| `archtests.sharing.PublicShareQueryServiceTests` | 4 |
+| `core.customer_iam.internal.application.CustomerContextServiceTests` | 6 |
+| `core.customer_iam.internal.security.CustomerSessionBoundaryTests` | 7 |
+| `core.customer_iam.internal.web.CustomerShareCursorCodecTests` | 6 |
+| `core.sharing.internal.application.CustomerShareQueryServiceTests` | 8 |
+| **19 suites** | **91** |
+
+### Current Failsafe Inventory
+
+All suites are in `com.onecall.archtests.container`.
+
+| Suite | Methods |
+| --- | ---: |
+| `PostgresContainerIT` | 64 |
+| `SharingQueryServiceIT` | 10 |
+| `CustomerMeIT` | 10 |
+| `CustomerSharesIT` | 8 |
+| `SharingRoleLeastPrivilegeIT` | 8 |
+| `CustomerShareCommandsIT` | 18 |
+| `PublicSharesIT` | 8 |
+| **7 suites** | **126** |
+
+The exact Failsafe breakdown is **64+10+10+8+8+18+8=126**. The command suite retains eight create, five revoke and five rotation methods.
+
+PA15 adds three Surefire classes with **6+4+2=12** methods and one Failsafe class with **8** methods:
+
+- Surefire: `16/79 → 19/91`.
+- Failsafe: `6/118 → 7/126`.
+- Combined: `22 classes/197 methods → 26 classes/217 methods`.
+- Net addition: **4 classes and 20 methods**.
+
+The connector proof extends existing `CustomerWebConfigurationTests` methods; that class remains at six methods. Architecture assertions likewise extend existing methods. The fixture is not a test suite.
+
+During this reporting task, the current `backend/target/surefire-reports/TEST-*.xml` and `backend/target/failsafe-reports/TEST-*.xml` were independently parsed. The current CI inventory checker was also executed locally against source and those XML files, without running tests. Both reproduce the exact totals and zero failures/errors/skips, including method identity and duplicate/conditional-test rejection.
+
+### Exact New Method Partitions
+
+**`PublicShareWebTests` — six methods**
+
+- `exactPublicGetRoutePrecedesOptionalAuthentication`
+- `optionalBearerFailuresKeepFrozenPrecedence`
+- `tokenShapeAndLookupFailuresUseClosedProblems`
+- `publicDtoIsClosedAndContentIsOmittedForNonmembers`
+- `memberSessionMatchAndNonmatchNeverLeakContent`
+- `prefetchAndNegotiationHaveNoAuthorizationSideEffects`
+
+**`PublicShareQueryServiceTests` — four methods**
+
+- `exactUtf8DigestLookupConcealsUnknownTokens`
+- `stateAndDatabaseTimeChecksNeverMutateGrant`
+- `immutableEvidenceProjectionIsOrderedAndFailClosed`
+- `organizationContentRequiresCurrentMatchingMember`
+
+**`PublicSharePersistenceConfigurationTests` — two methods**
+
+- `defaultWebAndDisabledCommandProfilesStayDatabaseFree`
+- `publicReadUsesExistingQualifiedManagerAndEnforcedReadOnlyTemplate`
+
+**`PublicSharesIT` — eight methods**
+
+- `publicGetResolvesOnlyExactTokenDigestAndRedactsEveryResponse`
+- `publicGetKeepsRevokedExpiredAndLockedPageSemantics`
+- `organizationPageRechecksCurrentAccountTenantAndMembership`
+- `publicProjectionUsesEvidenceOwnerOnSameReadOnlyConnection`
+- `publicProjectionAndDependencyFailuresFailClosedWithoutPartialContent`
+- `repeatedPageAndPrefetchLeaveAllPersistentFactsUnchanged`
+- `publicReadIsPostgresEnforcedAndRestoresPoolRoleAndTransactionState`
+- `publicReadPreservesCreateRevokeRotateListAndMeBehavior`
+
+## 5. Real Runtime And Database Proof
+
+### Actual Environment
+
+Successful candidate evidence reports:
+
+| Component | Observed version |
+| --- | --- |
+| Java | Eclipse Temurin **21.0.13+9**, `/opt/jdk21` |
+| Maven | **3.9.9**, including wrapper version confirmation |
+| Docker client | **29.1.3** |
+| Docker server | **29.9.2**, Docker Desktop |
+| PostgreSQL | **16.15**, resolved from disposable `postgres:16` |
+| Spring Boot | **4.1.2** |
+| Embedded Tomcat | **11.0.27** |
+| Testcontainers | **2.0.5** |
+
+Earlier blocked attempts reported different local Java/Docker observations. Those historical observations are not substituted for the successful runtime’s actual versions.
+
+### Encoded-Slash Runtime Behavior
+
+The strengthened embedded-server test asserts the actual connector value `passthrough`, then sends root-path encoded-slash requests with absent or malformed Authorization, `Accept: text/html` and an untrusted trace header. It verifies closed 404 Problems, security/cache headers, server UUID traces and no HTML/URI/client-trace echo.
+
+A separate `/pa15` context-path server tests `%2F`, `%2f` and double-encoded `%252F`, with malformed Authorization and HTML Accept. Each remains `404 NOT_FOUND` with no-store. Packaged-JAR probes independently cover encoded slash with and without hostile headers.
+
+Thus the proof covers real Tomcat admission and the existing filter, not only mocked MVC routing.
+
+### Read-Only, Same-Connection And Pool Reset
+
+`/tmp/pa15-runtime-evidence.log` records:
+
+- `transaction_read_only=[on]`.
+- One observed backend PID: **72**.
+- Current-user sequence: command login → `sharing_command_role` → `evidence_role` → restored `sharing_command_role`.
+- Intentional write rejection: **SQLSTATE 25006**.
+- Pool reuse: **PID 72**, current user restored to login, `transaction_read_only=off`, JDBC `isReadOnly=false`.
+- Final result: `postgresEnforced=true`, `roleRestored=true`, `poolReset=true`, `subsequentCommandWritable=true`.
+
+The intentional write is a rollback-contained evidence probe, not production GET behavior. The successful subsequent command shows that the public read does not poison the shared command pool.
+
+The real integration suite additionally checks direct unauthorized token-column access and forbidden role escalation with SQLSTATE **42501**.
+
+### Eleven-Table No-Write Equality
+
+The standalone runtime evidence prints complete before/after SHA-256 snapshots. Every corresponding digest is equal:
+
+| Table | Before/after digest |
+| --- | --- |
+| `audit.audit_fact` | `d26480f801a6120983ff7815d00996eee21fbecd6620ca9a7220d15b68b615ce` |
+| `evidence.evidence_artifact` | `85b47c2c30c6f273b367b9e1467fb87de3faa5c2e1858e1a0a68573bcc99b373` |
+| `evidence.evidence_event` | `b0c44d67cf99434f777cfd5af909084c0476fa43a63b6dc881000196b2335346` |
+| `evidence.evidence_record` | `2d103657c0785f97d9bbc3595d516f9b0eb8a12456366bb27d046289d7d72f2e` |
+| `evidence.media_object` | `16c55007fd480d4070c40ba4abc56c7359584a347915f255cfdbe5755fe25326` |
+| `evidence.recording` | `d64a5b63e9cea45649fced60b28f0b8b3d73a317885db6bb1166a22a99516644` |
+| `platform.idempotency_record` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `platform.outbox_event` | `e984ccaef2a57ce3384776a6fb915c98c45e997f5c9dd487a9f4cf4d44776c6e` |
+| `sharing.evidence_share_grant` | `b113e358f9affcc3b0fb08ba31441fcb9a7c67ea79e32a595bab65dfe87b74fd` |
+| `sharing.share_access_event` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `sharing.share_admission` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+
+The repeated-page/prefetch integration test independently asserts complete snapshot equality and absence of mutation/risk SQL. These observations establish zero changes to the protected grant, admission, access-event, evidence, audit, idempotency and Outbox facts during the exercised reads; they are not a claim about unrelated concurrent production activity.
+
+## 6. Packaged-JAR Smokes And Dependency Firewall
+
+The retained default/web smoke script passes against:
+
+`backend/target/onecall-runtime-0.0.1-SNAPSHOT.jar`
+
+Observed JAR SHA256:
+
+`AFDE7B9517EE54D8007FD8BDEB0A784863FC672C78A33C20E7BCD0191AB5B742`
+
+Default startup remains non-web/database-free. Opt-in web startup requires no database or verifier adapter. Spawned smoke JVMs are cleaned up.
+
+The **nine bounded HTTP probes** are:
+
+| Request | Expected result |
+| --- | --- |
+| Customer `/me`, no Authorization | 401 `UNAUTHENTICATED` |
+| Customer `/me`, supplied bearer without verifier | 503 `SERVICE_UNAVAILABLE` |
+| Customer `/me`, HTML Accept and untrusted trace, no credentials | 401 `UNAUTHENTICATED` |
+| `/error`, HTML Accept | 404 `NOT_FOUND` |
+| Public synthetic token, anonymous, no persistence service | 503 `SERVICE_UNAVAILABLE` |
+| Public synthetic token, malformed Authorization | 401 `UNAUTHENTICATED` |
+| POST public synthetic token | 404 `NOT_FOUND` |
+| Public encoded-slash token | 404 `NOT_FOUND` |
+| Public encoded-slash token plus malformed Authorization, HTML Accept and untrusted trace | 404 `NOT_FOUND` |
+
+These are negative/startup smokes, not successful database-backed public reads. Closed Problems and cache/security headers are checked.
+
+The production dependency firewall also passes **all 82 adversarial probes**:
+
+- Baseline: **37 resolved coordinates / 34 packaged JARs**.
+- Web: **55 resolved coordinates / 48 packaged JARs**.
+- **47 coordinate-to-JAR counterparts**, **8 dependency-only entries**, **1 packager-only JAR**.
+- Preserved reported deltas: **18/0 and 14/0**.
+
+The firewall uses exact `group:artifact:type:version:classifier:scope` coordinates, positive matching before legacy forbidden-name regexes, and exact packaged inventory equality. Approved collision coordinates include:
+
+- `org.springframework.boot:spring-boot-web-server:jar:4.1.2::compile`
+- `org.springframework.boot:spring-boot-webmvc:jar:4.1.2::compile`
+- `org.springframework:spring-web:jar:7.0.10::compile`
+- `org.springframework:spring-webmvc:jar:7.0.10::compile`
+- `org.apache.tomcat.embed:tomcat-embed-core:jar:11.0.27::compile`
+- `org.apache.tomcat.embed:tomcat-embed-el:jar:11.0.27::compile`
+- `org.apache.tomcat.embed:tomcat-embed-websocket:jar:11.0.27::compile`
+
+The sole packager branch remains `spring-boot-jarmode-tools-4.1.2.jar`. `commons-logging` is parsed explicitly. PA15 adds no dependency or broadened firewall exception; the complete approved coordinate inventory remains in the CI firewall and README.
+
+Evidence: `/tmp/pa15-jar-smokes.log`, `/tmp/pa15-firewall.log`, `backend/target/jar-index.txt` and `backend/target/pa11-runtime-dependencies.txt`.
+
+## 7. Architecture, Regression And Protected-Path Audit
+
+The new named interface is **`sharing::public-query`**, with exactly four top-level types, excluding package metadata:
+
+1. `OpaqueCapabilityToken`
+2. `PublicShareQueryException`
+3. `PublicShareView`
+4. `PublicShareQueryService`
+
+Its nested safe types are the exception `Code`, service `MemberAccess`/`MemberMatch`, and view `Content`, `Artifact`, `VerificationChallenge`, `VerificationMode`, `Status`, `ArtifactRole`. Its sole public query operation is `getPublicShare(OpaqueCapabilityToken, MemberAccess) -> PublicShareView`.
+
+Partition enforcement covers:
+
+- Web controller limited to the public named API, existing customer context and Problem writer.
+- Service-only DSL exception; no DSL in the repository interface or other public API types.
+- Repository implementation owns only grant/time queries.
+- Persistence configuration wires the existing qualified transaction graph.
+- Existing customer-query and customer-command named-interface inventories remain unchanged.
+- No command execution, admission abstraction or direct cross-module persistence access is introduced.
+
+The full green suite retains create/replay/revoke/rotation/list/`me`, module boundaries, least-privilege checks and migration backstops. The new public integration regression exercises those existing behaviors alongside the read.
+
+The final audit records **1,358 protected tracked files byte-identical**. This reporting task independently recomputed those hashes against `/tmp/pa15-baseline-hashes.json` and found **zero mismatches** after excluding the 11 modified candidate files and the separately authorized implementation report.
+
+V001–V010, ACL definitions, OpenAPI, schema specifications, Control, accepted plans and review artifacts remain untouched by the candidate. No private `.codex` content or prior worktree was inspected.
+
+Documentation/build synchronization is complete:
+
+- POM includes `PublicSharesIT` among exactly seven Failsafe suites.
+- CI checks exact source/class/method/XML identity at **19/91 + 7/126 = 217**.
+- README records the same current totals, exact Failsafe breakdown, read-only command-pool dependency and fail-closed behavior.
+- Historical checkpoint counts remain labeled historical rather than presented as current totals.
+
+## 8. Commands, Evidence And Inspection Scope
+
+Candidate validation used the Java 21 toolchain with Maven 3.9.9. Because the checked-in wrapper has CRLF shell text in this environment, successful invocations evaluated an in-memory CR-stripped wrapper without editing it:
+
+```bash
 export JAVA_HOME=/opt/jdk21
-export PATH=/opt/jdk21/bin:/opt/maven-3.9.9/bin:$PATH
-cd backend
-sh -c "$(sed 's/\r$//' mvnw)" ./mvnw -v
-sh -c "$(sed 's/\r$//' mvnw)" ./mvnw -B -ntp -Dtest=CustomerApiBoundaryTests,SharingQueryBoundaryTests,ModuleBoundaryTests test
-sh -c "$(sed 's/\r$//' mvnw)" ./mvnw -B -ntp -DskipTests package
+export PATH=/opt/jdk21/bin:$PATH
+sh -c "$(sed 's/\r$//' mvnw)" ./mvnw -B -ntp \
+  -Dtest=PublicShareWebTests,PublicShareQueryServiceTests,PublicSharePersistenceConfigurationTests,CustomerApiBoundaryTests,SharingQueryBoundaryTests,ModuleBoundaryTests test
+
+sh -c "$(sed 's/\r$//' mvnw)" ./mvnw -B -ntp \
+  -Pcontainer-smoke -Dit.test=PublicSharesIT verify
+
+sh -c "$(sed 's/\r$//' mvnw)" ./mvnw -B -ntp \
+  clean -Pcontainer-smoke verify
 ```
 
-| Executed validation | Actual result |
+These retained commands ran from `backend`. Container runs used the evidenced Docker host and Testcontainers host override. This report does not rerun them.
+
+| Retained evidence | Purpose |
 | --- | --- |
-| Wrapper version with recovered Linux JAVA_HOME | Maven 3.9.9; Java 21.0.13 |
-| Existing three-class architecture baseline | BUILD SUCCESS; 3 XML suites, 12 methods, 0 failures/errors/skips |
-| Baseline packaging with `-DskipTests` | BUILD SUCCESS; tests intentionally not executed by this packaging command |
-| Baseline web-only packaged-JAR diagnostics | 7 initial plus 24 confirmation HTTP requests; encoded-slash contract mismatch reproduced, not an acceptance pass |
-| Exact local Tomcat bytecode inspection | REJECT default and decoder-to-400 handling confirmed |
-| Current source versus CI literal method inventories | Exact class/method-set equality: 16/79 Surefire, 6/118 Failsafe, 197 combined |
-| Available architecture XML versus its source/CI subsets | Exact method identities: CustomerApiBoundaryTests 3, SharingQueryBoundaryTests 1, ModuleBoundaryTests 8 |
+| `/tmp/pa15-focused-final.log` | Final focused six-class, 24-test success |
+| `/tmp/pa15-targeted.log` | Targeted eight-method PostgreSQL public-read success |
+| `/tmp/pa15-clean-verify.log` | Fresh complete clean verify, 217 green |
+| `/tmp/pa15-inventory-final.log` | Exact source=CI=XML identity |
+| `/tmp/pa15-jar-smokes.log` | Default/web packaged startup and nine HTTP probes |
+| `/tmp/pa15-firewall.log` | Runtime dependency inventory and 82 firewall probes |
+| `/tmp/pa15-runtime-evidence.log` | Explicit database digests, roles, read-only enforcement and reset |
+| `/tmp/pa15-final-audit.log` | Exact 25-path scope, protected hashes, index and whitespace audit |
 
-The diagnostic launch command was `java -jar target/onecall-runtime-0.0.1-SNAPSHOT.jar --spring.profiles.active=web --server.port=0`, with `--server.servlet.context-path=/pa15` for the non-root confirmation. Inline Python discovered each ephemeral port from the startup log, imposed a 60-second startup bound and 10-second HTTP timeout, issued the exact matrices in §1, and terminated/reaped every JVM with 15-second termination and five-second kill bounds. Confirmation assertions checked the actual HTML 400 response and absence of Cache-Control, versus exact five-key NOT_FOUND Problems and no-store for controls. These assertions confirm the blocker; they deliberately do not reinterpret HTML 400 as acceptable PA15 behavior. Diagnostic boot logs contain no HikariPool startup.
+Earlier compile/diagnostic logs are not represented as green acceptance evidence. The successful final focused run and fresh clean verify supersede intermediate failures.
 
-Retained local generated evidence:
+Read-only reporting inspection used the explicit live Git directory:
 
-- `backend/target/surefire-reports/TEST-com.onecall.archtests.architecture.CustomerApiBoundaryTests.xml`
-- `backend/target/surefire-reports/TEST-com.onecall.archtests.architecture.SharingQueryBoundaryTests.xml`
-- `backend/target/surefire-reports/TEST-com.onecall.archtests.architecture.ModuleBoundaryTests.xml`
-- `backend/target/pa15-baseline-route-probe.log`
-- `backend/target/pa15-baseline-root-confirmation.log`
-- `backend/target/pa15-baseline-context-confirmation.log`
+`/mnt/d/codex-call/.git/worktrees/codex-call15`
 
-## 6. Mandatory Evidence Not Obtained
+with worktree:
 
-- No new test class/fixture or method was added. The planned 6+4+2 new Surefire and eight PublicSharesIT methods remain absent. Architecture methods were not changed.
-- The required focused **six-class** Surefire command was not run; only its three existing architecture classes were run as a baseline.
-- Targeted `-Pcontainer-smoke -Dit.test=PublicSharesIT verify` was not run. The class does not exist on this stopped candidate.
-- Fresh full clean `clean -Pcontainer-smoke verify` was not run. There is no 19-suite/91-method Surefire or seven-suite/126-method Failsafe XML result, no 217-test combined result and no full source=CI=XML acceptance equality.
-- Current source=CI remains 79+118=197; actual available XML is only 3/12 Surefire and no Failsafe suites. Partial baseline XML is not a substitute for a full acceptance run.
-- No PostgreSQL version, transaction_read_only/current_user/backend-PID, physical connection reuse, intentional SQLSTATE 25006, role restore, pool reset or before/after persistent no-write snapshot evidence was obtained. No database-read-only or no-write guarantee is certified.
-- The complete updated default/web JAR smoke suite, successful public-read probes, production-JAR dependency/firewall check and all 82 adversarial probes were not run. Baseline packaging and route diagnostics do not satisfy those requirements.
-- POM includes, CI inventories/smokes and README counts were deliberately not changed, because there is no implemented slice or new test inventory to synchronize.
-- Create/revoke/rotate/list/`me` behavior remains source-unchanged, but their full runtime regressions were not run in this task.
+`/mnt/c/Users/Administrator/.codex/worktrees/pa15-sharing-public-share-read/codex-call`
 
-## 7. Scope Audit And Residual Owners
+This avoids the checkout’s Windows-style `.git` pointer failing under WSL. Inspection included status, diff whitespace, empty staged diff, plan SHA/line count, source/configuration, retained runner evidence, XML parsing, protected-file hashing and local execution of the CI inventory checker. No source, tests, configuration or reporting file was written by this task.
 
-Read-only Git checks use the confirmed live directory, not another worktree:
+## 9. Limitations And Residual Risks
 
-```sh
-GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call15 GIT_WORK_TREE="$PWD" GIT_OPTIONAL_LOCKS=0 git rev-parse --git-dir
-GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call15 GIT_WORK_TREE="$PWD" GIT_OPTIONAL_LOCKS=0 git diff --check
-GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call15 GIT_WORK_TREE="$PWD" GIT_OPTIONAL_LOCKS=0 git diff --name-only
-GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call15 GIT_WORK_TREE="$PWD" GIT_OPTIONAL_LOCKS=0 git status --porcelain=v1 --untracked-files=normal
-```
-
-The final audit must include this new untracked artifact explicitly, not infer it from an empty tracked diff. No protected/private source path is authorized by this report. Git's LF-to-CRLF checkout warnings are not treated as file edits; the accepted plan hash is checked independently.
-
-| Unresolved item | Owner / required destination |
+| Risk / limitation | Owner and disposition |
 | --- | --- |
-| Encoded-slash rejection happens before the only authorized filter | Controller/Backend: bounded plan correction before implementation resumes |
-| All public-read behavior and the full 217-test/JAR/firewall/no-write proof | Implementation author after corrected authorization |
-| Production session verifier remains absent | Security/Identity; preserve fail-closed behavior |
-| Dual-role command-pool provisioning, capacity and dedicated least-privilege read principal | Backend/Database/Platform/Security; no PA15 schema/deployment workaround |
-| READ COMMITTED observation is not an admission/media authorization lease | Sharing/Product/Security; later admission/media owners recheck current state |
+| Production customer-session verifier | **Customer IAM / deployment owner:** tests use controlled verifier seams. Missing production verification fails closed; production session integration is not established here. |
+| Dedicated least-privilege public-read ACL | **Database/security owner:** command-role reuse is the accepted bounded design, protected by PostgreSQL read-only enforcement. A dedicated public-read principal/ACL remains future work; V010 is unchanged. |
+| Command-pool capacity and dual-role provisioning | **Backend/SRE/database owner:** anonymous reads share command-pool capacity and require the approved command/evidence role transitions. Production sizing, abuse controls and provisioning remain unvalidated. |
+| READ COMMITTED observation | **Backend/security owner:** this is not an authorization lease or serializable cross-module snapshot. Later revoke/membership changes require future read/admission/media checks; no locks bridge those boundaries. |
+| Production capability-token format | **Security/product/backend owner:** exact-byte 1–512 handling is implemented, not a production token generator, alphabet, entropy, TTL or issuance policy. Noncanonical HTTP presentations remain rejected. |
+| Historical documentation reconciliation | **Controller/specification owner:** older `docs/14` page-open/prefetch/observed-expiry prose remains historical. The accepted operation-specific observation-free GET contract controls this slice; general admission rules must not be reintroduced here. |
+| Checkpoint identifier discrepancy | **Controller:** reconcile the supplied/Control full checkpoint ID with the differing local fix-4 Git object identified in §1. Exact plan-content identity is verified; checkpoint-object equality is not. |
+| Evidence retention | **Controller/runner:** `/tmp` and Maven `target` evidence are local and replaceable. Preserve them with the candidate for subsequent review; this report records their results but does not archive them remotely. |
+| Remote CI | **Controller/CI owner:** local execution of CI scripts passed; no hosted CI execution or remote acceptance is claimed. |
 
-No Git staging, commit, push, PR, new worktree/branch, merge, approval, ready action, reviewer request, external comment, issue mutation or later-gate action occurred. No external review or remote CI was initiated. Status remains blocked at implementation; no production-readiness claim is made.
+## 10. Completion And Action Boundary
+
+The single public-read candidate is **implementation-complete** against the exact accepted 399-line plan: 25 bounded candidate files, focused and real PostgreSQL evidence, fresh **217-test** source=CI=XML agreement, connector regression proof, database no-write/read-only/role-reset proof, packaged smokes and all 82 firewall probes.
+
+No staging, commit, push, branch/worktree creation, remote mutation, review dispatch or later-gate action was performed by this reporting task. No additional Maven/Docker test or runtime validation was launched.
+
+One inspection exception must be recorded: a read-only `git cat-file` lookup of the supplied checkpoint triggered Git’s implicit attempt to retrieve a missing object from the promisor remote. That attempt failed with DNS resolution failure; no object was retrieved and no remote state was changed. Accordingly, this report does **not** claim that zero network attempts occurred.
+
+Runner persistence of this Markdown replaces the historical blocked report. Independent review, provenance reconciliation, gate acceptance and any production rollout remain Controller-owned subsequent decisions.

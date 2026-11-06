@@ -14,6 +14,10 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
+    private static final java.util.Set<String> PUBLIC_READ_FILES = java.util.Set.of(
+            "publicquery/package-info.java", "publicquery/OpaqueCapabilityToken.java", "publicquery/PublicShareQueryException.java",
+            "publicquery/PublicShareView.java", "publicquery/PublicShareQueryService.java", "persistence/PublicShareQueryRepository.java",
+            "persistence/JooqPublicShareQueryRepository.java", "persistence/PublicSharePersistenceConfiguration.java");
     private static final java.util.Set<String> QUERY_FILES = java.util.Set.of(
             "application/CustomerShareQueryService.java", "application/TrustedShareCaller.java", "application/SharePageRequest.java",
             "application/ShareCursor.java", "application/ShareSummary.java", "application/SharePage.java", "application/ShareQueryException.java",
@@ -22,6 +26,9 @@ class SharingQueryBoundaryTests {
 
     private static boolean queryFile(Path path) {
         return QUERY_FILES.contains(Path.of("src/main/java/com/onecall/core/sharing/internal").relativize(path).toString().replace('\\', '/'));
+    }
+    private static boolean publicReadFile(Path path) {
+        return PUBLIC_READ_FILES.contains(Path.of("src/main/java/com/onecall/core/sharing/internal").relativize(path).toString().replace('\\', '/'));
     }
     @Test
     void sharingQueryApiAndProjectionAreExact() throws Exception {
@@ -59,7 +66,7 @@ class SharingQueryBoundaryTests {
         var modules = ApplicationModules.of(com.onecall.core.OneCallApplication.class);
         var namedInterfaces = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(namedInterfaces.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactlyInAnyOrder("customer-query", "customer-command");
+                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query");
         var customerQuery = namedInterfaces.getByName("customer-query").orElseThrow();
         assertThat(customerQuery.asJavaClasses()
                 .filter(type -> !type.getName().contains("$"))
@@ -96,7 +103,7 @@ class SharingQueryBoundaryTests {
         }
         Path internal = Path.of("src/main/java/com/onecall/core/sharing/internal");
         try (var paths = Files.walk(internal)) {
-            var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path)).toList();
+            var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path) && !publicReadFile(path)).toList();
             assertThat(commandPaths.stream().map(path -> internal.relativize(path).toString().replace('\\', '/')))
                     .containsExactlyInAnyOrder("command/package-info.java", "command/CustomerShareCommand.java", "command/CustomerShareCommandResult.java",
                             "command/CustomerShareCommandService.java", "command/ShareCommandCaller.java", "command/ShareCommandException.java",
@@ -125,6 +132,76 @@ class SharingQueryBoundaryTests {
                 .extracting(Enum::name).containsExactly("ALLOW", "DENY");
         assertThat(commandApi.asJavaClasses().filter(type -> !type.getName().contains("$")).map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
                 .containsExactlyInAnyOrder("CustomerShareCommandService", "CustomerShareCommand", "CustomerShareCommandResult", "ShareCommandCaller", "ShareCommandException");
+        var publicApi = namedInterfaces.getByName("public-query").orElseThrow();
+        assertThat(publicApi.asJavaClasses().filter(type -> !type.getName().contains("$"))
+                .map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
+                .containsExactlyInAnyOrder("OpaqueCapabilityToken", "PublicShareQueryException", "PublicShareQueryService", "PublicShareView");
+        assertThat(publicApi.asJavaClasses().filter(type -> type.getName().contains("$"))
+                .map(com.tngtech.archunit.core.domain.JavaClass::getName))
+                .containsExactlyInAnyOrder("com.onecall.core.sharing.internal.publicquery.PublicShareQueryException$Code",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareQueryService$MemberAccess",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareQueryService$MemberMatch",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareView$Content",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareView$Artifact",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareView$VerificationChallenge",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareView$VerificationMode",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareView$Status",
+                        "com.onecall.core.sharing.internal.publicquery.PublicShareView$ArtifactRole");
+        var publicService = com.onecall.core.sharing.internal.publicquery.PublicShareQueryService.class;
+        assertThat(Arrays.stream(publicService.getDeclaredMethods()).filter(method -> Modifier.isPublic(method.getModifiers()))
+                .map(java.lang.reflect.Method::getName)).containsExactly("getPublicShare");
+        assertThat(publicService.getMethod("getPublicShare", com.onecall.core.sharing.internal.publicquery.OpaqueCapabilityToken.class,
+                com.onecall.core.sharing.internal.publicquery.PublicShareQueryService.MemberAccess.class).getReturnType())
+                .isEqualTo(com.onecall.core.sharing.internal.publicquery.PublicShareView.class);
+        assertThat(Arrays.stream(PublicShareQueryRepository.class.getDeclaredMethods()).map(java.lang.reflect.Method::getName))
+                .containsExactlyInAnyOrder("findByTokenDigest", "sampleDatabaseTime");
+        assertThat(Arrays.stream(PublicShareQueryRepository.class.getDeclaredMethods()).flatMap(method -> Arrays.stream(method.getParameterTypes())))
+                .doesNotContain(org.jooq.DSLContext.class);
+        components(PublicShareQueryRepository.PublicGrant.class, "evidenceId", "ownerOrganizationId", "verificationMode", "status",
+                "validFrom", "expiresAt", "downloadAllowed", "contentSnapshot");
+        assertThat(PublicShareQueryRepository.PublicGrant.class.getRecordComponents()[7].getType()).isIn(String.class, tools.jackson.databind.JsonNode.class);
+        components(com.onecall.core.sharing.internal.publicquery.PublicShareView.class, "verificationMode", "status", "expiresAt", "downloadAllowed", "content", "verificationChallenge");
+        components(com.onecall.core.sharing.internal.publicquery.PublicShareView.Content.class, "capturedAt", "validatedDurationSeconds", "artifacts");
+        components(com.onecall.core.sharing.internal.publicquery.PublicShareView.Artifact.class, "artifactRole", "mimeType", "sizeBytes", "sha256");
+        components(com.onecall.core.sharing.internal.publicquery.PublicShareView.VerificationChallenge.class, "customerSessionRequired");
+        assertThat(com.onecall.core.sharing.internal.publicquery.PublicShareQueryException.Code.values()).extracting(Enum::name)
+                .containsExactly("UNAUTHENTICATED", "FORBIDDEN", "VALIDATION_FAILED", "SHARE_TOKEN_INVALID", "SHARE_REVOKED", "SHARE_EXPIRED", "RATE_LIMITED", "SERVICE_UNAVAILABLE", "INTERNAL");
+        assertThat(com.onecall.core.sharing.internal.publicquery.PublicShareQueryService.MemberMatch.values()).extracting(Enum::name)
+                .containsExactly("MATCH", "NONMATCH", "UNAUTHENTICATED", "UNAVAILABLE", "INTERNAL");
+        assertThat(com.onecall.core.sharing.internal.publicquery.PublicShareView.VerificationMode.values()).extracting(Enum::name)
+                .containsExactly("NONE", "EXTRACTION_CODE", "DESIGNATED_MOBILE", "ORGANIZATION_MEMBER");
+        assertThat(com.onecall.core.sharing.internal.publicquery.PublicShareView.Status.values()).extracting(Enum::name)
+                .containsExactly("ACTIVE", "EXPIRED", "REVOKED", "LOCKED");
+        assertThat(com.onecall.core.sharing.internal.publicquery.PublicShareView.ArtifactRole.values()).extracting(Enum::name)
+                .containsExactly("ORIGINAL", "DERIVED");
+        assertThat(Modifier.isFinal(com.onecall.core.sharing.internal.publicquery.OpaqueCapabilityToken.class.getModifiers())).isTrue();
+        assertThat(com.onecall.core.sharing.internal.publicquery.OpaqueCapabilityToken.class.isRecord()).isFalse();
+        var member = com.onecall.core.sharing.internal.publicquery.PublicShareQueryService.MemberAccess.class;
+        assertThat(member.getDeclaredMethods()).hasSize(1);
+        assertThat(member.getMethod("check", java.util.UUID.class).getReturnType()).isEqualTo(com.onecall.core.sharing.internal.publicquery.PublicShareQueryService.MemberMatch.class);
+        try (var paths = Files.walk(internal)) {
+            var publicPaths = paths.filter(Files::isRegularFile).filter(SharingQueryBoundaryTests::publicReadFile).toList();
+            assertThat(publicPaths.stream().map(path -> internal.relativize(path).toString().replace('\\', '/')))
+                    .containsExactlyInAnyOrderElementsOf(PUBLIC_READ_FILES);
+            for (Path path : publicPaths) {
+                String source = Files.readString(path);
+                assertThat(source).doesNotContain("Logger", "System.out", "System.err", "printStackTrace", "ExecuteListener",
+                        "SELECT *", "selectFrom(", "forUpdate", "forShare", "pg_advisory", "share_access_event", "Outbox",
+                        "CustomerShareCommandService", "DefaultCustomerShareCommandService", "SharingCommandRepository", "JooqSharingCommandRepository",
+                        "com.onecall.core.customer_iam", "com.onecall.core.organization_access");
+                assertThat(source).doesNotMatch("(?is).*\\b(insert|update|delete|merge|truncate|create|alter|drop)\\s+(into|from|table|schema|role|function|sharing\\.|evidence\\.).*");
+                assertThat(source).doesNotMatch("(?is).*\\bfor\\s+(update|share)\\b.*");
+                assertThat(source).doesNotMatch("(?is).*\\b(insert|update|delete|merge|truncate|create|alter|drop)\\b.*");
+                assertThat(source).doesNotContain(".insertInto(", ".update(", ".deleteFrom(", ".mergeInto(", ".truncate(",
+                        ".createTable(", ".alterTable(", ".dropTable(", "appendAudit", "appendOutbox", "appendAccess", "WITH ");
+                if (!path.endsWith("JooqPublicShareQueryRepository.java")) assertThat(source).doesNotContain("capability_token_hash", "content_snapshot");
+                if (path.getParent().endsWith("publicquery")) {
+                    assertThat(source).doesNotContain("java.sql", "javax.sql", "DataSource", "Hikari");
+                    if (!path.endsWith("PublicShareQueryService.java")) assertThat(source).doesNotContain("org.jooq", "DSLContext");
+                    else assertThat(source.lines().filter(line -> line.startsWith("import org.jooq"))).containsExactly("import org.jooq.DSLContext;");
+                }
+            }
+        }
     }
 
     private void components(Class<?> type, String... expected) {

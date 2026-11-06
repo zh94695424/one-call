@@ -56,13 +56,17 @@ public final class CustomerBoundaryFilter implements Filter {
                 && servletPath.matches("/api/v1/customer/shares/[^/;%]+/revocations");
         boolean rotate = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/customer/shares/[^/;%]+/code-rotations");
-        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate)
+        boolean publicRead = "GET".equals(request.getMethod())
+                && servletPath.matches("/api/v1/public/shares/[^/;%]+");
+        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate || publicRead)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }
         try {
-            var principal = new CustomerRequestPrincipal(authenticator.authenticate(request.getHeaders("Authorization")));
+            var authorization = request.getHeaders("Authorization");
+            var principal = publicRead && (authorization == null || !authorization.hasMoreElements()) ? null
+                    : new CustomerRequestPrincipal(authenticator.authenticate(authorization));
             if (revoke || rotate) {
                 var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
                 if (keys.size() != 1) throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
@@ -98,7 +102,7 @@ public final class CustomerBoundaryFilter implements Filter {
                 @Override
                 public Principal getUserPrincipal() { return principal; }
                 @Override
-                public String getRemoteUser() { return principal.getName(); }
+                public String getRemoteUser() { return principal == null ? null : principal.getName(); }
             };
             BufferedResponse buffered = new BufferedResponse(response);
             chain.doFilter(trusted, buffered);

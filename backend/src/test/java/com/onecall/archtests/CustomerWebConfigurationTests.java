@@ -119,6 +119,40 @@ class CustomerWebConfigurationTests {
             assertThat(mappings.entrySet().stream().filter(entry -> entry.getKey().getPatternValues().contains("/error"))).hasSize(1);
             assertThat(mappings.values()).noneMatch(method -> method.getBeanType().equals(
                     org.springframework.boot.webmvc.autoconfigure.error.BasicErrorController.class));
+            var server = (org.springframework.boot.tomcat.TomcatWebServer) ((ServletWebServerApplicationContext) context).getWebServer();
+            assertThat(server.getTomcat().getConnector().getEncodedSolidusHandling()).isEqualTo("passthrough");
+            try (var client = HttpClient.newHttpClient()) {
+                int port = server.getPort();
+                for (String authorization : List.of("ABSENT", "bad")) {
+                    var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/public/shares/a%2Fb"))
+                            .timeout(Duration.ofSeconds(10)).header("Accept", "text/html").header("X-Trace-Id", "CLIENT_CANARY");
+                    if (!authorization.equals("ABSENT")) request.header("Authorization", authorization);
+                    var rejected = client.send(request.GET().build(), HttpResponse.BodyHandlers.ofString());
+                    assertThat(rejected.statusCode()).isEqualTo(404);
+                    assertThat(rejected.headers().firstValue("Content-Type").orElseThrow()).startsWith("application/problem+json");
+                    assertThat(rejected.headers().firstValue("Cache-Control").orElseThrow()).isEqualTo("no-store");
+                    assertThat(rejected.headers().firstValue("Pragma").orElseThrow()).isEqualTo("no-cache");
+                    assertThat(rejected.headers().firstValue("X-Content-Type-Options").orElseThrow()).isEqualTo("nosniff");
+                    var json = tools.jackson.databind.json.JsonMapper.builder().build().readTree(rejected.body());
+                    assertThat(json.properties().stream().map(Map.Entry::getKey)).containsExactlyInAnyOrder("type", "title", "status", "code", "traceId");
+                    assertThat(json.path("code").asString()).isEqualTo("NOT_FOUND");
+                    assertThat(UUID.fromString(json.path("traceId").asString())).isNotNull();
+                    assertThat(rejected.body()).doesNotContain("CLIENT_CANARY", "<html", "/api/");
+                }
+            }
+        }
+        try (var context = start("web", false, Map.of("server.servlet.context-path", "/pa15")); var client = HttpClient.newHttpClient()) {
+            int port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
+            for (String token : List.of("a%2Fb", "a%2fb", "a%252Fb")) {
+                var response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/pa15/api/v1/public/shares/" + token))
+                        .timeout(Duration.ofSeconds(10)).header("Authorization", "bad").header("Accept", "text/html").GET().build(), HttpResponse.BodyHandlers.ofString());
+                assertThat(response.statusCode()).isEqualTo(404);
+                assertThat(response.headers().firstValue("Cache-Control").orElseThrow()).isEqualTo("no-store");
+                assertThat(response.body()).contains("\"code\":\"NOT_FOUND\"").doesNotContain("<html", "/api/");
+            }
+            assertThat(context.getBeanFactory().containsSingleton("customerQueryDataSource")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("sharingQueryDataSource")).isFalse();
+            assertThat(context.getBeanFactory().containsSingleton("sharingCommandDataSource")).isFalse();
         }
     }
 
