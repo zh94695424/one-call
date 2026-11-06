@@ -125,17 +125,17 @@ class SharingAdmissionRoleLeastPrivilegeIT {
     @Test void v001ThroughV011BytesAndAclSnapshotsRemainUnchanged() throws Exception {
         assertThat(bytes()).isEqualTo(before); assertThat(bytes()).hasSize(11);
         assertThat(bytes()).containsExactlyInAnyOrderEntriesOf(Map.ofEntries(
-                Map.entry("V001__platform_schemas_roles_idempotency_outbox_audit.sql", "96e72bdacb32610dd03975e3e4fd6b828579b574a375e4241482f19c96b4e1c6"),
-                Map.entry("V002__identity_organization_and_employee.sql", "4cf2b66d5ad7870272102c90868a0d9ecbcf9e620ec1bd7ea26dec9541f66505"),
-                Map.entry("V003__subject_number_and_claim.sql", "4148f4acdeb9e56b57fe2d5d0a4fde616087f87bf16a836569edddbb0c8ae1d7"),
-                Map.entry("V004__catalog_order_and_payment.sql", "8d03b32814baf9a9a812e89d3f56f666a5fb025fc518ab92d454fdcf6f5ea030"),
-                Map.entry("V005__ivr_task_session_call.sql", "6feb3cbc87014fc83362e6faa33cc8d4107348c31540bf382df320657dc8d065"),
-                Map.entry("V006__trial_entitlement_issuance_reservation_usage.sql", "7a30ab8a97ad4062918a58dbcfcab97580fdca5752b939dd56c484c425a0a09d"),
-                Map.entry("V007__activation_and_consent.sql", "bf3fc710b76eb7b95b317458089f1f796f9aa42fde50444762db54152a350d81"),
-                Map.entry("V008__evidence_media.sql", "32aab5baf90ca09774241f5b9a4dd819e03352c5fbeb7e62d53cde8c3292ddde"),
-                Map.entry("V009__sharing.sql", "3226255afdf44a2dcc06b55d8059511b6cec5795a38083471f310c1c89bcd1b1"),
-                Map.entry("V010__sharing_role_least_privilege.sql", "d48c624d5f5c6d9ec47f0152a61fc48355f1025ac7b8b84cf9343170bfa94559"),
-                Map.entry("V011__sharing_public_read_least_privilege.sql", "ba7d485dce97d6cfd81a9f1c5a2e384b68a82fe865d73af7ee9edc92defde48e")));
+                Map.entry("V001__platform_schemas_roles_idempotency_outbox_audit.sql", "946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045"),
+                Map.entry("V002__identity_organization_and_employee.sql", "534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5"),
+                Map.entry("V003__subject_number_and_claim.sql", "1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1"),
+                Map.entry("V004__catalog_order_and_payment.sql", "a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc"),
+                Map.entry("V005__ivr_task_session_call.sql", "2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310"),
+                Map.entry("V006__trial_entitlement_issuance_reservation_usage.sql", "830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475"),
+                Map.entry("V007__activation_and_consent.sql", "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659"),
+                Map.entry("V008__evidence_media.sql", "2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e"),
+                Map.entry("V009__sharing.sql", "ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae"),
+                Map.entry("V010__sharing_role_least_privilege.sql", "fadd30a3c058c8847d734f83b22af3a93b2c79ab92cba1b0d1a8a547e5f4a343"),
+                Map.entry("V011__sharing_public_read_least_privilege.sql", "f5fddaf46a4a24bec427e5978364aa585f695b4ee9d03d5deb759eef0930e17b")));
         try(Connection connection=BASE.admin()) {
             var acl=strings(connection,"SELECT a.attrelid::text||':'||a.attnum||':'||acl.privilege_type FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) acl WHERE acl.grantee='sharing_public_read_role'::regrole ORDER BY 1");
             assertThat(acl).hasSize(24); connection.setAutoCommit(false); try(var statement=connection.createStatement()) { statement.execute("ALTER ROLE sharing_admission_role PASSWORD NULL"); statement.execute(migration()); }
@@ -157,7 +157,15 @@ class SharingAdmissionRoleLeastPrivilegeIT {
     private static Map<String,String> bytes() throws Exception {
         Map<String,String> result=new TreeMap<>(); try(var paths=Files.list(Path.of("src/main/resources/db/migration"))) {
             for(Path path:paths.filter(path -> path.getFileName().toString().matches("V00[1-9]__.*|V01[01]__.*")).toList())
-                result.put(path.getFileName().toString(),HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))));
+                result.put(path.getFileName().toString(),HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(lfBytes(Files.readAllBytes(path)))));
         } return result;
+    }
+    private static byte[] lfBytes(byte[] source) {
+        var result=new java.io.ByteArrayOutputStream(source.length);
+        for(int index=0;index<source.length;index++) {
+            if(source[index]=='\r' && index+1<source.length && source[index+1]=='\n') index++;
+            result.write(source[index]);
+        }
+        return result.toByteArray();
     }
 }

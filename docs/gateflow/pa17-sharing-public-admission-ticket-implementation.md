@@ -81,3 +81,9 @@ The accepted A/B code-review findings are fixed: post-commit expiry recheck; per
 - Removed only the dead malformed-fixture assignment from the existing service test while preserving the independent malformed fixture and assertions.
 - Extended the existing web test method to post authenticated organization-member admission through MockMvc, assert HTTP 201, and verify the captured `TrustedShareAdmissionCaller` has `ACCOUNT` and `ORGANIZATION`; the same method now verifies a schema-valid typed `DeniedCommitted(SHARE_EXPIRED)` maps through the controller handler to the frozen `410 SHARE_EXPIRED` problem response.
 - This agent did not claim the Controller's runtime as its own; the recorded Controller evidence remains separately attributed.
+
+## PR Review Fix 1
+
+- Fixed the hosted CI failure in `SharingAdmissionRoleLeastPrivilegeIT.v001ThroughV011BytesAndAclSnapshotsRemainUnchanged`: the old pins hashed Windows CRLF working-tree bytes, while CI hashes canonical LF content. The helper now converts only CRLF pairs to LF before SHA-256, and the eleven expected values are the supplied canonical LF hashes.
+- Database and ACL assertions are unchanged; V001–V011 migration files are untouched. The integration test remains at 8 `@Test` methods.
+- Targeted and full runtime results are recorded in the dedicated fix artifact; do not attribute prior Controller runtime to this correction.
