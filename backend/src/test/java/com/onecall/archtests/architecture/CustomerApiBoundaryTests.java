@@ -49,11 +49,17 @@ class CustomerApiBoundaryTests {
         assertThat(publicMapping.produces()).containsExactly("application/json");
         assertThat(publicMethod.getParameters()[0].getAnnotation(org.springframework.web.bind.annotation.PathVariable.class).value())
                 .isEqualTo("capabilityToken");
+        var admission = publicController.getMethod("admit", String.class, java.security.Principal.class, jakarta.servlet.http.HttpServletRequest.class);
+        assertThat(admission.getReturnType()).isEqualTo(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView.class);
+        assertThat(admission.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class).path())
+                .containsExactly("/api/v1/public/shares/{capabilityToken}/admissions");
         var constructor = publicController.getConstructors()[0];
+        assertThat(constructor.getParameters()[3].getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()).isEqualTo("shareAdmissionService");
         assertThat(Arrays.stream(constructor.getGenericParameterTypes()).map(java.lang.reflect.Type::getTypeName))
                 .containsExactly("org.springframework.beans.factory.ObjectProvider<com.onecall.core.sharing.internal.publicquery.PublicShareQueryService>",
                         "org.springframework.beans.factory.ObjectProvider<com.onecall.core.customer_iam.internal.application.CustomerContextService>",
-                        "com.onecall.core.customer_iam.internal.web.CustomerProblemWriter");
+                        "com.onecall.core.customer_iam.internal.web.CustomerProblemWriter",
+                        "org.springframework.beans.factory.ObjectProvider<com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService>");
         assertThat(constructor.getParameters()[0].getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()).isEqualTo("publicShareQueryService");
         assertThat(constructor.getParameters()[1].getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()).isEqualTo("customerContextService");
     }
@@ -77,7 +83,8 @@ class CustomerApiBoundaryTests {
                 if (path.endsWith("CustomerProblemWriter.java")) {
                     assertThat(source.lines().filter(line -> line.contains("com.onecall.core.sharing")))
                             .containsExactly("import com.onecall.core.sharing.internal.command.ShareCommandException;",
-                                    "import com.onecall.core.sharing.internal.publicquery.PublicShareQueryException;");
+                                    "import com.onecall.core.sharing.internal.publicquery.PublicShareQueryException;",
+                                    "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException;");
                 }
             }
         }
@@ -86,7 +93,14 @@ class CustomerApiBoundaryTests {
                 .containsExactly("import com.onecall.core.sharing.internal.publicquery.OpaqueCapabilityToken;",
                         "import com.onecall.core.sharing.internal.publicquery.PublicShareQueryException;",
                         "import com.onecall.core.sharing.internal.publicquery.PublicShareQueryService;",
-                        "import com.onecall.core.sharing.internal.publicquery.PublicShareView;");
+                        "import com.onecall.core.sharing.internal.publicquery.PublicShareView;",
+                        "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionCapabilityToken;",
+                        "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException;",
+                        "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionJsonBinder;",
+                        "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest;",
+                        "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService;",
+                        "import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView;",
+                        "import com.onecall.core.sharing.internal.publicadmission.TrustedShareAdmissionCaller;");
         assertThat(publicSource).doesNotContain("Repository", "DSLContext", "DataSource", "PublicGrant", "getAttribute(",
                 "getBean(", "Class.forName", "getDeclaredField", "getDeclaredMethod", "CustomerShareCommand");
         String shares = Files.readString(root.resolve("web/CustomerSharesController.java"));

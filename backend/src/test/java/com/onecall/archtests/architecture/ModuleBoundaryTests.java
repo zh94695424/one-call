@@ -38,7 +38,7 @@ class ModuleBoundaryTests {
             "operations_audit", "platform_reliability");
 
     private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
-            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query")),
+            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of()),
@@ -120,15 +120,16 @@ class ModuleBoundaryTests {
         modules.verify();
         var allowed = modules.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(modules);
-        assertThat(allowed).hasSize(3);
+        assertThat(allowed).hasSize(4);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-command"),
-                        org.assertj.core.api.Assertions.tuple("sharing", "public-query"));
+                        org.assertj.core.api.Assertions.tuple("sharing", "public-query"),
+                        org.assertj.core.api.Assertions.tuple("sharing", "public-admission"));
         var sharing = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query");
+                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
         assertThat(sharing.getByName("customer-query")).isPresent();
         assertThat(sharing.getByName("customer-qurey")).isEmpty();
         ImportOption withoutCustomerQuery = location -> {
@@ -183,14 +184,15 @@ class ModuleBoundaryTests {
         ApplicationModules production = ApplicationModules.of(OneCallApplication.class);
         var sharing = production.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query");
+                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
         var allowed = production.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(production);
-        assertThat(allowed).hasSize(3);
+        assertThat(allowed).hasSize(4);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-command"),
-                        org.assertj.core.api.Assertions.tuple("sharing", "public-query"));
+                        org.assertj.core.api.Assertions.tuple("sharing", "public-query"),
+                        org.assertj.core.api.Assertions.tuple("sharing", "public-admission"));
     }
 }

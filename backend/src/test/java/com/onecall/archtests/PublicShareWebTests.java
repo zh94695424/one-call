@@ -9,6 +9,7 @@ import com.onecall.core.customer_iam.internal.application.*;
 import com.onecall.core.customer_iam.internal.security.*;
 import com.onecall.core.customer_iam.internal.web.*;
 import com.onecall.core.sharing.internal.publicquery.*;
+import com.onecall.core.sharing.internal.publicadmission.*;
 import com.onecall.core.sharing.internal.publicquery.PublicShareView.*;
 import java.time.Instant;
 import java.util.List;
@@ -49,6 +50,29 @@ class PublicShareWebTests {
         }
         verifyNoInteractions(fixture.service, fixture.verifier);
         problem(fixture.mvc.perform(get("/api/v1/customer/me").servletPath("/api/v1/customer/me")).andReturn().getResponse(), 401, "UNAUTHENTICATED");
+        String admissionPath = PATH + "/admissions";
+        for (String verification : List.of("{\"mode\":\"NONE\"}", "{\"mode\":\"EXTRACTION_CODE\",\"code\":\"private\"}", "{\"mode\":\"DESIGNATED_MOBILE\",\"verificationProofId\":\"private\"}")) {
+            String body = "{\"admissionRequestId\":\"stable\",\"verification\":" + verification + "}";
+            assertThat(fixture.mvc.perform(post(admissionPath).servletPath(admissionPath).contentType("application/json").content(body)).andReturn().getResponse().getStatus()).isEqualTo(201);
+        }
+        String memberBody = "{\"admissionRequestId\":\"member\",\"verification\":{\"mode\":\"ORGANIZATION_MEMBER\"}}";
+        assertThat(fixture.mvc.perform(post(admissionPath).servletPath(admissionPath).header("Authorization", "Bearer test")
+                .contentType("application/json").content(memberBody)).andReturn().getResponse().getStatus()).isEqualTo(201);
+        var capturedCaller = org.mockito.ArgumentCaptor.forClass(Optional.class);
+        verify(fixture.admissions, atLeastOnce()).admit(any(), any(), capturedCaller.capture());
+        assertThat(capturedCaller.getValue()).isPresent();
+        assertThat(capturedCaller.getValue().orElseThrow()).isInstanceOfSatisfying(TrustedShareAdmissionCaller.class, trusted -> {
+            assertThat(trusted.accountId()).isEqualTo(ACCOUNT);
+            assertThat(trusted.organizationId()).isEqualTo(ORGANIZATION);
+        });
+        var committed = (ShareAdmissionService.AdmissionCommitted) fixture.admissions.admit(null,null,null);
+        when(fixture.admissions.admit(any(), any(), any())).thenReturn(new ShareAdmissionService.DeniedCommitted(ShareAdmissionException.Code.SHARE_EXPIRED));
+        problem(fixture.mvc.perform(post(admissionPath).servletPath(admissionPath).header("Authorization", "Bearer test")
+                .contentType("application/json").content(memberBody)).andReturn().getResponse(), 410, "SHARE_EXPIRED");
+        when(fixture.admissions.admit(any(),any(),any())).thenReturn(new ShareAdmissionService.ReplayCommitted(committed.view()));
+        assertThat(fixture.mvc.perform(post(admissionPath).servletPath(admissionPath).contentType("application/json").content("{\"admissionRequestId\":\"stable\",\"verification\":{\"mode\":\"NONE\"}}")).andReturn().getResponse().getStatus()).isEqualTo(201);
+        problem(fixture.mvc.perform(post(admissionPath).servletPath(admissionPath).contentType("application/json").content("{}")).andReturn().getResponse(),422,"VALIDATION_FAILED");
+        problem(fixture.mvc.perform(post(admissionPath).servletPath(admissionPath).contentType("text/plain").content("{}")).andReturn().getResponse(),422,"VALIDATION_FAILED");
         when(fixture.service.getPublicShare(any(), any())).thenThrow(new PublicShareQueryException(PublicShareQueryException.Code.SHARE_TOKEN_INVALID));
         problem(fixture.mvc.perform(get(PATH).servletPath(PATH)).andReturn().getResponse(), 404, "SHARE_TOKEN_INVALID");
     }
@@ -64,6 +88,11 @@ class PublicShareWebTests {
                     .andReturn().getResponse(), 401, "UNAUTHENTICATED");
         }
         problem(fixture.mvc.perform(get(PATH).servletPath(PATH).header("Authorization", "Bearer a", "Bearer b")).andReturn().getResponse(), 401, "UNAUTHENTICATED");
+        for (String header : List.of("bad", "Bearer", "Basic private")) {
+            problem(fixture.mvc.perform(post(PATH + "/admissions").servletPath(PATH + "/admissions").header("Authorization",header).content("{}")).andReturn().getResponse(),401,"UNAUTHENTICATED");
+        }
+        problem(fixture.mvc.perform(post(PATH + "/admissions").servletPath(PATH + "/admissions").header("Authorization","Bearer a","Bearer b").content("{}")).andReturn().getResponse(),401,"UNAUTHENTICATED");
+        verifyNoInteractions(fixture.admissions);
         verifyNoInteractions(fixture.verifier, fixture.service);
         assertThat(fixture.mvc.perform(get(PATH).servletPath(PATH).header("Authorization", "Bearer test")).andReturn().getResponse().getStatus()).isEqualTo(200);
         when(fixture.verifier.verify(any(), anyString())).thenReturn(new VerifiedCustomerSession(ACCOUNT, TrustedCustomerCaller.Channel.WEB, "wrong"));
@@ -229,6 +258,7 @@ class PublicShareWebTests {
 
     private static final class Fixture {
         final PublicShareQueryService service = mock(PublicShareQueryService.class);
+        final ShareAdmissionService admissions = mock(ShareAdmissionService.class);
         final CustomerContextService contexts = mock(CustomerContextService.class);
         final CustomerSessionVerifier verifier = mock(CustomerSessionVerifier.class);
         final MockMvc mvc;
@@ -236,7 +266,13 @@ class PublicShareWebTests {
         VerificationMode mode = VerificationMode.NONE;
 
         Fixture(boolean withService, boolean withVerifier) {
-            if (withService) beans.addBean("publicShareQueryService", service);
+            if (withService) {
+                beans.addBean("publicShareQueryService", service);
+                beans.addBean("shareAdmissionService", admissions);
+            }
+            when(admissions.admit(any(), any(), any())).thenReturn(new ShareAdmissionService.AdmissionCommitted(new ShareAdmissionView(UUID.randomUUID(),"NONE","NOT_REQUIRED",
+                    Instant.parse("2026-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:01:00Z"), Instant.parse("2026-01-01T00:02:00Z"),
+                    new ShareAdmissionView.MediaAuthorization("synthetic-credential", Instant.parse("2026-01-01T00:00:30Z")))));
             beans.addBean("customerContextService", contexts);
             if (withVerifier) beans.addBean("customerSessionVerifier", verifier);
             when(verifier.verify(any(), anyString())).thenReturn(new VerifiedCustomerSession(ACCOUNT, TrustedCustomerCaller.Channel.WEB, "onecall:customer-session:v1"));
@@ -256,7 +292,7 @@ class PublicShareWebTests {
         }
         MockMvc mvc(org.springframework.http.converter.HttpMessageConverter<?>... converters) {
             var writer = new CustomerProblemWriter();
-            var builder = MockMvcBuilders.standaloneSetup(new PublicSharesController(beans.getBeanProvider(PublicShareQueryService.class), beans.getBeanProvider(CustomerContextService.class), writer))
+            var builder = MockMvcBuilders.standaloneSetup(new PublicSharesController(beans.getBeanProvider(PublicShareQueryService.class), beans.getBeanProvider(CustomerContextService.class), writer, beans.getBeanProvider(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService.class)))
                     .addFilters(new CustomerBoundaryFilter(new CustomerBearerAuthenticator(beans.getBeanProvider(CustomerSessionVerifier.class)), writer));
             if (converters.length > 0) builder.setMessageConverters(converters);
             return builder.build();

@@ -14,6 +14,8 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
+    private static final java.util.Set<String> PUBLIC_ADMISSION_FILES = java.util.Set.of("publicadmission/package-info.java", "publicadmission/ShareAdmissionCapabilityToken.java", "publicadmission/ShareAdmissionRequest.java", "publicadmission/ShareAdmissionView.java", "publicadmission/ShareAdmissionException.java", "publicadmission/TrustedShareAdmissionCaller.java", "publicadmission/ShareAdmissionService.java", "publicadmission/ShareAdmissionJsonBinder.java");
+    private static final java.util.Set<String> ADMISSION_IMPLEMENTATION_FILES = java.util.Set.of("admission/ShareAdmissionRepository.java", "admission/JooqShareAdmissionRepository.java", "admission/DefaultShareAdmissionService.java", "admission/ShareAdmissionTicketProvider.java", "admission/ShareMediaCredentialProvider.java", "admission/ShareAdmissionPolicyProvider.java", "admission/ShareAdmissionCodeVerifier.java", "admission/DesignatedMobileProofVerifier.java", "admission/ShareAdmissionSha256Provider.java", "persistence/ShareAdmissionPersistenceConfiguration.java");
     private static final java.util.Set<String> PUBLIC_READ_FILES = java.util.Set.of(
             "publicquery/package-info.java", "publicquery/OpaqueCapabilityToken.java", "publicquery/PublicShareQueryException.java",
             "publicquery/PublicShareView.java", "publicquery/PublicShareQueryService.java", "persistence/PublicShareQueryRepository.java",
@@ -66,7 +68,52 @@ class SharingQueryBoundaryTests {
         var modules = ApplicationModules.of(com.onecall.core.OneCallApplication.class);
         var namedInterfaces = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(namedInterfaces.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
-                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query");
+                .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
+        Path admissionRoot = Path.of("src/main/java/com/onecall/core/sharing/internal");
+        try (var files = Files.walk(admissionRoot)) {
+            var discovered = files.filter(Files::isRegularFile).map(admissionRoot::relativize).map(Path::toString).map(value -> value.replace('\\', '/'))
+                    .filter(value -> value.startsWith("admission/") || value.startsWith("publicadmission/") || value.equals("persistence/ShareAdmissionPersistenceConfiguration.java")).collect(java.util.stream.Collectors.toSet());
+            var expected = new java.util.HashSet<>(PUBLIC_ADMISSION_FILES); expected.addAll(ADMISSION_IMPLEMENTATION_FILES);
+            assertThat(discovered).containsExactlyInAnyOrderElementsOf(expected);
+            for (String relative : discovered) {
+                String source = Files.readString(admissionRoot.resolve(relative));
+                assertThat(source).doesNotContain("com.onecall.core.customer_iam", "Logger", "System.out", "printStackTrace", "SET ROLE");
+                if (!relative.equals("admission/JooqShareAdmissionRepository.java"))
+                    assertThat(source).doesNotContain("FOR UPDATE", "FOR SHARE", "pg_advisory", "INSERT INTO", "UPDATE sharing.", "SELECT code_hash");
+                assertThat(queryFile(admissionRoot.resolve(relative))).isFalse();
+                assertThat(publicReadFile(admissionRoot.resolve(relative))).isFalse();
+            }
+        }
+        String admissionRepository = Files.readString(admissionRoot.resolve("admission/JooqShareAdmissionRepository.java"));
+        String preliminaryLookup = admissionRepository.substring(admissionRepository.indexOf("Optional<GrantSnapshot> findGrantByTokenDigest"), admissionRepository.indexOf("Optional<GrantSnapshot> lockGrant"));
+        String preliminaryAdmission = admissionRepository.substring(admissionRepository.indexOf("Optional<AdmissionRow> findAdmission"), admissionRepository.indexOf("private AdmissionRow admission"));
+        for (String preliminary : List.of(preliminaryLookup, preliminaryAdmission))
+            assertThat(preliminary).doesNotContain("FOR UPDATE", "FOR SHARE", "pg_advisory", "INSERT INTO", "UPDATE sharing.");
+        String admissionService = Files.readString(admissionRoot.resolve("admission/DefaultShareAdmissionService.java"));
+        assertThat(admissionService).contains("TransactionSynchronizationManager.isActualTransactionActive()", "if (durable.replay()) policy = policy(", "validateWitness(", "proof == null || policy == null || proof.unavailable()");
+        assertThat(admissionService.indexOf("facts = facts(grant, caller)")).isLessThan(admissionService.indexOf("Optional<AdmissionRow> existing"));
+        assertThat(admissionService).contains("grant.verificationMode().equals(witness.verificationMode())", "witness.codeGeneration()", "witness.revocationGeneration()",
+                "facts.open()", "SHARE_RISK_BLOCKED", "eventId = \"admission-granted:\"", "ADMISSION_GRANTED", "TICKET_FAILED",
+                "ShareAdmissionPolicyProvider.ApprovedTicketPolicy policy = null", "if (durable.replay()) policy = policy(");
+        assertThat(admissionService.indexOf("lifecycle(original, caller)")).isLessThan(admissionService.indexOf("repository.lockGrant(original.id())"));
+        assertThat(admissionService).doesNotContain("Logger", "System.out", "System.err", "printStackTrace", "LoggerFactory");
+        assertThat(Arrays.stream(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionCapabilityToken.class.getDeclaredMethods())
+                .filter(method -> Modifier.isPublic(method.getModifiers())).map(java.lang.reflect.Method::getName))
+                .containsExactlyInAnyOrder("utf8", "toString");
+        var admissionApi = namedInterfaces.getByName("public-admission").orElseThrow();
+        assertThat(admissionApi.asJavaClasses().filter(type -> !type.getName().contains("$")).map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
+                .containsExactlyInAnyOrder("ShareAdmissionCapabilityToken", "ShareAdmissionRequest", "ShareAdmissionView", "ShareAdmissionException", "TrustedShareAdmissionCaller", "ShareAdmissionService", "ShareAdmissionJsonBinder");
+        assertThat(admissionApi.asJavaClasses().map(com.tngtech.archunit.core.domain.JavaClass::getName).filter(name -> name.contains("$")))
+                .containsExactlyInAnyOrder("com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$None", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$ExtractionCode", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$DesignatedMobile", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$OrganizationMember", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView$MediaAuthorization", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException$Code", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionOutcome", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionCommitted", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$ReplayCommitted", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$DeniedCommitted");
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)
+                .stream().map(dependency -> dependency.getTargetModule().getIdentifier()+"::"+dependency.getTargetNamedInterface().getName()))
+                .containsExactlyInAnyOrder("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission");
+        var admissionMethod = com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService.class.getMethod("admit",
+                com.onecall.core.sharing.internal.publicadmission.ShareAdmissionCapabilityToken.class,
+                com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest.class, java.util.Optional.class);
+        assertThat(admissionMethod.getGenericParameterTypes()[2].getTypeName()).isEqualTo("java.util.Optional<com.onecall.core.sharing.internal.publicadmission.TrustedShareAdmissionCaller>");
+        assertThat(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionJsonBinder.class.getMethod("bind", byte[].class)).isNotNull();
+        assertThat(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionJsonBinder.class.getMethod("bindVerification", tools.jackson.databind.JsonNode.class)).isNotNull();
         var customerQuery = namedInterfaces.getByName("customer-query").orElseThrow();
         assertThat(customerQuery.asJavaClasses()
                 .filter(type -> !type.getName().contains("$"))
@@ -103,7 +150,8 @@ class SharingQueryBoundaryTests {
         }
         Path internal = Path.of("src/main/java/com/onecall/core/sharing/internal");
         try (var paths = Files.walk(internal)) {
-            var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path) && !publicReadFile(path)).toList();
+            var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path) && !publicReadFile(path))
+                    .filter(path -> !PUBLIC_ADMISSION_FILES.contains(internal.relativize(path).toString().replace('\\', '/')) && !ADMISSION_IMPLEMENTATION_FILES.contains(internal.relativize(path).toString().replace('\\', '/'))).toList();
             assertThat(commandPaths.stream().map(path -> internal.relativize(path).toString().replace('\\', '/')))
                     .containsExactlyInAnyOrder("command/package-info.java", "command/CustomerShareCommand.java", "command/CustomerShareCommandResult.java",
                             "command/CustomerShareCommandService.java", "command/ShareCommandCaller.java", "command/ShareCommandException.java",

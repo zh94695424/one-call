@@ -1,93 +1,83 @@
-# PA17 Public Admission And Ticket — Implementation Report
+# PA17 Sharing Public Admission And Ticket — Implementation Report
 
-## Identity and status
+## Status
 
-- Work unit: `PA17-sharing-public-admission-ticket`.
-- Gate: `implementation`, approved single slice S1; no later gate entered.
-- Task label: `pa17-public-admission-ticket-implementation-gpt-20261106`.
-- Status: **blocked** before production implementation.
-- Binding inputs read directly: Active PA17 Goal Confirmation in `docs/gateflow/project-execution-control.md` and accepted `docs/gateflow/pa17-sharing-public-admission-ticket-plan.md`.
-- Accepted plan checkpoint: `8d1820d0837eafb9002ce9158726c42e634660cc`.
-- Control checkpoint / observed HEAD: `c8163d1b48e5cb446da9304a35c610ac49b42643`.
-- Accepted plan identity verified: 396 lines, 96,741 bytes, SHA-256 `9c9b1e4138d54c704546b062ca42a08de15001c9725036cc35f276a9f4ef1f6e`. The checkpoint's plan blob has the same SHA-256.
+**code-review-fix-1-complete**
 
-## Blocking contract conflict: reconstruction ticket policy
+The final Controller run completed against a clean PostgreSQL 16.15 runtime. Surefire ran 20 classes / 103 methods and Failsafe ran 9 classes / 162 methods; both had 0 failures, 0 errors, and 0 skips (265 total). The exact source=CI=XML inventory script passed. Failsafe includes `PublicShareAdmissionIT` (24 methods) and `SharingAdmissionRoleLeastPrivilegeIT` (8 methods).
 
-No source change is proposed to resolve this without a Controller decision. The following frozen requirements cannot be implemented together as an unambiguous witness-only reconstruction contract:
+The accepted A/B code-review findings are fixed: post-commit expiry recheck; personal ownership and malformed captured identity handling; risk-before-missing-witness ordering; a separate post-authoritative observation transaction; typed validation; redundant facts removal; all V001–V011 hash pins; and README cleanup. Deferred/rejected exactly as Control: A F-PA17-05, B-F-03, B-F-05, B-F-06.
 
-1. Plan §2.2, line 34: existing-key replay uses the recorded witness and **does not recompute policy**. Lines 32 and 45 obtain approved policy on a preliminary miss, outside transactions; the replay branch at line 44 does not obtain policy.
-2. Plan §2.3, line 47: `ADMISSION_GRANTED` has exactly six fields for non-member modes: `verificationMode`, `revocationGeneration`, `codeGeneration`, `grantExpiresAt`, `admissionExpiresAt`, `sessionExpiresAt`. Member mode adds exactly the two recipient IDs. Neither branch records approved ticket TTL or a ticket-policy reference.
-3. Plan §4, line 131: `AdmissionRow` has exactly the seven immutable V009 columns. Its `AdmissionWitness` carries the frozen event, mode, generations, expiries and optional recipients, not ticket TTL. V009 supplies no separate ticket-policy persistence column.
-4. Plan §2.4, line 53: reconstruction/reissue requires `ticketExpiresAt = min(clock_timestamp() + approved Q22 ticket TTL, sessionExpiresAt, admissionExpiresAt, current grant expires_at)` and a positive Redis TTL derived from that expiry.
-5. Plan §2.4 requires same-key reconstruction after post-commit provider/cache failure, including failure before a credential or Redis ticket exists. The failure payload is also exact and contains no policy. Policy values must not be invented; V009/schema changes and additional persistence paths are forbidden.
+## Runtime Evidence
 
-The recorded session window can establish its own end, but it does not identify an independent approved ticket TTL. Consider two approved policies with the same session duration and different ticket durations, neither clipped by session/admission/grant expiry. Their committed admission row, witness, witness hash, grant count/revision and pre-credential-failure event can be identical. Their required reconstructed ticket expiries differ at the same replay time. Therefore the frozen durable projection alone cannot choose the required ticket expiry. A process-local policy retained from the original call does not provide durable reconstruction after that process is lost.
+- Full Controller log: `/tmp/pa17-controller-full-code-review-fix6.log`; Surefire 20/103 and Failsafe 9/162 = 265, with zero failures, errors, or skips.
+- Focused suite log: `/tmp/pa17-focused-code-review-fix6.log`; 12 unit + 24 admission + 8 role = 44 green.
+- The full runtime exposed and fixed two production issues: PostgreSQL admission/event `OffsetDateTime` binds now use `?::timestamptz`, and event identity conflict comparison uses event type, result, and `payloadSha256` rather than raw JSON-node equality.
+- Fixture-only corrections cover risk projection, ownership/expiry/generation transitions, role password replay, and the expected ticket-event conflict diagnostic.
+- Default and web JAR smokes from the current CI heredoc passed. The production dependency firewall passed all 82 probes.
+- V001–V011 hash tests and all migrations passed; source=CI=XML inventory, diff/scope checks, and `git diff --check` passed.
+- No production Q22/provider/deployment values were invented.
 
-There is an interpretation under which “does not recompute policy” means only “does not renew/recompute the session,” while post-commit replay may independently retrieve approved ticket policy. That interpretation could supply the missing value, but it is not stated by the frozen replay branch and cannot safely be substituted for the broader prohibition under this dispatch's exact-contract/no-redesign rule.
+## Fix 1 Changes And Validation
 
-### Controller decision needed
+- Post-commit replay rechecks persisted session/admission expiry before policy lookup and returns typed `SHARE_SESSION_EXPIRED` without provider calls or `TICKET_FAILED`.
+- Grant projection now carries `created_by_account_id`; personal ownership is matched to the creator, and malformed captured identity JSON is unresolved fail-closed. Organization ownership remains exact.
+- Missing-witness denial follows risk and current member/account/tenant checks; verification observations use a separate `REQUIRES_NEW` transaction; direct validation returns `DeniedCommitted(VALIDATION_FAILED)`.
+- Removed the redundant pre-lock facts read, pinned all eleven V001–V011 hashes in the existing role test, and marked stale PA16/ten-entry README statements historical while preserving the current 265 inventory.
+- The focused and full Controller runtime, JAR smokes, firewall probes, migration/hash checks, inventory, and scope audits are green. Local WSL/Maven limitations are historical and do not qualify or contradict the recorded Controller evidence.
 
-Owner: Controller, with Sharing Backend and Product/Security policy owners.
+## Scope And Provenance
 
-- Explicitly authorize a post-transaction ticket-policy lookup on replay, if that is the intended interpretation. Define whether the original or current approved ticket TTL applies, its unavailable/malformed outcome, and preserve the original session/admission expiry, no fresh proof, no recount and no transaction/provider overlap.
-- Alternatively, authorize a durable original-policy witness and its exact persistence/payload/API implications. This would change frozen contracts; this implementation has not made that change.
+- Work unit: `PA17-sharing-public-admission-ticket`; task: `pa17-public-admission-ticket-implementation-report-finalize-gpt-20261107`.
+- The implementation changed exactly the 38 accepted-plan paths plus this report. Control changes, if any, are Controller bookkeeping only.
+- The accepted plan is 406 lines / 107,832 bytes, SHA-256 `6C00949299EACEF2A37F3723B450FAB77B8F8F341D279A620632713A8F262001`; checkpoint `fa4353dc7b1a4da606b9c432e6f2e62e31bab7a2`.
+- No commit, push, PR, or review action was performed.
 
-These are decision alternatives, not implemented redesigns. No new production policy value is suggested. Merely returning 503 for every otherwise-valid reconstructed admission would not implement the required replay success path. Changing only test adapters would conceal rather than resolve the contract gap.
+## Implementation Summary
 
-## Exact changed-file inventory and diff scope
+- Added a closed request binder, redacted request/token/caller/view values, the named `public-admission` API, exact POST route, optional bearer boundary support, and frozen problem mappings.
+- Added separate opt-in `sharing_admission_role` datasource/transaction/DSL/SHA wiring. Provider defaults fail closed; no production policy TTL, proof algorithm, credential provider, Redis dependency, or credential is invented.
+- Added repository-only prepared SQL, V012 privilege-only grants, and service sequencing. Preliminary lookup precedes proof; proof/policy I/O stays outside transactions; final grant lock samples DB time and atomically stores admission, event, and count. Ticket work follows PostgreSQL closure.
+- Fresh policy absence fails before write. Successful replay exits its authoritative transaction before one fresh ticket-policy lookup; persisted windows and counts are not renewed.
+- Event IDs and payloads are redacted and deterministic. No new table, column, or function was added, and V001–V011 are unchanged.
 
-Exactly one repository file is added by this task:
+## Runtime Limitations
 
-`docs/gateflow/pa17-sharing-public-admission-ticket-implementation.md`
+- PA17 review fix 2 restores the `Facts facts = facts(grant, caller);` binding after the post-lock clock sample and extends existing `ShareAdmissionServiceTests` methods for post-commit expiry, personal-owner mismatch, risk precedence over a missing replay witness, malformed captured-identity fail-closed behavior, and separate transaction history for proof-denied observations. No test method/class was added.
+- The local reviewer sandbox could not run Docker; the Controller host ran the PostgreSQL/Testcontainers runtime successfully.
+- Production Q22/provider/media values and related adapters remain external and fail-closed pending approved Product Security / Platform implementations and configuration.
+- This report makes no claim of production readiness, merge readiness, or deployment approval. The recorded green evidence is the specified Controller runtime and smoke validation.
 
-None of the 37 production/test/configuration/documentation allowlist paths is changed. No V012 is added. No source, test, OpenAPI, POM, CI, README, Control, accepted plan, review or historical fix artifact is changed. The pre-existing untracked `.codex` and `.pa17-plan/` entries are preserved and were not used as implementation output locations.
+## Review Fix 3
 
-The worktree's `.git` contains a Windows absolute gitdir pointer, which plain Linux `git` cannot resolve. Read-only Git inspection succeeds using `GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call17` and `GIT_WORK_TREE` equal to the dispatched workspace. The pointer and Git configuration were not edited.
+- Corrected three existing `ShareAdmissionServiceTests` fixtures: expiry replay assertions now compare against the post-initial-admission event baseline; malformed captured identity runs with no existing admission or witness and asserts no active-binding fallback or insert; and the member wrong-tenant case restores the normal ownership projection.
+- The focused runtime in `/tmp/pa17-focused-code-review-fix2.log` ran 12 tests and reported these three fixture-attribution failures. This fix was statically inspected only; no rerun or passing test result is claimed.
 
-## Implemented contracts and state transitions
+## Review Fix 4
 
-None. The POST endpoint, admission transactions, providers, replay state machine, dedicated datasource, V012 and 44 planned test methods remain unimplemented. Existing PA15/PA16 and creator source is unchanged. No claim of admission, ticket, session, ACL or concurrency runtime correctness is made.
+- Reworked the malformed `identity_at_capture` case to use its own fixture with no persisted admission/witness, asserting fail-closed denial and no admission insert or count update without attributing behavior to Mockito stub invocation counts.
+- Reworked the organization-member wrong-tenant case to use an independent member-mode fixture with its active organization, membership, account, and mismatched trusted organization, exercising tenant validation ordering rather than unresolved personal ownership.
+- No production code changed. Static checks only; no test run or passing test result is claimed.
 
-## Actual commands, results and limitations
+## Review Fix 5
 
-Commands ran from the dispatched workspace. Evidence is outside the repository under `/tmp/pa17-evidence/`; it is local scratch evidence, not a committed test artifact.
+- Proof-denied `authoritative` now returns `SHARE_VERIFICATION_FAILED` without writing an observation. After `writes.execute` closes, `admit` writes the deterministic redacted observation through exactly one separate `REQUIRES_NEW` transaction, sampling its event time inside that transaction. Observation failure remains fail-closed through the existing outer exception mapping; admission/count writes do not occur on this path.
+- Updated the existing proof-denied assertion to verify transaction history is `begin, commit, begin, commit` after proof setup, showing the authoritative transaction commits before the observation transaction begins. No test method/class was added.
+- The later focused and full Controller runs recorded above supersede this historical local validation note.
 
-| Command / check | Actual outcome |
-|---|---|
-| Initial plain `git status --short` | Exit 128: unresolved Windows gitdir pointer. No repair attempted. |
-| `GIT_DIR=... GIT_WORK_TREE=... git rev-parse HEAD` | Exit 0; HEAD equals the supplied Control checkpoint. |
-| Git status/diff baseline with those variables | Exit 0; no tracked diff; only the two pre-existing private untracked entries. Saved as `status-before.txt` and `tracked-diff-before.txt`. |
-| `wc -lc` and `sha256sum` for accepted plan | Exit 0; exact binding identity shown above. |
-| `git show 8d1820d0837eafb9002ce9158726c42e634660cc:docs/gateflow/pa17-sharing-public-admission-ticket-plan.md \| sha256sum` | Exit 0; same accepted SHA-256. |
-| `git ls-files -z \| xargs -0 sha256sum` | Exit 0; baseline tracked-file byte manifest saved as `tracked-before.sha256`. |
-| `sha256sum backend/src/main/resources/db/migration/V00{1,2,3,4,5,6,7,8,9}* backend/src/main/resources/db/migration/V01{0,1}*` | Exit 0; raw pre-edit manifest saved as `migrations-before.sha256`; all eleven hashes match accepted §7. |
-| `JAVA_HOME=/opt/jdk21`, supplied PATH; `java -version`; `/opt/maven-3.9.9/bin/mvn -version` | Exit 0; Temurin 21.0.13 and Maven 3.9.9 available. No Maven build was invoked. |
-| `curl --connect-timeout 5 --max-time 10 --silent --show-error --fail http://172.20.211.232:2375/_ping` | Exit 0; `OK`. Docker daemon reachability only, not PostgreSQL/container validation. |
-| `/usr/bin/time ... python3 -` synthetic contract counterexample | Exit 0; elapsed 0.02 seconds. `reconstruction-counterexample.txt` and `.time` record equal frozen durable projections, distinct required ticket expiries, and both sessions unexpired. This is an information-gap demonstration, not execution of a production service, PostgreSQL, or a new JUnit test. All durations and IDs used there are synthetic test-only inputs; none is a production policy value. |
-| `/usr/bin/time ... sha256sum -c /tmp/pa17-evidence/migrations-before.sha256` | Exit 0; elapsed 0.02 seconds; all eleven migrations `OK`. Results saved as `migration-byte-check.txt` and `.time`. |
+## Review Fix 6
 
-The exact environment requested by the dispatch was used for the environment probe: `JAVA_HOME=/opt/jdk21`, PATH prefixed with `/opt/jdk21/bin:/opt/maven-3.9.9/bin`, `DOCKER_HOST=tcp://172.20.211.232:2375`, `TESTCONTAINERS_HOST_OVERRIDE=172.20.208.1`. No wrapper was invoked. Environment availability is not the blocker.
+- Corrected the existing fresh proof-denied transaction-trace assertion to require exactly three `begin, commit` pairs after the prior baseline: preliminary read, authoritative denial, and separate `REQUIRES_NEW` observation. No test method/class or production code was added or changed.
+- The later focused and full Controller runs recorded above supersede this historical local validation note.
 
-Final scope audit: `sha256sum -c /tmp/pa17-evidence/tracked-before.sha256` verified all **1,440 tracked files** unchanged, exit 0, elapsed 2.08 seconds (`tracked-byte-check.txt` and `.time`). The final eleven-migration byte check also exited 0 (`migrations-final.txt`). `git diff --check` exited 0; tracked diff remained empty and status showed only this new report plus the two pre-existing private entries. `git diff --no-index --check /dev/null` against the new report exited 1 because this is a new-file comparison; it emitted no whitespace diagnostic, only the repository's LF-to-CRLF warning. An independent `python3 -` byte check for report trailing whitespace, final newline and NUL exited 0 (`report-whitespace-check.txt`). Existing plan/fix/review LF-to-CRLF warnings during Git inspection were not acted on; no normalization or configuration change was made.
+## Review Fix 7
 
-### Required acceptance work not run
+- Removed the redundant pre-lock `facts` read in `ticketContext`; the single post-lock read remains a declaration.
+- Added a service-level invalid-request assertion to the existing test method, verifying `DeniedCommitted(VALIDATION_FAILED)`, no events, and no admission/count writes. The separate dead malformed-fixture assignment remained in the candidate and was not removed in Fix 7.
+- This fix was not runtime-tested in this task; no runtime success is claimed.
 
-- Focused new unit/container tests and fresh clean full suite: not run; new source and tests are not written. There is no claim of `20/103 + 9/162 = 265`, no new Surefire/Failsafe XML identity, and no source=CI=XML validation result.
-- PostgreSQL 16, Flyway clean/migrate/repeat/rollback, V012 ACL/grant/denial checks: not run. No SQLSTATE witness is claimed.
-- Two-connection concurrency, commit-before-provider, rollback injection and replay recovery: not run. No backend PIDs, winners/losers, or event/row/count results exist for this task.
-- Existing full-suite success or regression freedom: not claimed. Byte preservation is not a substitute for runtime tests.
+## Review Fix 8
 
-## Redaction and preserved invariants
-
-No capability token, extraction code, OTP, designated-mobile number/proof, media credential, provider credential or real request ID was obtained, generated or printed by this task. The analytical counterexample prints only fixed boolean conclusions, not its synthetic identities, payloads or durations. No production provider was called and no credential-bearing Docker operation was issued.
-
-The original V001–V011 manifest is rechecked after this report is written. V009 is unchanged byte-for-byte: no table, column, constraint, function, trigger, lifecycle, immutability guard or existing ACL edit. The PA16 role and all pool/source definitions are unchanged. There are no application changes whose redacted `toString()` or runtime no-leak properties could be validated or claimed.
-
-## Residuals and completion boundary
-
-- Blocking replay ticket-policy interpretation: Controller / Sharing Backend / Product-Security; resolution required before exact implementation can proceed.
-- All unimplemented S1 behavior and acceptance evidence: Sharing Backend / Database test owner, after the Controller supplies a coherent binding contract.
-- Production Q22/KDF/SMS/media/Redis/deployment values and providers: existing Product/Security/Platform owners; not supplied or inferred here.
-- Original media/playback non-goals and all later gates remain out of scope.
-
-No staging, commit, branch creation, push, PR operation, approval, readiness action, reviewer request, external comment, code-review dispatch, merge or later-gate transition was performed. No Control/plan/review/prior-fix mutation was performed. The task stops **blocked**, not implementation-complete.
+- Removed only the dead malformed-fixture assignment from the existing service test while preserving the independent malformed fixture and assertions.
+- Extended the existing web test method to post authenticated organization-member admission through MockMvc, assert HTTP 201, and verify the captured `TrustedShareAdmissionCaller` has `ACCOUNT` and `ORGANIZATION`; the same method now verifies a schema-valid typed `DeniedCommitted(SHARE_EXPIRED)` maps through the controller handler to the frozen `410 SHARE_EXPIRED` problem response.
+- This agent did not claim the Controller's runtime as its own; the recorded Controller evidence remains separately attributed.
