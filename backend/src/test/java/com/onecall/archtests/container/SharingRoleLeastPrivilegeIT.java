@@ -59,7 +59,7 @@ class SharingRoleLeastPrivilegeIT {
         POSTGRES.start();
         url = "jdbc:postgresql://" + POSTGRES.getHost() + ":" + POSTGRES.getMappedPort(5432) + "/sharing_least_privilege";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", PASSWORD).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(11);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(12);
         try (Connection admin = admin(); Statement statement = admin.createStatement()) {
             try (var rows = statement.executeQuery("SELECT rolpassword IS NULL FROM pg_authid WHERE rolname='sharing_public_read_role'")) {
                 assertThat(rows.next()).isTrue();
@@ -200,7 +200,7 @@ class SharingRoleLeastPrivilegeIT {
                 var data = applicationData(connection);
                 var oldAcl = aclSnapshot(connection);
                 var oldDatabaseAcl = strings(connection, "SELECT acl.grantor||'|'||acl.grantee||'|'||acl.privilege_type||'|'||acl.is_grantable FROM pg_database database CROSS JOIN LATERAL aclexplode(coalesce(database.datacl,acldefault('d',database.datdba))) acl WHERE datname=current_database() AND NOT (acl.grantee=0 AND acl.privilege_type='TEMPORARY')");
-                var latest = Flyway.configure().dataSource(scratchUrl, "fixture_admin", PASSWORD).locations("classpath:db/migration").load();
+                var latest = Flyway.configure().dataSource(scratchUrl, "fixture_admin", PASSWORD).locations("classpath:db/migration").target("11").load();
                 assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
                 assertThat(latest.info().current().getVersion().getVersion()).isEqualTo("011");
                 assertThat(latest.info().applied()).hasSize(11);
@@ -493,7 +493,7 @@ class SharingRoleLeastPrivilegeIT {
         try (Connection connection = DriverManager.getConnection(scratchUrl, "fixture_admin", password)) {
             before = aclSnapshot(connection);
         }
-        Flyway failing = Flyway.configure().dataSource(scratchUrl, "fixture_admin", password).locations("filesystem:" + migrationDir).load();
+        Flyway failing = Flyway.configure().dataSource(scratchUrl, "fixture_admin", password).locations("filesystem:" + migrationDir).target("10").load();
         assertThatThrownBy(failing::migrate).isInstanceOf(RuntimeException.class);
         try (Connection connection = DriverManager.getConnection(scratchUrl, "fixture_admin", password); Statement statement = connection.createStatement();
                 var rows = statement.executeQuery("select count(*) from flyway_schema_history where version='010'")) {
@@ -566,8 +566,10 @@ class SharingRoleLeastPrivilegeIT {
             System.out.println("PA13 PostgreSQL 16 evidence: " + rows.getString(2) + "; image=" + POSTGRES.getDockerImageName()
                     + "; imageId=" + POSTGRES.getContainerInfo().getImageId());
         }
-        assertThat(flyway.info().applied()).hasSize(11);
+        assertThat(flyway.info().applied()).hasSize(12);
         assertThat(flyway.info().applied()[10].getVersion().getVersion()).isEqualTo("011");
+        assertThat(flyway.info().applied()[11].getVersion().getVersion()).isEqualTo("012");
+        assertThat(flyway.info().applied()[11].getScript()).isEqualTo("V012__sharing_admission_least_privilege.sql");
         assertThat(flyway.info().applied()[9].getVersion().getVersion()).isEqualTo("010");
         assertThat(flyway.info().applied()[9].getScript()).isEqualTo("V010__sharing_role_least_privilege.sql");
         assertThat(flyway.info().applied()[9].getDescription()).isEqualTo("sharing role least privilege");

@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 91:
-              sys.exit("expected exactly 91 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 103:
+              sys.exit("expected exactly 103 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -370,6 +370,57 @@ jobs:
               "publicReadPreservesCreateRevokeRotateListAndMeBehavior",
           }
 
+          unit_expected["com.onecall.archtests.sharing.ShareAdmissionServiceTests"] = {
+              "canonicalAdmissionKeyUsesExactUtf8AndNoRawRequestId",
+              "closedAdmissionBinderRejectsUnknownDuplicateTrailingAndWrongBranchFields",
+              "verificationModesMapToFrozenResultsAndSecretsNeverEnterViews",
+              "policyAndProviderAbsenceFailClosedWithoutWrites",
+              "existingAdmissionReplaysBeforeLimitWithoutVerificationOrRecount",
+              "expiredExistingAdmissionNeverRenews",
+              "ticketMaterialIsValidatedAndCredentialFailureClaimsNoSuccess",
+              "ticketFailureIsRedactedAndSameKeyReconstructs",
+              "problemCodesPreserveFrozenStatusPrecedence",
+              "organizationMemberRequiresTrustedCurrentSessionOnly",
+              "wrongTenantAndRiskFailuresCannotProduceSuccess",
+              "responseProjectionContainsOnlyFrozenPublicFields",
+          }
+          container_expected["com.onecall.archtests.container.PublicShareAdmissionIT"] = {
+              "postAdmissionUsesExactRouteAndClosedBody",
+              "unknownTokenIsUniformAndDoesNotLeakDigestOrGrant",
+              "noneAdmissionCommitsOneRowEventCountAndRevision",
+              "extractionCodeSuccessAndFailureAreRedacted",
+              "designatedMobileRequiresTrustedProofProvider",
+              "organizationMemberUsesCurrentAccountOrganizationMembership",
+              "wrongTenantAccountOrMembershipFailsClosed",
+              "openRiskBlocksWithoutAdmissionOrCount",
+              "revokedExpiredLockedAndStaleGenerationMapExactly",
+              "limitReachedLeavesStateAndLastSessionUnchanged",
+              "sameKeyReplayPrecedesLimitAndDoesNotRecount",
+              "sameKeyReplayRequiresMatchingGenerationWitness",
+              "sessionExpiryReturnsGoneWithoutRenewal",
+              "ticketPolicyUnavailableBeforeAdmissionLeavesNoRows",
+              "redisUnavailableAfterCommitReturns503AndPersistsAdmission",
+              "ticketFailureEventIsDeterministicRedactedAndSingle",
+              "lostResponseRetryReconstructsWithoutSecondAdmission",
+              "malformedTicketMaterialFailsClosedWithoutForgedSuccess",
+              "differentKeysAtLastSlotHaveOneWinner",
+              "duplicateKeysConcurrentlyCreateOneAdmission",
+              "admissionRaceWithRevokeOrRotateObservesCommittedWinner",
+              "failureAtAdmissionInsertEventOrCountRollsBackAllEffects",
+              "postAdmissionResponseNeverContainsForbiddenIdentifiersOrSecrets",
+              "publicGetAndCreatorCreateRevokeRotateListMeRemainUnchanged",
+          }
+          container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"] = {
+              "v012CreatesExactAdmissionRoleAndIsReplaySafe",
+              "v012GrantsExactSchemasAndColumnsWithoutFunctionExecution",
+              "v012DeniesPublicReadRoleEscalationAndCreatorRoleSubstitution",
+              "v012DeniesDmlDdlSequencesFunctionsAndGrantOptions",
+              "admissionPoolAssertsCurrentAndSessionUserBeforeWrite",
+              "admissionPoolResetsRoleTransactionAndReadOnlyState",
+              "admissionRoleSupportsAdmissionWriteAndRejectsUnrelatedWrites",
+              "v001ThroughV011BytesAndAclSnapshotsRemainUnchanged",
+          }
+
           def exact_inventory(pattern, inventory, total):
               reports = suites(pattern)
               if len(reports) != len(inventory) or {report.get("name") for report in reports} != set(inventory):
@@ -398,9 +449,9 @@ jobs:
                   source_classes.add(str(path.relative_to("src/test/java")).removesuffix(".java").replace("/", "."))
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 91)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 130)
-          print("PA16 exact source=CI=XML inventory passed: 19 Surefire classes/91 methods; 7 Failsafe classes/130 methods (64+10+10+8+12+18+8=130); combined 221; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 103)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 162)
+          print("PA17 exact source=CI=XML inventory passed: 20 Surefire classes/103 methods; 9 Failsafe classes/162 methods (64+10+10+8+12+18+8+24+8=162); combined 265; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |

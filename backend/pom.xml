@@ -182,6 +182,8 @@
                 <include>**/SharingRoleLeastPrivilegeIT.java</include>
                 <include>**/CustomerShareCommandsIT.java</include>
                 <include>**/PublicSharesIT.java</include>
+                <include>**/PublicShareAdmissionIT.java</include>
+                <include>**/SharingAdmissionRoleLeastPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

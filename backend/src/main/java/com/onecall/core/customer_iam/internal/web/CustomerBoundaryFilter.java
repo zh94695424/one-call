@@ -58,14 +58,16 @@ public final class CustomerBoundaryFilter implements Filter {
                 && servletPath.matches("/api/v1/customer/shares/[^/;%]+/code-rotations");
         boolean publicRead = "GET".equals(request.getMethod())
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+");
-        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate || publicRead)
+        boolean publicAdmission = "POST".equals(request.getMethod())
+                && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions");
+        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate || publicRead || publicAdmission)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }
         try {
             var authorization = request.getHeaders("Authorization");
-            var principal = publicRead && (authorization == null || !authorization.hasMoreElements()) ? null
+            var principal = (publicRead || publicAdmission) && (authorization == null || !authorization.hasMoreElements()) ? null
                     : new CustomerRequestPrincipal(authenticator.authenticate(authorization));
             if (revoke || rotate) {
                 var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
@@ -76,7 +78,7 @@ public final class CustomerBoundaryFilter implements Filter {
                     throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 request.setAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey", key);
             }
-            if (create || revoke || rotate) {
+            if (create || revoke || rotate || publicAdmission) {
                 try {
                     var types = java.util.Collections.list(request.getHeaders("Content-Type"));
                     if (types.size() != 1) throw new IllegalArgumentException();
