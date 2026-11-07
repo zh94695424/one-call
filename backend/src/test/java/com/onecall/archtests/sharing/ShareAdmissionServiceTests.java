@@ -13,6 +13,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -270,7 +271,7 @@ class ShareAdmissionServiceTests {
         assertThat(outcome).isEqualTo(new ShareAdmissionService.DeniedCommitted(code));
     }
     private static final class Transactions extends AbstractPlatformTransactionManager {
-        final List<String> history = new ArrayList<>();
+        final List<String> history = new CopyOnWriteArrayList<>();
         @Override protected Object doGetTransaction() { return new Object(); }
         @Override protected void doBegin(Object transaction, TransactionDefinition definition) { history.add("begin"); }
         @Override protected void doCommit(DefaultTransactionStatus status) { history.add("commit"); }
@@ -329,4 +330,402 @@ class ShareAdmissionServiceTests {
         }
         ShareAdmissionService.AdmissionOutcome admit() { return service.admit(new ShareAdmissionCapabilityToken("token-private"),new ShareAdmissionRequest("request-private",memberMode?new ShareAdmissionRequest.Verification.OrganizationMember():new ShareAdmissionRequest.Verification.None()),Optional.empty()); }
     }
+    @Test void mediaAuthorizationBinderAcceptsOnlyFrozenFieldsAndPurpose() {
+        var binder = new ShareAdmissionJsonBinder();
+        var request = binder.bindMediaAuthorization("{\"authorizationRequestId\":\"雪-é\",\"purpose\":\"SEEK\"}".getBytes(StandardCharsets.UTF_8));
+        assertThat(request.authorizationRequestId()).isEqualTo("雪-é");
+        assertThat(request.purpose()).isEqualTo(MediaAuthorizationRequest.Purpose.SEEK);
+        for (String invalid : List.of("{\"authorizationRequestId\":\"x\",\"purpose\":\"PLAYBACK\",\"extra\":1}",
+                "{\"authorizationRequestId\":\"x\",\"authorizationRequestId\":\"y\",\"purpose\":\"PLAYBACK\"}",
+                "{\"authorizationRequestId\":\"x\",\"purpose\":\"OTHER\"}", "{\"authorizationRequestId\":\"x\",\"purpose\":\"PLAYBACK\"}{}"))
+            assertThatThrownBy(() -> binder.bindMediaAuthorization(invalid.getBytes(StandardCharsets.UTF_8)))
+                    .isInstanceOfSatisfying(ShareAdmissionException.class, e -> assertThat(e.code()).isEqualTo(ShareAdmissionException.Code.VALIDATION_FAILED));
+    }
+
+    @Test void mediaAuthorizationIdentityUsesExactUtf8DigestAndPurposeEventMapping() {
+        for (var purpose : MediaAuthorizationRequest.Purpose.values()) {
+            MediaFixture f = new MediaFixture();
+            f.authorize("req-é", purpose);
+            var request = f.issued.get(0);
+            assertThat(request.requestKeyDigest()).isEqualTo(digest("req-é".getBytes(StandardCharsets.UTF_8)));
+            assertThat(request.eventType()).isEqualTo(switch (purpose) { case PLAYBACK -> "PLAYBACK_AUTHORIZED"; case SEEK -> "SEEK_AUTHORIZED"; case RENEW -> "RENEWED"; });
+            assertThat(request.eventId()).doesNotContain("req-é");
+        }
+        MediaFixture fractional = new MediaFixture(Instant.parse("2026-01-01T00:10:00.123Z"));
+        fractional.authorize("fractional", MediaAuthorizationRequest.Purpose.PLAYBACK);
+        assertThat(fractional.events).hasSize(1);
+        var payload = fractional.events.get(0).payload();
+        assertThat(payload.path("grantExpiresAt").asString()).isEqualTo("2026-01-01T00:10:00.123000Z");
+        assertThat(payload.path("admissionExpiresAt").asString()).isEqualTo("2026-01-01T00:09:00.123000Z");
+        assertThat(payload.path("sessionExpiresAt").asString()).isEqualTo("2026-01-01T00:08:00.123000Z");
+        assertThat(payload.path("credentialExpiresAt").asString()).isEqualTo("2026-01-01T00:07:00.123000Z");
+        assertThat(fractional.events.get(0).payloadSha256()).isEqualTo(digest(JSON.writeValueAsString(payload).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test void activeAndAdmittedLockedAuthorizeWithoutAdmissionMutation() {
+        for (String status : List.of("ACTIVE", "LOCKED")) {
+            MediaFixture f = new MediaFixture(); f.status = status;
+            assertThat(f.authorize("a", MediaAuthorizationRequest.Purpose.PLAYBACK).credential()).isEqualTo("credential-private");
+            assertThat(f.events).hasSize(1);
+            verify(f.repository, never()).insertAdmission(any());
+            verify(f.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+        }
+    }
+
+    @Test void sameAuthorizationRequestAndPurposeReplaysCredentialAndEvent() {
+        for (boolean subMicrosecond : List.of(false, true)) {
+            MediaFixture f = new MediaFixture();
+            if (subMicrosecond) f.providerResult = new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued(
+                    "credential-private", f.witness.sessionExpiresAt().minusNanos(1));
+            Instant expectedExpiry = subMicrosecond ? Instant.parse("2026-01-01T00:07:59.999999Z") : NOW.plusSeconds(420);
+            var first = f.authorize("same", MediaAuthorizationRequest.Purpose.PLAYBACK);
+            assertThat(first.expiresAt()).isEqualTo(expectedExpiry);
+            assertThat(f.events).hasSize(1);
+            var success = f.events.get(0);
+            assertThat(success.result()).isEqualTo("SUCCESS");
+            assertThat(success.eventType()).isEqualTo("PLAYBACK_AUTHORIZED");
+            assertThat(success.payload().path("credentialExpiresAt").asString()).isEqualTo(expectedExpiry.toString());
+            var second = f.authorize("same", MediaAuthorizationRequest.Purpose.PLAYBACK);
+            assertThat(second).isEqualTo(first);
+            assertThat(f.events).containsExactly(success);
+            assertThat(f.eventWrites).containsExactly(EventWriteStatus.INSERTED, EventWriteStatus.REUSED_IDENTICAL);
+            assertThat(f.issued).hasSize(2);
+        }
+    }
+
+    @Test void sameAuthorizationRequestAcrossPurposesConflictsWithoutSecondCredentialOrEvent() throws Exception {
+        MediaFixture f = new MediaFixture(); f.authorize("same", MediaAuthorizationRequest.Purpose.PLAYBACK);
+        assertThatThrownBy(() -> f.authorize("same", MediaAuthorizationRequest.Purpose.SEEK))
+                .isInstanceOfSatisfying(ShareAdmissionException.class, e -> assertThat(e.code()).isEqualTo(ShareAdmissionException.Code.SHARE_GENERATION_STALE));
+        assertThat(f.issued).hasSize(1); assertThat(f.events).hasSize(1);
+
+        MediaFixture changed = new MediaFixture();
+        Map<String, Object> identity = new TreeMap<>(Map.of("shareGrantId", changed.grantId.toString(),
+                "shareAdmissionId", changed.admission.toString(), "eventType", "PLAYBACK_AUTHORIZED",
+                "requestKeyDigest", digest("same".getBytes(StandardCharsets.UTF_8))));
+        Map<String, Object> fingerprint = new TreeMap<>(identity);
+        fingerprint.put("purpose", "PLAYBACK"); fingerprint.put("codeGeneration", 0); fingerprint.put("revocationGeneration", 0);
+        fingerprint.put("grantExpiresAt", changed.witness.grantExpiresAt().toString());
+        fingerprint.put("admissionExpiresAt", changed.witness.admissionExpiresAt().toString());
+        fingerprint.put("sessionExpiresAt", changed.witness.sessionExpiresAt().toString());
+        String currentFingerprint = digest(JSON.writeValueAsString(fingerprint).getBytes(StandardCharsets.UTF_8));
+        fingerprint.put("sessionExpiresAt", changed.witness.sessionExpiresAt().minusSeconds(1).toString());
+        Map<String, Object> payload = new TreeMap<>(fingerprint);
+        payload.put("preProviderFingerprint", digest(JSON.writeValueAsString(fingerprint).getBytes(StandardCharsets.UTF_8)));
+        payload.put("result", "SUCCESS"); payload.put("credentialExpiresAt", changed.expires.minusSeconds(180).toString());
+        var changedPayload = JSON.valueToTree(payload);
+        assertThat(changedPayload.path("preProviderFingerprint").asString()).isNotEqualTo(currentFingerprint);
+        AccessEventInsert prior = new AccessEventInsert(changed.grantId, changed.admission,
+                "share-access:" + digest(JSON.writeValueAsString(identity).getBytes(StandardCharsets.UTF_8)),
+                "PLAYBACK_AUTHORIZED", "SUCCESS", NOW.minusSeconds(1), changedPayload,
+                digest(JSON.writeValueAsString(changedPayload).getBytes(StandardCharsets.UTF_8)));
+        changed.events.add(prior);
+        String priorPayload = JSON.writeValueAsString(prior.payload());
+        var conflict = catchThrowableOfType(ShareAdmissionException.class,
+                () -> changed.authorize("same", MediaAuthorizationRequest.Purpose.PLAYBACK));
+        assertThat(conflict).isNotNull();
+        assertThat(conflict.code()).isEqualTo(ShareAdmissionException.Code.SHARE_GENERATION_STALE);
+        var problem = new MockHttpServletResponse();
+        new CustomerProblemWriter().write(problem, conflict.code(), UUID.randomUUID());
+        assertThat(problem.getStatus()).isEqualTo(409);
+        assertThat(JSON.readTree(problem.getContentAsByteArray()).path("code").asString()).isEqualTo("SHARE_GENERATION_STALE");
+        assertThat(changed.issued).isEmpty();
+        assertThat(changed.events).containsExactly(prior);
+        assertThat(changed.events.get(0)).isSameAs(prior);
+        assertThat(JSON.writeValueAsString(changed.events.get(0).payload())).isEqualTo(priorPayload);
+        assertThat(changed.events.get(0).payloadSha256()).isEqualTo(digest(priorPayload.getBytes(StandardCharsets.UTF_8)));
+        assertThat(changed.eventWrites).isEmpty();
+        verify(changed.repository, never()).insertAccessEvent(any());
+        verify(changed.repository, never()).insertAdmission(any());
+        verify(changed.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+        verify(changed.repository, never()).expireGrant(any(), anyLong());
+    }
+
+    @Test void organizationMemberReauthenticatesWitnessBeforeGrantRead() {
+        MediaFixture f = new MediaFixture(); f.member = true; f.grant = f.makeGrant(); f.prepareMemberWitness();
+        AtomicInteger resolutions = new AtomicInteger();
+        f.service.authorize(new ShareAdmissionCapabilityToken("token-private"), f.admission,
+                new MediaAuthorizationRequest("member", MediaAuthorizationRequest.Purpose.PLAYBACK), () -> {
+                    resolutions.incrementAndGet(); f.trace.add("resolver");
+                    return Optional.of(new TrustedShareAdmissionCaller(f.account, f.organization));
+                });
+        assertThat(resolutions).hasValue(1);
+        assertThat(f.trace).containsExactly("discovery", "resolver", "org-lock", "membership-lock", "account-lock", "grant-lock");
+        verify(f.repository).readCurrentMembership(f.organization, f.account);
+        MediaFixture nonMember = new MediaFixture();
+        AtomicInteger nonMemberResolutions = new AtomicInteger();
+        nonMember.service.authorize(new ShareAdmissionCapabilityToken("token-private"), nonMember.admission,
+                new MediaAuthorizationRequest("non-member", MediaAuthorizationRequest.Purpose.PLAYBACK), () -> {
+                    nonMemberResolutions.incrementAndGet(); return Optional.empty();
+                });
+        assertThat(nonMemberResolutions).hasValue(0);
+        assertThat(nonMember.trace).containsExactly("discovery", "grant-lock");
+    }
+
+    @Test void riskBindingGenerationAndTimeDenialsFailClosedWithoutMutation() {
+        for (String denial : List.of("risk", "binding", "generation", "session")) {
+            MediaFixture f = new MediaFixture(); f.denial = denial;
+            var expected = switch (denial) {
+                case "risk", "binding" -> ShareAdmissionException.Code.SHARE_RISK_BLOCKED;
+                case "generation" -> ShareAdmissionException.Code.SHARE_GENERATION_STALE;
+                case "session" -> ShareAdmissionException.Code.SHARE_SESSION_EXPIRED;
+                default -> throw new AssertionError(denial);
+            };
+            assertThatThrownBy(() -> f.authorize("blocked", MediaAuthorizationRequest.Purpose.PLAYBACK)).as(denial)
+                    .isInstanceOfSatisfying(ShareAdmissionException.class, failure -> assertThat(failure.code()).isEqualTo(expected));
+            if (denial.equals("session")) {
+                assertThat(f.repository.now()).isBefore(f.grant.expiresAt());
+                assertThat(f.repository.now()).isAfterOrEqualTo(f.witness.sessionExpiresAt());
+                assertThat(f.repository.now()).isAfterOrEqualTo(f.witness.admissionExpiresAt());
+            }
+            assertThat(f.issued).isEmpty(); assertThat(f.events).isEmpty();
+            verify(f.repository, never()).insertAdmission(any()); verify(f.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+        }
+        MediaFixture expiredStatus = new MediaFixture(); expiredStatus.status = "EXPIRED";
+        assertThatThrownBy(() -> expiredStatus.authorize("expired-status", MediaAuthorizationRequest.Purpose.PLAYBACK))
+                .isInstanceOfSatisfying(ShareAdmissionException.class, e -> assertThat(e.code()).isEqualTo(ShareAdmissionException.Code.SHARE_EXPIRED));
+        assertThat(expiredStatus.issued).isEmpty(); assertThat(expiredStatus.events).isEmpty();
+        for (String scenario : List.of("absent-session-bound", "malformed-session-bound", "epoch-session-bound")) {
+            MediaFixture f = new MediaFixture();
+            Instant admissionBound = f.witness.admissionExpiresAt();
+            f.witness = new AdmissionWitness(f.witness.eventId(), f.witness.payload(), f.witness.payloadSha256(), f.witness.verificationMode(),
+                    f.witness.codeGeneration(), f.witness.revocationGeneration(), f.witness.grantExpiresAt(), admissionBound,
+                    scenario.equals("epoch-session-bound") ? Instant.EPOCH : null, null, null);
+            when(f.repository.findAdmissionWitness(any(), any())).thenReturn(Optional.of(f.witness));
+            assertThatThrownBy(() -> f.authorize("invalid-bound", MediaAuthorizationRequest.Purpose.PLAYBACK)).as(scenario)
+                    .isInstanceOfSatisfying(ShareAdmissionException.class, e -> assertThat(e.code()).isEqualTo(ShareAdmissionException.Code.SHARE_SESSION_POLICY_UNAVAILABLE));
+            assertThat(f.issued).isEmpty(); assertThat(f.events).isEmpty();
+        }
+    }
+
+    @Test void concurrentSameKeyCallsConvergeAfterTransactionClosureAndCredentialNeverEntersEvent() throws Exception {
+        MediaFixture f = new MediaFixture();
+        CyclicBarrier start = new CyclicBarrier(3);
+        f.providerBarrier = new CyclicBarrier(2);
+        Callable<ShareAdmissionView.MediaAuthorization> authorize = () -> {
+            start.await(10, TimeUnit.SECONDS);
+            return f.service.authorize(new ShareAdmissionCapabilityToken("token-private"), f.admission,
+                    new MediaAuthorizationRequest("parallel", MediaAuthorizationRequest.Purpose.RENEW), null);
+        };
+        ShareAdmissionView.MediaAuthorization first;
+        ShareAdmissionView.MediaAuthorization second;
+        try (ExecutorService callers = Executors.newFixedThreadPool(2)) {
+            var firstCall = callers.submit(authorize);
+            var secondCall = callers.submit(authorize);
+            start.await(10, TimeUnit.SECONDS);
+            first = firstCall.get(15, TimeUnit.SECONDS);
+            second = secondCall.get(15, TimeUnit.SECONDS);
+        }
+        assertThat(first).isEqualTo(second); assertThat(f.events).hasSize(1);
+        assertThat(first.credential()).isEqualTo("credential-private");
+        assertThat(first.expiresAt()).isEqualTo(f.expires.minusSeconds(180));
+        assertThat(second.credential()).isEqualTo(first.credential());
+        assertThat(second.expiresAt()).isEqualTo(first.expiresAt());
+        assertThat(f.issued).hasSize(2).containsOnly(f.issued.get(0));
+        assertThat(f.credentials).hasSize(1).containsOnlyKeys(f.issued.get(0).eventId());
+        assertThat(f.eventWrites).containsExactlyInAnyOrder(EventWriteStatus.INSERTED, EventWriteStatus.REUSED_IDENTICAL);
+        assertThat(f.events.get(0).eventType()).isEqualTo("RENEWED");
+        assertThat(f.events.get(0).result()).isEqualTo("SUCCESS");
+        assertThat(f.events.get(0).payload().path("credentialExpiresAt").asString()).isEqualTo(first.expiresAt().toString());
+        assertThat(f.providerOutsideTransaction).containsExactly(true, true);
+        assertThat(f.events.get(0).payload().toString()).doesNotContain("credential-private");
+        verify(f.repository, times(2)).findAccessEventsByRequestKeyDigest(eq(f.grantId), eq(f.admission), any());
+        verify(f.repository, times(2)).insertAccessEvent(any());
+        verify(f.repository, never()).insertAdmission(any());
+        verify(f.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+    }
+
+    @Test void providerFailureAppendsOnlyDeterministicFailureAndRetrySucceeds() throws Exception {
+        Map<String, ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued> malformed = new LinkedHashMap<>();
+        malformed.put("over-code-point-limit", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("😀".repeat(2049), NOW.plusSeconds(10)));
+        malformed.put("nul", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential\0private", NOW.plusSeconds(10)));
+        malformed.put("unpaired-surrogate", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential\uD800", NOW.plusSeconds(10)));
+        malformed.put("null-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", null));
+        malformed.put("past-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW.minusNanos(1)));
+        malformed.put("equal-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW));
+        malformed.put("non-future-after-canonicalization", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW.plusNanos(1)));
+        for (var scenario : malformed.entrySet()) {
+            MediaFixture rejected = new MediaFixture(); rejected.providerResult = scenario.getValue();
+            Map<String, Object> failureIdentity = new TreeMap<>(Map.of("shareGrantId", rejected.grantId.toString(),
+                    "shareAdmissionId", rejected.admission.toString(), "eventType", "FAILURE",
+                    "requestKeyDigest", digest(scenario.getKey().getBytes(StandardCharsets.UTF_8))));
+            String failureId = "share-access:" + digest(JSON.writeValueAsString(failureIdentity).getBytes(StandardCharsets.UTF_8));
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var denial = catchThrowableOfType(ShareAdmissionException.class,
+                        () -> rejected.authorize(scenario.getKey(), MediaAuthorizationRequest.Purpose.PLAYBACK));
+                assertThat(denial).as(scenario.getKey()).isNotNull();
+                assertThat(denial.code()).isEqualTo(ShareAdmissionException.Code.DEPENDENCY_UNAVAILABLE);
+                var problem = new MockHttpServletResponse();
+                new CustomerProblemWriter().write(problem, denial.code(), UUID.randomUUID());
+                assertThat(problem.getStatus()).isEqualTo(503);
+                assertThat(JSON.readTree(problem.getContentAsByteArray()).path("code").asString()).isEqualTo("DEPENDENCY_UNAVAILABLE");
+                assertThat(rejected.events).hasSize(1);
+                assertThat(rejected.events.get(0).eventId()).isEqualTo(failureId);
+                assertThat(rejected.events).extracting(AccessEventInsert::eventType).containsExactly("FAILURE");
+                assertThat(rejected.events).extracting(AccessEventInsert::result).containsExactly("FAILED");
+                assertThat(rejected.events.get(0).payload().path("reasonCode").asString()).isEqualTo("MEDIA_CREDENTIAL_MALFORMED");
+                assertThat(rejected.credentials).isEmpty();
+            }
+            assertThat(rejected.issued).hasSize(2);
+            assertThat(rejected.eventWrites).containsExactly(EventWriteStatus.INSERTED, EventWriteStatus.REUSED_IDENTICAL);
+            verify(rejected.repository, never()).insertAdmission(any());
+            verify(rejected.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+        }
+        MediaFixture f = new MediaFixture(); f.throwProvider = true;
+        assertThatThrownBy(() -> f.authorize("retry", MediaAuthorizationRequest.Purpose.PLAYBACK)).isInstanceOf(ShareAdmissionException.class);
+        assertThat(f.events).hasSize(1);
+        AccessEventInsert failure = f.events.get(0);
+        assertThat(failure.eventType()).isEqualTo("FAILURE"); assertThat(failure.result()).isEqualTo("FAILED");
+        assertThat(failure.payload().path("reasonCode").asString()).isEqualTo("MEDIA_CREDENTIAL_UNAVAILABLE");
+        String requestKeyDigest = digest("retry".getBytes(StandardCharsets.UTF_8));
+        Map<String, Object> identity = new TreeMap<>(Map.of("shareGrantId", f.grantId.toString(),
+                "shareAdmissionId", f.admission.toString(), "eventType", "FAILURE", "requestKeyDigest", requestKeyDigest));
+        assertThat(failure.eventId()).isEqualTo("share-access:" + digest(JSON.writeValueAsString(identity).getBytes(StandardCharsets.UTF_8)));
+        Map<String, Object> fingerprint = new TreeMap<>(identity);
+        fingerprint.put("eventType", "PLAYBACK_AUTHORIZED");
+        fingerprint.put("purpose", "PLAYBACK");
+        fingerprint.put("codeGeneration", 0);
+        fingerprint.put("revocationGeneration", 0);
+        fingerprint.put("grantExpiresAt", f.expires.toString());
+        fingerprint.put("admissionExpiresAt", f.expires.minusSeconds(60).toString());
+        fingerprint.put("sessionExpiresAt", f.expires.minusSeconds(120).toString());
+        Map<String, Object> payload = new TreeMap<>(identity);
+        payload.put("purpose", "PLAYBACK");
+        payload.put("result", "FAILED");
+        payload.put("reasonCode", "MEDIA_CREDENTIAL_UNAVAILABLE");
+        payload.put("preProviderFingerprint", digest(JSON.writeValueAsString(fingerprint).getBytes(StandardCharsets.UTF_8)));
+        payload.put("grantExpiresAt", f.expires.toString());
+        payload.put("admissionExpiresAt", f.expires.minusSeconds(60).toString());
+        payload.put("sessionExpiresAt", f.expires.minusSeconds(120).toString());
+        payload.put("credentialExpiresAt", f.expires.minusSeconds(120).toString());
+        assertThat(failure.payload()).isEqualTo(JSON.valueToTree(payload));
+        assertThat(failure.payloadSha256()).isEqualTo(digest(JSON.writeValueAsString(payload).getBytes(StandardCharsets.UTF_8)));
+        assertThat(failure.grantId()).isEqualTo(f.grantId);
+        assertThat(failure.admissionId()).isEqualTo(f.admission);
+        assertThat(failure.payload().toString()).doesNotContain("SUCCESS", "credential-private", "token-private", "retry");
+        assertThat(f.events).extracting(AccessEventInsert::result).containsExactly("FAILED");
+        f.throwProvider = false;
+        assertThat(f.authorize("retry", MediaAuthorizationRequest.Purpose.PLAYBACK).credential()).isEqualTo("credential-private");
+        assertThat(f.events).hasSize(2);
+        assertThat(f.events).extracting(AccessEventInsert::eventType).containsExactly("FAILURE", "PLAYBACK_AUTHORIZED");
+        assertThat(f.events).extracting(AccessEventInsert::result).containsExactly("FAILED", "SUCCESS");
+        assertThat(f.providerOutsideTransaction).containsExactly(true, true);
+        AccessEventInsert firstSuccess = f.events.get(1);
+        String firstSuccessPayload = JSON.writeValueAsString(firstSuccess.payload());
+        String firstSuccessHash = firstSuccess.payloadSha256();
+        f.throwProvider = true;
+        var outage = catchThrowableOfType(ShareAdmissionException.class,
+                () -> f.authorize("retry", MediaAuthorizationRequest.Purpose.PLAYBACK));
+        assertThat(outage).isNotNull();
+        assertThat(outage.code()).isEqualTo(ShareAdmissionException.Code.DEPENDENCY_UNAVAILABLE);
+        var response = new MockHttpServletResponse();
+        new CustomerProblemWriter().write(response, outage.code(), UUID.randomUUID());
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(JSON.readTree(response.getContentAsByteArray()).path("code").asString()).isEqualTo("DEPENDENCY_UNAVAILABLE");
+        assertThat(f.events).containsExactly(failure, firstSuccess);
+        assertThat(f.events.get(1)).isSameAs(firstSuccess);
+        assertThat(JSON.writeValueAsString(f.events.get(1).payload())).isEqualTo(firstSuccessPayload);
+        assertThat(f.events.get(1).payloadSha256()).isEqualTo(firstSuccessHash);
+        assertThat(f.events).extracting(AccessEventInsert::eventType).containsExactly("FAILURE", "PLAYBACK_AUTHORIZED");
+        verify(f.repository, times(2)).insertAccessEvent(any());
+        assertThat(f.eventWrites).containsExactly(EventWriteStatus.INSERTED, EventWriteStatus.INSERTED);
+        assertThat(f.issued).hasSize(3);
+        assertThat(f.issued.get(2)).isEqualTo(f.issued.get(1));
+        assertThat(f.providerOutsideTransaction).containsExactly(true, true, true);
+    }
+
+    private static final class MediaFixture {
+        final UUID grantId = UUID.randomUUID(), admission = UUID.randomUUID(), subject = UUID.randomUUID(), binding = UUID.randomUUID();
+        final UUID account = UUID.randomUUID(), organization = UUID.randomUUID();
+        final ShareAdmissionRepository repository = mock(ShareAdmissionRepository.class);
+        final Transactions transactions = new Transactions();
+        final List<AccessEventInsert> events = new CopyOnWriteArrayList<>();
+        final List<ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest> issued = new CopyOnWriteArrayList<>();
+        final List<String> trace = new CopyOnWriteArrayList<>(); final List<Boolean> providerOutsideTransaction = new CopyOnWriteArrayList<>();
+        final List<EventWriteStatus> eventWrites = new CopyOnWriteArrayList<>();
+        final Map<String, ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued> credentials = new ConcurrentHashMap<>();
+        CyclicBarrier providerBarrier;
+        ShareMediaCredentialProvider.MediaAuthorizationCredentialResult providerResult;
+        final Instant expires;
+        String status = "ACTIVE", denial = ""; boolean member, throwProvider;
+        GrantSnapshot grant;
+        AdmissionWitness witness;
+        final DefaultShareMediaAuthorizationService service;
+        MediaFixture() {
+            this(NOW.plusSeconds(600));
+        }
+        MediaFixture(Instant expires) {
+            this.expires = expires;
+            grant = makeGrant();
+            Map<String,Object> values = new TreeMap<>(); values.put("verificationMode","NONE"); values.put("codeGeneration",0); values.put("revocationGeneration",0);
+            values.put("grantExpiresAt",expires.toString()); values.put("admissionExpiresAt",expires.minusSeconds(60).toString()); values.put("sessionExpiresAt",expires.minusSeconds(120).toString());
+            var payload = JSON.valueToTree(values);
+            witness = new AdmissionWitness("admission-granted:"+grantId+":"+admission,payload,digest(JSON.writeValueAsString(values).getBytes(StandardCharsets.UTF_8)),"NONE",0,0,expires,expires.minusSeconds(60),expires.minusSeconds(120),null,null);
+            when(repository.findGrantByTokenDigest(any())).thenAnswer(i -> {
+                assertThat(TransactionSynchronizationManager.isCurrentTransactionReadOnly()).isTrue();
+                trace.add("discovery"); return Optional.of(grant);
+            });
+            when(repository.lockGrant(any())).thenAnswer(i -> { trace.add("grant-lock"); return Optional.of(grant); });
+            when(repository.now()).thenReturn(NOW);
+            when(repository.findAdmissionById(any(),any())).thenReturn(Optional.of(new AdmissionRow(admission,grantId,"key",1,"NONE","NOT_REQUIRED",NOW.minusSeconds(300))));
+            when(repository.findAdmissionWitness(any(),any())).thenReturn(Optional.of(witness));
+            when(repository.readSubjectOwnership(any())).thenAnswer(i -> Optional.of(new SubjectOwnership(subject,member?null:account,member?organization:null)));
+            when(repository.readCapturedBinding(any())).thenReturn(Optional.of(new BindingState(binding,subject,"ACTIVE",NOW.minusSeconds(1),1)));
+            when(repository.readCurrentBindings(any())).thenAnswer(i -> denial.equals("binding") ? List.of() : List.of(new BindingState(binding,subject,"ACTIVE",NOW.minusSeconds(1),1)));
+            when(repository.readSubjectRisk(any(),any())).thenAnswer(i -> Optional.of(new RiskState(subject,List.of(binding),List.of(new RiskRow(subject,"RISK",denial.equals("risk")?"OPEN":"CLOSED",1)))));
+            when(repository.findAccessEventsByRequestKeyDigest(any(),any(),any())).thenAnswer(i -> events.stream().map(e -> new AccessEventRow(e.eventId(),e.eventType(),e.payload(),e.payloadSha256(),e.result())).toList());
+            when(repository.insertAccessEvent(any())).thenAnswer(i -> {
+                synchronized (events) {
+                    var event = i.<AccessEventInsert>getArgument(0);
+                    var first = events.stream().filter(prior -> prior.eventId().equals(event.eventId())).findFirst().orElse(null);
+                    if (first == null) events.add(event);
+                    var value = first == null ? event : first;
+                    var row = new AccessEventRow(value.eventId(), value.eventType(), value.payload(), value.payloadSha256(), value.result());
+                    var writeStatus = first == null ? EventWriteStatus.INSERTED
+                            : first.payloadSha256().equals(event.payloadSha256()) ? EventWriteStatus.REUSED_IDENTICAL : EventWriteStatus.CONFLICT;
+                    eventWrites.add(writeStatus);
+                    return new EventWriteResult(writeStatus, row);
+                }
+            });
+            when(repository.readCurrentOrganization(any())).thenReturn(Optional.of(new OrganizationState(organization,"ACTIVE")));
+            when(repository.readCurrentMembership(any(),any())).thenReturn(Optional.of(new MembershipState(organization,account,"ACTIVE")));
+            when(repository.readCurrentAccount(any())).thenReturn(Optional.of(new AccountState(account,"ACTIVE")));
+            doAnswer(i -> { trace.add("org-lock"); return null; }).when(repository).acquireOrganizationLifecycleLock(any());
+            doAnswer(i -> { trace.add("membership-lock"); return null; }).when(repository).acquireMembershipLifecycleLock(any(),any());
+            doAnswer(i -> { trace.add("account-lock"); return null; }).when(repository).acquireAccountLifecycleLock(any());
+            TransactionTemplate template = new TransactionTemplate(transactions);
+            service = new DefaultShareMediaAuthorizationService(template,repository,ShareAdmissionServiceTests::digest, new ShareMediaCredentialProvider() {
+                public Result issue(MediaCredentialRequest r) { throw new AssertionError(); }
+                public MediaAuthorizationCredentialResult issueOrReplay(MediaAuthorizationCredentialRequest r) {
+                    providerOutsideTransaction.add(!TransactionSynchronizationManager.isActualTransactionActive()); issued.add(r);
+                    if (providerBarrier != null) {
+                        assertThat(events).isEmpty();
+                        try { providerBarrier.await(10, TimeUnit.SECONDS); }
+                        catch (Exception failure) { throw new AssertionError("Concurrent provider calls did not overlap", failure); }
+                    }
+                    if (throwProvider) throw new IllegalStateException("provider");
+                    if (providerResult != null) return providerResult;
+                    return credentials.computeIfAbsent(r.eventId(), ignored -> new MediaAuthorizationCredentialResult.Issued("credential-private", expires.minusSeconds(180)));
+                }
+            });
+        }
+        ShareAdmissionView.MediaAuthorization authorize(String key, MediaAuthorizationRequest.Purpose purpose) {
+            grant = makeGrant();
+            if (denial.equals("generation")) when(repository.findAdmissionWitness(any(),any())).thenReturn(Optional.of(new AdmissionWitness(witness.eventId(),witness.payload(),witness.payloadSha256(),"NONE",1,0,witness.grantExpiresAt(),witness.admissionExpiresAt(),witness.sessionExpiresAt(),null,null)));
+            if (denial.equals("session")) when(repository.now()).thenReturn(witness.admissionExpiresAt());
+            return service.authorize(new ShareAdmissionCapabilityToken("token-private"),admission,new MediaAuthorizationRequest(key,purpose),
+                    member ? () -> Optional.of(new TrustedShareAdmissionCaller(account,organization)) : null);
+        }
+        private GrantSnapshot makeGrant() { return new GrantSnapshot(grantId,"share",UUID.randomUUID(),account,member?organization:null,status,member?"ORGANIZATION_MEMBER":"NONE",NOW.minusSeconds(1),expires,0,0,1,null,1,null,null,subject,binding,false,JSON.readTree("{}")); }
+        private void prepareMemberWitness() {
+            Map<String,Object> values = new TreeMap<>(); values.put("verificationMode","ORGANIZATION_MEMBER"); values.put("codeGeneration",0); values.put("revocationGeneration",0);
+            values.put("grantExpiresAt",expires.toString()); values.put("admissionExpiresAt",expires.minusSeconds(60).toString()); values.put("sessionExpiresAt",expires.minusSeconds(120).toString());
+            values.put("recipientAccountId",account.toString()); values.put("recipientOrganizationId",organization.toString());
+            var payload=JSON.valueToTree(values);
+            witness=new AdmissionWitness("admission-granted:"+grantId+":"+admission,payload,digest(JSON.writeValueAsString(values).getBytes(StandardCharsets.UTF_8)),"ORGANIZATION_MEMBER",0,0,expires,expires.minusSeconds(60),expires.minusSeconds(120),account,organization);
+            when(repository.findAdmissionById(any(),any())).thenReturn(Optional.of(new AdmissionRow(admission,grantId,"key",1,"ORGANIZATION_MEMBER","VERIFIED",NOW.minusSeconds(300))));
+            when(repository.findAdmissionWitness(any(),any())).thenReturn(Optional.of(witness));
+        }
+    }
+
 }

@@ -14,8 +14,8 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
-    private static final java.util.Set<String> PUBLIC_ADMISSION_FILES = java.util.Set.of("publicadmission/package-info.java", "publicadmission/ShareAdmissionCapabilityToken.java", "publicadmission/ShareAdmissionRequest.java", "publicadmission/ShareAdmissionView.java", "publicadmission/ShareAdmissionException.java", "publicadmission/TrustedShareAdmissionCaller.java", "publicadmission/ShareAdmissionService.java", "publicadmission/ShareAdmissionJsonBinder.java");
-    private static final java.util.Set<String> ADMISSION_IMPLEMENTATION_FILES = java.util.Set.of("admission/ShareAdmissionRepository.java", "admission/JooqShareAdmissionRepository.java", "admission/DefaultShareAdmissionService.java", "admission/ShareAdmissionTicketProvider.java", "admission/ShareMediaCredentialProvider.java", "admission/ShareAdmissionPolicyProvider.java", "admission/ShareAdmissionCodeVerifier.java", "admission/DesignatedMobileProofVerifier.java", "admission/ShareAdmissionSha256Provider.java", "persistence/ShareAdmissionPersistenceConfiguration.java");
+    private static final java.util.Set<String> PUBLIC_ADMISSION_FILES = java.util.Set.of("publicadmission/package-info.java", "publicadmission/ShareAdmissionCapabilityToken.java", "publicadmission/ShareAdmissionRequest.java", "publicadmission/ShareAdmissionView.java", "publicadmission/ShareAdmissionException.java", "publicadmission/TrustedShareAdmissionCaller.java", "publicadmission/ShareAdmissionService.java", "publicadmission/ShareAdmissionJsonBinder.java", "publicadmission/MediaAuthorizationRequest.java", "publicadmission/ShareMediaAuthorizationService.java");
+    private static final java.util.Set<String> ADMISSION_IMPLEMENTATION_FILES = java.util.Set.of("admission/ShareAdmissionRepository.java", "admission/JooqShareAdmissionRepository.java", "admission/DefaultShareAdmissionService.java", "admission/ShareAdmissionTicketProvider.java", "admission/ShareMediaCredentialProvider.java", "admission/ShareAdmissionPolicyProvider.java", "admission/ShareAdmissionCodeVerifier.java", "admission/DesignatedMobileProofVerifier.java", "admission/ShareAdmissionSha256Provider.java", "persistence/ShareAdmissionPersistenceConfiguration.java", "admission/DefaultShareMediaAuthorizationService.java");
     private static final java.util.Set<String> PUBLIC_READ_FILES = java.util.Set.of(
             "publicquery/package-info.java", "publicquery/OpaqueCapabilityToken.java", "publicquery/PublicShareQueryException.java",
             "publicquery/PublicShareView.java", "publicquery/PublicShareQueryService.java", "persistence/PublicShareQueryRepository.java",
@@ -102,9 +102,9 @@ class SharingQueryBoundaryTests {
                 .containsExactlyInAnyOrder("utf8", "toString");
         var admissionApi = namedInterfaces.getByName("public-admission").orElseThrow();
         assertThat(admissionApi.asJavaClasses().filter(type -> !type.getName().contains("$")).map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
-                .containsExactlyInAnyOrder("ShareAdmissionCapabilityToken", "ShareAdmissionRequest", "ShareAdmissionView", "ShareAdmissionException", "TrustedShareAdmissionCaller", "ShareAdmissionService", "ShareAdmissionJsonBinder");
+                .containsExactlyInAnyOrder("ShareAdmissionCapabilityToken", "ShareAdmissionRequest", "ShareAdmissionView", "ShareAdmissionException", "TrustedShareAdmissionCaller", "ShareAdmissionService", "ShareAdmissionJsonBinder", "MediaAuthorizationRequest", "ShareMediaAuthorizationService");
         assertThat(admissionApi.asJavaClasses().map(com.tngtech.archunit.core.domain.JavaClass::getName).filter(name -> name.contains("$")))
-                .containsExactlyInAnyOrder("com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$None", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$ExtractionCode", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$DesignatedMobile", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$OrganizationMember", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView$MediaAuthorization", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException$Code", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionOutcome", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionCommitted", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$ReplayCommitted", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$DeniedCommitted");
+                .containsExactlyInAnyOrder("com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$None", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$ExtractionCode", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$DesignatedMobile", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$OrganizationMember", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView$MediaAuthorization", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException$Code", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionOutcome", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionCommitted", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$ReplayCommitted", "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$DeniedCommitted", "com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest$Purpose", "com.onecall.core.sharing.internal.publicadmission.ShareMediaAuthorizationService$CallerResolver");
         assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)
                 .stream().map(dependency -> dependency.getTargetModule().getIdentifier()+"::"+dependency.getTargetNamedInterface().getName()))
                 .containsExactlyInAnyOrder("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission");
@@ -256,5 +256,73 @@ class SharingQueryBoundaryTests {
         assertThat(Arrays.stream(type.getRecordComponents()).map(java.lang.reflect.RecordComponent::getName)).containsExactly(expected);
         assertThat(Arrays.stream(type.getRecordComponents()).map(java.lang.reflect.RecordComponent::getType))
                 .noneMatch(component -> component == java.util.Map.class || component == org.jooq.Record.class);
+    }
+    @Test void mediaAuthorizationSurfacePreservesNamedInterfaceAndNoForeignWriteBoundary() throws Exception {
+        Path sharingRoot = Path.of("src/main/java/com/onecall/core/sharing/internal");
+        try (var paths = Files.walk(sharingRoot)) {
+            var discovered = paths.filter(Files::isRegularFile).map(sharingRoot::relativize).map(Path::toString)
+                    .map(value -> value.replace('\\', '/'))
+                    .filter(value -> value.startsWith("publicadmission/") || value.startsWith("admission/")
+                            || value.equals("persistence/ShareAdmissionPersistenceConfiguration.java"))
+                    .collect(java.util.stream.Collectors.toSet());
+            var expected = new java.util.HashSet<>(PUBLIC_ADMISSION_FILES);
+            expected.addAll(ADMISSION_IMPLEMENTATION_FILES);
+            assertThat(discovered).containsExactlyInAnyOrderElementsOf(expected);
+        }
+        var modules = ApplicationModules.of(com.onecall.core.OneCallApplication.class);
+        var admissionApi = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces()
+                .getByName("public-admission").orElseThrow();
+        assertThat(admissionApi.asJavaClasses().filter(type -> !type.getName().contains("$"))
+                .map(com.tngtech.archunit.core.domain.JavaClass::getSimpleName))
+                .containsExactlyInAnyOrder("ShareAdmissionCapabilityToken", "ShareAdmissionRequest", "ShareAdmissionView",
+                        "ShareAdmissionException", "TrustedShareAdmissionCaller", "ShareAdmissionService", "ShareAdmissionJsonBinder",
+                        "MediaAuthorizationRequest", "ShareMediaAuthorizationService");
+        assertThat(admissionApi.asJavaClasses().map(com.tngtech.archunit.core.domain.JavaClass::getName)
+                .filter(name -> name.contains("$")))
+                .containsExactlyInAnyOrder("com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$None",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$ExtractionCode",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$DesignatedMobile",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest$Verification$OrganizationMember",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView$MediaAuthorization",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException$Code",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionOutcome",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$AdmissionCommitted",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$ReplayCommitted",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService$DeniedCommitted",
+                        "com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest$Purpose",
+                        "com.onecall.core.sharing.internal.publicadmission.ShareMediaAuthorizationService$CallerResolver");
+        var credentialProvider = com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.class;
+        assertThat(List.of(com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest.class,
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.class,
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued.class,
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Unavailable.class,
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Malformed.class)
+                .stream().map(Class::getName))
+                .containsExactly("com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialRequest",
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult",
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Issued",
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Unavailable",
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Malformed");
+        Path controller = Path.of("src/main/java/com/onecall/core/customer_iam/internal/web/PublicSharesController.java");
+        for (Path surface : List.of(controller, sharingRoot.resolve("publicadmission/MediaAuthorizationRequest.java"),
+                sharingRoot.resolve("publicadmission/ShareMediaAuthorizationService.java"))) {
+            String source = Files.readString(surface);
+            assertThat(source).doesNotContain(".internal.persistence", ".internal.admission", "org.jooq", "DSLContext",
+                    "TransactionTemplate", "PlatformTransactionManager", "ObjectStorage", "Redis", "COS", "GenericMedia",
+                    "internal.command", "CustomerShareCommand", "CustomerShareCommandService");
+        }
+        assertThat(Files.readString(Path.of("../.github/workflows/ci.yml")))
+                .contains("\"mediaAuthorizationSurfacePreservesNamedInterfaceAndNoForeignWriteBoundary\"");
+        Path admissionRoot = sharingRoot;
+        try (var paths = Files.walk(admissionRoot.resolve("publicadmission"))) {
+            for (Path surface : paths.filter(Files::isRegularFile).toList()) {
+                String source = Files.readString(surface);
+                assertThat(source).doesNotContain(".internal.persistence", ".internal.admission", "org.jooq", "DSLContext",
+                        "TransactionTemplate", "PlatformTransactionManager", "ObjectStorage", "Redis", "COS", "GenericMedia",
+                        "internal.command", "CustomerShareCommand", "CustomerShareCommandService");
+                assertThat(source).doesNotMatch("(?is).*\\b(insert|update|delete|merge|truncate|create|alter|drop)\\s+(into|from|table|schema|role|function|sharing\\.|evidence\\.).*");
+            }
+        }
     }
 }

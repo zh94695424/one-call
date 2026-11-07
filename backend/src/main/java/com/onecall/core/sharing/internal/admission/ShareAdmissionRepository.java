@@ -20,8 +20,10 @@ public interface ShareAdmissionRepository {
     List<BindingState> readCurrentBindings(UUID subjectId);
     Optional<RiskState> readSubjectRisk(UUID subjectId, List<UUID> bindingIds);
     Optional<AdmissionRow> findAdmission(UUID grantId, String admissionKey);
+    Optional<AdmissionRow> findAdmissionById(UUID grantId, UUID admissionId);
     Optional<AdmissionWitness> findAdmissionWitness(UUID grantId, UUID admissionId);
     Optional<AccessEventRow> findAccessEvent(UUID grantId, String eventId);
+    List<AccessEventRow> findAccessEventsByRequestKeyDigest(UUID grantId, UUID admissionId, String requestKeyDigest);
     EventWriteResult insertAccessEvent(AccessEventInsert event);
     AdmissionRow insertAdmission(AdmissionInsert admission);
     int updateGrantAdmissionCount(UUID grantId, long expectedRevision, long admissionNo);

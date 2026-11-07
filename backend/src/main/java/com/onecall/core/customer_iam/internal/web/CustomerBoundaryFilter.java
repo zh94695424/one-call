@@ -60,14 +60,16 @@ public final class CustomerBoundaryFilter implements Filter {
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+");
         boolean publicAdmission = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions");
-        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate || publicRead || publicAdmission)
+        boolean publicMediaAuthorization = "POST".equals(request.getMethod())
+                && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions/[^/;%]+/media-authorizations");
+        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate || publicRead || publicAdmission || publicMediaAuthorization)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
         }
         try {
             var authorization = request.getHeaders("Authorization");
-            var principal = (publicRead || publicAdmission) && (authorization == null || !authorization.hasMoreElements()) ? null
+            var principal = (publicRead || publicAdmission || publicMediaAuthorization) && (authorization == null || !authorization.hasMoreElements()) ? null
                     : new CustomerRequestPrincipal(authenticator.authenticate(authorization));
             if (revoke || rotate) {
                 var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
@@ -78,7 +80,7 @@ public final class CustomerBoundaryFilter implements Filter {
                     throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 request.setAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey", key);
             }
-            if (create || revoke || rotate || publicAdmission) {
+            if (create || revoke || rotate || publicAdmission || publicMediaAuthorization) {
                 try {
                     var types = java.util.Collections.list(request.getHeaders("Content-Type"));
                     if (types.size() != 1) throw new IllegalArgumentException();

@@ -90,6 +90,9 @@ public final class JooqShareAdmissionRepository implements ShareAdmissionReposit
     @Override public Optional<AdmissionRow> findAdmission(UUID grantId, String admissionKey) {
         return Optional.ofNullable(database.fetchOne("SELECT id,share_grant_id,admission_key,admission_no,verification_mode,verification_result,admitted_at FROM sharing.share_admission WHERE share_grant_id=? AND admission_key=?", grantId, admissionKey)).map(this::admission);
     }
+    @Override public Optional<AdmissionRow> findAdmissionById(UUID grantId, UUID admissionId) {
+        return Optional.ofNullable(database.fetchOne("SELECT id,share_grant_id,admission_key,admission_no,verification_mode,verification_result,admitted_at FROM sharing.share_admission WHERE share_grant_id=? AND id=?", grantId, admissionId)).map(this::admission);
+    }
     private AdmissionRow admission(Record row) {
         return new AdmissionRow(row.get("id", UUID.class), row.get("share_grant_id", UUID.class), row.get("admission_key", String.class), row.get("admission_no", Long.class), row.get("verification_mode", String.class), row.get("verification_result", String.class), time(row, "admitted_at"));
     }
@@ -97,14 +100,30 @@ public final class JooqShareAdmissionRepository implements ShareAdmissionReposit
         return findAccessEvent(grantId, "admission-granted:" + grantId + ":" + admissionId).filter(event -> "ADMISSION_GRANTED".equals(event.eventType()) && "SUCCESS".equals(event.result())).map(event -> {
             JsonNode payload = event.payload();
             return new AdmissionWitness(event.eventId(), payload, event.payloadSha256(), payload.path("verificationMode").asString(),
-                    payload.path("codeGeneration").asInt(), payload.path("revocationGeneration").asInt(),
-                    Instant.parse(payload.path("grantExpiresAt").asString()), Instant.parse(payload.path("admissionExpiresAt").asString()),
-                    Instant.parse(payload.path("sessionExpiresAt").asString()), uuid(payload, "recipientAccountId"), uuid(payload, "recipientOrganizationId"));
+                    generation(payload, "codeGeneration"), generation(payload, "revocationGeneration"),
+                    instant(payload, "grantExpiresAt"), instant(payload, "admissionExpiresAt"),
+                    instant(payload, "sessionExpiresAt"), uuid(payload, "recipientAccountId"), uuid(payload, "recipientOrganizationId"));
         });
     }
     private UUID uuid(JsonNode node, String key) { return node.has(key) ? UUID.fromString(node.path(key).asString()) : null; }
+    private Instant instant(JsonNode node, String key) {
+        String value = node.path(key).asString(null);
+        if (value == null) return null;
+        try { return Instant.parse(value); } catch (RuntimeException malformed) { return null; }
+    }
+    private static int generation(JsonNode payload, String key) {
+        JsonNode value = payload.path(key);
+        if (!value.isIntegralNumber() || !value.canConvertToInt()) throw unavailable();
+        int generation = value.asInt();
+        if (generation < 0) throw unavailable();
+        return generation;
+    }
     @Override public Optional<AccessEventRow> findAccessEvent(UUID grantId, String eventId) {
         return Optional.ofNullable(database.fetchOne("SELECT event_id,event_type,payload_redacted,payload_sha256,result FROM sharing.share_access_event WHERE share_grant_id=? AND event_domain='SHARE_ACCESS' AND event_id=?", grantId, eventId))
+                .map(row -> new AccessEventRow(row.get("event_id", String.class), row.get("event_type", String.class), json(row, "payload_redacted"), row.get("payload_sha256", String.class), row.get("result", String.class)));
+    }
+    @Override public List<AccessEventRow> findAccessEventsByRequestKeyDigest(UUID grantId, UUID admissionId, String requestKeyDigest) {
+        return database.fetch("SELECT event_id,event_type,payload_redacted,payload_sha256,result FROM sharing.share_access_event WHERE share_grant_id=? AND share_admission_id=? AND event_domain='SHARE_ACCESS' AND payload_redacted->>'requestKeyDigest'=? ORDER BY occurred_at,id", grantId, admissionId, requestKeyDigest)
                 .map(row -> new AccessEventRow(row.get("event_id", String.class), row.get("event_type", String.class), json(row, "payload_redacted"), row.get("payload_sha256", String.class), row.get("result", String.class)));
     }
     @Override public EventWriteResult insertAccessEvent(AccessEventInsert event) {
