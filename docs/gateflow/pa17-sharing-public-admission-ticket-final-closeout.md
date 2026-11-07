@@ -65,13 +65,15 @@ submitted as Draft PR #27. This does not merge, approve or mark the PR ready.
 - URL: https://github.com/zh94695424/one-call/pull/27
 - Base: `main` at `c7d4d213e7f83bdff767278238033d51b44a13fc`
 - Final remote review head: `6337afe7ab903957682dc486298ce27caaffa424`
-- Shared content tree: `0a3c6b6c6c274d750508648f295425f01561763c`
+- Final closeout delivery head: `5e7ae5fcb2ea2443531621a3523af9811b41792b`
+- Shared final-closeout tree: `308ce128659c6019e6945c6ad5e9df4733af870e`
 - State: OPEN / Draft / MERGEABLE / no reviewer requested.
 
-The final accepted-review commit changes only Control and review artifacts, so
-it does not match the workflow's executable-code path filter. The preceding
-executable-code head `8bb5f4bb…` has the required hosted CI success and the same
-product code.
+Hosted run `42316466316` passed both `contract-regressions` and `java-runtime`
+on the final closeout delivery head. The preceding reviewed executable-code
+head `8bb5f4bb…` also passed both jobs and contains the same product code.
+Any subsequent controller-only status update is documentation-only and does not
+change this closed work unit.
 
 ## Residual Risk / Owners
 
