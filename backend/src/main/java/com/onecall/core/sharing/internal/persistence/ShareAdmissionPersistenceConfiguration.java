@@ -1,6 +1,7 @@
 package com.onecall.core.sharing.internal.persistence;
 
 import com.onecall.core.sharing.internal.admission.DefaultShareAdmissionService;
+import com.onecall.core.sharing.internal.admission.DefaultShareMediaAuthorizationService;
 import com.onecall.core.sharing.internal.admission.DesignatedMobileProofVerifier;
 import com.onecall.core.sharing.internal.admission.JooqShareAdmissionRepository;
 import com.onecall.core.sharing.internal.admission.ShareAdmissionCodeVerifier;
@@ -11,6 +12,7 @@ import com.onecall.core.sharing.internal.admission.ShareAdmissionTicketProvider;
 import com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider;
 import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException;
 import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService;
+import com.onecall.core.sharing.internal.publicadmission.ShareMediaAuthorizationService;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.security.MessageDigest;
@@ -105,6 +107,12 @@ public class ShareAdmissionPersistenceConfiguration {
             ShareAdmissionPolicyProvider policies, ShareAdmissionCodeVerifier codes, DesignatedMobileProofVerifier mobiles,
             ShareMediaCredentialProvider credentials, ShareAdmissionTicketProvider tickets) {
         return new DefaultShareAdmissionService(transactions, repository, sha256, policies, codes, mobiles, credentials, tickets);
+    }
+    @Bean
+    ShareMediaAuthorizationService shareMediaAuthorizationService(@Qualifier("sharingAdmissionTransactionTemplate") TransactionTemplate transactions,
+            ShareAdmissionRepository repository, @Qualifier("sharingAdmissionSha256Provider") ShareAdmissionSha256Provider sha256,
+            ShareMediaCredentialProvider credentials) {
+        return new DefaultShareMediaAuthorizationService(transactions, repository, sha256, credentials);
     }
     static final class UnavailablePolicyProvider implements ShareAdmissionPolicyProvider {
         @Override public Result ticketPolicy(SharePolicyRequest request) { return new Unavailable(); }

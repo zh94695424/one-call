@@ -12,8 +12,10 @@ import com.onecall.core.sharing.internal.publicquery.*;
 import com.onecall.core.sharing.internal.publicadmission.*;
 import com.onecall.core.sharing.internal.publicquery.PublicShareView.*;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -124,6 +126,9 @@ class PublicShareWebTests {
         String oversized = "/api/v1/public/shares/" + "a".repeat(513);
         problem(missing.mvc.perform(get(oversized).servletPath(oversized)).andReturn().getResponse(), 422, "VALIDATION_FAILED");
         problem(missing.mvc.perform(get(PATH).servletPath(PATH)).andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
+        problem(missing.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH)
+                .contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
+        verifyNoInteractions(missing.service, missing.admissions, missing.mediaAuthorizations, missing.contexts, missing.verifier);
         Map<PublicShareQueryException.Code, Integer> statuses = Map.of(
                 PublicShareQueryException.Code.UNAUTHENTICATED, 401, PublicShareQueryException.Code.FORBIDDEN, 403,
                 PublicShareQueryException.Code.VALIDATION_FAILED, 422, PublicShareQueryException.Code.SHARE_TOKEN_INVALID, 404,
@@ -245,6 +250,13 @@ class PublicShareWebTests {
             case "SHARE_TOKEN_INVALID" -> "Invalid share token";
             case "SHARE_REVOKED" -> "Share revoked";
             case "SHARE_EXPIRED" -> "Share expired";
+            case "SHARE_GENERATION_STALE" -> "Share generation stale";
+            case "SHARE_SESSION_EXPIRED" -> "Share session expired";
+            case "SHARE_LOCKED" -> "Share locked";
+            case "SHARE_ADMISSION_LIMIT_REACHED" -> "Share admission limit reached";
+            case "SHARE_SESSION_POLICY_UNAVAILABLE" -> "Share session policy unavailable";
+            case "DEPENDENCY_UNAVAILABLE" -> "Dependency unavailable";
+            case "SHARE_WRONG_TENANT" -> "Share tenant mismatch";
             case "UNAUTHENTICATED" -> "Authentication required";
             case "FORBIDDEN" -> "Access denied";
             case "VALIDATION_FAILED" -> "Request validation failed";
@@ -259,6 +271,7 @@ class PublicShareWebTests {
     private static final class Fixture {
         final PublicShareQueryService service = mock(PublicShareQueryService.class);
         final ShareAdmissionService admissions = mock(ShareAdmissionService.class);
+        final ShareMediaAuthorizationService mediaAuthorizations = mock(ShareMediaAuthorizationService.class);
         final CustomerContextService contexts = mock(CustomerContextService.class);
         final CustomerSessionVerifier verifier = mock(CustomerSessionVerifier.class);
         final MockMvc mvc;
@@ -269,6 +282,7 @@ class PublicShareWebTests {
             if (withService) {
                 beans.addBean("publicShareQueryService", service);
                 beans.addBean("shareAdmissionService", admissions);
+                beans.addBean("shareMediaAuthorizationService", mediaAuthorizations);
             }
             when(admissions.admit(any(), any(), any())).thenReturn(new ShareAdmissionService.AdmissionCommitted(new ShareAdmissionView(UUID.randomUUID(),"NONE","NOT_REQUIRED",
                     Instant.parse("2026-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:01:00Z"), Instant.parse("2026-01-01T00:02:00Z"),
@@ -292,10 +306,215 @@ class PublicShareWebTests {
         }
         MockMvc mvc(org.springframework.http.converter.HttpMessageConverter<?>... converters) {
             var writer = new CustomerProblemWriter();
-            var builder = MockMvcBuilders.standaloneSetup(new PublicSharesController(beans.getBeanProvider(PublicShareQueryService.class), beans.getBeanProvider(CustomerContextService.class), writer, beans.getBeanProvider(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService.class)))
+            var builder = MockMvcBuilders.standaloneSetup(new PublicSharesController(beans.getBeanProvider(PublicShareQueryService.class), beans.getBeanProvider(CustomerContextService.class), writer, beans.getBeanProvider(com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService.class), beans.getBeanProvider(ShareMediaAuthorizationService.class)))
                     .addFilters(new CustomerBoundaryFilter(new CustomerBearerAuthenticator(beans.getBeanProvider(CustomerSessionVerifier.class)), writer));
             if (converters.length > 0) builder.setMessageConverters(converters);
             return builder.build();
         }
     }
+    private static final String MEDIA_PATH = PATH + "/admissions/30000000-0000-0000-0000-000000000001/media-authorizations";
+    private static final String MEDIA_BODY = "{\"authorizationRequestId\":\"request-1\",\"purpose\":\"PLAYBACK\"}";
+
+    @Test void mediaAuthorizationUsesExactRouteAndReturnsOnlyCredentialAndExpiresAt() throws Exception {
+        Fixture fixture = new Fixture(true, true);
+        Instant expiry = Instant.parse("2026-11-07T01:02:03Z");
+        when(fixture.mediaAuthorizations.authorize(any(), any(), any(), any())).thenReturn(new ShareAdmissionView.MediaAuthorization("credential-canary", expiry));
+        var response = fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse();
+        assertThat(response.getStatus()).isEqualTo(200);
+        JsonNode json = MAPPER.readTree(response.getContentAsString());
+        keys(json, "credential", "expiresAt");
+        assertThat(json.path("credential").asString()).isEqualTo("credential-canary");
+        assertThat(json.path("expiresAt").asString()).isEqualTo(expiry.toString());
+        var captor = org.mockito.ArgumentCaptor.forClass(ShareMediaAuthorizationService.CallerResolver.class);
+        verify(fixture.mediaAuthorizations).authorize(any(), eq(UUID.fromString("30000000-0000-0000-0000-000000000001")),
+                argThat(r -> r.authorizationRequestId().equals("request-1") && r.purpose() == MediaAuthorizationRequest.Purpose.PLAYBACK), captor.capture());
+        assertThat(captor.getValue().resolve()).isEmpty();
+        problem(fixture.mvc.perform(post(PATH + "/admissions/a/media-authorizations").servletPath(PATH + "/admissions/a/media-authorizations")
+                .contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        var trailing = fixture.mvc.perform(post("/api/v1/public/shares/token/admissions/30000000-0000-0000-0000-000000000001/media-authorizations/")
+                .with(r -> { r.setServletPath(MEDIA_PATH); return r; })).andReturn().getResponse();
+        problem(trailing, 404, "NOT_FOUND");
+    }
+
+    @Test void mediaAuthorizationRejectsClosedBodyAndInvalidPurposeWith422() throws Exception {
+        Fixture fixture = new Fixture(true, true);
+        List<byte[]> invalid = List.of("{}".getBytes(), ("{"+"\"authorizationRequestId\":\"x\",\"purpose\":\"PLAYBACK\",\"extra\":1}").getBytes(),
+                ("{\"authorizationRequestId\":\"x\",\"authorizationRequestId\":\"y\",\"purpose\":\"PLAYBACK\"}").getBytes(),
+                "{\"authorizationRequestId\":\"x\",\"purpose\":\"PLAYBACK\"} {}".getBytes(),
+                "{\"authorizationRequestId\":\"x\",\"purpose\":\"NOPE\"}".getBytes(),
+                "{\"authorizationRequestId\":\"x\u0000\",\"purpose\":\"PLAYBACK\"}".getBytes(),
+                ("{\"authorizationRequestId\":\""+"x".repeat(129)+"\",\"purpose\":\"PLAYBACK\"}").getBytes(),
+                new byte[]{'{','"','a','"',':','"',(byte)0xc3,'"','}'});
+        for (byte[] body : invalid) problem(fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(body)).andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        problem(fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("text/plain").content(MEDIA_BODY))
+                .andReturn().getResponse(), 422, "VALIDATION_FAILED");
+        verifyNoInteractions(fixture.mediaAuthorizations);
+    }
+
+    @Test void mediaAuthorizationMapsFrozenDeniedStatusesAndPrecedence() throws Exception {
+        Fixture fixture = new Fixture(true, true);
+        for (var entry : Map.of(ShareAdmissionException.Code.FORBIDDEN, 403, ShareAdmissionException.Code.SHARE_TOKEN_INVALID, 404,
+                ShareAdmissionException.Code.SHARE_REVOKED, 410, ShareAdmissionException.Code.SHARE_EXPIRED, 410,
+                ShareAdmissionException.Code.SHARE_SESSION_EXPIRED, 410, ShareAdmissionException.Code.SHARE_GENERATION_STALE, 409,
+                ShareAdmissionException.Code.VALIDATION_FAILED, 422, ShareAdmissionException.Code.RATE_LIMITED, 429,
+                ShareAdmissionException.Code.DEPENDENCY_UNAVAILABLE, 503).entrySet()) {
+            doAnswer(i -> { throw new ShareAdmissionException(entry.getKey()); }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+            problem(fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse(), entry.getValue(), entry.getKey().name());
+        }
+        problem(fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).header("Authorization", "bad").contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse(), 401, "UNAUTHENTICATED");
+        verify(fixture.mediaAuthorizations, times(9)).authorize(any(), any(), any(), any());
+    }
+
+    @Test void organizationMemberMediaAuthorizationRequiresTrustedCurrentSession() throws Exception {
+        Fixture fixture = new Fixture(true, true);
+        when(fixture.mediaAuthorizations.authorize(any(), any(), any(), any())).thenAnswer(i -> {
+            verifyNoInteractions(fixture.contexts);
+            Optional<?> caller = i.<ShareMediaAuthorizationService.CallerResolver>getArgument(3).resolve();
+            assertThat(caller).isPresent();
+            assertThat(caller.orElseThrow()).isEqualTo(new TrustedShareAdmissionCaller(ACCOUNT, ORGANIZATION));
+            return new ShareAdmissionView.MediaAuthorization("ok", Instant.parse("2026-11-07T01:00:00Z"));
+        });
+        var request = post(MEDIA_PATH).servletPath(MEDIA_PATH).header("Authorization", "Bearer test").contentType("application/json").content(MEDIA_BODY);
+        assertThat(fixture.mvc.perform(request).andReturn().getResponse().getStatus()).isEqualTo(200);
+        verify(fixture.contexts).getCustomerMe(any());
+        verify(fixture.verifier).verify(any(), eq("onecall:customer-session:v1"));
+        verify(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+
+        record WorkspaceDenial(SelectedCustomerWorkspace selected, CustomerContext current, String code) { }
+        UUID otherOrganization = UUID.fromString("40000000-0000-0000-0000-000000000002");
+        var multipleOrganizations = new ArrayList<>(context(true).workspaces());
+        multipleOrganizations.add(new CustomerContext.WorkspaceSummary(CustomerContext.WorkspaceType.ORGANIZATION,
+                otherOrganization, "Other", CustomerContext.OrganizationRole.MEMBER, CustomerContext.WorkspaceStatus.ACTIVE));
+        for (var denial : List.of(
+                new WorkspaceDenial(null, new CustomerContext(new CustomerContext.AccountSummary(
+                        UUID.fromString("10000000-0000-0000-0000-000000000002"), "Synthetic", CustomerContext.AccountStatus.ACTIVE),
+                        context(true).workspaces(), TrustedCustomerCaller.Channel.WEB), "SHARE_WRONG_TENANT"),
+                new WorkspaceDenial(null, new CustomerContext(new CustomerContext.AccountSummary(
+                        ACCOUNT, "Synthetic", CustomerContext.AccountStatus.DISABLED),
+                        context(true).workspaces(), TrustedCustomerCaller.Channel.WEB), "FORBIDDEN"),
+                new WorkspaceDenial(new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.PERSONAL, ORGANIZATION), context(true), "SHARE_WRONG_TENANT"),
+                new WorkspaceDenial(new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.ORGANIZATION, null), context(true), "SHARE_WRONG_TENANT"),
+                new WorkspaceDenial(new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.ORGANIZATION, otherOrganization), context(true), "SHARE_WRONG_TENANT"),
+                new WorkspaceDenial(null, context(false), "FORBIDDEN"),
+                new WorkspaceDenial(null, new CustomerContext(context(true).account(), multipleOrganizations, TrustedCustomerCaller.Channel.WEB), "FORBIDDEN"))) {
+            when(fixture.verifier.verify(any(), anyString())).thenReturn(new VerifiedCustomerSession(ACCOUNT,
+                    TrustedCustomerCaller.Channel.WEB, "onecall:customer-session:v1", denial.selected()));
+            when(fixture.contexts.getCustomerMe(any())).thenReturn(denial.current());
+            doAnswer(i -> {
+                verifyNoInteractions(fixture.contexts);
+                i.<ShareMediaAuthorizationService.CallerResolver>getArgument(3).resolve();
+                throw new AssertionError("Invalid workspace must not authorize a member");
+            }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+            clearInvocations(fixture.contexts, fixture.verifier, fixture.mediaAuthorizations);
+            problem(fixture.mvc.perform(request).andReturn().getResponse(), 403, denial.code());
+            verify(fixture.contexts, times(1)).getCustomerMe(argThat(caller -> caller.accountId().equals(ACCOUNT)
+                    && Objects.equals(caller.selectedWorkspace(), denial.selected())));
+            verify(fixture.verifier, times(1)).verify(any(), eq("onecall:customer-session:v1"));
+            verify(fixture.mediaAuthorizations, times(1)).authorize(any(), any(), any(), any());
+            verifyNoMoreInteractions(fixture.contexts, fixture.verifier, fixture.mediaAuthorizations);
+        }
+        when(fixture.verifier.verify(any(), anyString())).thenReturn(new VerifiedCustomerSession(ACCOUNT,
+                TrustedCustomerCaller.Channel.WEB, "onecall:customer-session:v1"));
+        when(fixture.contexts.getCustomerMe(any())).thenReturn(context(true));
+
+        clearInvocations(fixture.contexts, fixture.verifier, fixture.mediaAuthorizations);
+        doAnswer(i -> {
+            verifyNoInteractions(fixture.contexts);
+            assertThat(i.<ShareMediaAuthorizationService.CallerResolver>getArgument(3).resolve()).isEmpty();
+            verifyNoInteractions(fixture.contexts);
+            throw new ShareAdmissionException(ShareAdmissionException.Code.UNAUTHENTICATED);
+        }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        problem(fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY))
+                .andReturn().getResponse(), 401, "UNAUTHENTICATED");
+        verify(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        verifyNoInteractions(fixture.contexts, fixture.verifier);
+
+        clearInvocations(fixture.mediaAuthorizations);
+        when(fixture.contexts.getCustomerMe(any())).thenThrow(new CustomerContextException(CustomerContextException.Code.SERVICE_UNAVAILABLE));
+        clearInvocations(fixture.contexts);
+        doAnswer(i -> {
+            verifyNoInteractions(fixture.contexts);
+            i.<ShareMediaAuthorizationService.CallerResolver>getArgument(3).resolve();
+            throw new AssertionError("Unavailable context must not authorize a member");
+        }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        problem(fixture.mvc.perform(request).andReturn().getResponse(), 503, "SERVICE_UNAVAILABLE");
+        verify(fixture.contexts).getCustomerMe(any());
+        verify(fixture.verifier).verify(any(), eq("onecall:customer-session:v1"));
+        verify(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+
+        clearInvocations(fixture.contexts, fixture.verifier, fixture.mediaAuthorizations);
+        doAnswer(i -> {
+            verifyNoInteractions(fixture.contexts);
+            assertThat(i.<ShareMediaAuthorizationService.CallerResolver>getArgument(3)).isNotNull();
+            return new ShareAdmissionView.MediaAuthorization("non-member-grant", Instant.parse("2026-11-07T01:00:00Z"));
+        }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        assertThat(fixture.mvc.perform(request).andReturn().getResponse().getStatus()).isEqualTo(200);
+        verify(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        verify(fixture.verifier).verify(any(), eq("onecall:customer-session:v1"));
+        verifyNoInteractions(fixture.contexts);
+
+        clearInvocations(fixture.verifier, fixture.mediaAuthorizations);
+        doAnswer(i -> {
+            verifyNoInteractions(fixture.contexts);
+            assertThat(i.<ShareMediaAuthorizationService.CallerResolver>getArgument(3)).isNotNull();
+            throw new ShareAdmissionException(ShareAdmissionException.Code.SHARE_TOKEN_INVALID);
+        }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        String invalidPath = MEDIA_PATH.replace("/shares/token/", "/shares/invalid-token/");
+        problem(fixture.mvc.perform(post(invalidPath).servletPath(invalidPath).header("Authorization", "Bearer test")
+                .contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse(), 404, "SHARE_TOKEN_INVALID");
+        verify(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+        verify(fixture.verifier).verify(any(), eq("onecall:customer-session:v1"));
+        verifyNoInteractions(fixture.contexts);
+
+        clearInvocations(fixture.mediaAuthorizations, fixture.verifier);
+        problem(fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).header("Authorization", "bad")
+                .contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse(), 401, "UNAUTHENTICATED");
+        verifyNoInteractions(fixture.contexts, fixture.mediaAuthorizations, fixture.verifier);
+    }
+
+    @Test void mediaAuthorizationReplayAndConflictUseFrozenProblemSurface() throws Exception {
+        Fixture fixture = new Fixture(true, true);
+        Instant expiry = Instant.parse("2026-11-07T01:00:00Z");
+        when(fixture.mediaAuthorizations.authorize(any(), any(), any(), any()))
+                .thenReturn(new ShareAdmissionView.MediaAuthorization("SECRET_CANARY", expiry))
+                .thenThrow(new ShareAdmissionException(ShareAdmissionException.Code.SHARE_GENERATION_STALE));
+        var request = post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY);
+        var success = fixture.mvc.perform(request).andReturn().getResponse();
+        assertThat(success.getStatus()).isEqualTo(200);
+        assertThat(success.getContentType()).startsWith("application/json");
+        assertThat(success.getHeader("Cache-Control")).isEqualTo("no-store");
+        var json = MAPPER.readTree(success.getContentAsString());
+        keys(json, "credential", "expiresAt");
+        assertThat(json).isEqualTo(MAPPER.valueToTree(Map.of("credential", "SECRET_CANARY", "expiresAt", expiry.toString())));
+        assertThat(success.getContentAsString()).doesNotContain("token", "request-1", "30000000-0000-0000-0000-000000000001",
+                ACCOUNT.toString(), ORGANIZATION.toString(), "grant", "admissionId", "object", "url", "redis", "provider");
+        var conflict = fixture.mvc.perform(request).andReturn().getResponse();
+        problem(conflict, 409, "SHARE_GENERATION_STALE");
+        assertThat(conflict.getContentAsString()).doesNotContain("SECRET_CANARY", "credential", "expiresAt", "token", "request-1",
+                "30000000-0000-0000-0000-000000000001", ORGANIZATION.toString(), "grant", "object", "url", "redis", "provider");
+        var requests = org.mockito.ArgumentCaptor.forClass(MediaAuthorizationRequest.class);
+        verify(fixture.mediaAuthorizations, times(2)).authorize(any(), eq(UUID.fromString("30000000-0000-0000-0000-000000000001")),
+                requests.capture(), any());
+        assertThat(requests.getAllValues()).containsExactly(new MediaAuthorizationRequest("request-1", MediaAuthorizationRequest.Purpose.PLAYBACK),
+                new MediaAuthorizationRequest("request-1", MediaAuthorizationRequest.Purpose.PLAYBACK));
+        verifyNoInteractions(fixture.contexts, fixture.verifier);
+        for (var code : List.of(ShareAdmissionException.Code.SHARE_LOCKED, ShareAdmissionException.Code.SHARE_ADMISSION_LIMIT_REACHED,
+                ShareAdmissionException.Code.SHARE_SESSION_POLICY_UNAVAILABLE)) {
+            doAnswer(i -> { throw new ShareAdmissionException(code); }).when(fixture.mediaAuthorizations).authorize(any(), any(), any(), any());
+            var response = fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse();
+            assertThat(response.getStatus()).isIn(409, 503);
+            assertThat(response.getContentAsString()).contains("\"code\":\"" + code.name() + "\"");
+        }
+    }
+
+    @Test void mediaAuthorizationResponseAndProblemNeverLeakInternalMediaFacts() throws Exception {
+        Fixture fixture = new Fixture(true, true);
+        when(fixture.mediaAuthorizations.authorize(any(), any(), any(), any())).thenReturn(new ShareAdmissionView.MediaAuthorization("SECRET_CANARY", Instant.parse("2026-11-07T01:00:00Z")));
+        String body = fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("SECRET_CANARY").doesNotContain("token", "admissionId", "grant", "object", "url", "redis", "provider");
+        when(fixture.mediaAuthorizations.authorize(any(), any(), any(), any())).thenThrow(new ShareAdmissionException(ShareAdmissionException.Code.SERVICE_UNAVAILABLE));
+        String problem = fixture.mvc.perform(post(MEDIA_PATH).servletPath(MEDIA_PATH).contentType("application/json").content(MEDIA_BODY)).andReturn().getResponse().getContentAsString();
+        assertThat(problem).doesNotContain("SECRET_CANARY", "30000000-0000-0000-0000-000000000001", "token", "object", "redis", "provider");
+    }
+
 }

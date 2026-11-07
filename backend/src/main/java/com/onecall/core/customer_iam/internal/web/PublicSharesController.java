@@ -14,6 +14,8 @@ import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest;
 import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService;
 import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionView;
 import com.onecall.core.sharing.internal.publicadmission.TrustedShareAdmissionCaller;
+import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest;
+import com.onecall.core.sharing.internal.publicadmission.ShareMediaAuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -38,15 +40,51 @@ public class PublicSharesController {
     private final ObjectProvider<CustomerContextService> customerContexts;
     private final CustomerProblemWriter problems;
     private final ObjectProvider<ShareAdmissionService> admissions;
+    private final ObjectProvider<ShareMediaAuthorizationService> mediaAuthorizations;
     private final ShareAdmissionJsonBinder admissionBinder = new ShareAdmissionJsonBinder();
 
     public PublicSharesController(@Qualifier("publicShareQueryService") ObjectProvider<PublicShareQueryService> service,
             @Qualifier("customerContextService") ObjectProvider<CustomerContextService> customerContexts, CustomerProblemWriter problems,
-            @Qualifier("shareAdmissionService") ObjectProvider<ShareAdmissionService> admissions) {
+            @Qualifier("shareAdmissionService") ObjectProvider<ShareAdmissionService> admissions,
+            @Qualifier("shareMediaAuthorizationService") ObjectProvider<ShareMediaAuthorizationService> mediaAuthorizations) {
         this.service = service;
         this.customerContexts = customerContexts;
         this.problems = problems;
         this.admissions = admissions;
+        this.mediaAuthorizations = mediaAuthorizations;
+    }
+
+    @PostMapping(path = "/api/v1/public/shares/{capabilityToken}/admissions/{admissionId}/media-authorizations", produces = "application/json")
+    public ShareAdmissionView.MediaAuthorization authorizeMedia(@PathVariable("capabilityToken") String capabilityToken,
+            @PathVariable("admissionId") String admissionId, Principal principal, HttpServletRequest servletRequest) throws IOException {
+        final UUID parsed;
+        try { parsed = UUID.fromString(admissionId); } catch (RuntimeException invalid) { throw new ShareAdmissionException(ShareAdmissionException.Code.VALIDATION_FAILED); }
+        MediaAuthorizationRequest request = admissionBinder.bindMediaAuthorization(servletRequest.getInputStream().readAllBytes());
+        ShareMediaAuthorizationService service;
+        try { service = java.util.Objects.requireNonNull(mediaAuthorizations.getObject()); }
+        catch (RuntimeException unavailable) { throw new ShareAdmissionException(ShareAdmissionException.Code.SERVICE_UNAVAILABLE); }
+        ShareMediaAuthorizationService.CallerResolver resolver = () -> {
+            if (!(principal instanceof CustomerRequestPrincipal customer)) return java.util.Optional.empty();
+            try {
+                var current = customerContexts.getObject().getCustomerMe(customer.caller());
+                var organizations = current.workspaces().stream().filter(workspace -> workspace.workspaceType() == CustomerContext.WorkspaceType.ORGANIZATION
+                        && workspace.status() == CustomerContext.WorkspaceStatus.ACTIVE).toList();
+                if (!current.account().accountId().equals(customer.caller().accountId())) throw new ShareAdmissionException(ShareAdmissionException.Code.SHARE_WRONG_TENANT);
+                if (current.account().status() != CustomerContext.AccountStatus.ACTIVE) throw new ShareAdmissionException(ShareAdmissionException.Code.FORBIDDEN);
+                var selected = customer.caller().selectedWorkspace();
+                if (selected == null && organizations.size() != 1) throw new ShareAdmissionException(ShareAdmissionException.Code.FORBIDDEN);
+                if (selected != null && (selected.workspaceType() != CustomerContext.WorkspaceType.ORGANIZATION || selected.organizationId() == null))
+                    throw new ShareAdmissionException(ShareAdmissionException.Code.SHARE_WRONG_TENANT);
+                UUID organization = selected == null ? organizations.getFirst().organizationId() : selected.organizationId();
+                if (organizations.stream().noneMatch(workspace -> organization.equals(workspace.organizationId())))
+                    throw new ShareAdmissionException(ShareAdmissionException.Code.SHARE_WRONG_TENANT);
+                return java.util.Optional.of(new TrustedShareAdmissionCaller(current.account().accountId(), organization));
+            } catch (ShareAdmissionException known) { throw known; }
+            catch (CustomerContextException known) { throw new ShareAdmissionException(known.code() == CustomerContextException.Code.UNAUTHENTICATED
+                    ? ShareAdmissionException.Code.UNAUTHENTICATED : ShareAdmissionException.Code.SERVICE_UNAVAILABLE); }
+            catch (RuntimeException unavailable) { throw new ShareAdmissionException(ShareAdmissionException.Code.SERVICE_UNAVAILABLE); }
+        };
+        return service.authorize(new ShareAdmissionCapabilityToken(capabilityToken), parsed, request, resolver);
     }
 
     @PostMapping(path = "/api/v1/public/shares/{capabilityToken}/admissions", produces = "application/json")

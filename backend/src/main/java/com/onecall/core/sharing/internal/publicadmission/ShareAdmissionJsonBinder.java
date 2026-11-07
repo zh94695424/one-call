@@ -19,6 +19,19 @@ public final class ShareAdmissionJsonBinder {
         } catch (RuntimeException failure) { throw invalid(); }
     }
 
+    public MediaAuthorizationRequest bindMediaAuthorization(byte[] body) {
+        try {
+            try { StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(body)); }
+            catch (java.nio.charset.CharacterCodingException invalidUtf8) { throw invalid(); }
+            JsonNode root = mapper.readTree(body);
+            closed(root, Set.of("authorizationRequestId", "purpose"));
+            String purpose = text(root, "purpose", 16);
+            return new MediaAuthorizationRequest(text(root, "authorizationRequestId", 128),
+                    MediaAuthorizationRequest.Purpose.valueOf(purpose));
+        } catch (RuntimeException failure) { throw invalid(); }
+    }
+
     public ShareAdmissionRequest.Verification bindVerification(JsonNode verification) {
         try {
             String mode = text(verification, "mode", 32);

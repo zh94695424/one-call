@@ -2,16 +2,26 @@ package com.onecall.archtests.container;
 
 import static org.assertj.core.api.Assertions.*;
 import com.onecall.core.sharing.internal.admission.*;
+import com.onecall.core.sharing.internal.publicadmission.*;
 import com.onecall.core.sharing.internal.persistence.ShareAdmissionPersistenceConfiguration;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.*;
+import java.time.Instant;
 import java.util.*;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.datasource.*;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DefaultConfiguration;
+import org.jooq.impl.DSL;
+import org.jooq.impl.DataSourceConnectionProvider;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 class SharingAdmissionRoleLeastPrivilegeIT {
     private static final SharingQueryFixture BASE=new SharingQueryFixture();
@@ -168,4 +178,122 @@ class SharingAdmissionRoleLeastPrivilegeIT {
         }
         return result.toByteArray();
     }
+    @Test void v012AclSupportsMediaAuthorizationWithoutNewPrivilege() throws Exception {
+        byte[] v012Before=Files.readAllBytes(Path.of("src/main/resources/db/migration/V012__sharing_admission_least_privilege.sql"));
+        BASE.reset();
+        String aclBefore;
+        String roleBefore;
+        boolean passwordInitiallySet;
+        try (Connection connection=BASE.admin()) { aclBefore=admissionAcl(connection); roleBefore=admissionRole(connection); passwordInitiallySet=admissionPasswordIsSet(connection); }
+        String token="pa18-acl-token-"+UUID.randomUUID();
+        String digest=sha256Hex(token);
+        UUID grantId=UUID.randomUUID();
+        UUID binding=UUID.randomUUID();
+        try (Connection connection=BASE.admin()) {
+            UUID subject;
+            try (PreparedStatement statement=connection.prepareStatement("SELECT subject_id FROM evidence.evidence_record WHERE id=?")) {
+                statement.setObject(1,BASE.evidence);
+                try (ResultSet rows=statement.executeQuery()) { assertThat(rows.next()).isTrue(); subject=rows.getObject(1,UUID.class); }
+            }
+            SharingQueryFixture.execute(connection,"UPDATE subject_number.business_subject SET owner_account_id=NULL,owner_organization_id=?,revision=revision+1 WHERE id=?",BASE.org,subject);
+            SharingQueryFixture.execute(connection,"INSERT INTO subject_number.caller_number_binding(id,subject_id,number_type,number_ciphertext,number_hmac,number_masked,verified_at) VALUES (?,?,'MOBILE','v1.synthetic.payload',?,'synthetic',clock_timestamp())",binding,subject,sha256Hex(binding.toString()));
+            SharingQueryFixture.execute(connection,"INSERT INTO subject_number.subject_risk_state(id,caller_number_binding_id,risk_type,state,source,observed_at,cleared_at) VALUES (?,?,'CONFLICT','CLEARED','OPERATIONS',clock_timestamp(),clock_timestamp())",UUID.randomUUID(),binding);
+            SharingQueryFixture.execute(connection,"""
+                    INSERT INTO sharing.evidence_share_grant(id,share_id,capability_token_hash,evidence_id,
+                        created_by_account_id,owner_organization_id,verification_mode,valid_from,expires_at,max_admissions,
+                        content_snapshot,content_sha256,code_salt,code_hash,code_generation,status)
+                    SELECT ?,?,?,?,?,?,'NONE',clock_timestamp()-interval '60 seconds',clock_timestamp()+interval '1 day',NULL,
+                        jsonb_build_object('content',jsonb_build_object('evidenceId',?::text),
+                            'verification',jsonb_build_object('mode','NONE'),
+                            'creation',jsonb_build_object('creatorAccountId',?::text,'evidenceId',?::text,'ownerOrganizationId',?::text,
+                                'scopeDigest',repeat('d',64),'creationRequestDigest',repeat('e',64),'creationFingerprint',repeat('f',64))),
+                        repeat('a',64),NULL,NULL,0,'ACTIVE'
+                    """,grantId,"pa18-acl",digest,BASE.evidence,BASE.account,BASE.org,BASE.evidence,BASE.account,BASE.evidence,BASE.org);
+            try (PreparedStatement statement=connection.prepareStatement("SELECT id,capability_token_hash FROM sharing.evidence_share_grant WHERE share_id='pa18-acl'")) {
+                try (ResultSet rows=statement.executeQuery()) {
+                    assertThat(rows.next()).isTrue(); assertThat(rows.getObject(1,UUID.class)).isEqualTo(grantId); assertThat(rows.getString(2)).isEqualTo(digest); assertThat(rows.next()).isFalse();
+                }
+            }
+            assertThatThrownBy(() -> SharingQueryFixture.execute(connection,"UPDATE sharing.evidence_share_grant SET capability_token_hash=? WHERE id=?",sha256Hex("pa18-acl-immutable"),grantId))
+                    .isInstanceOfSatisfying(SQLException.class,failure -> assertThat(failure.getMessage()).contains("SHARE_GRANT_IMMUTABLE"));
+        }
+        setAdmissionPassword();
+        var source=new DriverManagerDataSource(BASE.url,"sharing_admission_role",BASE.password);
+        var manager=new DataSourceTransactionManager(source);
+        var transactions=new TransactionTemplate(manager); transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        var configuration=new DefaultConfiguration(); configuration.set(SQLDialect.POSTGRES);
+        configuration.set(new DataSourceConnectionProvider(new TransactionAwareDataSourceProxy(source)));
+        var repository=new JooqShareAdmissionRepository(DSL.using(configuration));
+        var admissions=new DefaultShareAdmissionService(transactions,repository,bytes -> {
+                    try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
+                    catch (java.security.NoSuchAlgorithmException unavailable) { throw new IllegalStateException(unavailable); }
+                },
+                request -> new ShareAdmissionPolicyProvider.ApprovedTicketPolicy(java.time.Duration.ofSeconds(120),java.time.Duration.ofSeconds(30)),
+                request -> new ShareAdmissionCodeVerifier.Unavailable(), request -> new DesignatedMobileProofVerifier.Unavailable(),
+                request -> new ShareMediaCredentialProvider.Issued("admission-credential",request.expiresAt()), request -> new ShareAdmissionTicketProvider.Written());
+        var admissionOutcome=admissions.admit(new ShareAdmissionCapabilityToken(token),new ShareAdmissionRequest("pa18-acl-admission",new ShareAdmissionRequest.Verification.None()),Optional.empty());
+        assertThat(admissionOutcome).isInstanceOf(ShareAdmissionService.AdmissionCommitted.class);
+        ShareAdmissionView view=((ShareAdmissionService.AdmissionCommitted)admissionOutcome).view();
+        assertThat(view.verificationMode()).isEqualTo("NONE");
+        assertThat(view.verificationResult()).isEqualTo("NOT_REQUIRED");
+        assertThat(view.mediaAuthorization()).isNotNull();
+        UUID admissionId=view.admissionId();
+        String admissionKey=admissions.admissionKey(grantId,"pa18-acl-admission");
+        assertThat(admissionKey).hasSize(74).doesNotContain("pa18-acl-admission");
+        JsonMapper mapper=JsonMapper.builder().build();
+        try (Connection connection=DriverManager.getConnection(BASE.url,"sharing_admission_role",BASE.password)) {
+            connection.setAutoCommit(false);
+            DSLContext database=DSL.using(connection,SQLDialect.POSTGRES);
+            JooqShareAdmissionRepository mediaRepository=new JooqShareAdmissionRepository(database);
+            assertThat(mediaRepository.findGrantByTokenDigest(digest)).isPresent();
+            assertThat(mediaRepository.lockGrant(grantId)).isPresent();
+            assertThat(mediaRepository.findAdmission(grantId,admissionKey)).isPresent();
+            assertThat(mediaRepository.findAdmissionById(grantId,admissionId)).isPresent();
+            assertThat(mediaRepository.findAdmissionWitness(grantId,admissionId)).isPresent();
+            assertThat(mediaRepository.findAccessEventsByRequestKeyDigest(grantId,admissionId,"not-present")).isEmpty();
+            JsonNode payload=mapper.readTree("{\"purpose\":\"PLAYBACK\",\"requestKeyDigest\":\""+"b".repeat(64)+"\"}");
+            var appended=mediaRepository.insertAccessEvent(new ShareAdmissionRepository.AccessEventInsert(grantId,admissionId,
+                    "share-access:pa18-acl", "PLAYBACK_AUTHORIZED", "SUCCESS", Instant.parse("2026-01-02T03:04:05Z"), payload, "b".repeat(64)));
+            assertThat(appended.status()).isEqualTo(ShareAdmissionRepository.EventWriteStatus.INSERTED);
+            assertThat(appended.first().eventType()).isEqualTo("PLAYBACK_AUTHORIZED");
+            connection.rollback();
+            deniedAndRollback(connection,"SELECT display_name FROM customer_iam.customer_account");
+            deniedAndRollback(connection,"SELECT object_key FROM evidence.media_object");
+            deniedAndRollback(connection,"SELECT source_type FROM evidence.evidence_record");
+            deniedAndRollback(connection,"UPDATE sharing.evidence_share_grant SET code_hash=code_hash");
+        } finally { if (passwordInitiallySet) setAdmissionPassword(); else clearAdmissionPassword(); }
+        try (Connection connection=BASE.admin()) {
+            assertThat(admissionAcl(connection)).isEqualTo(aclBefore);
+            assertThat(admissionRole(connection)).isEqualTo(roleBefore);
+        }
+        assertThat(bytes()).isEqualTo(before);
+        assertThat(Files.readAllBytes(Path.of("src/main/resources/db/migration/V012__sharing_admission_least_privilege.sql"))).isEqualTo(v012Before);
+        try (Connection connection=BASE.admin()) { assertThat(strings(connection,"SELECT event_id FROM sharing.share_access_event WHERE event_id='share-access:pa18-acl'")).isEmpty(); }
+    }
+
+    private static String sha256Hex(String value) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+    }
+    private static boolean admissionPasswordIsSet(Connection connection) throws Exception {
+        return Boolean.parseBoolean(strings(connection,"SELECT (rolpassword IS NOT NULL)::text FROM pg_authid WHERE rolname='sharing_admission_role'").getFirst());
+    }
+    private static void setAdmissionPassword() throws Exception {
+        try (Connection connection=BASE.admin()) { SharingQueryFixture.execute(connection,"ALTER ROLE sharing_admission_role PASSWORD '"+BASE.password+"'"); }
+    }
+    private static void clearAdmissionPassword() throws Exception {
+        try (Connection connection=BASE.admin()) { SharingQueryFixture.execute(connection,"ALTER ROLE sharing_admission_role PASSWORD NULL"); }
+    }
+    private static void deniedAndRollback(Connection connection,String sql) throws Exception {
+        denied(connection,sql); connection.rollback();
+    }
+    private static String admissionAcl(Connection connection) throws Exception {
+        return String.join("\n",List.of(
+                String.join("\n",strings(connection,"SELECT 'schema:'||nspname||':'||has_schema_privilege('sharing_admission_role',oid,'USAGE,CREATE') FROM pg_namespace WHERE nspname !~ '^pg_' AND nspname <> 'information_schema' ORDER BY 1")),
+                String.join("\n",strings(connection,"SELECT 'column:'||a.attrelid::regclass||':'||a.attnum||':'||acl.privilege_type FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) acl WHERE acl.grantee='sharing_admission_role'::regrole ORDER BY 1")),
+                String.join("\n",strings(connection,"SELECT 'table:'||c.oid||':'||acl.privilege_type FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) acl WHERE acl.grantee='sharing_admission_role'::regrole ORDER BY 1"))));
+    }
+    private static String admissionRole(Connection connection) throws Exception {
+        return strings(connection,"SELECT concat_ws('|',rolcanlogin,rolsuper,rolcreatedb,rolcreaterole,rolinherit,rolreplication,rolbypassrls,rolconnlimit,rolvaliduntil IS NULL,rolconfig IS NULL,(SELECT rolpassword IS NOT NULL FROM pg_authid auth_state WHERE auth_state.oid=role_state.oid)) FROM pg_roles role_state WHERE rolname='sharing_admission_role'").toString();
+    }
+
 }
