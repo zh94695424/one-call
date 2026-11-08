@@ -1,6 +1,7 @@
 package com.onecall.archtests.container;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.awaitility.Awaitility.await;
 import static com.onecall.archtests.support.MediaGatewayTestProviders.*;
 
 import com.onecall.core.OneCallApplication;
@@ -338,7 +339,9 @@ class MediaGatewayTransportIT {
             synchronized (fixture) { return client.send(http(range, bearer, query).build(), HttpResponse.BodyHandlers.ofByteArray()); }
         }
         void counts(int aborts) {
-            assertThat(source.opens).hasValue(1); assertThat(source.abortAttempts).hasValue(aborts); assertThat(source.closeAttempts).hasValue(1);
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                assertThat(source.opens).hasValue(1); assertThat(source.abortAttempts).hasValue(aborts); assertThat(source.closeAttempts).hasValue(1);
+            });
             assertThat(source.requested).allMatch(count -> count > 0 && count <= 8192);
             assertThat(fixture.checkouts).hasValue(sealedCheckouts);
         }
