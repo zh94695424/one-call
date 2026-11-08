@@ -8,7 +8,8 @@
 - Base: `main` at `9da37930651d2d0f4ba76a1e8c8d1c15a6ba435e`
 - Draft PR: <https://github.com/zh94695424/one-call/pull/31>
 - Accepted PR review checkpoint: `d77995f0b0eae58bbd03eef8d5f7c4ea588673e3`
-- Controller bookkeeping head at final hosted CI: `d83aaee1be536880f5a561d3715cd1159fbceee5`
+- Controller bookkeeping head before closeout delivery: `d83aaee1be536880f5a561d3715cd1159fbceee5`
+- Final closeout delivery head: `be68653edbd8659600319b0e2f16d6411a50e941`
 - PR state at closeout: `OPEN`, draft `true`, merge state `CLEAN`
 
 This is a feature work unit with no associated GitHub issue. No issue closing
@@ -48,8 +49,10 @@ credentials, frontend surfaces or deployment manifests.
   Redocly validation, generation/typecheck, doc-map checks and S3 assertions.
 - Strict YAML 1.2 parsing passed with no `<<:` tokens and with all required
   `206`/`401`/`405`/`416` headers present.
-- Final Controller bookkeeping head `d83aaee1...eee5` passed hosted CI run
+- Controller bookkeeping head `d83aaee1...eee5` passed hosted CI run
   `42519442863`: `contract-regressions` SUCCESS and `java-runtime` SUCCESS.
+- Final closeout delivery head `be68653e...e941` also passed hosted CI run
+  `42520130741`: `contract-regressions` SUCCESS and `java-runtime` SUCCESS.
   The remote branch and PR #31 head matched that SHA and remained Draft/CLEAN.
 
 ## Documentation and review record
