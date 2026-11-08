@@ -14,6 +14,9 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
+    private static final java.util.Set<String> PLAYBACK_FILES = java.util.Set.of("OpaquePlaybackCredential.java", "VerifiedMediaClaim.java",
+            "MediaCredentialVerifier.java", "PlaybackStateReader.java", "SharingPlaybackStateReader.java", "ControlledMediaReader.java",
+            "MediaPlaybackService.java", "MediaPlaybackConfiguration.java");
     private static final java.util.Set<String> PUBLIC_ADMISSION_FILES = java.util.Set.of("publicadmission/package-info.java", "publicadmission/ShareAdmissionCapabilityToken.java", "publicadmission/ShareAdmissionRequest.java", "publicadmission/ShareAdmissionView.java", "publicadmission/ShareAdmissionException.java", "publicadmission/TrustedShareAdmissionCaller.java", "publicadmission/ShareAdmissionService.java", "publicadmission/ShareAdmissionJsonBinder.java", "publicadmission/MediaAuthorizationRequest.java", "publicadmission/ShareMediaAuthorizationService.java");
     private static final java.util.Set<String> ADMISSION_IMPLEMENTATION_FILES = java.util.Set.of("admission/ShareAdmissionRepository.java", "admission/JooqShareAdmissionRepository.java", "admission/DefaultShareAdmissionService.java", "admission/ShareAdmissionTicketProvider.java", "admission/ShareMediaCredentialProvider.java", "admission/ShareAdmissionPolicyProvider.java", "admission/ShareAdmissionCodeVerifier.java", "admission/DesignatedMobileProofVerifier.java", "admission/ShareAdmissionSha256Provider.java", "persistence/ShareAdmissionPersistenceConfiguration.java", "admission/DefaultShareMediaAuthorizationService.java");
     private static final java.util.Set<String> PUBLIC_READ_FILES = java.util.Set.of(
@@ -151,7 +154,8 @@ class SharingQueryBoundaryTests {
         Path internal = Path.of("src/main/java/com/onecall/core/sharing/internal");
         try (var paths = Files.walk(internal)) {
             var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path) && !publicReadFile(path))
-                    .filter(path -> !PUBLIC_ADMISSION_FILES.contains(internal.relativize(path).toString().replace('\\', '/')) && !ADMISSION_IMPLEMENTATION_FILES.contains(internal.relativize(path).toString().replace('\\', '/'))).toList();
+                    .filter(path -> !PUBLIC_ADMISSION_FILES.contains(internal.relativize(path).toString().replace('\\', '/')) && !ADMISSION_IMPLEMENTATION_FILES.contains(internal.relativize(path).toString().replace('\\', '/')))
+                    .filter(path -> !internal.relativize(path).toString().replace('\\', '/').startsWith("playback/")).toList();
             assertThat(commandPaths.stream().map(path -> internal.relativize(path).toString().replace('\\', '/')))
                     .containsExactlyInAnyOrder("command/package-info.java", "command/CustomerShareCommand.java", "command/CustomerShareCommandResult.java",
                             "command/CustomerShareCommandService.java", "command/ShareCommandCaller.java", "command/ShareCommandException.java",
@@ -324,5 +328,61 @@ class SharingQueryBoundaryTests {
                 assertThat(source).doesNotMatch("(?is).*\\b(insert|update|delete|merge|truncate|create|alter|drop)\\s+(into|from|table|schema|role|function|sharing\\.|evidence\\.).*");
             }
         }
+    }
+
+    @Test void playbackUsesOnlyNamedEvidenceReadAndPrivateTypedScope() throws Exception {
+        Path root = Path.of("src/main/java/com/onecall/core/sharing/internal/playback");
+        try (var paths = Files.list(root)) {
+            assertThat(paths.map(path -> path.getFileName().toString())).containsExactlyInAnyOrderElementsOf(PLAYBACK_FILES);
+        }
+        for (String file : PLAYBACK_FILES) {
+            String source = Files.readString(root.resolve(file));
+            assertThat(source).doesNotContain("NamedInterface", "evidence.internal", "evidence.shareprojection", "org.jooq", "byte[]", "InputStream",
+                    "org.springframework.web", "bucket", "object_key", "object_version", "https://", "Logger", "System.out", "System.err",
+                    "Supplier<", "Callable<", "Redis", "COS", "com.onecall.core.customer_iam", "com.onecall.core.organization_access");
+            assertThat(source.lines().filter(line -> line.startsWith("import com.onecall.core.evidence.")))
+                    .allMatch(line -> line.equals("import com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader;")
+                            || line.equals("import com.onecall.core.evidence.mediaread.ResolvedMediaObject;"));
+        }
+        var service = com.onecall.core.sharing.internal.playback.MediaPlaybackService.class;
+        assertThat(Arrays.stream(service.getDeclaredMethods()).filter(method -> Modifier.isPublic(method.getModifiers())).map(java.lang.reflect.Method::getName))
+                .containsExactly("authorizeAndOpen");
+        assertThat(service.getMethod("authorizeAndOpen", com.onecall.core.sharing.internal.playback.OpaquePlaybackCredential.class,
+                com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose.class).getReturnType())
+                .isEqualTo(com.onecall.core.sharing.internal.playback.MediaPlaybackService.Result.class);
+        assertThat(Arrays.stream(com.onecall.core.sharing.internal.playback.ControlledMediaReader.ReadScope.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName)).containsExactly("media", "purpose", "window", "expiresAt");
+        assertThat(Arrays.stream(com.onecall.core.sharing.internal.playback.ControlledMediaReader.ControlledReadHandle.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName)).containsExactly("scope");
+        for (Class<?> result : List.of(com.onecall.core.sharing.internal.playback.MediaCredentialVerifier.Result.class,
+                com.onecall.core.sharing.internal.playback.PlaybackStateReader.Result.class,
+                com.onecall.core.sharing.internal.playback.ControlledMediaReader.Result.class,
+                com.onecall.core.sharing.internal.playback.MediaPlaybackService.Result.class)) {
+            assertThat(result.isSealed()).isTrue();
+            assertThat(Arrays.stream(result.getPermittedSubclasses()).map(Class::getSimpleName)).contains("Unavailable");
+        }
+        var modules = ApplicationModules.of(com.onecall.core.OneCallApplication.class);
+        assertThat(modules.getModuleByName("sharing").orElseThrow().getAllowedDependencies(modules).stream()
+                .map(dependency -> dependency.getTargetModule().getIdentifier() + "::" + dependency.getTargetNamedInterface().getName()))
+                .containsExactlyInAnyOrder("evidence::share-projection", "evidence::media-read");
+    }
+
+    @Test void playbackStateAndOpenPreserveReadOnlyNoProjectionBoundary() throws Exception {
+        Path root = Path.of("src/main/java/com/onecall/core/sharing/internal/playback");
+        for (String file : PLAYBACK_FILES) assertThat(Files.readString(root.resolve(file)))
+                .doesNotContain("FOR UPDATE", "FOR SHARE", "pg_advisory", "INSERT INTO", "UPDATE sharing.", "DELETE FROM",
+                        "lockGrant(", "acquireOrganization", "insertAccessEvent", "insertAdmission", "expireGrant(", "updateGrantAdmissionCount",
+                        "ShareMediaCredentialProvider", "issueOrReplay", "ShareProjection", "@Transactional");
+        String state = Files.readString(root.resolve("SharingPlaybackStateReader.java"));
+        assertThat(state).contains("setReadOnly(true)", "ISOLATION_REPEATABLE_READ", "PROPAGATION_REQUIRES_NEW", "findGrantById(claim.shareGrantId())");
+        String repository = Files.readString(Path.of("src/main/java/com/onecall/core/sharing/internal/admission/JooqShareAdmissionRepository.java"));
+        String query = repository.substring(repository.indexOf("@Override public Optional<GrantSnapshot> findGrantById"), repository.indexOf("@Override public Optional<GrantSnapshot> findGrantByTokenDigest"));
+        assertThat(query).contains("principal();", "SELECT \" + GRANT_COLUMNS", "JOIN evidence.evidence_record evidence_row ON evidence_row.id=grant_row.evidence_id WHERE grant_row.id=?\", grantId)")
+                .doesNotContain("FOR UPDATE", "FOR SHARE", "capability_token_hash", "media_object", "evidence_artifact");
+        String preliminary = repository.substring(repository.indexOf("@Override public Optional<GrantSnapshot> findGrantByTokenDigest"), repository.indexOf("@Override public Optional<GrantSnapshot> lockGrant"));
+        assertThat(preliminary).contains("WHERE grant_row.capability_token_hash=?\", digest)").doesNotContain("principal();");
+        String service = Files.readString(root.resolve("MediaPlaybackService.java"));
+        String afterOpen = service.substring(service.indexOf("var opened = reader.open(scope);"), service.indexOf("static boolean validShape"));
+        assertThat(afterOpen).doesNotContain("clock.", "state.", "evidence.", "verifier.", "repository.", "transactions.");
     }
 }

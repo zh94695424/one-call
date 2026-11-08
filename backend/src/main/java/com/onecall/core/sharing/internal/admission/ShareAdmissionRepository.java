@@ -7,6 +7,7 @@ import java.util.UUID;
 import tools.jackson.databind.JsonNode;
 
 public interface ShareAdmissionRepository {
+    Optional<GrantSnapshot> findGrantById(UUID grantId);
     Optional<GrantSnapshot> findGrantByTokenDigest(String digest);
     Optional<GrantSnapshot> lockGrant(UUID grantId);
     void acquireOrganizationLifecycleLock(UUID organizationId);

@@ -23,6 +23,12 @@ public final class JooqShareAdmissionRepository implements ShareAdmissionReposit
 
     public JooqShareAdmissionRepository(DSLContext database) { this.database = database; }
 
+    @Override public Optional<GrantSnapshot> findGrantById(UUID grantId) {
+        principal();
+        return grant(database.fetchOne("SELECT " + GRANT_COLUMNS + " FROM sharing.evidence_share_grant grant_row "
+                + "JOIN evidence.evidence_record evidence_row ON evidence_row.id=grant_row.evidence_id WHERE grant_row.id=?", grantId));
+    }
+
     @Override public Optional<GrantSnapshot> findGrantByTokenDigest(String digest) {
         return grant(database.fetchOne("SELECT " + GRANT_COLUMNS + " FROM sharing.evidence_share_grant grant_row "
                 + "JOIN evidence.evidence_record evidence_row ON evidence_row.id=grant_row.evidence_id WHERE grant_row.capability_token_hash=?", digest));
