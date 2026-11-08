@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: ONECALL internal media gateway
+  version: 1.0.0
+  description: >-
+    Internal deterministic audio data plane, not a deployed public origin or player protocol.
+    Production credential verification and physical byte authority are unavailable and fail closed.
+    An opaque bearer is the sole object selector. The gateway delegates once to the PA19
+    MediaPlaybackService and delivers one evidence-owned bounded session, with no authorization,
+    clock, database, replay or event work after metadata open. No permanent URL is issued.
+  license:
+    name: Proprietary
+servers:
+  - url: /
+tags:
+  - name: Media delivery
+    description: Internal authorized original audio bytes only.
+security:
+  - mediaBearer: []
+paths:
+  /internal/media-gateway/v1/playback:
+    get:
+      operationId: readAuthorizedMedia
+      summary: Deliver full original audio or one byte range
+      tags: [Media delivery]
+      description: >-
+        Only this exact raw route and GET are accepted. Gateway namespace aliases return 404;
+        other methods return 405 with Allow GET. HEAD has no body and retains the would-be
+        problem Content-Length. There is no implicit HEAD, OPTIONS or CORS support.
+        Precedence is route, method, request shape, bearer presentation, Range grammar,
+        ambient resource guard, one PA19 authorization, full temporal window, safe MIME,
+        interval resolution, resource guard, one physical open, bounded copy and cleanup.
+        Any query string, body, Transfer-Encoding, repeated/conflicting Content-Length, or
+        If-Range, If-Match, If-None-Match, If-Modified-Since or If-Unmodified-Since is rejected.
+        Content-Length absent or exactly one 0 is allowed. No request body is read.
+        Authorization requires one header with case-insensitive Bearer, one ASCII space,
+        and 1-2048 opaque ASCII characters matching [A-Za-z0-9._~+/-]+={0,}; bytes are preserved.
+        Missing or malformed presentation is 401 before verification. A valid presentation
+        may still be denied with a non-disclosing 403. No Range means PLAYBACK, any valid
+        Range means SEEK, and RENEW is never consumable here. Purpose cannot be overridden.
+        Only a full authenticated temporal window from zero to media duration is supported;
+        partial windows return 403 before physical open or 416. No time-to-byte conversion.
+        Safe MIME matches exactly ^audio/[a-z0-9!#$%&'+.^_`|~-]+$ using ASCII token characters other
+        than wildcard, without whitespace, parameters or controls. Unsafe metadata is 500.
+        Accept is not negotiated; Accept-Encoding does not alter bytes. No compression,
+        cookies, redirects, download disposition, ETag, Last-Modified, Vary or CORS headers.
+        All problems contain only fixed fields and a fresh server UUID, never dependency
+        details or media facts, except total length in the authorized 416 Content-Range.
+        A session is owned before descriptor validation. Copy requests at most 8192 bytes,
+        never beyond remaining length and without an EOF probe. Success closes once then
+        flushes. Failure attempts abort once and close once, without retries. Before commitment
+        a failure resets media headers and returns a safe 500. After commitment no replacement
+        status or JSON is appended: processing terminates with a possibly truncated body;
+        already-sent bytes cannot be recalled and cleanup failure cannot invalidate them.
+        Container rejection/normalization before filter entry is outside this envelope.
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          description: >-
+            At most one value, at most 128 ASCII characters: bytes=a-b, bytes=a- or bytes=-s.
+            Bounds are unsigned decimal longs through 9223372036854775807, with leading zeroes
+            accepted. Whitespace, commas, other units/case, reversed bounds and overflow are 400
+            before authorization. Closed ends clip to size-1; suffixes clip to size. A zero
+            suffix or start at/above size is 416 only after authorization. A full-covering
+            valid range is still 206. Multiple/multipart ranges and revalidation are unsupported.
+          schema:
+            type: string
+            maxLength: 128
+            pattern: '^bytes=([0-9]+-[0-9]*|-[0-9]+)$'
+      responses:
+        '200':
+          description: Exact full original object, no Content-Range.
+          headers: &mediaHeaders
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+            Accept-Ranges: { $ref: '#/components/headers/AcceptRanges' }
+          content: &audioContent
+            audio/*:
+              schema: { type: string, format: binary }
+        '206':
+          description: Exact selected interval, including ranges normalized to the full object.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+            Accept-Ranges: { $ref: '#/components/headers/AcceptRanges' }
+            Content-Range:
+              description: Inclusive start/end and authorized total size, e.g. bytes 2-5/16.
+              schema: { type: string, pattern: '^bytes [0-9]+-[0-9]+/[0-9]+$' }
+          content: *audioContent
+        '400':
+          description: Invalid shape or Range; MEDIA_REQUEST_INVALID / Invalid media request.
+          headers: &problemHeaders
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+          content: &problemContent
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: Invalid bearer presentation; UNAUTHENTICATED / Authentication required.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+            WWW-Authenticate:
+              description: Bare Bearer challenge, no parameters.
+              schema: { type: string, const: Bearer }
+          content: *problemContent
+        '403':
+          description: Any PA19 denial or partial temporal window; MEDIA_FORBIDDEN / Media access denied. No size or reason disclosure.
+          headers: *problemHeaders
+          content: *problemContent
+        '404':
+          description: Noncanonical gateway route; NOT_FOUND / Not found.
+          headers: *problemHeaders
+          content: *problemContent
+        '405':
+          description: Method other than GET; METHOD_NOT_ALLOWED / Method not allowed. HEAD suppresses the body.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+            Allow:
+              description: The only allowed method.
+              schema: { type: string, const: GET }
+          content: *problemContent
+        '416':
+          description: Authorized full-window unsatisfiable range; MEDIA_RANGE_UNSATISFIABLE / Range not satisfiable. Zero physical opens.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+            Accept-Ranges: { $ref: '#/components/headers/AcceptRanges' }
+            Content-Range:
+              description: Authorized total object size only, e.g. bytes */16.
+              schema: { type: string, pattern: '^bytes \*/[0-9]+$' }
+          content: *problemContent
+        '500':
+          description: Precommit metadata, provider, copy or cleanup failure; INTERNAL / Internal error. No dependency details.
+          headers: *problemHeaders
+          content: *problemContent
+        '503':
+          description: Unavailable authority or ambient transaction/resource; MEDIA_UNAVAILABLE / Media unavailable. No Retry-After policy.
+          headers: *problemHeaders
+          content: *problemContent
+components:
+  securitySchemes:
+    mediaBearer:
+      type: http
+      scheme: bearer
+      description: Opaque credential; no signing or wire format is specified.
+  headers:
+    NoStore:
+      description: No application caching.
+      schema: { type: string, const: no-store }
+    NoCache:
+      description: Legacy no-cache instruction.
+      schema: { type: string, const: no-cache }
+    NoSniff:
+      description: Do not sniff response media.
+      schema: { type: string, const: nosniff }
+    Length:
+      description: Exact body length in bytes; positive long, not narrowed to int. Problems use UTF-8 length, not object size.
+      schema: { type: integer, format: int64, minimum: 1 }
+    AcceptRanges:
+      description: Only byte intervals are supported.
+      schema: { type: string, const: bytes }
+  schemas:
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type: { type: string, const: 'about:blank' }
+        title:
+          type: string
+          enum: [Range not satisfiable, Invalid media request, Authentication required, Media access denied, Media unavailable, Internal error, Not found, Method not allowed]
+        status: { type: integer, enum: [400, 401, 403, 404, 405, 416, 500, 503] }
+        code:
+          type: string
+          enum: [MEDIA_RANGE_UNSATISFIABLE, MEDIA_REQUEST_INVALID, UNAUTHENTICATED, MEDIA_FORBIDDEN, MEDIA_UNAVAILABLE, INTERNAL, NOT_FOUND, METHOD_NOT_ALLOWED]
+        traceId: { type: string, format: uuid }

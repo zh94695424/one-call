@@ -317,16 +317,16 @@ class MediaPlaybackIT {
                 expiry, claim.durationSeconds(), claim.window());
     }
 
-    private record Scenario(UUID grant, UUID evidence, UUID media, UUID subject, UUID binding, UUID account,
+    record Scenario(UUID grant, UUID evidence, UUID media, UUID subject, UUID binding, UUID account,
             UUID organization, VerifiedMediaClaim claim, AdmissionWitness witness) { }
-    private record Read(String role, String sessionRole, String readOnly, String isolation, String sql, int parameters, int columns, Map<Integer, Object> bindings) { }
+    record Read(String role, String sessionRole, String readOnly, String isolation, String sql, int parameters, int columns, Map<Integer, Object> bindings) { }
 
     private static String digest(byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
         catch (Exception failure) { throw new AssertionError("Fixture SHA unavailable"); }
     }
 
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         final SharingQueryFixture base = new SharingQueryFixture();
         final HikariDataSource admissionPool;
         final HikariDataSource evidencePool;
@@ -386,6 +386,10 @@ class MediaPlaybackIT {
         }
 
         Scenario scenario(String mode, String recordingStatus, boolean wrongRelationship) throws Exception {
+            return scenario(mode, recordingStatus, wrongRelationship, "a".repeat(64), 123);
+        }
+
+        Scenario scenario(String mode, String recordingStatus, boolean wrongRelationship, String mediaSha256, long mediaSize) throws Exception {
             afterOpen = false;
             UUID account = UUID.randomUUID();
             UUID organization = UUID.randomUUID();
@@ -407,10 +411,10 @@ class MediaPlaybackIT {
             sql("INSERT INTO subject_number.subject_risk_state(id,caller_number_binding_id,risk_type,state,source,observed_at,cleared_at) VALUES (?,?,'CONFLICT','CLEARED','OPERATIONS',clock_timestamp(),clock_timestamp())", UUID.randomUUID(), binding);
             sql("INSERT INTO ivr.inbound_session(id,call_id,subject_id,trusted_caller,access_number_masked,node_id,protocol_version,prompt_version) VALUES (?,?,?,false,'synthetic','fixture','v1','v1')", session, call, subject);
             sql("INSERT INTO ivr.call_record(id,call_id,session_id,subject_id,caller_ciphertext,caller_number_hmac,caller_masked,access_number_masked,node_id,protocol_version) VALUES (?,?,?,?,'v1.fixture.payload',?,'synthetic','synthetic','fixture','v1')", UUID.randomUUID(), call, session, subject, digest(call.getBytes(StandardCharsets.UTF_8)));
-            media(media);
+            media(media, mediaSha256, mediaSize);
             UUID recordingMedia = media;
-            if (wrongRelationship) { recordingMedia = UUID.randomUUID(); media(recordingMedia); }
-            sql("INSERT INTO evidence.recording(id,call_id,recording_id,media_object_id,declared_format,declared_size,declared_duration,declared_sha256,validated_duration,validated_sha256,status,upload_expires_at,validated_at) VALUES (?,?,?,?,'wav',123,10,repeat('a',64),10,repeat('a',64),?,clock_timestamp()+interval '1 hour',clock_timestamp())", recording, call, UUID.randomUUID().toString(), recordingMedia, recordingStatus);
+            if (wrongRelationship) { recordingMedia = UUID.randomUUID(); media(recordingMedia, mediaSha256, mediaSize); }
+            sql("INSERT INTO evidence.recording(id,call_id,recording_id,media_object_id,declared_format,declared_size,declared_duration,declared_sha256,validated_duration,validated_sha256,status,upload_expires_at,validated_at) VALUES (?,?,?,?,'wav',?,10,?,10,?,?,clock_timestamp()+interval '1 hour',clock_timestamp())", recording, call, UUID.randomUUID().toString(), recordingMedia, mediaSize, mediaSha256, mediaSha256, recordingStatus);
             try (Connection connection = base.admin()) {
                 connection.setAutoCommit(false);
                 SharingQueryFixture.execute(connection, """
@@ -623,7 +627,10 @@ class MediaPlaybackIT {
             return frozen() + text("SELECT coalesce(jsonb_agg(to_jsonb(g) ORDER BY id),'[]')::text FROM sharing.evidence_share_grant g");
         }
         void media(UUID id) throws SQLException {
-            sql("INSERT INTO evidence.media_object(id,storage_provider,bucket,object_key,object_version_id,sha256,size_bytes,mime_type,crypto_key_ref) VALUES (?,'COS','fixture',?,'v1',repeat('a',64),123,'audio/wav','fixture-key')", id, CANARY + id);
+            media(id, "a".repeat(64), 123);
+        }
+        void media(UUID id, String mediaSha256, long mediaSize) throws SQLException {
+            sql("INSERT INTO evidence.media_object(id,storage_provider,bucket,object_key,object_version_id,sha256,size_bytes,mime_type,crypto_key_ref) VALUES (?,'COS','fixture',?,'v1',?,?,'audio/wav','fixture-key')", id, CANARY + id, mediaSha256, mediaSize);
         }
         Map<String, String> triggers() throws SQLException {
             Map<String, String> definitions = new TreeMap<>();

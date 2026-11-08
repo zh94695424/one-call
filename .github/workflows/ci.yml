@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 162:
-              sys.exit("expected exactly 162 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 196:
+              sys.exit("expected exactly 196 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -548,6 +548,64 @@ jobs:
               target = container_expected if class_name.endswith("IT") else unit_expected
               target.setdefault(class_name, set()).update(names)
 
+          pa20_additions = {
+              "com.onecall.archtests.MediaGatewayWebTests": {
+                  "fullGetReturnsExactAuthorizedBytesAndHeaders",
+                  "singleRangeGetReturnsExactIntervalAnd206Headers",
+                  "bearerIsPropagatedOpaqueWithoutCustomerIdentity",
+                  "gatewayRouteMethodQueryAndBodyAreClosed",
+                  "malformedAndDuplicateBearerStopBeforeVerification",
+                  "malformedMultipleAndOverflowRangesStopBeforeAuthorization",
+                  "unsatisfiableRangeDisclosesSizeOnlyAfterAuthorization",
+                  "rangePresenceSelectsExpectedPurposeWithoutClaimFallback",
+                  "allPlaybackDenialsHaveOneNonDisclosingEnvelope",
+                  "unavailableDependenciesAndDefaultByteProviderFailClosed",
+                  "partialTemporalWindowAndUnsafeMimeNeverOpenBytes",
+                  "misboundSessionAbortsAndClosesBeforeAnyRead",
+                  "shortZeroAndImpossibleReadsFailWithoutExtraRead",
+                  "disconnectAndCommittedFailuresNeverAppendProblems",
+                  "abortCloseAndFlushFailuresPreserveCleanupCounts",
+                  "ambientTransactionsAndBoundResourcesPreventTransfer",
+                  "responsesAndCapturedLogsNeverLeakPrivateCanaries",
+                  "largeObjectTransferUsesFixedBufferAndLongAccounting",
+              },
+              "com.onecall.archtests.MediaGatewayConfigurationTests": {
+                  "nonWebProfilesDoNotRegisterGatewayOrActivateProviders",
+                  "webGatewayPrecedesCustomerBoundaryAndDefaultBearerIsUnavailable",
+                  "singleExplicitByteAuthorityIsUsedInEitherRegistrationOrder",
+                  "duplicateByteAuthoritiesFailClosedEvenWithPrimary",
+              },
+              "com.onecall.archtests.sharing.SingleByteRangeTests": {
+                  "absentRangeSelectsExactlyFullPositiveObject",
+                  "closedRangesClipOnlyTheirEndWithoutOverflow",
+                  "openEndedAndSuffixRangesResolveOneBoundedInterval",
+                  "malformedUnitsWhitespaceAndMultipleRangesAreRejected",
+                  "reversedAndOverflowDecimalBoundsNeverWrapOrClamp",
+                  "normalizationMatchesDeterministicSmallObjectOracle",
+              },
+              "com.onecall.archtests.evidence.ControlledMediaByteSourceTests": {
+                  "byteIntervalsAndOpenRequestsRejectUnboundedOrNullScope",
+                  "deterministicSourceBindsObjectHashSizeAndExactInterval",
+                  "sessionsCloseAbortAndRejectReadsAfterTerminalState",
+                  "byteRequestsSessionsAndFailuresHaveRedactedRepresentations",
+              },
+              "com.onecall.archtests.architecture.SharingQueryBoundaryTests": {
+                  "gatewayUsesExactOwnedFilesAndEvidenceNamedInterface",
+                  "gatewayTransfersWithoutTransactionsProjectionOrPublicContractChanges",
+              },
+              "com.onecall.archtests.container.MediaGatewayTransportIT": {
+                  "realHttpFullAndRangeUseQualifiedAuthorizationThenExactBytes",
+                  "realHttpMalformedUnsatisfiableAndDeniedRequestsNeverReadBytes",
+                  "committedRevocationRotationAndRiskDenyNextByteRequest",
+                  "byteOpenReadAbortAndCloseHoldNoDatabaseTransactionOrLock",
+                  "transferFaultsReleaseOneSessionAndPreserveDurableSnapshots",
+                  "realHttpAndLogsRedactSecretsAndLeaveExistingPublicFlowUnchanged",
+              },
+          }
+          for class_name, names in pa20_additions.items():
+              target = container_expected if class_name.endswith("IT") else unit_expected
+              target.setdefault(class_name, set()).update(names)
+
           source_classes = set()
           for path in Path("src/test/java").rglob("*.java"):
               source = path.read_text()
@@ -601,8 +659,10 @@ jobs:
           method_totals = [0, 0]
           baseline_totals = [0, 0]
           pa19_start_totals = [0, 0]
+          pa20_start_totals = [0, 0]
           line_scan_total = baseline_line_scan_total = 0
           pa19_start_line_scan_total = 0
+          pa20_start_line_scan_total = 0
           comment_hits = []
           for path in Path("src/test/java").rglob("*.java"):
               source = path.read_text()
@@ -610,13 +670,15 @@ jobs:
               names = method_pattern.findall(source)
               pa18_names = pa18_additions.get(class_name, set())
               pa19_names = pa19_additions.get(class_name, set())
-              additions = pa18_names | pa19_names
-              assert additions <= set(names), f"missing PA18/PA19 additions: {class_name}"
+              pa20_names = pa20_additions.get(class_name, set())
+              additions = pa18_names | pa19_names | pa20_names
+              assert additions <= set(names), f"missing PA18/PA19/PA20 additions: {class_name}"
               if names:
                   suite_index = 0 if class_name in unit_expected else 1
                   method_totals[suite_index] += len(names)
                   baseline_totals[suite_index] += len(names) - len(additions)
-                  pa19_start_totals[suite_index] += len(names) - len(pa19_names)
+                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names)
+                  pa20_start_totals[suite_index] += len(names) - len(pa20_names)
               baseline_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
                   if match.group(1) in additions else match.group(), source)
@@ -624,29 +686,35 @@ jobs:
               baseline_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in baseline_source.splitlines())
               pa19_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa19_names else match.group(), source)
+                  if match.group(1) in pa19_names | pa20_names else match.group(), source)
               pa19_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa19_start_source.splitlines())
+              pa20_start_source = method_pattern.sub(
+                  lambda match: match.group().replace("@Test", "", 1)
+                  if match.group(1) in pa20_names else match.group(), source)
+              pa20_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa20_start_source.splitlines())
               comment_hits.extend((path.name, line.strip()) for line in source.splitlines()
                                   if re.search(r"@Test\b", line) and line.lstrip().startswith("//"))
           assert [len(names) for names in pa18_additions.values()] == [9, 6, 1, 13, 1]
           assert [len(names) for names in pa19_additions.values()] == [20, 8, 4, 2, 6]
           assert baseline_totals == [112, 178] and sum(baseline_totals) == 290
           assert pa19_start_totals == [128, 192] and sum(pa19_start_totals) == 320
-          assert method_totals == [162, 198] and sum(method_totals) == 360
-          assert (baseline_line_scan_total, pa19_start_line_scan_total, line_scan_total) == (291, 321, 361)
+          assert [len(names) for names in pa20_additions.values()] == [18, 4, 6, 4, 2, 6]
+          assert pa20_start_totals == [162, 198] and sum(pa20_start_totals) == 360
+          assert method_totals == [196, 204] and sum(method_totals) == 400
+          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, line_scan_total) == (291, 321, 361, 401)
           assert comment_hits == [("PostgresContainerIT.java", "// evidence inside this existing method; no new @Test and no catalog weakening.")]
-          assert len(unit_expected) == 25
-          assert len(container_expected) == 12
+          assert len(unit_expected) == 29
+          assert len(container_expected) == 13
           pom = ET.parse("pom.xml").getroot()
           ns = {"m": "http://maven.apache.org/POM/4.0.0"}
           includes = pom.findall(".//m:plugin[m:artifactId='maven-failsafe-plugin']/m:configuration/m:includes/m:include", ns)
-          assert len(includes) == 12
+          assert len(includes) == 13
           assert {include.text for include in includes} == {"**/" + name.rsplit(".", 1)[1] + ".java" for name in container_expected}
           assert len(container_expected["com.onecall.archtests.container.PublicShareAdmissionIT"]) == 37
           assert len(container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"]) == 9
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 162)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 198)
-          print("PA19 exact source=CI=XML inventory passed: 25 Surefire classes/162 methods; 12 Failsafe classes/198 methods (64+10+10+8+12+18+8+37+9+8+8+6=198); combined 37/360; historical 112+178=290 -> PA19-start 128+192=320 -> current 162+198=360; comment-inclusive word-boundary line scans 291 -> 321 -> 361 (one PostgresContainerIT comment hit, not a method); Failsafe includes 12; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 196)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 204)
+          print("PA20 exact source=CI=XML inventory passed: 29/196 + 13/204 = 42/400; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> current 196+204=400; line scans 291 -> 321 -> 361 -> 401; POM 13 includes; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
@@ -696,6 +764,8 @@ jobs:
                             ("POST", "/api/v1/public/shares/synthetic", {}, 404, "NOT_FOUND", "Not found"),
                             ("GET", "/api/v1/public/shares/a%2Fb", {}, 404, "NOT_FOUND", "Not found"),
                             ("GET", "/api/v1/public/shares/a%2Fb", {"Authorization": "bad", "Accept": "text/html", "X-Trace-Id": "untrusted"}, 404, "NOT_FOUND", "Not found")]
+                  probes.extend([("GET", "/internal/media-gateway/v1/playback", {}, 401, "UNAUTHENTICATED", "Authentication required"),
+                                 ("GET", "/internal/media-gateway/v1/playback", {"Authorization": "Bearer smoke-opaque"}, 503, "MEDIA_UNAVAILABLE", "Media unavailable")])
                   for method, path, headers, status, code, title in probes:
                       request = urllib.request.Request(f"http://127.0.0.1:{port.group(1)}{path}", headers=headers, method=method)
                       try:
