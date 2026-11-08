@@ -186,6 +186,7 @@
                 <include>**/SharingAdmissionRoleLeastPrivilegeIT.java</include>
                 <include>**/EvidenceMediaReadRoleLeastPrivilegeIT.java</include>
                 <include>**/EvidenceMediaReadIT.java</include>
+                <include>**/MediaPlaybackIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

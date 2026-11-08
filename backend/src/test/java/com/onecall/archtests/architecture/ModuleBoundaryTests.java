@@ -48,7 +48,7 @@ class ModuleBoundaryTests {
             Map.entry("catalog_order", Set.of("customer_iam", "subject_number")),
             Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number")),
             Map.entry("evidence", Set.of("entitlement_metering")),
-            Map.entry("sharing", Set.of("evidence::share-projection")),
+            Map.entry("sharing", Set.of("evidence::share-projection", "evidence::media-read")),
             Map.entry("ai_orchestration", Set.of("evidence", "entitlement_metering")),
             Map.entry("notary", Set.of("evidence")),
             Map.entry("operations_audit", Set.of()),
