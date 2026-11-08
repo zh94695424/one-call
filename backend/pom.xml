@@ -184,6 +184,8 @@
                 <include>**/PublicSharesIT.java</include>
                 <include>**/PublicShareAdmissionIT.java</include>
                 <include>**/SharingAdmissionRoleLeastPrivilegeIT.java</include>
+                <include>**/EvidenceMediaReadRoleLeastPrivilegeIT.java</include>
+                <include>**/EvidenceMediaReadIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

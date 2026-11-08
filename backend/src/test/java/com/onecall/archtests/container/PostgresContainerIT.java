@@ -1233,7 +1233,7 @@ class PostgresContainerIT {
         assertThat(stagedV007Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV008Migration.migrationsExecuted).isEqualTo(1);
         assertThat(stagedV008FencesVerified).isTrue();
-        assertThat(initialMigration.migrationsExecuted).isEqualTo(4);
+        assertThat(initialMigration.migrationsExecuted).isEqualTo(5);
         assertThat(stagedV004OrphanConsentEvidence)
                 .as("assigned-once V004 orphan-consent probe evidence is present").isNotNull();
         assertThat(stagedV004OrphanConsentEvidence.insertSucceeded())
@@ -1379,6 +1379,12 @@ class PostgresContainerIT {
             assertThat(resultSet.getString("version")).isEqualTo("012");
             assertThat(resultSet.getString("description")).isEqualTo("sharing admission least privilege");
             assertThat(resultSet.getString("script")).isEqualTo("V012__sharing_admission_least_privilege.sql");
+            assertThat(resultSet.getString("type")).isEqualTo("SQL");
+            assertThat(resultSet.getBoolean("success")).isTrue();
+            assertThat(resultSet.next()).isTrue();
+            assertThat(resultSet.getString("version")).isEqualTo("013");
+            assertThat(resultSet.getString("description")).isEqualTo("evidence media reader role");
+            assertThat(resultSet.getString("script")).isEqualTo("V013__evidence_media_reader_role.sql");
             assertThat(resultSet.getString("type")).isEqualTo("SQL");
             assertThat(resultSet.getBoolean("success")).isTrue();
             assertThat(resultSet.next()).isFalse();
@@ -8452,6 +8458,7 @@ class PostgresContainerIT {
         expectedRoles.add("sharing_command_role:false:false:false:false");
         expectedRoles.add("sharing_public_read_role:true:false:false:false");
         expectedRoles.add("sharing_admission_role:true:false:false:false");
+        expectedRoles.add("evidence_media_reader_role:true:false:false:false");
         expectedRoles.sort(String::compareTo);
 
         assertThat(queryStrings(
@@ -10758,7 +10765,8 @@ class PostgresContainerIT {
                         "009|V009__sharing.sql|SQL|true",
                         "010|V010__sharing_role_least_privilege.sql|SQL|true",
                         "011|V011__sharing_public_read_least_privilege.sql|SQL|true",
-                "012|V012__sharing_admission_least_privilege.sql|SQL|true");
+                        "012|V012__sharing_admission_least_privilege.sql|SQL|true",
+                        "013|V013__evidence_media_reader_role.sql|SQL|true");
         assertThat(java.util.Arrays.stream(flyway.info().all())
                 .map(info -> info.getScript()).toList())
                 .containsExactly(
@@ -10770,7 +10778,8 @@ class PostgresContainerIT {
                         "V007__activation_and_consent.sql", "V008__evidence_media.sql", "V009__sharing.sql",
                         "V010__sharing_role_least_privilege.sql",
                         "V011__sharing_public_read_least_privilege.sql",
-                        "V012__sharing_admission_least_privilege.sql");
+                        "V012__sharing_admission_least_privilege.sql",
+                        "V013__evidence_media_reader_role.sql");
     }
 
     /**
