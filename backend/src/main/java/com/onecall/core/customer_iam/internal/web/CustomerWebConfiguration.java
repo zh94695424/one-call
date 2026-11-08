@@ -34,7 +34,7 @@ public class CustomerWebConfiguration {
                 new CustomerBoundaryFilter(new CustomerBearerAuthenticator(verifiers), problems));
         registration.addUrlPatterns("/*");
         registration.setDispatcherTypes(DispatcherType.REQUEST);
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         return registration;
     }
 }

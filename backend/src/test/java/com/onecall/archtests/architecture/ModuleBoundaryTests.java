@@ -167,7 +167,14 @@ class ModuleBoundaryTests {
         assertThat(interfaces.getByName("media-read").orElseThrow().asJavaClasses()
                 .map(com.tngtech.archunit.core.domain.JavaClass::getName))
                 .contains("com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader",
-                        "com.onecall.core.evidence.mediaread.ResolvedMediaObject")
+                        "com.onecall.core.evidence.mediaread.ResolvedMediaObject",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource$ByteInterval",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource$OpenRequest",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource$ReadSession",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource$Result",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource$Result$Opened",
+                        "com.onecall.core.evidence.mediaread.ControlledMediaByteSource$Result$Unavailable")
                 .allMatch(name -> name.startsWith("com.onecall.core.evidence.mediaread."));
         assertThat(interfaces.stream().flatMap(named -> named.asJavaClasses())
                 .map(com.tngtech.archunit.core.domain.JavaClass::getName))

@@ -14,6 +14,8 @@ import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.NamedInterface;
 
 class SharingQueryBoundaryTests {
+    private static final java.util.Set<String> GATEWAY_FILES = java.util.Set.of("gateway/MediaGatewayFilter.java",
+            "gateway/MediaGatewayConfiguration.java", "gateway/SingleByteRange.java", "gateway/MediaGatewayProblemWriter.java");
     private static final java.util.Set<String> PLAYBACK_FILES = java.util.Set.of("OpaquePlaybackCredential.java", "VerifiedMediaClaim.java",
             "MediaCredentialVerifier.java", "PlaybackStateReader.java", "SharingPlaybackStateReader.java", "ControlledMediaReader.java",
             "MediaPlaybackService.java", "MediaPlaybackConfiguration.java");
@@ -155,7 +157,8 @@ class SharingQueryBoundaryTests {
         try (var paths = Files.walk(internal)) {
             var commandPaths = paths.filter(Files::isRegularFile).filter(path -> !queryFile(path) && !publicReadFile(path))
                     .filter(path -> !PUBLIC_ADMISSION_FILES.contains(internal.relativize(path).toString().replace('\\', '/')) && !ADMISSION_IMPLEMENTATION_FILES.contains(internal.relativize(path).toString().replace('\\', '/')))
-                    .filter(path -> !internal.relativize(path).toString().replace('\\', '/').startsWith("playback/")).toList();
+                    .filter(path -> !internal.relativize(path).toString().replace('\\', '/').startsWith("playback/"))
+                    .filter(path -> !GATEWAY_FILES.contains(internal.relativize(path).toString().replace('\\', '/'))).toList();
             assertThat(commandPaths.stream().map(path -> internal.relativize(path).toString().replace('\\', '/')))
                     .containsExactlyInAnyOrder("command/package-info.java", "command/CustomerShareCommand.java", "command/CustomerShareCommandResult.java",
                             "command/CustomerShareCommandService.java", "command/ShareCommandCaller.java", "command/ShareCommandException.java",
@@ -328,6 +331,60 @@ class SharingQueryBoundaryTests {
                 assertThat(source).doesNotMatch("(?is).*\\b(insert|update|delete|merge|truncate|create|alter|drop)\\s+(into|from|table|schema|role|function|sharing\\.|evidence\\.).*");
             }
         }
+    }
+
+    @Test void gatewayUsesExactOwnedFilesAndEvidenceNamedInterface() throws Exception {
+        Path internal = Path.of("src/main/java/com/onecall/core/sharing/internal");
+        try (var files = Files.list(internal.resolve("gateway"))) {
+            assertThat(files.map(path -> "gateway/" + path.getFileName())).containsExactlyInAnyOrderElementsOf(GATEWAY_FILES);
+        }
+        for (String file : GATEWAY_FILES) {
+            String source = Files.readString(internal.resolve(file));
+            assertThat(source).doesNotContain("evidence.internal", "customer_iam", "NamedInterface", "organization_access");
+            assertThat(source.lines().filter(line -> line.startsWith("import com.onecall.core.evidence.")))
+                    .allMatch(line -> line.equals("import com.onecall.core.evidence.mediaread.ControlledMediaByteSource;")
+                            || line.equals("import com.onecall.core.evidence.mediaread.ControlledMediaByteSource.ByteInterval;"));
+        }
+        var interval = com.onecall.core.evidence.mediaread.ControlledMediaByteSource.ByteInterval.class;
+        var byteApi = com.onecall.core.evidence.mediaread.ControlledMediaByteSource.class;
+        assertThat(byteApi.getDeclaredMethods()).extracting(java.lang.reflect.Method::getName).containsExactly("open");
+        assertThat(byteApi.getMethod("open", com.onecall.core.evidence.mediaread.ControlledMediaByteSource.OpenRequest.class).getReturnType())
+                .isEqualTo(com.onecall.core.evidence.mediaread.ControlledMediaByteSource.Result.class);
+        assertThat(com.onecall.core.evidence.mediaread.ControlledMediaByteSource.ReadSession.class.getDeclaredMethods())
+                .extracting(java.lang.reflect.Method::getName).containsExactlyInAnyOrder("request", "read", "abort", "close", "redacted");
+        assertThat(com.onecall.core.sharing.internal.gateway.SingleByteRange.Resolution.Selected.class.getRecordComponents()[0].getType()).isEqualTo(interval);
+        assertThat(com.onecall.core.evidence.mediaread.ControlledMediaByteSource.OpenRequest.class.getRecordComponents()[1].getType()).isEqualTo(interval);
+        try (var paths = Files.walk(Path.of("src/main/java"))) {
+            var definitions = paths.filter(path -> path.toString().endsWith(".java")).filter(path -> {
+                try { return Files.readString(path).contains("record ByteInterval("); }
+                catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
+            }).toList();
+            assertThat(definitions).containsExactly(Path.of("src/main/java/com/onecall/core/evidence/mediaread/ControlledMediaByteSource.java"));
+        }
+        String api = Files.readString(Path.of("src/main/java/com/onecall/core/evidence/mediaread/ControlledMediaByteSource.java"));
+        assertThat(api).contains("Result open(OpenRequest request) throws IOException", "interface ReadSession extends AutoCloseable", "@JsonValue")
+                .doesNotContain("com.onecall.core.sharing", "InputStream", "bucket", "object_key");
+    }
+
+    @Test void gatewayTransfersWithoutTransactionsProjectionOrPublicContractChanges() throws Exception {
+        Path internal = Path.of("src/main/java/com/onecall/core/sharing/internal");
+        for (String file : GATEWAY_FILES) {
+            String source = Files.readString(internal.resolve(file));
+            assertThat(source).doesNotContain("@Transactional", "TransactionTemplate", "DataSource", "org.jooq", "java.sql", "FOR UPDATE", "FOR SHARE",
+                    "pg_advisory", "INSERT INTO", "SELECT ", "ShareProjection", "insertAccessEvent", "issueOrReplay", "readAllBytes", "transferTo", ".available(",
+                    "Executor", "CompletableFuture", "Logger", "System.out", "System.err", "printStackTrace", "getUserPrincipal", "getCookies");
+        }
+        String filter = Files.readString(internal.resolve("gateway/MediaGatewayFilter.java"));
+        assertThat(filter).contains("/internal/media-gateway/v1/playback", "Purpose.PLAYBACK", "Purpose.SEEK", "new byte[8192]", "isSynchronizationActive()", "getResourceMap().isEmpty()");
+        assertThat(filter.split("service\\.authorizeAndOpen\\(", -1)).hasSize(2);
+        String transfer = filter.substring(filter.indexOf("private void transfer("), filter.indexOf("private void safeProblem("));
+        assertThat(transfer).doesNotContain("service.", "clock.", "verifier.", "state.", "evidence.");
+        byte[] publicContract = Files.readAllBytes(Path.of("../api/openapi/onecall-v1.openapi.yaml"));
+        assertThat(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(publicContract)))
+                .isEqualTo("0ef64251846ce6f23e136bdcaa39e45a6cc9d54d5f86470b8589d8d14fc94c68");
+        String contract = Files.readString(Path.of("../api/openapi/media-gateway-v1.openapi.yaml"));
+        assertThat(contract).contains("/internal/media-gateway/v1/playback:", "operationId: readAuthorizedMedia", "MEDIA_FORBIDDEN", "MEDIA_UNAVAILABLE", "Content-Range", "WWW-Authenticate");
+        assertThat(contract).doesNotContain("onecall-v1.openapi.yaml", "https://", "bucket", "object_key");
     }
 
     @Test void playbackUsesOnlyNamedEvidenceReadAndPrivateTypedScope() throws Exception {
