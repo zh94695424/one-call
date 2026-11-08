@@ -33,7 +33,7 @@ class SharingQueryServiceIT {
 
     @Test
     void queryRuntimeStartsAfterFixtureProvisioning() throws Exception {
-        assertThat(fixture.flyway.info().applied()).hasSize(12);
+        assertThat(fixture.flyway.info().applied()).hasSize(13);
         fixture.flyway.validate();
         assertThat(fixture.context.getBeansOfType(org.jooq.DSLContext.class)).hasSize(1);
         assertThat(fixture.context.getBeansOfType(javax.sql.DataSource.class)).hasSize(1);

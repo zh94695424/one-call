@@ -160,6 +160,28 @@ class ModuleBoundaryTests {
     }
 
     @Test
+    void evidenceMediaReadIsNamedAndInternalImplementationCannotBeImported() {
+        var modules = ApplicationModules.of(OneCallApplication.class);
+        var interfaces = modules.getModuleByName("evidence").orElseThrow().getNamedInterfaces();
+        assertThat(interfaces.getByName("media-read")).isPresent();
+        assertThat(interfaces.getByName("media-read").orElseThrow().asJavaClasses()
+                .map(com.tngtech.archunit.core.domain.JavaClass::getName))
+                .contains("com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader",
+                        "com.onecall.core.evidence.mediaread.ResolvedMediaObject")
+                .allMatch(name -> name.startsWith("com.onecall.core.evidence.mediaread."));
+        assertThat(interfaces.stream().flatMap(named -> named.asJavaClasses())
+                .map(com.tngtech.archunit.core.domain.JavaClass::getName))
+                .noneMatch(name -> name.startsWith("com.onecall.core.evidence.internal.mediaread."));
+        com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses()
+                .that().resideInAPackage("com.onecall.core..")
+                .and().resideOutsideOfPackage("com.onecall.core.evidence..")
+                .should().dependOnClassesThat().resideInAPackage("com.onecall.core.evidence.internal.mediaread..")
+                .check(new com.tngtech.archunit.core.importer.ClassFileImporter()
+                        .withImportOption(new ImportOption.DoNotIncludeTests()).importPackages("com.onecall.core"));
+        modules.verify();
+    }
+
+    @Test
     void rejectsForbiddenDependencyFixture() {
         assertThatThrownBy(() -> ApplicationModules
                         .of(ForbiddenFixtureRoot.class, INCLUDE_TEST_FIXTURES)

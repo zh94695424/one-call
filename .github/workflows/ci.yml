@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 119:
-              sys.exit("expected exactly 119 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 128:
+              sys.exit("expected exactly 128 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -182,6 +182,7 @@ jobs:
                   "assertsExactAllowedDependencyMapFromPlan62", "discoveredProductionEdgesStayInsideTheConfiguredMap",
                   "verifiesNoCyclesOrBoundaryViolations", "rejectsCycleFixture", "rejectsForbiddenDependencyFixture",
                   "rejectsInternalPackageAccessFixture",
+                  "evidenceMediaReadIsNamedAndInternalImplementationCannotBeImported",
               },
               "com.onecall.archtests.OneCallApplicationTests": {"contextLoadsWithoutDatabaseOrSecurityAutoConfiguration"},
               "com.onecall.archtests.architecture.BootstrapDependencyBoundaryTests": {"approvedPersistenceFrameworksAndForbiddenStacksAreExact"},
@@ -455,6 +456,42 @@ jobs:
                   if int(report.get("tests", "0")) != len(names) or any(int(report.get(key, "0")) for key in ("skipped", "failures", "errors")):
                       sys.exit(f"non-green or incorrect report: {class_name}")
 
+          unit_expected["com.onecall.archtests.EvidenceMediaReadPersistenceConfigurationTests"] = {
+              "missingDisabledAndNonPersistenceProfilesAreInert",
+              "enabledInvalidCredentialsFailClosedWithSanitizedRootCause",
+              "validExplicitCredentialsWireOnlyQualifiedReadOnlyResources",
+              "propertiesConfigurationAndDatasourceStringFormsAreRedacted",
+          }
+
+          unit_expected["com.onecall.archtests.evidence.EvidenceMediaObjectReaderTests"] = {
+              "validRowsResolveSafelyAndZeroOrMultipleRowsHaveDistinctResults",
+              "incompleteInconsistentAndInvalidExistingFactsNeverBecomeMissing",
+              "nullInputPrecedesDatabaseAccessAndSqlAndTransactionFailuresAreOpaque",
+              "publicApiSerializationValidationAndStringFormsExposeOnlySafeMetadata",
+          }
+
+          container_expected["com.onecall.archtests.container.EvidenceMediaReadRoleLeastPrivilegeIT"] = {
+              "roleAttributesPasswordTopologyAndV013HistoryAreExact",
+              "exactSixteenDependenciesAndOwnerGrantedColumnSchemaAclsAreEnumerated",
+              "actualLoginSelectsEveryGrantedColumnAndResolvesMatchingObject",
+              "actualLoginDeniesAdjacentReadsWritesDdlSequencesFunctionsAndEscalation",
+              "zeroAclCompatibleRoleAndTwiceReplayedGrantedStateAreAccepted",
+              "incompatibleAttributesMembershipsSettingsAndAnyUnexpectedDependencyFailClosed",
+              "failedDuplicateIncompatibleOrMissingRequiredHistoryIsRejected",
+              "privilegeOnlyMigrationIsAtomicAndV001ThroughV012RemainByteIdentical",
+          }
+
+          container_expected["com.onecall.archtests.container.EvidenceMediaReadIT"] = {
+              "dedicatedQualifiedReaderAuthenticatesAndResolvesInOneReadOnlyQuery",
+              "onlyAbsentEvidenceReturnsMissing",
+              "missingOriginalMediaAndRecordingRemainUnavailable",
+              "pendingQuarantinedAndUnvalidatedFactsAreUnavailable",
+              "mismatchedRecordingReferenceMediaAndDerivedArtifactFailClosed",
+              "corruptedMetadataIsUnavailableAndOptionalDurationIsSupported",
+              "duplicateOriginalArtifactsAreUnavailableWithoutLimitOrAggregation",
+              "connectionAndPermissionFaultsReturnOnlyUnavailable",
+          }
+
           source_classes = set()
           for path in Path("src/test/java").rglob("*.java"):
               source = path.read_text()
@@ -527,16 +564,22 @@ jobs:
               comment_hits.extend((path.name, line.strip()) for line in source.splitlines()
                                   if re.search(r"@Test\b", line) and line.lstrip().startswith("//"))
           assert [len(names) for names in pa18_additions.values()] == [9, 6, 1, 13, 1]
-          assert baseline_totals == [103, 162] and sum(baseline_totals) == 265
-          assert method_totals == [119, 176] and sum(method_totals) == 295
-          assert (baseline_line_scan_total, line_scan_total) == (266, 296)
+          assert baseline_totals == [112, 178] and sum(baseline_totals) == 290
+          assert method_totals == [128, 192] and sum(method_totals) == 320
+          assert (baseline_line_scan_total, line_scan_total) == (291, 321)
           assert comment_hits == [("PostgresContainerIT.java", "// evidence inside this existing method; no new @Test and no catalog weakening.")]
-          assert len(container_expected) == 9
+          assert len(unit_expected) == 22
+          assert len(container_expected) == 11
+          pom = ET.parse("pom.xml").getroot()
+          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+          includes = pom.findall(".//m:plugin[m:artifactId='maven-failsafe-plugin']/m:configuration/m:includes/m:include", ns)
+          assert len(includes) == 11
+          assert {include.text for include in includes} == {"**/" + name.rsplit(".", 1)[1] + ".java" for name in container_expected}
           assert len(container_expected["com.onecall.archtests.container.PublicShareAdmissionIT"]) == 37
           assert len(container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"]) == 9
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 119)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 176)
-          print("PA18 exact source=CI=XML inventory passed: 20 Surefire classes/119 methods; 9 Failsafe classes/176 methods (64+10+10+8+12+18+8+37+9=176; PublicShareAdmissionIT=37; SharingAdmissionRoleLeastPrivilegeIT=9); combined 295; actual-method recipe 103+162=265 -> 119+176=295; comment-inclusive word-boundary line-scan recipe 266 -> 296 (one PostgresContainerIT comment hit, not a method); zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 128)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 192)
+          print("PA19A exact source=CI=XML inventory passed: 22 Surefire classes/128 methods; 11 Failsafe classes/192 methods (64+10+10+8+12+18+8+37+9+8+8=192); combined 33/320; actual-method recipe 112+178=290 -> 128+192=320; comment-inclusive word-boundary line-scan recipe 291 -> 321 (one PostgresContainerIT comment hit, not a method); Failsafe includes 11; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
