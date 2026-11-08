@@ -36,6 +36,13 @@ public interface ControlledMediaByteSource {
         record Unavailable() implements Result { }
     }
 
+    /**
+     * A single bounded read session owned by the gateway. The gateway calls {@link #close()} on
+     * success, or {@link #abort()} followed by {@link #close()} on failure. After either terminal
+     * operation, {@link #read(byte[], int, int)} fails with {@link IOException}. Both terminal
+     * operations are idempotent; {@code abort()} after a successful {@code close()} is a no-op.
+     * {@code close()} releases, or attempts to release, resources exactly once even if it throws.
+     */
     interface ReadSession extends AutoCloseable {
         OpenRequest request();
         int read(byte[] destination, int offset, int length) throws IOException;

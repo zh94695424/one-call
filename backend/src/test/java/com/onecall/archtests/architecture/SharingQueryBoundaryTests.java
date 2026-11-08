@@ -385,6 +385,8 @@ class SharingQueryBoundaryTests {
                 .isEqualTo("ce8de66d9bbc3c3e2fbbc6469f146e6d7e9b58223d3fd7c2187e95c26a6e7e30");
         String contract = Files.readString(Path.of("../api/openapi/media-gateway-v1.openapi.yaml"));
         assertThat(contract).contains("/internal/media-gateway/v1/playback:", "operationId: readAuthorizedMedia", "MEDIA_FORBIDDEN", "MEDIA_UNAVAILABLE", "Content-Range", "WWW-Authenticate");
+        assertThat(contract).doesNotContain("<<:").contains("'206':", "'401':", "'405':", "'416':", "Cache-Control:", "Pragma:",
+                "X-Content-Type-Options:", "Content-Length:", "Accept-Ranges:", "Content-Range:", "WWW-Authenticate:", "Allow:");
         assertThat(contract).doesNotContain("onecall-v1.openapi.yaml", "https://", "bucket", "object_key");
     }
 

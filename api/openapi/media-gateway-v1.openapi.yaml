@@ -83,7 +83,11 @@ paths:
         '206':
           description: Exact selected interval, including ranges normalized to the full object.
           headers:
-            <<: *mediaHeaders
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
+            Accept-Ranges: { $ref: '#/components/headers/AcceptRanges' }
             Content-Range:
               description: Inclusive start/end and authorized total size, e.g. bytes 2-5/16.
               schema: { type: string, pattern: '^bytes [0-9]+-[0-9]+/[0-9]+$' }
@@ -101,7 +105,10 @@ paths:
         '401':
           description: Invalid bearer presentation; UNAUTHENTICATED / Authentication required.
           headers:
-            <<: *problemHeaders
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
             WWW-Authenticate:
               description: Bare Bearer challenge, no parameters.
               schema: { type: string, const: Bearer }
@@ -117,7 +124,10 @@ paths:
         '405':
           description: Method other than GET; METHOD_NOT_ALLOWED / Method not allowed. HEAD suppresses the body.
           headers:
-            <<: *problemHeaders
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
             Allow:
               description: The only allowed method.
               schema: { type: string, const: GET }
@@ -125,7 +135,10 @@ paths:
         '416':
           description: Authorized full-window unsatisfiable range; MEDIA_RANGE_UNSATISFIABLE / Range not satisfiable. Zero physical opens.
           headers:
-            <<: *problemHeaders
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
+            Pragma: { $ref: '#/components/headers/NoCache' }
+            X-Content-Type-Options: { $ref: '#/components/headers/NoSniff' }
+            Content-Length: { $ref: '#/components/headers/Length' }
             Accept-Ranges: { $ref: '#/components/headers/AcceptRanges' }
             Content-Range:
               description: Authorized total object size only, e.g. bytes */16.
