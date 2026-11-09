@@ -33,6 +33,14 @@ class MediaPlaybackServiceTests {
         assertThat(fixture.calls).containsExactly("verify", "state", "evidence", "open");
     }
 
+    @Test void validInDurationSubWindowPassesShapeAndTypedOpen() {
+        Fixture fixture = new Fixture();
+        fixture.claim = replace(fixture.claim,"window",new VerifiedMediaClaim.PlaybackWindow(Duration.ofSeconds(1),Duration.ofSeconds(8)));
+        assertThat(fixture.run()).isInstanceOf(MediaPlaybackService.Result.Opened.class);
+        assertThat(fixture.scope().window()).isEqualTo(fixture.claim.window());
+        assertThat(fixture.calls).containsExactly("verify","state","evidence","open");
+    }
+
     @Test void seekAndRenewRequireExactPurposeAndNeverIssueOrExtendCredentials() {
         for (Purpose purpose : Purpose.values()) {
             Fixture fixture = new Fixture(); fixture.claim = purpose(fixture.claim, purpose);

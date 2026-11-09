@@ -8,6 +8,8 @@ import com.onecall.core.evidence.mediaread.ResolvedMediaObject;
 import com.onecall.core.sharing.internal.admission.*;
 import com.onecall.core.sharing.internal.admission.ShareAdmissionRepository.*;
 import com.onecall.core.sharing.internal.playback.*;
+import com.onecall.core.sharing.internal.credential.*;
+import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import com.onecall.core.sharing.internal.publicadmission.*;
 import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose;
 import com.zaxxer.hikari.HikariDataSource;
@@ -309,6 +311,78 @@ class MediaPlaybackIT {
         for (String sql : List.of("SELECT bucket FROM evidence.media_object", "SELECT object_key FROM evidence.media_object", "SELECT object_version_id FROM evidence.media_object", "SELECT id FROM sharing.evidence_share_grant"))
             fixture.denied("evidence_media_reader_role", sql);
         assertThat(fixture.snapshot()).isEqualTo(before);
+    }
+
+    @Test void realAuthorityRoundTripsAllPurposesThroughCurrentState() throws Exception {
+        var scenario=fixture.scenario("NONE","VALIDATED",false);
+        String before=fixture.snapshot();
+        for(Purpose purpose:Purpose.values()) {
+            fixture.resetTrace();
+            var authority=realAuthority(scenario.claim().issuedAt(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys());
+            var issued=issue(authority,scenario,purpose);
+            fixture.resetTrace();
+            var result=realService(authority).authorizeAndOpen(new OpaquePlaybackCredential(issued.credential()),purpose);
+            assertThat(result).isInstanceOf(MediaPlaybackService.Result.Opened.class);
+            assertThat(fixture.opens).hasValue(1); assertThat(fixture.resolutions).hasValue(1);
+            assertThat(fixture.snapshot()).isEqualTo(before);
+        }
+    }
+
+    @Test void realAuthorityStaleAndCrossObjectClaimsNeverOpen() throws Exception {
+        for(String mutation:List.of("REVOKE","CODE","OBJECT")) {
+            var scenario=fixture.scenario("NONE","VALIDATED",false);
+            var authority=realAuthority(scenario.claim().issuedAt(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys());
+            var issued=mutation.equals("OBJECT") ? issue(authority,scenario,Purpose.PLAYBACK,UUID.randomUUID()):issue(authority,scenario,Purpose.PLAYBACK);
+            if(mutation.equals("REVOKE")) fixture.sql("UPDATE sharing.evidence_share_grant SET status='REVOKED',revocation_generation=revocation_generation+1,revision=revision+1 WHERE id=?",scenario.grant());
+            else if(mutation.equals("CODE")) fixture.sql("UPDATE sharing.evidence_share_grant SET revocation_generation=revocation_generation+1,revision=revision+1 WHERE id=?",scenario.grant());
+            String before=fixture.snapshot(); fixture.resetTrace();
+            assertThat(realService(authority).authorizeAndOpen(new OpaquePlaybackCredential(issued.credential()),Purpose.PLAYBACK)).isInstanceOf(MediaPlaybackService.Result.Denied.class);
+            assertThat(fixture.opens).hasValue(0); assertThat(fixture.snapshot()).isEqualTo(before);
+        }
+    }
+
+    @Test void realAuthorityEvidenceMismatchAndUnavailableKeysNeverOpen() throws Exception {
+        var scenario=fixture.scenario("NONE","VALIDATED",false);
+        var authority=realAuthority(scenario.claim().issuedAt(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys());
+        var issued=issue(authority,scenario,Purpose.PLAYBACK);
+        fixture.resetTrace(); fixture.missingDuration=true;
+        assertThat(realService(authority).authorizeAndOpen(new OpaquePlaybackCredential(issued.credential()),Purpose.PLAYBACK)).isInstanceOf(MediaPlaybackService.Result.Unavailable.class);
+        assertThat(fixture.opens).hasValue(0);
+        fixture.resetTrace();
+        var unavailable=realAuthority(scenario.claim().issuedAt(),() -> new MediaPlaybackSigningKeyProvider.Result.Unavailable());
+        assertThat(realService(unavailable).authorizeAndOpen(new OpaquePlaybackCredential(issued.credential()),Purpose.PLAYBACK)).isInstanceOf(MediaPlaybackService.Result.Unavailable.class);
+        assertThat(fixture.opens).hasValue(0); assertThat(fixture.resolutions).hasValue(0);
+    }
+
+    private MediaPlaybackService realService(MediaCredentialVerifier verifier) {
+        return new MediaPlaybackService(verifier,fixture.state,fixture.evidence,scope -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(TransactionSynchronizationManager.getResourceMap()).isEmpty(); fixture.opens.incrementAndGet();
+            return new ControlledMediaReader.Result.Opened(new ControlledMediaReader.ControlledReadHandle(scope));
+        },Clock.systemUTC());
+    }
+
+    static MediaPlaybackCredentialAuthority realAuthority(Instant now,MediaPlaybackSigningKeyProvider provider) {
+        var beans=new org.springframework.beans.factory.support.DefaultListableBeanFactory(); beans.registerSingleton("keys",provider);
+        return new MediaPlaybackCredentialAuthority(beans.getBeanProvider(MediaPlaybackSigningKeyProvider.class),Clock.fixed(now,ZoneOffset.UTC));
+    }
+
+    private ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued issue(MediaPlaybackCredentialAuthority authority,Scenario scenario,Purpose purpose) {
+        return issue(authority,scenario,purpose,null);
+    }
+
+    private ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued issue(MediaPlaybackCredentialAuthority authority,Scenario scenario,Purpose purpose,UUID objectOverride) {
+        var found=(EvidenceMediaObjectReader.Result.Found)fixture.evidence.resolve(scenario.evidence());
+        var media=found.media(); var witness=scenario.witness();
+        var facts=new ShareMediaCredentialProvider.AuthorizedMediaFacts(scenario.evidence(),objectOverride==null ? media.mediaObjectId():objectOverride,media.sha256(),media.sizeBytes(),media.mimeType(),media.durationSeconds(),0,
+                Math.multiplyExact((long)media.durationSeconds(),1_000_000_000L));
+        String event=switch(purpose) { case PLAYBACK -> "PLAYBACK_AUTHORIZED"; case SEEK -> "SEEK_AUTHORIZED"; case RENEW -> "RENEWED"; };
+        Instant bound=List.of(witness.grantExpiresAt(),witness.admissionExpiresAt(),witness.sessionExpiresAt()).stream().min(Instant::compareTo).orElseThrow();
+        var result=authority.issueOrReplay(new ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest(scenario.grant(),scenario.claim().shareAdmissionId(),purpose.name(),event,
+                "a".repeat(64),scenario.claim().codeGeneration(),scenario.claim().revocationGeneration(),witness.grantExpiresAt(),witness.admissionExpiresAt(),witness.sessionExpiresAt(),bound,
+                "b".repeat(64),"event",facts,null));
+        assertThat(result).isInstanceOf(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued.class);
+        return (ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued)result;
     }
 
     private static VerifiedMediaClaim copy(VerifiedMediaClaim claim, UUID grant, UUID admission, UUID evidence, Instant expiry) {

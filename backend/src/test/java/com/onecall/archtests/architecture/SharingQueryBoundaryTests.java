@@ -166,7 +166,8 @@ class SharingQueryBoundaryTests {
                             "persistence/JooqSharingCommandRepository.java", "persistence/SharingCommandPersistenceConfiguration.java",
                             "persistence/SharingCommandPersistenceProperties.java", "provider/ProviderResult.java", "provider/ShareCreationPolicyProvider.java",
                             "provider/CapabilityTokenProvider.java", "provider/ShareExtractionCodeProvider.java", "provider/DesignatedMobileBindingProvider.java",
-                            "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java", "provider/ShareRotationPolicyProvider.java");
+                            "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java", "provider/ShareRotationPolicyProvider.java",
+                            "credential/MediaPlaybackSigningKeyProvider.java", "credential/MediaPlaybackCredentialAuthority.java", "credential/MediaPlaybackCredentialCodec.java");
             for (Path path : commandPaths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("org.flywaydb", "spring.datasource", "ONECALL_MIGRATION", "jdbc:", "SELECT *",
@@ -176,6 +177,26 @@ class SharingQueryBoundaryTests {
                         "share_access_event", "FOR UPDATE", "pg_advisory", "selectFrom(");
             }
         }
+        try (var files = Files.list(internal.resolve("credential"))) {
+            var credentials = files.toList();
+            assertThat(credentials.stream().map(path -> path.getFileName().toString())).containsExactlyInAnyOrder(
+                    "MediaPlaybackSigningKeyProvider.java", "MediaPlaybackCredentialAuthority.java", "MediaPlaybackCredentialCodec.java");
+            for (var file : credentials) {
+                String source = Files.readString(file);
+                assertThat(source).doesNotContain("NamedInterface", "com.onecall.core.evidence", "shareprojection", "org.jooq", "DataSource", "Transaction",
+                        "Repository", "StateReader", "EvidenceMediaObjectReader", "ControlledMedia", "org.springframework.web", "jakarta.servlet", "Redis", "COS",
+                        "KMS", "SecretManager", "java.net", "java.sql", "SELECT ", "INSERT ", "UPDATE ", "DELETE ",
+                        "Logger", "System.out", "System.err", "printStackTrace", "@Value", "getProperty(", "getenv(");
+                assertThat(source.lines().filter(line -> line.startsWith("import "))).allMatch(line -> line.startsWith("import java.nio.")
+                        || line.startsWith("import java.security.") || line.startsWith("import java.time.") || line.startsWith("import java.util.")
+                        || line.startsWith("import javax.crypto.") || line.equals("import com.fasterxml.jackson.annotation.JsonValue;")
+                        || line.equals("import org.springframework.beans.factory.ObjectProvider;")
+                        || line.equals("import com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider;")
+                        || line.equals("import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose;")
+                        || line.matches("import com\\.onecall\\.core\\.sharing\\.internal\\.playback\\.(MediaCredentialVerifier|OpaquePlaybackCredential|VerifiedMediaClaim|VerifiedMediaClaim\\.PlaybackWindow);"));
+            }
+        }
+        try (var files = Files.walk(internal)) { assertThat(files.filter(Files::isRegularFile).count()).isEqualTo(76); }
         var commandApi = namedInterfaces.getByName("customer-command").orElseThrow();
         components(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyRequest.class,
                 "caller", "grantId", "verificationMode", "status", "codeGeneration", "revocationGeneration");
@@ -304,13 +325,24 @@ class SharingQueryBoundaryTests {
                 com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.class,
                 com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued.class,
                 com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Unavailable.class,
-                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Malformed.class)
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Malformed.class,
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.AuthorizedMediaFacts.class,
+                com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.ReplayAnchor.class)
                 .stream().map(Class::getName))
                 .containsExactly("com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialRequest",
                         "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult",
                         "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Issued",
                         "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Unavailable",
-                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Malformed");
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$MediaAuthorizationCredentialResult$Malformed",
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$AuthorizedMediaFacts",
+                        "com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider$ReplayAnchor");
+        components(com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest.class,
+                "shareGrantId", "shareAdmissionId", "purpose", "eventType", "requestKeyDigest", "codeGeneration", "revocationGeneration", "grantExpiresAt",
+                "admissionExpiresAt", "sessionExpiresAt", "credentialExpiresAt", "preProviderFingerprint", "eventId", "mediaFacts", "priorReplayAnchor");
+        components(com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.AuthorizedMediaFacts.class,
+                "evidenceId", "mediaObjectId", "sha256", "sizeBytes", "mimeType", "durationSeconds", "windowStartNanos", "windowEndNanos");
+        components(com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.ReplayAnchor.class,"issuedAtMicros","notBeforeMicros","kid");
+        components(com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued.class,"credential","expiresAt","replayAnchor");
         Path controller = Path.of("src/main/java/com/onecall/core/customer_iam/internal/web/PublicSharesController.java");
         for (Path surface : List.of(controller, sharingRoot.resolve("publicadmission/MediaAuthorizationRequest.java"),
                 sharingRoot.resolve("publicadmission/ShareMediaAuthorizationService.java"))) {
@@ -397,6 +429,9 @@ class SharingQueryBoundaryTests {
         }
         for (String file : PLAYBACK_FILES) {
             String source = Files.readString(root.resolve(file));
+            assertThat(source.lines().filter(line -> line.startsWith("import com.onecall.core.sharing.internal.credential.")))
+                    .allMatch(line -> file.equals("MediaPlaybackConfiguration.java") && (line.equals("import com.onecall.core.sharing.internal.credential.MediaPlaybackCredentialAuthority;")
+                            || line.equals("import com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider;")));
             assertThat(source).doesNotContain("NamedInterface", "evidence.internal", "evidence.shareprojection", "org.jooq", "byte[]", "InputStream",
                     "org.springframework.web", "bucket", "object_key", "object_version", "https://", "Logger", "System.out", "System.err",
                     "Supplier<", "Callable<", "Redis", "COS", "com.onecall.core.customer_iam", "com.onecall.core.organization_access");
