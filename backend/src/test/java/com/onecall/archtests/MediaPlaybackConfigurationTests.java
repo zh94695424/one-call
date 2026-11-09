@@ -6,9 +6,12 @@ import static org.mockito.Mockito.*;
 import com.onecall.core.evidence.mediaread.*;
 import com.onecall.core.sharing.internal.admission.*;
 import com.onecall.core.sharing.internal.playback.*;
+import com.onecall.core.sharing.internal.credential.*;
+import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
@@ -21,10 +24,10 @@ class MediaPlaybackConfigurationTests {
     private final ApplicationContextRunner runner = new ApplicationContextRunner().withAllowBeanDefinitionOverriding(false)
             .withUserConfiguration(MediaPlaybackConfiguration.class);
 
-    @Test void defaultAndWebProfilesProvideOnlyUnavailablePlaybackProviders() {
-        for (String profile : List.of("default", "web")) runner.withPropertyValues("spring.profiles.active=" + profile).run(context -> {
+    @Test void defaultAndWebProfilesProvideOneUnavailableAuthority() {
+        for (String profile : List.of("", "default", "web")) runner.withPropertyValues("spring.profiles.active=" + profile).run(context -> {
             assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackService.class);
-            assertThat(context).doesNotHaveBean(MediaCredentialVerifier.class).doesNotHaveBean(ControlledMediaReader.class)
+            assertThat(context).hasSingleBean(MediaCredentialVerifier.class).hasSingleBean(ShareMediaCredentialProvider.class).hasSingleBean(MediaPlaybackCredentialAuthority.class).doesNotHaveBean(ControlledMediaReader.class)
                     .doesNotHaveBean(PlaybackStateReader.class).doesNotHaveBean(EvidenceMediaObjectReader.class);
             assertThat(context.getBean(MediaPlaybackService.class).authorizeAndOpen(new OpaquePlaybackCredential("fixture"), Purpose.PLAYBACK))
                     .isEqualTo(new MediaPlaybackService.Result.Unavailable());
@@ -49,18 +52,49 @@ class MediaPlaybackConfigurationTests {
                 .run(context -> assertThat(context).hasFailed());
     }
 
-    @Test void explicitVerifierEvidenceStateAndReaderAreUsedWithoutReplacement() {
+    @Test void singleAuthorityEvidenceStateAndReaderAreUsedWithoutReplacement() {
         for (boolean configurationFirst : List.of(true, false)) {
             AtomicInteger calls = new AtomicInteger();
+            var observedClaim = new AtomicReference<VerifiedMediaClaim>();
             var configured = new ApplicationContextRunner().withAllowBeanDefinitionOverriding(false);
             if (configurationFirst) configured = configured.withUserConfiguration(MediaPlaybackConfiguration.class);
-            configured = providers(configured, calls);
+            configured = providers(configured, calls, observedClaim);
             if (!configurationFirst) configured = configured.withUserConfiguration(MediaPlaybackConfiguration.class);
             configured.run(context -> {
                 assertThat(context).hasNotFailed();
-                assertThat(context.getBean(MediaPlaybackService.class).authorizeAndOpen(new OpaquePlaybackCredential("fixture"), Purpose.PLAYBACK))
+                Instant issuedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS).minusSeconds(1);
+                Instant notBefore = issuedAt;
+                Instant expiresAt = issuedAt.plusSeconds(60);
+                var anchor = new ShareMediaCredentialProvider.ReplayAnchor(
+                        issuedAt.getEpochSecond() * 1_000_000 + issuedAt.getNano() / 1_000,
+                        notBefore.getEpochSecond() * 1_000_000 + notBefore.getNano() / 1_000, "K1");
+                var facts = new ShareMediaCredentialProvider.AuthorizedMediaFacts(new UUID(0, 3), new UUID(0, 4),
+                        "a".repeat(64), 123, "audio/wav", 10, 0, 10_000_000_000L);
+                var issued = context.getBean(MediaPlaybackCredentialAuthority.class).issueOrReplay(
+                        new ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest(new UUID(0, 1), new UUID(0, 2),
+                                "PLAYBACK", "PLAYBACK_AUTHORIZED", "a".repeat(64), 11, 7, expiresAt, expiresAt,
+                                expiresAt, expiresAt, "a".repeat(64), "event", facts, anchor));
+                assertThat(issued).isInstanceOf(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued.class);
+                String credential = ((ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued) issued).credential();
+                var expectedClaim = new VerifiedMediaClaim("onecall:media-playback:v1", new UUID(0, 1), new UUID(0, 2),
+                        new UUID(0, 3), new UUID(0, 4), 7, 11, Purpose.PLAYBACK, issuedAt, notBefore, expiresAt, 10,
+                        new VerifiedMediaClaim.PlaybackWindow(Duration.ZERO, Duration.ofSeconds(10)));
+                assertThat(context.getBean(MediaPlaybackService.class).authorizeAndOpen(new OpaquePlaybackCredential(credential), Purpose.PLAYBACK))
                         .isInstanceOf(MediaPlaybackService.Result.Opened.class);
-                assertThat(calls).hasValue(4);
+                assertThat(observedClaim.get()).isEqualTo(expectedClaim);
+                assertThat(calls).hasValue(3);
+                assertThat(context.getBean(MediaCredentialVerifier.class)).isSameAs(context.getBean(ShareMediaCredentialProvider.class));
+                assertThat(context).hasSingleBean(MediaPlaybackCredentialAuthority.class).hasSingleBean(MediaCredentialVerifier.class).hasSingleBean(ShareMediaCredentialProvider.class);
+                assertThat(context.getBean(MediaCredentialVerifier.class)).isSameAs(context.getBean(MediaPlaybackCredentialAuthority.class));
+                assertThat(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(MediaPlaybackService.class), "verifier"))
+                        .isSameAs(context.getBean(MediaPlaybackCredentialAuthority.class));
+                String valid = token(context.getBean(MediaPlaybackCredentialAuthority.class));
+                String[] parts = valid.split("\\.");
+                byte[] mac = Base64.getUrlDecoder().decode(parts[3]); mac[0] ^= 1;
+                String tampered = String.join(".", parts[0], parts[1], parts[2], Base64.getUrlEncoder().withoutPadding().encodeToString(mac));
+                assertThat(context.getBean(MediaPlaybackService.class).authorizeAndOpen(new OpaquePlaybackCredential(tampered), Purpose.PLAYBACK))
+                        .isEqualTo(new MediaPlaybackService.Result.Denied(MediaPlaybackService.Reason.INVALID_CREDENTIAL));
+                assertThat(calls).hasValue(3);
             });
         }
         for (Class<?> type : List.of(MediaCredentialVerifier.class, PlaybackStateReader.class, EvidenceMediaObjectReader.class, ControlledMediaReader.class)) {
@@ -75,28 +109,129 @@ class MediaPlaybackConfigurationTests {
         }
     }
 
-    @Test void missingEvidenceOrProvidersFailClosedWithoutProductionAdapters() {
-        for (Class<?> missing : List.of(PlaybackStateReader.class, EvidenceMediaObjectReader.class, MediaCredentialVerifier.class, ControlledMediaReader.class)) {
+    @Test void missingEvidenceStateReaderOrKeysFailClosedWithoutProductionAdapters() {
+        for (Class<?> missing : List.of(PlaybackStateReader.class, EvidenceMediaObjectReader.class, MediaPlaybackSigningKeyProvider.class, ControlledMediaReader.class)) {
             providers(runner, new AtomicInteger()).withInitializer(context ->
                     context.addBeanFactoryPostProcessor(factory -> {
                         var registry = (BeanDefinitionRegistry) factory;
                         for (String name : factory.getBeanNamesForType(missing)) registry.removeBeanDefinition(name);
                     })).run(context -> {
                         assertThat(context).hasNotFailed();
-                        var result = context.getBean(MediaPlaybackService.class).authorizeAndOpen(new OpaquePlaybackCredential("fixture"), Purpose.PLAYBACK);
+                        var result = context.getBean(MediaPlaybackService.class).authorizeAndOpen(new OpaquePlaybackCredential(validToken()), Purpose.PLAYBACK);
                         assertThat(result).isEqualTo(new MediaPlaybackService.Result.Unavailable());
                         assertThat(result.toString()).doesNotContain("bucket", "jdbc", "password");
                     });
         }
     }
 
+
+    @Test void persistenceOnlyConsumersShareSingleAuthority() { persistence(false); }
+
+    @Test void bothEnabledConsumersShareAuthorityInEitherOrder() { persistence(true); }
+
+    @Test void zeroAndAmbiguousKeysDoNotFailStartup() {
+        for (int count : List.of(0,2)) {
+            var configured=runner;
+            for(int index=0;index<count;index++) {
+                boolean primary=index==0;
+                configured=configured.withBean("keys"+index,MediaPlaybackSigningKeyProvider.class,
+                        DeterministicShareCommandProviders::mediaPlaybackSigningKeys,definition -> definition.setPrimary(primary));
+            }
+            configured.run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class);
+                assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+            });
+        }
+    }
+
+    @Test void invalidAndThrowingKeysAreUnavailablePerCall() {
+        for(MediaPlaybackSigningKeyProvider keys:Arrays.<MediaPlaybackSigningKeyProvider>asList(() -> null, () -> { throw new IllegalStateException("private-key"); },
+                () -> new MediaPlaybackSigningKeyProvider.Result.Unavailable(),
+                () -> new MediaPlaybackSigningKeyProvider.Result.Available(new MediaPlaybackSigningKeyProvider.Entry("bad.kid",new byte[31],MediaPlaybackSigningKeyProvider.Role.ACTIVE),List.of())))
+            runner.withBean(MediaPlaybackSigningKeyProvider.class,() -> keys).run(context -> {
+                assertThat(context).hasNotFailed(); assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+            });
+    }
+
+    @Test void secondVerifierStillFailsClosedWithoutFallback() {
+        runner.withBean("secondVerifier",MediaCredentialVerifier.class,() -> credential -> new MediaCredentialVerifier.Result.Unavailable())
+                .run(context -> { assertThat(context).hasFailed(); assertThat(context.getStartupFailure()).hasRootCauseMessage("Ambiguous playback authority"); });
+    }
+
+    private void persistence(boolean combined) {
+        for(boolean reverse:List.of(false,true)) for (String readers : List.of("zero", "single", "multiple", "primary", "throwing", "nullResult", "throwingProvider")) {
+            Class<?>[] configuration=combined ? (reverse ? new Class<?>[]{com.onecall.core.sharing.internal.persistence.ShareAdmissionPersistenceConfiguration.class,MediaPlaybackConfiguration.class}
+                    : new Class<?>[]{MediaPlaybackConfiguration.class,com.onecall.core.sharing.internal.persistence.ShareAdmissionPersistenceConfiguration.class})
+                    : new Class<?>[]{com.onecall.core.sharing.internal.persistence.ShareAdmissionPersistenceConfiguration.class};
+            AtomicInteger readerCalls = new AtomicInteger();
+            new ApplicationContextRunner().withAllowBeanDefinitionOverriding(false).withUserConfiguration(configuration)
+                    .withInitializer(context -> { context.getEnvironment().setActiveProfiles(combined ? new String[]{"web","persistence"}:new String[]{"persistence"});
+                        context.addBeanFactoryPostProcessor(factory -> factory.registerSingleton("sharingAdmissionDataSource",mock(com.zaxxer.hikari.HikariDataSource.class))); })
+                    .withPropertyValues("onecall.sharing-admission.datasource.enabled=true","onecall.sharing-admission.datasource.url=jdbc:synthetic:admission",
+                            "onecall.sharing-admission.datasource.username=sharing_admission_role","onecall.sharing-admission.datasource.password=synthetic")
+                    .run(context -> {
+                        assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class).hasSingleBean(ShareMediaCredentialProvider.class).hasSingleBean(MediaCredentialVerifier.class);
+                        var authority=context.getBean(MediaPlaybackCredentialAuthority.class);
+                        assertThat(context.getBean(ShareMediaCredentialProvider.class)).isSameAs(authority);
+                        assertThat(context.getBean(MediaCredentialVerifier.class)).isSameAs(authority);
+                        for(Object consumer:List.of(context.getBean("shareAdmissionService"),context.getBean("shareMediaAuthorizationService")))
+                            assertThat(org.springframework.test.util.ReflectionTestUtils.getField(consumer,"credentials")).isSameAs(authority);
+                        assertThat(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(MediaPlaybackService.class),"verifier")).isSameAs(authority);
+                        assertThat(context).doesNotHaveBean("unavailableShareMediaCredentialProvider");
+                        var factory = (org.springframework.beans.factory.support.DefaultListableBeanFactory) context.getSourceApplicationContext().getBeanFactory();
+                        EvidenceMediaObjectReader reader = evidenceId -> {
+                            readerCalls.incrementAndGet();
+                            if (readers.equals("throwing")) throw new IllegalStateException("private-evidence-canary");
+                            return readers.equals("nullResult") ? null : new EvidenceMediaObjectReader.Result.Missing();
+                        };
+                        if (!readers.equals("zero")) factory.registerSingleton("evidenceReader", reader);
+                        if (List.of("multiple", "primary", "throwingProvider").contains(readers)) {
+                            var definition = new RootBeanDefinition(EvidenceMediaObjectReader.class);
+                            definition.setInstanceSupplier(() -> {
+                                if (readers.equals("throwingProvider")) throw new IllegalStateException("private-evidence-canary");
+                                return (EvidenceMediaObjectReader) evidenceId -> { throw new AssertionError("Ambiguous reader invoked"); };
+                            });
+                            definition.setPrimary(readers.equals("primary")); definition.setLazyInit(true);
+                            factory.registerBeanDefinition("otherEvidenceReader", definition);
+                        }
+                        var evidence = (EvidenceMediaObjectReader) org.springframework.test.util.ReflectionTestUtils.getField(context.getBean("shareMediaAuthorizationService"), "evidence");
+                        var resolved = evidence.resolve(new UUID(0, 3));
+                        if (readers.equals("single")) assertThat(resolved).isInstanceOf(EvidenceMediaObjectReader.Result.Missing.class);
+                        else if (readers.equals("nullResult")) assertThat(resolved).isNull();
+                        else assertThat(resolved).isInstanceOf(EvidenceMediaObjectReader.Result.Unavailable.class);
+                        assertThat(readerCalls).hasValue(List.of("single", "throwing", "nullResult").contains(readers) ? 1 : 0);
+                        assertUnavailable(authority);
+                    });
+        }
+    }
+
+    private static void assertUnavailable(MediaCredentialVerifier verifier) {
+        for(String malformed:List.of("pa20-positive-playback-token","ocmp1","ocmp1.bad.!.*"))
+            assertThat(verifier.verify(new OpaquePlaybackCredential(malformed))).isInstanceOf(MediaCredentialVerifier.Result.Unavailable.class);
+    }
+
+    private static String validToken() {
+        var beans=new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+        beans.registerSingleton("keys",DeterministicShareCommandProviders.mediaPlaybackSigningKeys());
+        return token(new MediaPlaybackCredentialAuthority(beans.getBeanProvider(MediaPlaybackSigningKeyProvider.class),Clock.systemUTC()));
+    }
+
+    private static String token(MediaPlaybackCredentialAuthority authority) {
+        Instant expiry=Instant.now().plusSeconds(60);
+        var facts=new ShareMediaCredentialProvider.AuthorizedMediaFacts(new UUID(0,3),new UUID(0,4),"a".repeat(64),123,"audio/wav",10,0,10_000_000_000L);
+        var issued=authority.issueOrReplay(new ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest(new UUID(0,1),new UUID(0,2),"PLAYBACK","PLAYBACK_AUTHORIZED",
+                "a".repeat(64),0,0,expiry,expiry,expiry,expiry,"a".repeat(64),"event",facts,null));
+        return ((ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued)issued).credential();
+    }
+
     private ApplicationContextRunner providers(ApplicationContextRunner base, AtomicInteger calls) {
-        Instant now = Instant.now(); UUID mediaId = UUID.randomUUID();
-        var claim = new VerifiedMediaClaim("onecall:media-playback:v1", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), mediaId,
-                0, 0, Purpose.PLAYBACK, now.minusSeconds(1), now.minusSeconds(1), now.plusSeconds(60), 10,
-                new VerifiedMediaClaim.PlaybackWindow(Duration.ZERO, Duration.ofSeconds(10)));
-        return base.withBean(MediaCredentialVerifier.class, () -> credential -> { calls.incrementAndGet(); return new MediaCredentialVerifier.Result.Verified(claim); })
-                .withBean(PlaybackStateReader.class, () -> value -> { calls.incrementAndGet(); return new PlaybackStateReader.Result.Allowed(now); })
+        return providers(base, calls, new AtomicReference<>());
+    }
+
+    private ApplicationContextRunner providers(ApplicationContextRunner base, AtomicInteger calls, AtomicReference<VerifiedMediaClaim> observedClaim) {
+        UUID mediaId = new UUID(0,4);
+        return base.withBean(MediaPlaybackSigningKeyProvider.class, DeterministicShareCommandProviders::mediaPlaybackSigningKeys)
+                .withBean(PlaybackStateReader.class, () -> value -> { observedClaim.set(value); calls.incrementAndGet(); return new PlaybackStateReader.Result.Allowed(Instant.now()); })
                 .withBean(EvidenceMediaObjectReader.class, () -> evidenceId -> { calls.incrementAndGet(); return new EvidenceMediaObjectReader.Result.Found(new ResolvedMediaObject(mediaId, "a".repeat(64), 123, "audio/wav", 10)); })
                 .withBean(ControlledMediaReader.class, () -> scope -> { calls.incrementAndGet(); return new ControlledMediaReader.Result.Opened(new ControlledMediaReader.ControlledReadHandle(scope)); });
     }

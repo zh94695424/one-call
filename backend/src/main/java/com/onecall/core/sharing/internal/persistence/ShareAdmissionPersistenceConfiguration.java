@@ -13,6 +13,8 @@ import com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider;
 import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException;
 import com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService;
 import com.onecall.core.sharing.internal.publicadmission.ShareMediaAuthorizationService;
+import com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader;
+import com.onecall.core.sharing.internal.playback.MediaPlaybackConfiguration;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.security.MessageDigest;
@@ -28,6 +30,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.DataSourceConnectionProvider;
 import org.jooq.impl.DefaultConfiguration;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -35,6 +38,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 import org.springframework.transaction.TransactionDefinition;
@@ -44,6 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Profile("persistence")
 @ConditionalOnProperty(prefix = "onecall.sharing-admission.datasource", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(ShareAdmissionPersistenceConfiguration.Properties.class)
+@Import(MediaPlaybackConfiguration.class)
 public class ShareAdmissionPersistenceConfiguration {
     @ConfigurationProperties("onecall.sharing-admission.datasource")
     public record Properties(String url, String username, String password) {
@@ -97,8 +102,6 @@ public class ShareAdmissionPersistenceConfiguration {
     ShareAdmissionCodeVerifier unavailableShareAdmissionCodeVerifier() { return new UnavailableCodeVerifier(); }
     @Bean @ConditionalOnMissingBean(DesignatedMobileProofVerifier.class)
     DesignatedMobileProofVerifier unavailableDesignatedMobileProofVerifier() { return new UnavailableMobileProofVerifier(); }
-    @Bean @ConditionalOnMissingBean(ShareMediaCredentialProvider.class)
-    ShareMediaCredentialProvider unavailableShareMediaCredentialProvider() { return new UnavailableMediaCredentialProvider(); }
     @Bean @ConditionalOnMissingBean(ShareAdmissionTicketProvider.class)
     ShareAdmissionTicketProvider unavailableShareAdmissionTicketProvider() { return new UnavailableTicketProvider(); }
     @Bean
@@ -111,8 +114,14 @@ public class ShareAdmissionPersistenceConfiguration {
     @Bean
     ShareMediaAuthorizationService shareMediaAuthorizationService(@Qualifier("sharingAdmissionTransactionTemplate") TransactionTemplate transactions,
             ShareAdmissionRepository repository, @Qualifier("sharingAdmissionSha256Provider") ShareAdmissionSha256Provider sha256,
-            ShareMediaCredentialProvider credentials) {
-        return new DefaultShareMediaAuthorizationService(transactions, repository, sha256, credentials);
+            ShareMediaCredentialProvider credentials, ObjectProvider<EvidenceMediaObjectReader> evidence) {
+        return new DefaultShareMediaAuthorizationService(transactions, repository, sha256, credentials, evidenceId -> {
+            try {
+                var readers = evidence.stream().limit(2).toList();
+                if (readers.size() != 1) return new EvidenceMediaObjectReader.Result.Unavailable();
+                return readers.getFirst().resolve(evidenceId);
+            } catch (RuntimeException unavailable) { return new EvidenceMediaObjectReader.Result.Unavailable(); }
+        });
     }
     static final class UnavailablePolicyProvider implements ShareAdmissionPolicyProvider {
         @Override public Result ticketPolicy(SharePolicyRequest request) { return new Unavailable(); }
@@ -122,9 +131,6 @@ public class ShareAdmissionPersistenceConfiguration {
     }
     static final class UnavailableMobileProofVerifier implements DesignatedMobileProofVerifier {
         @Override public Result verify(MobileProofRequest request) { return new Unavailable(); }
-    }
-    static final class UnavailableMediaCredentialProvider implements ShareMediaCredentialProvider {
-        @Override public Result issue(MediaCredentialRequest request) { return new Unavailable(); }
     }
     static final class UnavailableTicketProvider implements ShareAdmissionTicketProvider {
         @Override public Result write(TicketWriteRequest request) { return new Unavailable(); }

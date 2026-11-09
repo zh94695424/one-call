@@ -6,6 +6,10 @@ import static com.onecall.archtests.support.MediaGatewayTestProviders.*;
 
 import com.onecall.core.OneCallApplication;
 import com.onecall.core.evidence.mediaread.ControlledMediaByteSource;
+import com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader;
+import com.onecall.core.sharing.internal.admission.ShareMediaCredentialProvider;
+import com.onecall.core.sharing.internal.credential.*;
+import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import com.onecall.core.sharing.internal.gateway.*;
 import com.onecall.core.sharing.internal.playback.*;
 import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose;
@@ -248,6 +252,76 @@ class MediaGatewayTransportIT {
         }
     }
 
+    @Test void realAuthorityIssuedCredentialsReachHttpFullAndRange() throws Exception {
+        try(var transport=new Transport(PAYLOAD,AuthorityMode.REAL)) {
+            assertThat(transport.context.getBeansOfType(MediaPlaybackCredentialAuthority.class)).hasSize(1);
+            assertThat(transport.context.getBeansOfType(ShareMediaCredentialProvider.class)).hasSize(1);
+            assertThat(transport.context.getBeansOfType(MediaCredentialVerifier.class)).hasSize(1);
+            assertThat(transport.context.getBeansOfType(MediaPlaybackSigningKeyProvider.class)).hasSize(1);
+            var authority=transport.context.getBean(MediaPlaybackCredentialAuthority.class);
+            assertThat(transport.context.getBean(MediaCredentialVerifier.class)).isSameAs(authority);
+            assertThat(transport.context.getBean(ShareMediaCredentialProvider.class)).isSameAs(authority);
+            assertThat(org.springframework.test.util.ReflectionTestUtils.getField(transport.service,"verifier")).isSameAs(authority);
+            for(String range:Arrays.asList(null,"bytes=2-5")) {
+                Purpose purpose=range==null ? Purpose.PLAYBACK:Purpose.SEEK;
+                transport.prepare(purpose); String credential=transport.issue(purpose);
+                transport.fixture.resetTrace(); String before=transport.fixture.snapshot();
+                var response=transport.get(range,credential,"");
+                assertThat(response.statusCode()).isEqualTo(range==null ? 200:206);
+                assertThat(response.body()).isEqualTo(range==null ? PAYLOAD:Arrays.copyOfRange(PAYLOAD,2,6));
+                assertThat(response.headers().firstValue("Content-Length")).contains(range==null ? "16":"4");
+                assertThat(response.headers().firstValue("Content-Type")).contains("audio/wav");
+                assertThat(response.headers().firstValue("Accept-Ranges")).contains("bytes");
+                if(range!=null) assertThat(response.headers().firstValue("Content-Range")).contains("bytes 2-5/16");
+                transport.counts(0); assertThat(transport.fixture.opens).hasValue(1); assertThat(transport.fixture.resolutions).hasValue(1);
+                assertThat(transport.fixture.snapshot()).isEqualTo(before);
+                assertThat(response.headers().map().toString()+capturedOutput.getAll()).doesNotContain(credential,transport.scenario.media().toString());
+            }
+        }
+    }
+
+    @Test void realAuthorityTamperScopeAndWindowFailuresNeverReadBytes() throws Exception {
+        try(var transport=new Transport(PAYLOAD,AuthorityMode.REAL)) {
+            for(String fault:List.of("TAMPER","UNKNOWN","EXPIRED","FUTURE","PURPOSE","OBJECT","GENERATION","WINDOW")) {
+                transport.newScenario("NONE"); transport.prepare(Purpose.PLAYBACK);
+                String credential=transport.issue(Purpose.PLAYBACK);
+                if(fault.equals("TAMPER")) {
+                    String[] parts=credential.split("\\."); byte[] bytes=Base64.getUrlDecoder().decode(parts[2]); bytes[51]^=1;
+                    credential="ocmp1.K1."+Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)+"."+parts[3];
+                } else if(fault.equals("UNKNOWN")) credential=credential.replace(".K1.",".removed.");
+                else credential=adversarial(credential,fault);
+                transport.fixture.resetTrace(); String before=transport.fixture.snapshot();
+                var response=transport.get(null,credential,"");
+                assertThat(response.statusCode()).as(fault).isEqualTo(403);
+                assertThat(transport.source.opens).hasValue(0); assertThat(transport.source.reads).hasValue(0);
+                assertThat(transport.fixture.snapshot()).isEqualTo(before); transport.redacted(response);
+                assertThat(capturedOutput.getAll()).doesNotContain(credential);
+            }
+        }
+    }
+
+    private static String adversarial(String credential,String fault) throws Exception {
+        String[] parts=credential.split("\\."); byte[] bytes=Base64.getUrlDecoder().decode(parts[2]); var payload=java.nio.ByteBuffer.wrap(bytes);
+        switch(fault) {
+            case "EXPIRED" -> { payload.putLong(133,1); payload.putLong(141,1); payload.putLong(149,2); }
+            case "FUTURE" -> { long future=Instant.now().plusSeconds(86400).getEpochSecond()*1_000_000L; payload.putLong(133,future); payload.putLong(141,future); payload.putLong(149,future+1_000_000L); }
+            case "PURPOSE" -> bytes=replacePurpose(bytes,"RENEW");
+            case "OBJECT" -> bytes[114]^=1;
+            case "GENERATION" -> payload.putInt(115,99);
+            case "WINDOW" -> payload.putLong(161,1_000_000_000L);
+            default -> throw new AssertionError(fault);
+        }
+        var key=((MediaPlaybackSigningKeyProvider.Result.Available)DeterministicShareCommandProviders.mediaPlaybackSigningKeys().currentKeys()).active().material();
+        var mac=javax.crypto.Mac.getInstance("HmacSHA256"); mac.init(new javax.crypto.spec.SecretKeySpec(key,"HmacSHA256"));
+        mac.update("onecall-media-playback\0v1\0K1\0".getBytes(StandardCharsets.US_ASCII));
+        return "ocmp1.K1."+Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)+"."+Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(bytes));
+    }
+
+    private static byte[] replacePurpose(byte[] bytes,String purpose) {
+        byte[] name=purpose.getBytes(StandardCharsets.US_ASCII); var result=java.nio.ByteBuffer.allocate(bytes.length-8+name.length);
+        result.put(bytes,0,123).putShort((short)name.length).put(name).put(bytes,133,bytes.length-133); return result.array();
+    }
+
     private static int pid(javax.sql.DataSource pool) throws Exception {
         try (var connection = pool.getConnection(); var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT pg_backend_pid()")) {
             assertThat(rows.next()).isTrue(); return rows.getInt(1);
@@ -256,7 +330,6 @@ class MediaGatewayTransportIT {
 
     @Configuration(proxyBeanMethods = false)
     static class HttpBeans {
-        @Bean @Primary MediaPlaybackService transportPlaybackService(Transport transport) { return transport.service; }
         @Bean ControlledMediaByteSource transportByteSource(Transport transport) { return request -> transport.source.open(request); }
         @Bean WebServerFactoryCustomizer<TomcatServletWebServerFactory> transportBuffer(Transport transport) {
             return factory -> factory.addContextValves(new ValveBase() {
@@ -268,13 +341,28 @@ class MediaGatewayTransportIT {
         }
     }
 
+    @Configuration(proxyBeanMethods = false)
+    static class StubPlaybackBeans {
+        @Bean @Primary MediaPlaybackService transportPlaybackService(Transport transport) { return transport.service; }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class RealAuthorityHttpBeans {
+        @Bean MediaPlaybackSigningKeyProvider transportKeys() { return DeterministicShareCommandProviders.mediaPlaybackSigningKeys(); }
+        @Bean PlaybackStateReader transportState(Transport transport) { return claim -> transport.fixture.state.check(claim); }
+        @Bean EvidenceMediaObjectReader transportEvidence(Transport transport) { return evidence -> transport.fixture.evidence.resolve(evidence); }
+        @Bean ControlledMediaReader transportReader(Transport transport) { return transport::typedOpen; }
+    }
+
+    enum AuthorityMode { STUB, REAL }
+
     static final class Transport implements AutoCloseable {
         final MediaPlaybackIT.Fixture fixture;
         final byte[] bytes;
         MediaPlaybackIT.Scenario scenario;
         VerifiedMediaClaim claim;
         Source source;
-        final MediaPlaybackService service;
+        MediaPlaybackService service;
         final ConfigurableApplicationContext context;
         final HttpClient client = HttpClient.newHttpClient();
         boolean invalid;
@@ -283,10 +371,13 @@ class MediaGatewayTransportIT {
         volatile int responseBuffer;
 
         Transport(byte[] bytes) throws Exception {
+            this(bytes,AuthorityMode.STUB);
+        }
+        Transport(byte[] bytes,AuthorityMode mode) throws Exception {
             this.bytes = bytes.clone(); fixture = new MediaPlaybackIT.Fixture();
             try {
                 newScenario("NONE");
-                service = new MediaPlaybackService(credential -> {
+                if(mode==AuthorityMode.STUB) service = new MediaPlaybackService(credential -> {
                     assertThat(fixture.afterOpen).isFalse(); fixture.verifications.incrementAndGet();
                     if (unavailable) return new MediaCredentialVerifier.Result.Unavailable();
                     return invalid || !POSITIVE_HTTP_BEARER.equals(credential.value()) ? new MediaCredentialVerifier.Result.Invalid()
@@ -300,10 +391,34 @@ class MediaGatewayTransportIT {
                     @Override public Clock withZone(ZoneId zone) { return this; }
                     @Override public Instant instant() { assertThat(fixture.afterOpen).isFalse(); return Instant.now(); }
                 });
-                context = new SpringApplicationBuilder(OneCallApplication.class, HttpBeans.class).profiles("web")
+                context = new SpringApplicationBuilder(OneCallApplication.class, HttpBeans.class,mode==AuthorityMode.STUB ? StubPlaybackBeans.class:RealAuthorityHttpBeans.class).profiles("web")
                         .properties("server.port=0", "spring.main.banner-mode=off")
                         .initializers(application -> application.getBeanFactory().registerSingleton("transportFixture", this)).run();
+                if(mode==AuthorityMode.REAL) service=context.getBean(MediaPlaybackService.class);
             } catch (Exception | Error failure) { client.close(); fixture.close(); throw failure; }
+        }
+        ControlledMediaReader.Result typedOpen(ControlledMediaReader.ReadScope scope) {
+            assertUnbound(); assertThat(fixture.afterOpen).isFalse(); fixture.opens.incrementAndGet();
+            sealedCheckouts=fixture.checkouts.get(); fixture.afterOpen=true;
+            return new ControlledMediaReader.Result.Opened(new ControlledMediaReader.ControlledReadHandle(scope));
+        }
+        String issue(Purpose purpose) {
+            var found=(EvidenceMediaObjectReader.Result.Found)fixture.evidence.resolve(scenario.evidence()); var media=found.media();
+            assertThat(media.mediaObjectId()).isEqualTo(scenario.media()); assertThat(media.sha256()).isEqualTo(digest(bytes));
+            assertThat(media.sizeBytes()).isEqualTo(bytes.length); assertThat(media.mimeType()).isEqualTo("audio/wav"); assertThat(media.durationSeconds()).isEqualTo(10);
+            var facts=new ShareMediaCredentialProvider.AuthorizedMediaFacts(scenario.evidence(),media.mediaObjectId(),media.sha256(),media.sizeBytes(),media.mimeType(),media.durationSeconds(),0,10_000_000_000L);
+            var witness=scenario.witness(); Instant bound=List.of(witness.grantExpiresAt(),witness.admissionExpiresAt(),witness.sessionExpiresAt()).stream().min(Instant::compareTo).orElseThrow();
+            String event=switch(purpose) { case PLAYBACK -> "PLAYBACK_AUTHORIZED"; case SEEK -> "SEEK_AUTHORIZED"; case RENEW -> "RENEWED"; };
+            var issuer=MediaPlaybackIT.realAuthority(scenario.claim().issuedAt(),context.getBean(MediaPlaybackSigningKeyProvider.class));
+            var result=issuer.issueOrReplay(new ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest(scenario.grant(),scenario.claim().shareAdmissionId(),purpose.name(),event,
+                    "a".repeat(64),scenario.claim().codeGeneration(),scenario.claim().revocationGeneration(),witness.grantExpiresAt(),witness.admissionExpiresAt(),witness.sessionExpiresAt(),bound,
+                    "b".repeat(64),"event",facts,null));
+            assertThat(result).isInstanceOf(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued.class);
+            var issued=(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued)result;
+            assertThat(issued.expiresAt()).isEqualTo(bound.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+            long micros=scenario.claim().issuedAt().getEpochSecond()*1_000_000L+scenario.claim().issuedAt().getNano()/1_000;
+            assertThat(issued.replayAnchor()).isEqualTo(new ShareMediaCredentialProvider.ReplayAnchor(micros,micros,"K1"));
+            return issued.credential();
         }
         void newScenario(String mode) throws Exception {
             scenario = fixture.scenario(mode, "VALIDATED", false, digest(bytes), bytes.length);

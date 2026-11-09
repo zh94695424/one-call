@@ -3,6 +3,8 @@ package com.onecall.core.sharing.internal.playback;
 import com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader;
 import com.onecall.core.sharing.internal.admission.ShareAdmissionRepository;
 import com.onecall.core.sharing.internal.admission.ShareAdmissionSha256Provider;
+import com.onecall.core.sharing.internal.credential.MediaPlaybackCredentialAuthority;
+import com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider;
 import java.time.Clock;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -15,10 +17,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration(proxyBeanMethods = false)
 public class MediaPlaybackConfiguration {
     @Bean
+    MediaPlaybackCredentialAuthority mediaPlaybackCredentialAuthority(ObjectProvider<MediaPlaybackSigningKeyProvider> keys) {
+        return new MediaPlaybackCredentialAuthority(keys, Clock.systemUTC());
+    }
+    @Bean
     MediaPlaybackService mediaPlaybackService(ObjectProvider<MediaCredentialVerifier> verifier,
             ObjectProvider<PlaybackStateReader> state, ObjectProvider<EvidenceMediaObjectReader> evidence,
             ObjectProvider<ControlledMediaReader> reader) {
-        return new MediaPlaybackService(resolve(verifier, unavailableMediaCredentialVerifier()),
+        var authorities = verifier.stream().limit(2).toList();
+        if (authorities.size() != 1) throw new IllegalStateException("Ambiguous playback authority");
+        return new MediaPlaybackService(authorities.getFirst(),
                 resolve(state, claim -> new PlaybackStateReader.Result.Unavailable()),
                 resolve(evidence, evidenceId -> new EvidenceMediaObjectReader.Result.Unavailable()),
                 resolve(reader, unavailableControlledMediaReader()), Clock.systemUTC());
@@ -27,9 +35,6 @@ public class MediaPlaybackConfiguration {
     private static <T> T resolve(ObjectProvider<T> provider, T fallback) {
         if (provider.stream().limit(2).count() > 1) throw new IllegalStateException("Ambiguous playback authority");
         return provider.getIfAvailable(() -> fallback);
-    }
-    private MediaCredentialVerifier unavailableMediaCredentialVerifier() {
-        return credential -> new MediaCredentialVerifier.Result.Unavailable();
     }
     private ControlledMediaReader unavailableControlledMediaReader() {
         return scope -> new ControlledMediaReader.Result.Unavailable();

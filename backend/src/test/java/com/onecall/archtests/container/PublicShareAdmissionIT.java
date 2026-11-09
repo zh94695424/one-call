@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.*;
 import com.onecall.core.sharing.internal.admission.*;
 import com.onecall.core.sharing.internal.admission.ShareAdmissionRepository.*;
 import com.onecall.core.sharing.internal.publicadmission.*;
+import com.onecall.core.sharing.internal.credential.*;
+import com.onecall.core.evidence.mediaread.*;
+import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.*;
@@ -15,6 +18,9 @@ import org.jooq.*;
 import org.jooq.impl.*;
 import org.jooq.conf.Settings;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.datasource.*;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.*;
@@ -26,13 +32,15 @@ import com.onecall.core.customer_iam.internal.security.*;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class PublicShareAdmissionIT {
     private static final SharingQueryFixture BASE = new SharingQueryFixture();
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private Fixture fixture;
+    private CapturedOutput output;
     @BeforeAll static void start() throws Exception { BASE.start(); }
     @AfterAll static void stop() throws Exception { BASE.close(); }
-    @BeforeEach void seed() throws Exception { BASE.reset(); fixture = new Fixture("NONE", null); }
+    @BeforeEach void seed(CapturedOutput output) throws Exception { this.output=output; BASE.reset(); fixture = new Fixture("NONE", null); }
 
     @Test void postAdmissionUsesExactRouteAndClosedBody() throws Exception {
         var beans = new StaticListableBeanFactory(); beans.addBean("shareAdmissionService", fixture.service);
@@ -314,9 +322,12 @@ class PublicShareAdmissionIT {
         final ShareAdmissionRepository repository;
         final DefaultShareAdmissionService service;
         final DefaultShareMediaAuthorizationService mediaService;
+        volatile java.util.function.Function<ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest,ShareMediaCredentialProvider.MediaAuthorizationCredentialResult> realProvider;
+        volatile ResolvedMediaObject mediaOverride;
         final Map<String, ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest> credentialRequests = new ConcurrentHashMap<>();
         final Map<String, ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued> issuedCredentials = new ConcurrentHashMap<>();
         final AtomicInteger credentialCalls = new AtomicInteger(), semanticCredentials = new AtomicInteger();
+        final List<EventWriteStatus> mediaWrites=new CopyOnWriteArrayList<>();
         final Set<Integer> mediaBackendPids=ConcurrentHashMap.newKeySet();
         final Set<Boolean> mediaProviderTransactions=ConcurrentHashMap.newKeySet();
         volatile String mediaProviderMode; volatile CountDownLatch mediaProviderEntered,mediaProviderRelease;
@@ -345,6 +356,22 @@ class PublicShareAdmissionIT {
                 connection.commit();
             }
             evidenceId=BASE.evidence;
+            try(Connection connection=BASE.admin()) {
+                SharingQueryFixture.execute(connection,"INSERT INTO evidence.media_object(id,storage_provider,bucket,object_key,object_version_id,sha256,size_bytes,mime_type,crypto_key_ref) VALUES (?,'COS','PA21-private-bucket-canary','PA21-private-object-key-canary','PA21-private-object-version-canary',repeat('c',64),1,'audio/wav','PA21-private-key-material-canary') ON CONFLICT (bucket,object_key,object_version_id) DO NOTHING",UUID.randomUUID());
+                UUID originalMedia;
+                try(var statement=connection.prepareStatement("SELECT id FROM evidence.media_object WHERE bucket='PA21-private-bucket-canary' AND object_key='PA21-private-object-key-canary' AND object_version_id='PA21-private-object-version-canary'")) {
+                    try(var rows=statement.executeQuery()) { assertThat(rows.next()).isTrue(); originalMedia=rows.getObject(1,UUID.class); }
+                }
+                SharingQueryFixture.execute(connection,"INSERT INTO evidence.evidence_artifact(id,evidence_id,media_object_id,artifact_role) SELECT ?,?,?,'ORIGINAL' WHERE NOT EXISTS(SELECT 1 FROM evidence.evidence_artifact WHERE evidence_id=? AND artifact_role='ORIGINAL')",UUID.randomUUID(),evidenceId,originalMedia,evidenceId);
+                SharingQueryFixture.execute(connection,"""
+                    INSERT INTO evidence.recording(id,call_id,recording_id,media_object_id,declared_format,declared_size,declared_duration,declared_sha256,
+                        validated_duration,validated_sha256,status,upload_expires_at,validated_at)
+                    SELECT er.source_ref_id,er.call_id,?::text,m.id,'wav',m.size_bytes,3600,m.sha256,3600,m.sha256,'VALIDATED',clock_timestamp()+interval '1 hour',clock_timestamp()
+                    FROM evidence.evidence_record er JOIN evidence.evidence_artifact a ON a.evidence_id=er.id JOIN evidence.media_object m ON m.id=a.media_object_id
+                    WHERE er.id=? AND a.artifact_role='ORIGINAL' ON CONFLICT DO NOTHING
+                    """,UUID.randomUUID().toString(),evidenceId);
+                SharingQueryFixture.execute(connection,"ALTER ROLE evidence_media_reader_role PASSWORD '"+BASE.password+"'");
+            }
             id=UUID.randomUUID();
             String share="admission-"+UUID.randomUUID();
             try(Connection connection=BASE.admin()) {
@@ -380,8 +407,11 @@ class PublicShareAdmissionIT {
                         throw new AssertionError("expireGrant affected-row count was not exactly one");
                     if(method.getName().equals("insertAccessEvent")) {
                         var status=((EventWriteResult)value).status();
+                        var event=(AccessEventInsert)arguments[0];
+                        boolean mediaSuccess=Set.of("PLAYBACK_AUTHORIZED","SEEK_AUTHORIZED","RENEWED").contains(event.eventType());
                         if(status!=EventWriteStatus.INSERTED && status!=EventWriteStatus.REUSED_IDENTICAL
-                                && !(allowTicketFailureEventConflict && status==EventWriteStatus.CONFLICT))
+                                && !(allowTicketFailureEventConflict && status==EventWriteStatus.CONFLICT)
+                                && !(realProvider!=null && mediaSuccess && status==EventWriteStatus.CONFLICT))
                             throw new AssertionError("insertAccessEvent returned an unexpected status");
                     }
                     if(method.getName().equals(failAt)) throw new IllegalStateException("Synthetic rollback");
@@ -409,6 +439,7 @@ class PublicShareAdmissionIT {
                     assertOutside();
                     mediaProviderTransactions.add(TransactionSynchronizationManager.isActualTransactionActive());
                     credentialCalls.incrementAndGet();
+                    if(realProvider!=null) return realProvider.apply(request);
                     var mode=mediaProviderMode;
                     var entered=mediaProviderEntered; var release=mediaProviderRelease;
                     if(entered!=null && release!=null) {
@@ -420,21 +451,21 @@ class PublicShareAdmissionIT {
                         case "UNAVAILABLE" -> new MediaAuthorizationCredentialResult.Unavailable();
                         case "MALFORMED" -> new MediaAuthorizationCredentialResult.Malformed();
                         case "THROWN" -> throw new IllegalStateException("Synthetic media provider outage");
-                        case "BLANK" -> new MediaAuthorizationCredentialResult.Issued(" ",request.credentialExpiresAt());
-                        case "OVER_LENGTH" -> new MediaAuthorizationCredentialResult.Issued("😀".repeat(2049),request.credentialExpiresAt());
-                        case "NUL" -> new MediaAuthorizationCredentialResult.Issued("media\0credential",request.credentialExpiresAt());
-                        case "UNPAIRED_SURROGATE" -> new MediaAuthorizationCredentialResult.Issued("media\uD800",request.credentialExpiresAt());
-                        case "NULL_EXPIRY" -> new MediaAuthorizationCredentialResult.Issued("media-credential",null);
-                        case "PAST_EXPIRY" -> new MediaAuthorizationCredentialResult.Issued("media-credential",Instant.EPOCH);
-                        case "BEYOND_BOUND" -> new MediaAuthorizationCredentialResult.Issued("media-credential-beyond-bound",request.credentialExpiresAt().plusMillis(1));
+                        case "BLANK" -> new MediaAuthorizationCredentialResult.Issued(" ",request.credentialExpiresAt(), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
+                        case "OVER_LENGTH" -> new MediaAuthorizationCredentialResult.Issued("😀".repeat(2049),request.credentialExpiresAt(), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
+                        case "NUL" -> new MediaAuthorizationCredentialResult.Issued("media\0credential",request.credentialExpiresAt(), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
+                        case "UNPAIRED_SURROGATE" -> new MediaAuthorizationCredentialResult.Issued("media\uD800",request.credentialExpiresAt(), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
+                        case "NULL_EXPIRY" -> new MediaAuthorizationCredentialResult.Issued("media-credential",null, com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
+                        case "PAST_EXPIRY" -> new MediaAuthorizationCredentialResult.Issued("media-credential",Instant.EPOCH, com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
+                        case "BEYOND_BOUND" -> new MediaAuthorizationCredentialResult.Issued("media-credential-beyond-bound",request.credentialExpiresAt().plusMillis(1), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
                         default -> throw new AssertionError("Unknown media provider failure mode: "+mode);
                     };
                     var firstRequest = credentialRequests.putIfAbsent(request.eventId(), request);
-                    if (firstRequest != null && !firstRequest.equals(request)) throw new AssertionError("Provider idempotency input changed");
+                    if (firstRequest != null && !firstRequest.preProviderFingerprint().equals(request.preProviderFingerprint())) throw new AssertionError("Provider idempotency input changed");
                     var issued = issuedCredentials.computeIfAbsent(request.eventId(), eventId -> {
                         semanticCredentials.incrementAndGet();
                         return new MediaAuthorizationCredentialResult.Issued("media-credential-"+digest(eventId),
-                                "SUB_MICROSECOND".equals(mode) ? request.credentialExpiresAt().minusNanos(1) : request.credentialExpiresAt());
+                                "SUB_MICROSECOND".equals(mode) ? request.credentialExpiresAt().minusNanos(1) : request.credentialExpiresAt(), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
                     });
                     return issued;
                 }
@@ -444,7 +475,15 @@ class PublicShareAdmissionIT {
                     Connection connection = DataSourceUtils.getConnection(source);
                     try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT pg_backend_pid()")) { rows.next(); mediaBackendPids.add(rows.getInt(1)); }
                 }
-                try { return method.invoke(real, arguments); }
+                try {
+                    Object value = method.invoke(real, arguments);
+                    if (method.getName().equals("insertAccessEvent")) {
+                        var event = (AccessEventInsert) arguments[0];
+                        if (Set.of("PLAYBACK_AUTHORIZED", "SEEK_AUTHORIZED", "RENEWED").contains(event.eventType()))
+                            mediaWrites.add(((EventWriteResult) value).status());
+                    }
+                    return value;
+                }
                 catch (java.lang.reflect.InvocationTargetException failure) {
                     Throwable cause = failure.getCause();
                     if (cause instanceof RuntimeException known) throw known;
@@ -452,7 +491,12 @@ class PublicShareAdmissionIT {
                     throw failure;
                 }
             });
-            mediaService = new DefaultShareMediaAuthorizationService(transactions, mediaRepository, bytes -> digest(new String(bytes,StandardCharsets.UTF_8)), mediaCredentials);
+            var evidenceSource=new DriverManagerDataSource(BASE.url,"evidence_media_reader_role",BASE.password);
+            var evidenceTransactions=new TransactionTemplate(new DataSourceTransactionManager(evidenceSource)); evidenceTransactions.setReadOnly(true);
+            var evidenceReader=new com.onecall.core.evidence.internal.mediaread.JooqEvidenceMediaObjectReader(DSL.using(
+                    new TransactionAwareDataSourceProxy(evidenceSource),SQLDialect.POSTGRES,new Settings().withExecuteLogging(false)),evidenceTransactions);
+            mediaService = new DefaultShareMediaAuthorizationService(transactions, mediaRepository, bytes -> digest(new String(bytes,StandardCharsets.UTF_8)), mediaCredentials,
+                    evidence -> mediaOverride==null ? evidenceReader.resolve(evidence) : new EvidenceMediaObjectReader.Result.Found(mediaOverride));
             service=new DefaultShareAdmissionService(transactions,repository,bytes -> digest(new String(bytes,StandardCharsets.UTF_8)),request -> {
                 assertOutside(); policyCalls.incrementAndGet();
                 if(policyEntered!=null) {
@@ -519,16 +563,38 @@ class PublicShareAdmissionIT {
         assertThat(success.result()).isEqualTo("SUCCESS");
         assertThat(success.payload().path("credentialExpiresAt").asString()).isEqualTo(expectedExpiryText);
         assertThat(success.payload().toString()).doesNotContain(body.path("credential").asString());
+        var fingerprintFields=mediaFingerprintFields(fixture.event("ADMISSION_GRANTED").payload(),fixture.id,admission.admissionId(),"PLAYBACK_AUTHORIZED","PLAYBACK","route-request");
+        assertThat(fingerprintFields).hasSize(19);
+        String fingerprint=digest(JSON.writeValueAsString(fingerprintFields));
+        var providerRequest=fixture.credentialRequests.get(success.eventId());
+        assertThat(providerRequest.preProviderFingerprint()).isEqualTo(fingerprint);
+        var anchor=fixture.issuedCredentials.get(success.eventId()).replayAnchor();
+        Map<String,Object> expectedPayload=new TreeMap<>(fingerprintFields);
+        expectedPayload.put("credentialExpiresAt",expectedExpiryText); expectedPayload.put("result","SUCCESS");
+        expectedPayload.put("preProviderFingerprint",fingerprint); expectedPayload.put("kid",anchor.kid());
+        expectedPayload.put("issuedAtMicros",anchor.issuedAtMicros()); expectedPayload.put("notBeforeMicros",anchor.notBeforeMicros());
+        assertThat(expectedPayload).hasSize(24);
+        assertMediaSuccessFields(success.payload());
+        String expectedCanonical=JSON.writeValueAsString(expectedPayload);
+        assertThat(canonical(success.payload())).isEqualTo(expectedCanonical);
+        assertThat(success.payloadSha256()).isEqualTo(digest(expectedCanonical));
         var replay=mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path).servletPath(path)
                 .contentType("application/json").content("{\"authorizationRequestId\":\"route-request\",\"purpose\":\"PLAYBACK\"}"))
                 .andReturn().getResponse();
         assertThat(replay.getStatus()).isEqualTo(200);
         assertThat(JSON.readTree(replay.getContentAsString())).isEqualTo(body);
+        assertThat(replay.getContentAsString()).isEqualTo(response.getContentAsString());
+        var replaySuccess=fixture.event("PLAYBACK_AUTHORIZED");
+        assertMediaSuccessFields(replaySuccess.payload());
+        assertThat(replaySuccess.payload().path("preProviderFingerprint").asString()).isEqualTo(fingerprint);
+        assertThat(canonical(replaySuccess.payload())).isEqualTo(expectedCanonical);
+        assertThat(replaySuccess.payloadSha256()).isEqualTo(digest(expectedCanonical));
         assertThat(fixture.eventCount("PLAYBACK_AUTHORIZED")).isEqualTo(1);
         assertThat(fixture.event("PLAYBACK_AUTHORIZED")).isEqualTo(success);
         assertThat(fixture.eventCount("FAILURE")).isZero();
         assertThat(fixture.credentialCalls).hasValue(2);
         assertThat(fixture.semanticCredentials).hasValue(1);
+        assertThat(fixture.mediaWrites).containsExactly(EventWriteStatus.INSERTED,EventWriteStatus.REUSED_IDENTICAL);
     }
 
     @Test void invalidTokenOrUnassociatedAdmissionDoesNotDiscloseState() throws Exception {
@@ -1093,6 +1159,7 @@ class PublicShareAdmissionIT {
         assertThat(fixture.issuedCredentials).hasSize(2);
         assertThat(fixture.credentialRequests.values()).allSatisfy(value -> assertThat(value.toString()).isEqualTo("[REDACTED]"));
         assertThat(fixture.issuedCredentials.values()).allSatisfy(value -> assertThat(value.toString()).isEqualTo("[REDACTED]"));
+        assertNoMediaSecrets(output.getAll(),credential,renewed.credential(),key,"renew-request-private","outage-request-private","failure-request-private");
     }
 
     @Test void mediaAuthorizationDoesNotChangeAdmissionCountRevisionOrSession() throws Exception {
@@ -1178,7 +1245,79 @@ class PublicShareAdmissionIT {
         return "share-access:"+digest(JSON.writeValueAsString(identity));
     }
 
+    @Test void realAuthorityFirstCredentialReplaysAcrossClockAndInstance() throws Exception {
+        var admission=view(fixture.admit("real-first"));
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys()).issueOrReplay(request);
+        var first=fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-replay",MediaAuthorizationRequest.Purpose.PLAYBACK),null);
+        var event=fixture.event("PLAYBACK_AUTHORIZED");
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now().plusSeconds(1),DeterministicShareCommandProviders.mediaPlaybackSigningKeys()).issueOrReplay(request);
+        var replay=fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-replay",MediaAuthorizationRequest.Purpose.PLAYBACK),null);
+        assertThat(replay).isEqualTo(first); assertThat(fixture.event("PLAYBACK_AUTHORIZED")).isEqualTo(event);
+        assertThat(fixture.eventCount("PLAYBACK_AUTHORIZED")).isEqualTo(1); assertThat(fixture.credentialCalls).hasValue(2);
+    }
+
+    @Test void realAuthoritySuccessStoresOnlyExactNonsecretMetadata() throws Exception {
+        var admission=view(fixture.admit("real-metadata"));
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys()).issueOrReplay(request);
+        var key="real-metadata-private-request";
+        var result=fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest(key,MediaAuthorizationRequest.Purpose.PLAYBACK),null);
+        var success=fixture.event("PLAYBACK_AUTHORIZED"); assertMediaSuccessFields(success.payload()); assertNoMediaPayloadIdentityFacts(success.payload());
+        assertThat(success.payloadSha256()).isEqualTo(digest(canonical(success.payload())));
+        assertThat(success.payload().path("preProviderFingerprint").asString()).isEqualTo(mediaFingerprint(fixture.event("ADMISSION_GRANTED").payload(),fixture.id,admission.admissionId(),"PLAYBACK_AUTHORIZED","PLAYBACK",key));
+        assertNoMediaSecrets(success.payload().toString(),result.credential(),key,result.credential().split("\\.")[2],result.credential().split("\\.")[3]);
+        fixture.realProvider=request -> new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Unavailable();
+        assertThatThrownBy(() -> fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-failure",MediaAuthorizationRequest.Purpose.PLAYBACK),null)).isInstanceOf(ShareAdmissionException.class);
+        var failure=fixture.event("FAILURE"); assertMediaFailureFields(failure.payload()); assertNoMediaPayloadIdentityFacts(failure.payload());
+        assertThat(failure.payloadSha256()).isEqualTo(digest(canonical(failure.payload()))); assertNoMediaSecrets(mediaDurableState(),result.credential(),key);
+        assertNoMediaSecrets(output.getAll(),result.credential(),key);
+    }
+
+    @Test void realAuthorityChangedMediaFactsConflictBeforeProvider() throws Exception {
+        var admission=view(fixture.admit("real-drift"));
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys()).issueOrReplay(request);
+        fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-drift",MediaAuthorizationRequest.Purpose.PLAYBACK),null);
+        var expected=mediaFactFields(BASE.evidence);
+        fixture.mediaOverride=new ResolvedMediaObject(UUID.fromString((String)expected.get("mediaObjectId")),"d".repeat(64),(long)expected.get("sizeBytes"),(String)expected.get("mimeType"),(int)expected.get("durationSeconds"));
+        assertThatThrownBy(() -> fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-drift",MediaAuthorizationRequest.Purpose.PLAYBACK),null))
+                .isInstanceOfSatisfying(ShareAdmissionException.class,failure -> assertThat(failure.code()).isEqualTo(ShareAdmissionException.Code.SHARE_GENERATION_STALE));
+        assertThat(fixture.credentialCalls).hasValue(1); assertThat(fixture.eventCount("PLAYBACK_AUTHORIZED")).isEqualTo(1);
+    }
+
+    @Test void realAuthorityRecordedKeyOverlapAndRemovalFailClosed() throws Exception {
+        var admission=view(fixture.admit("real-rotation"));
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now(),DeterministicShareCommandProviders.mediaPlaybackSigningKeys()).issueOrReplay(request);
+        var first=fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-rotation",MediaAuthorizationRequest.Purpose.PLAYBACK),null);
+        byte[] bytes=((MediaPlaybackSigningKeyProvider.Result.Available)DeterministicShareCommandProviders.mediaPlaybackSigningKeys().currentKeys()).active().material();
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now(),() -> new MediaPlaybackSigningKeyProvider.Result.Available(
+                new MediaPlaybackSigningKeyProvider.Entry("K2",bytes,MediaPlaybackSigningKeyProvider.Role.ACTIVE),List.of(new MediaPlaybackSigningKeyProvider.Entry("K1",bytes,MediaPlaybackSigningKeyProvider.Role.VERIFY_ONLY)))).issueOrReplay(request);
+        assertThat(fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-rotation",MediaAuthorizationRequest.Purpose.PLAYBACK),null)).isEqualTo(first);
+        fixture.realProvider=request -> MediaPlaybackIT.realAuthority(Instant.now(),() -> new MediaPlaybackSigningKeyProvider.Result.Available(
+                new MediaPlaybackSigningKeyProvider.Entry("K2",bytes,MediaPlaybackSigningKeyProvider.Role.ACTIVE),List.of())).issueOrReplay(request);
+        assertThatThrownBy(() -> fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-rotation",MediaAuthorizationRequest.Purpose.PLAYBACK),null))
+                .isInstanceOfSatisfying(ShareAdmissionException.class,failure -> assertThat(failure.code()).isEqualTo(ShareAdmissionException.Code.DEPENDENCY_UNAVAILABLE));
+        assertThat(fixture.eventCount("PLAYBACK_AUTHORIZED")).isEqualTo(1); assertThat(fixture.eventCount("FAILURE")).isZero();
+    }
+
+    @Test void realAuthorityConcurrentIssuanceReturnsFirstCommittedToken() throws Exception {
+        var admission=view(fixture.admit("real-race")); var barrier=new CyclicBarrier(2); var counter=new AtomicInteger();
+        fixture.realProvider=request -> {
+            var result=MediaPlaybackIT.realAuthority(Instant.now().plusSeconds(request.priorReplayAnchor()==null ? counter.getAndIncrement():2),DeterministicShareCommandProviders.mediaPlaybackSigningKeys()).issueOrReplay(request);
+            if(request.priorReplayAnchor()==null) try { barrier.await(10,TimeUnit.SECONDS); } catch(Exception failure) { throw new AssertionError(failure); }
+            return result;
+        };
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            Callable<ShareAdmissionView.MediaAuthorization> call=() -> fixture.mediaService.authorize(new ShareAdmissionCapabilityToken(fixture.token),admission.admissionId(),mediaRequest("real-race",MediaAuthorizationRequest.Purpose.PLAYBACK),null);
+            var first=pool.submit(call); var second=pool.submit(call); assertThat(first.get(20,TimeUnit.SECONDS)).isEqualTo(second.get(20,TimeUnit.SECONDS));
+        }
+        assertThat(fixture.credentialCalls).hasValue(3); assertThat(fixture.eventCount("PLAYBACK_AUTHORIZED")).isEqualTo(1);
+        assertThat(fixture.mediaWrites).containsExactlyInAnyOrder(EventWriteStatus.INSERTED,EventWriteStatus.CONFLICT);
+    }
+
     private static String mediaFingerprint(JsonNode witness,UUID grantId,UUID admissionId,String eventType,String purpose,String requestKey) {
+        return digest(JSON.writeValueAsString(mediaFingerprintFields(witness,grantId,admissionId,eventType,purpose,requestKey)));
+    }
+
+    private static Map<String,Object> mediaFingerprintFields(JsonNode witness,UUID grantId,UUID admissionId,String eventType,String purpose,String requestKey) {
         Map<String,Object> fields=new TreeMap<>();
         fields.put("shareGrantId",grantId.toString());
         fields.put("shareAdmissionId",admissionId.toString());
@@ -1190,7 +1329,25 @@ class PublicShareAdmissionIT {
         fields.put("grantExpiresAt",witness.path("grantExpiresAt").asString());
         fields.put("admissionExpiresAt",witness.path("admissionExpiresAt").asString());
         fields.put("sessionExpiresAt",witness.path("sessionExpiresAt").asString());
-        return digest(JSON.writeValueAsString(fields));
+        fields.put("credentialExpiresAt",mediaBoundText(witness));
+        fields.putAll(mediaFactFields(BASE.evidence));
+        assertThat(fields).hasSize(19);
+        return fields;
+    }
+
+    private static Map<String,Object> mediaFactFields(UUID evidenceId) {
+        ShareMediaCredentialProvider.AuthorizedMediaFacts facts;
+        try(Connection connection=BASE.admin();var statement=connection.prepareStatement("SELECT m.id,m.sha256,m.size_bytes,m.mime_type,r.validated_duration FROM evidence.evidence_record er JOIN evidence.evidence_artifact a ON a.evidence_id=er.id AND a.artifact_role='ORIGINAL' JOIN evidence.media_object m ON m.id=a.media_object_id JOIN evidence.recording r ON r.id=er.source_ref_id WHERE er.id=?")) {
+            statement.setObject(1,evidenceId);
+            try(var rows=statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                int duration=rows.getInt(5);
+                facts=new ShareMediaCredentialProvider.AuthorizedMediaFacts(evidenceId,rows.getObject(1,UUID.class),rows.getString(2),rows.getLong(3),rows.getString(4),duration,0,Math.multiplyExact((long)duration,1_000_000_000L));
+            }
+        } catch(SQLException failure) { throw new AssertionError(failure); }
+        return Map.of("evidenceId",facts.evidenceId().toString(),"mediaObjectId",facts.mediaObjectId().toString(),"sha256",facts.sha256(),
+                "sizeBytes",facts.sizeBytes(),"mimeType",facts.mimeType(),"durationSeconds",facts.durationSeconds(),
+                "windowStartNanos",facts.windowStartNanos(),"windowEndNanos",facts.windowEndNanos());
     }
 
     private static String mediaBoundText(JsonNode witness) {
@@ -1200,25 +1357,27 @@ class PublicShareAdmissionIT {
 
     private static void assertMediaSuccessFields(JsonNode payload) {
         assertThat(payload.propertyNames()).containsExactlyInAnyOrder("shareGrantId","shareAdmissionId","eventType","purpose","requestKeyDigest",
-                "codeGeneration","revocationGeneration","grantExpiresAt","admissionExpiresAt","sessionExpiresAt","credentialExpiresAt","result","preProviderFingerprint");
+                "codeGeneration","revocationGeneration","grantExpiresAt","admissionExpiresAt","sessionExpiresAt","credentialExpiresAt","result","preProviderFingerprint","evidenceId","mediaObjectId","sha256","sizeBytes","mimeType","durationSeconds","windowStartNanos","windowEndNanos","issuedAtMicros","notBeforeMicros","kid");
     }
 
     private static void assertMediaFailureFields(JsonNode payload) {
         assertThat(payload.propertyNames()).containsExactlyInAnyOrder("shareGrantId","shareAdmissionId","eventType","purpose","requestKeyDigest",
-                "result","reasonCode","preProviderFingerprint","grantExpiresAt","admissionExpiresAt","sessionExpiresAt","credentialExpiresAt");
+                "result","reasonCode","preProviderFingerprint","grantExpiresAt","admissionExpiresAt","sessionExpiresAt","credentialExpiresAt","evidenceId","mediaObjectId","sha256","sizeBytes","mimeType","durationSeconds","windowStartNanos","windowEndNanos");
     }
 
     private void assertNoMediaSecrets(String text,String... mediaFacts) {
         Set<String> forbidden=new LinkedHashSet<>(List.of(fixture.token,"token-private","code-private","proof-private","credential-private",
+                "PA21-private-bucket-canary","PA21-private-object-key-canary","PA21-private-object-version-canary","PA21-private-key-material-canary",
                 "share-ticket:","http://","https://","objectKey","object_key","bucket","cos:","redis","Redis","signature","SecretKey","q-sign-algorithm",
-                "x-cos-","accessKey","Authorization","Bearer",BASE.password,BASE.login,BASE.deniedLogin,"media-credential-"));
+                "objectVersion","object_version","versionId","subjectId","subject_id","callerNumberBindingId","caller_number_binding_id","tokenHash","codeHash","passwordHash","x-cos-","accessKey","Authorization","Bearer",BASE.password,BASE.login,BASE.deniedLogin,"media-credential-"));
         forbidden.addAll(Arrays.asList(mediaFacts));
         for(String value:forbidden) assertThat(text).as("forbidden media fact "+value).doesNotContain(value);
     }
 
     private void assertNoMediaPayloadIdentityFacts(JsonNode payload) {
+        for(var fact:mediaFactFields(BASE.evidence).entrySet()) assertThat(payload.path(fact.getKey()).toString()).isEqualTo(JSON.valueToTree(fact.getValue()).toString());
         String text=payload.toString();
-        for(String value:List.of(BASE.evidence.toString(),fixture.subject.toString(),fixture.binding.toString()))
+        for(String value:List.of(fixture.subject.toString(),fixture.binding.toString()))
             assertThat(text).as("forbidden identity fact "+value).doesNotContain(value);
     }
 

@@ -376,7 +376,7 @@ class ShareAdmissionServiceTests {
         for (boolean subMicrosecond : List.of(false, true)) {
             MediaFixture f = new MediaFixture();
             if (subMicrosecond) f.providerResult = new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued(
-                    "credential-private", f.witness.sessionExpiresAt().minusNanos(1));
+                    "credential-private", f.witness.sessionExpiresAt().minusNanos(1), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor());
             Instant expectedExpiry = subMicrosecond ? Instant.parse("2026-01-01T00:07:59.999999Z") : NOW.plusSeconds(420);
             var first = f.authorize("same", MediaAuthorizationRequest.Purpose.PLAYBACK);
             assertThat(first.expiresAt()).isEqualTo(expectedExpiry);
@@ -385,11 +385,19 @@ class ShareAdmissionServiceTests {
             assertThat(success.result()).isEqualTo("SUCCESS");
             assertThat(success.eventType()).isEqualTo("PLAYBACK_AUTHORIZED");
             assertThat(success.payload().path("credentialExpiresAt").asString()).isEqualTo(expectedExpiry.toString());
+            assertMediaSuccess(f, "same", expectedExpiry);
+            String firstPayload = JSON.writeValueAsString(success.payload());
+            String firstHash = success.payloadSha256();
             var second = f.authorize("same", MediaAuthorizationRequest.Purpose.PLAYBACK);
             assertThat(second).isEqualTo(first);
             assertThat(f.events).containsExactly(success);
             assertThat(f.eventWrites).containsExactly(EventWriteStatus.INSERTED, EventWriteStatus.REUSED_IDENTICAL);
             assertThat(f.issued).hasSize(2);
+            assertMediaSuccess(f, "same", expectedExpiry);
+            assertThat(JSON.writeValueAsString(f.events.getFirst().payload())).isEqualTo(firstPayload);
+            assertThat(f.events.getFirst().payloadSha256()).isEqualTo(firstHash);
+            assertThat(f.issued.get(1).priorReplayAnchor()).isEqualTo(
+                    ((ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued) (subMicrosecond ? f.providerResult : f.credentials.get(f.issued.getFirst().eventId()))).replayAnchor());
         }
     }
 
@@ -408,6 +416,8 @@ class ShareAdmissionServiceTests {
         fingerprint.put("grantExpiresAt", changed.witness.grantExpiresAt().toString());
         fingerprint.put("admissionExpiresAt", changed.witness.admissionExpiresAt().toString());
         fingerprint.put("sessionExpiresAt", changed.witness.sessionExpiresAt().toString());
+        fingerprint.put("credentialExpiresAt", changed.witness.sessionExpiresAt().toString());
+        fingerprint.putAll(mediaFactFields(DeterministicShareCommandProviders.mediaFacts(changed.evidenceId)));
         String currentFingerprint = digest(JSON.writeValueAsString(fingerprint).getBytes(StandardCharsets.UTF_8));
         fingerprint.put("sessionExpiresAt", changed.witness.sessionExpiresAt().minusSeconds(1).toString());
         Map<String, Object> payload = new TreeMap<>(fingerprint);
@@ -537,13 +547,14 @@ class ShareAdmissionServiceTests {
 
     @Test void providerFailureAppendsOnlyDeterministicFailureAndRetrySucceeds() throws Exception {
         Map<String, ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued> malformed = new LinkedHashMap<>();
-        malformed.put("over-code-point-limit", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("😀".repeat(2049), NOW.plusSeconds(10)));
-        malformed.put("nul", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential\0private", NOW.plusSeconds(10)));
-        malformed.put("unpaired-surrogate", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential\uD800", NOW.plusSeconds(10)));
-        malformed.put("null-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", null));
-        malformed.put("past-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW.minusNanos(1)));
-        malformed.put("equal-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW));
-        malformed.put("non-future-after-canonicalization", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW.plusNanos(1)));
+        malformed.put("missing-anchor",new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private",NOW.plusSeconds(10),null));
+        malformed.put("over-code-point-limit", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("😀".repeat(2049), NOW.plusSeconds(10), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
+        malformed.put("nul", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential\0private", NOW.plusSeconds(10), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
+        malformed.put("unpaired-surrogate", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential\uD800", NOW.plusSeconds(10), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
+        malformed.put("null-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", null, com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
+        malformed.put("past-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW.minusNanos(1), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
+        malformed.put("equal-expiry", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW, com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
+        malformed.put("non-future-after-canonicalization", new ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued("credential-private", NOW.plusNanos(1), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
         for (var scenario : malformed.entrySet()) {
             MediaFixture rejected = new MediaFixture(); rejected.providerResult = scenario.getValue();
             Map<String, Object> failureIdentity = new TreeMap<>(Map.of("shareGrantId", rejected.grantId.toString(),
@@ -589,6 +600,8 @@ class ShareAdmissionServiceTests {
         fingerprint.put("grantExpiresAt", f.expires.toString());
         fingerprint.put("admissionExpiresAt", f.expires.minusSeconds(60).toString());
         fingerprint.put("sessionExpiresAt", f.expires.minusSeconds(120).toString());
+        fingerprint.put("credentialExpiresAt", f.expires.minusSeconds(120).toString());
+        fingerprint.putAll(mediaFactFields(DeterministicShareCommandProviders.mediaFacts(f.evidenceId)));
         Map<String, Object> payload = new TreeMap<>(identity);
         payload.put("purpose", "PLAYBACK");
         payload.put("result", "FAILED");
@@ -598,6 +611,7 @@ class ShareAdmissionServiceTests {
         payload.put("admissionExpiresAt", f.expires.minusSeconds(60).toString());
         payload.put("sessionExpiresAt", f.expires.minusSeconds(120).toString());
         payload.put("credentialExpiresAt", f.expires.minusSeconds(120).toString());
+        payload.putAll(mediaFactFields(DeterministicShareCommandProviders.mediaFacts(f.evidenceId)));
         assertThat(failure.payload()).isEqualTo(JSON.valueToTree(payload));
         assertThat(failure.payloadSha256()).isEqualTo(digest(JSON.writeValueAsString(payload).getBytes(StandardCharsets.UTF_8)));
         assertThat(failure.grantId()).isEqualTo(f.grantId);
@@ -630,13 +644,214 @@ class ShareAdmissionServiceTests {
         verify(f.repository, times(2)).insertAccessEvent(any());
         assertThat(f.eventWrites).containsExactly(EventWriteStatus.INSERTED, EventWriteStatus.INSERTED);
         assertThat(f.issued).hasSize(3);
-        assertThat(f.issued.get(2)).isEqualTo(f.issued.get(1));
+        assertThat(f.issued.get(2).preProviderFingerprint()).isEqualTo(f.issued.get(1).preProviderFingerprint());
+        assertThat(f.issued.get(2).credentialExpiresAt()).isEqualTo(Instant.parse(firstSuccess.payload().path("credentialExpiresAt").asString()));
         assertThat(f.providerOutsideTransaction).containsExactly(true, true, true);
+    }
+
+    @Test void resolvedMediaFactsBoundBeforeProviderAndCommittedExactly() {
+        MediaFixture fixture = new MediaFixture();
+        fixture.authorize("facts", MediaAuthorizationRequest.Purpose.PLAYBACK);
+        var request = fixture.issued.getFirst();
+        assertThat(request.mediaFacts()).isEqualTo(DeterministicShareCommandProviders.mediaFacts(fixture.evidenceId));
+        var fingerprint = new TreeMap<String,Object>(mediaFactFields(request.mediaFacts()));
+        fingerprint.putAll(Map.of("shareGrantId",fixture.grantId.toString(),"shareAdmissionId",fixture.admission.toString(),"eventType","PLAYBACK_AUTHORIZED",
+                "purpose","PLAYBACK","requestKeyDigest",digest("facts".getBytes(StandardCharsets.UTF_8)),"codeGeneration",0,"revocationGeneration",0,
+                "grantExpiresAt",fixture.expires.toString(),"admissionExpiresAt",fixture.expires.minusSeconds(60).toString(),"sessionExpiresAt",fixture.expires.minusSeconds(120).toString()));
+        fingerprint.put("credentialExpiresAt",fixture.expires.minusSeconds(120).toString());
+        assertThat(fingerprint).hasSize(19);
+        assertThat(request.preProviderFingerprint()).isEqualTo(digest(JSON.writeValueAsString(fingerprint).getBytes(StandardCharsets.UTF_8)));
+        var event = fixture.events.getFirst();
+        assertThat(event.payload().size()).isEqualTo(24);
+        for (var fact : mediaFactFields(request.mediaFacts()).entrySet()) assertThat(event.payload().path(fact.getKey())).isEqualTo(JSON.valueToTree(fact.getValue()));
+        assertThat(event.payloadSha256()).isEqualTo(digest(JSON.writeValueAsString(event.payload()).getBytes(StandardCharsets.UTF_8)));
+        assertThat(fixture.evidenceOutsideTransaction).containsExactly(true);
+    }
+
+    @Test void changedMediaFactsConflictBeforeReplayProvider() {
+        for (int index = 0; index < 6; index++) {
+            MediaFixture fixture = new MediaFixture(); fixture.authorize("drift", MediaAuthorizationRequest.Purpose.PLAYBACK);
+            var facts = DeterministicShareCommandProviders.mediaFacts(fixture.evidenceId);
+            assertThat(facts.windowStartNanos()).isZero();
+            switch (index) {
+                case 0 -> fixture.evidenceId = UUID.randomUUID();
+                case 1 -> fixture.media = new com.onecall.core.evidence.mediaread.ResolvedMediaObject(UUID.randomUUID(),facts.sha256(),16,"audio/wav",3600);
+                case 2 -> fixture.media = new com.onecall.core.evidence.mediaread.ResolvedMediaObject(facts.mediaObjectId(),"b".repeat(64),16,"audio/wav",3600);
+                case 3 -> fixture.media = new com.onecall.core.evidence.mediaread.ResolvedMediaObject(facts.mediaObjectId(),facts.sha256(),17,"audio/wav",3600);
+                case 4 -> fixture.media = new com.onecall.core.evidence.mediaread.ResolvedMediaObject(facts.mediaObjectId(),facts.sha256(),16,"audio/mpeg",3600);
+                case 5 -> fixture.media = new com.onecall.core.evidence.mediaread.ResolvedMediaObject(facts.mediaObjectId(),facts.sha256(),16,"audio/wav",3601);
+                default -> throw new AssertionError("Unexpected media fact mutation");
+            }
+            assertThatThrownBy(() -> fixture.authorize("drift", MediaAuthorizationRequest.Purpose.PLAYBACK))
+                    .isInstanceOfSatisfying(ShareAdmissionException.class, failure -> assertThat(failure.code()).isEqualTo(ShareAdmissionException.Code.SHARE_GENERATION_STALE));
+            assertThat(fixture.issued).hasSize(1); assertThat(fixture.events).hasSize(1);
+            assertThat(fixture.eventWrites).containsExactly(EventWriteStatus.INSERTED);
+            verify(fixture.repository, times(1)).insertAccessEvent(any());
+        }
+    }
+
+    @Test void concurrentAnchorsConvergeOnFirstCommittedCredential() throws Exception {
+        for(boolean missingWinningKey:List.of(false,true)) {
+            MediaFixture fixture = new MediaFixture();
+            AtomicInteger anchors = new AtomicInteger();
+            var key=((com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Result.Available)
+                    DeterministicShareCommandProviders.mediaPlaybackSigningKeys().currentKeys()).active().material();
+            fixture.realProvider = request -> {
+                int candidate=request.priorReplayAnchor()==null ? anchors.incrementAndGet():3;
+                var beans = new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+                com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider provider=() -> {
+                    var role=com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Role.ACTIVE;
+                    var overlapRole=com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Role.VERIFY_ONLY;
+                    var active=new com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Entry("K"+candidate,key,role);
+                    return new com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Result.Available(active,
+                            candidate<3 || missingWinningKey ? List.of():List.of(
+                                    new com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Entry("K1",key,overlapRole),
+                                    new com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Entry("K2",key,overlapRole)));
+                };
+                beans.registerSingleton("keys",provider);
+                return new com.onecall.core.sharing.internal.credential.MediaPlaybackCredentialAuthority(
+                        beans.getBeanProvider(com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.class),
+                        java.time.Clock.fixed(NOW.plusSeconds(candidate),java.time.ZoneOffset.UTC)).issueOrReplay(request);
+            };
+            fixture.providerBarrier = new CyclicBarrier(2);
+            List<ShareAdmissionView.MediaAuthorization> returned=new ArrayList<>();
+            List<Throwable> errors=new ArrayList<>();
+            try (var pool = Executors.newFixedThreadPool(2)) {
+                var first = pool.submit(() -> fixture.authorize("race",MediaAuthorizationRequest.Purpose.PLAYBACK));
+                var second = pool.submit(() -> fixture.authorize("race",MediaAuthorizationRequest.Purpose.PLAYBACK));
+                for(var future:List.of(first,second)) try { returned.add(future.get(15,TimeUnit.SECONDS)); }
+                catch(java.util.concurrent.ExecutionException failure) { errors.add(failure.getCause()); }
+            }
+            assertThat(fixture.events).hasSize(1); assertThat(fixture.issued).hasSize(3);
+            assertThat(fixture.eventWrites).containsExactlyInAnyOrder(EventWriteStatus.INSERTED,EventWriteStatus.CONFLICT);
+            String winningKid=fixture.events.getFirst().payload().path("kid").asString();
+            assertThat(returned).allSatisfy(result -> assertThat(result.credential()).startsWith("ocmp1."+winningKid+"."));
+            if(missingWinningKey) {
+                assertThat(returned).hasSize(1); assertThat(errors).singleElement().isInstanceOfSatisfying(ShareAdmissionException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ShareAdmissionException.Code.DEPENDENCY_UNAVAILABLE));
+            } else {
+                assertThat(errors).isEmpty(); assertThat(returned).hasSize(2); assertThat(returned.getFirst()).isEqualTo(returned.getLast());
+            }
+        }
+    }
+
+    @Test void legacyOrUnavailableReplayMetadataNeverIssuesReplacement() {
+        MediaFixture fixture = new MediaFixture(); fixture.authorize("legacy",MediaAuthorizationRequest.Purpose.PLAYBACK);
+        var first=fixture.events.getFirst();
+        var payload=JSON.readTree(first.payload().toString()); ((tools.jackson.databind.node.ObjectNode)payload).remove("kid");
+        fixture.events.set(0,new AccessEventInsert(first.grantId(),first.admissionId(),first.eventId(),first.eventType(),first.result(),first.occurredAt(),payload,digest(JSON.writeValueAsString(payload).getBytes(StandardCharsets.UTF_8))));
+        assertThatThrownBy(() -> fixture.authorize("legacy",MediaAuthorizationRequest.Purpose.PLAYBACK)).isInstanceOf(ShareAdmissionException.class);
+        assertThat(fixture.issued).hasSize(1); assertThat(fixture.eventWrites).hasSize(1);
+    }
+
+    @Test void evidenceResolutionFailuresNeverInvokeProvider() {
+        for (String fault : List.of("NULL", "MISSING", "UNAVAILABLE", "THROWN", "ZERO_READERS", "MULTIPLE_READERS", "PRIMARY_READERS",
+                "NULL_READER", "THROWING_PROVIDER", "NULL_MEDIA", "NULL_EVIDENCE_ID", "INVALID_EVIDENCE_UUID", "NULL_OBJECT_ID", "INVALID_OBJECT_UUID",
+                "NULL_HASH", "INVALID_HASH", "UPPERCASE_HASH", "ZERO_SIZE", "NEGATIVE_SIZE", "NULL_MIME", "BLANK_MIME",
+                "DURATION", "ZERO_DURATION", "NEGATIVE_DURATION", "WINDOW_OVERFLOW")) {
+            MediaFixture fixture = new MediaFixture(); fixture.evidenceFault=fault;
+            var grant = fixture.grant;
+            var witness = fixture.witness;
+            var admission = fixture.repository.findAdmissionById(fixture.grantId, fixture.admission);
+            assertThatThrownBy(() -> fixture.authorize("recover",MediaAuthorizationRequest.Purpose.PLAYBACK))
+                    .isInstanceOfSatisfying(ShareAdmissionException.class, failure -> {
+                        assertThat(failure.code()).isEqualTo(ShareAdmissionException.Code.DEPENDENCY_UNAVAILABLE);
+                        assertThat(failure.toString()).doesNotContain("private-evidence-canary", "token-private", "recover");
+                    });
+            assertThat(fixture.events).isEmpty(); assertThat(fixture.issued).isEmpty(); verify(fixture.repository,never()).insertAccessEvent(any());
+            assertThat(fixture.eventWrites).isEmpty();
+            assertThat(fixture.evidenceOutsideTransaction).containsExactly(true);
+            assertThat(fixture.trace).containsExactly("discovery", "grant-lock");
+            assertThat(fixture.grant).isEqualTo(grant); assertThat(fixture.witness).isSameAs(witness);
+            assertThat(fixture.repository.findAdmissionById(fixture.grantId, fixture.admission)).isEqualTo(admission);
+            verify(fixture.repository, never()).insertAdmission(any());
+            verify(fixture.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+            fixture.evidenceFault="";
+            var first = fixture.authorize("recover",MediaAuthorizationRequest.Purpose.PLAYBACK);
+            assertThat(fixture.issued).hasSize(1);
+            assertThat(fixture.issued.getFirst().priorReplayAnchor()).isNull();
+            verify(fixture.repository, times(1)).insertAccessEvent(any());
+            assertMediaSuccess(fixture, "recover", first.expiresAt());
+            var success = fixture.events.getFirst();
+            String payload = JSON.writeValueAsString(success.payload());
+            String hash = success.payloadSha256();
+            var anchor = fixture.credentials.get(fixture.issued.getFirst().eventId()).replayAnchor();
+            assertThat(fixture.authorize("recover",MediaAuthorizationRequest.Purpose.PLAYBACK)).isEqualTo(first);
+            assertThat(fixture.issued).hasSize(2);
+            assertThat(fixture.issued.get(1).priorReplayAnchor()).isEqualTo(anchor);
+            assertThat(fixture.credentials.get(fixture.issued.get(1).eventId()).replayAnchor()).isEqualTo(anchor);
+            assertMediaSuccess(fixture, "recover", first.expiresAt());
+            assertThat(fixture.events).containsExactly(success);
+            assertThat(JSON.writeValueAsString(success.payload())).isEqualTo(payload);
+            assertThat(success.payloadSha256()).isEqualTo(hash);
+            assertThat(fixture.eventWrites).containsExactly(EventWriteStatus.INSERTED, EventWriteStatus.REUSED_IDENTICAL);
+            verify(fixture.repository, times(2)).insertAccessEvent(any());
+            assertThat(fixture.evidenceOutsideTransaction).containsExactly(true, true, true);
+            assertThat(fixture.providerOutsideTransaction).containsExactly(true, true);
+            assertThat(fixture.grant).isEqualTo(grant); assertThat(fixture.witness).isSameAs(witness);
+            assertThat(fixture.repository.findAdmissionById(fixture.grantId, fixture.admission)).isEqualTo(admission);
+            verify(fixture.repository, never()).insertAdmission(any());
+            verify(fixture.repository, never()).updateGrantAdmissionCount(any(), anyLong(), anyLong());
+        }
+    }
+
+    private static void assertMediaSuccess(MediaFixture fixture, String key, Instant expiry) {
+        Map<String,Object> fingerprint = new TreeMap<>();
+        fingerprint.put("shareGrantId", fixture.grantId.toString());
+        fingerprint.put("shareAdmissionId", fixture.admission.toString());
+        fingerprint.put("eventType", "PLAYBACK_AUTHORIZED"); fingerprint.put("purpose", "PLAYBACK");
+        fingerprint.put("requestKeyDigest", digest(key.getBytes(StandardCharsets.UTF_8)));
+        fingerprint.put("codeGeneration", 0); fingerprint.put("revocationGeneration", 0);
+        fingerprint.put("grantExpiresAt", fixture.witness.grantExpiresAt().toString());
+        fingerprint.put("admissionExpiresAt", fixture.witness.admissionExpiresAt().toString());
+        fingerprint.put("sessionExpiresAt", fixture.witness.sessionExpiresAt().toString());
+        fingerprint.put("credentialExpiresAt", fixture.witness.sessionExpiresAt().toString());
+        fingerprint.putAll(mediaFactFields(DeterministicShareCommandProviders.mediaFacts(fixture.evidenceId)));
+        assertThat(fingerprint).hasSize(19);
+        String preFingerprint = digest(JSON.writeValueAsString(fingerprint).getBytes(StandardCharsets.UTF_8));
+        assertThat(fixture.issued).allSatisfy(request -> assertThat(request.preProviderFingerprint()).isEqualTo(preFingerprint));
+        var issued = (ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Issued) (fixture.providerResult != null
+                ? fixture.providerResult : fixture.credentials.get(fixture.issued.getFirst().eventId()));
+        Map<String,Object> expected = new TreeMap<>(fingerprint);
+        expected.put("credentialExpiresAt", expiry.toString()); expected.put("result", "SUCCESS"); expected.put("preProviderFingerprint", preFingerprint);
+        expected.put("issuedAtMicros", issued.replayAnchor().issuedAtMicros()); expected.put("notBeforeMicros", issued.replayAnchor().notBeforeMicros());
+        expected.put("kid", issued.replayAnchor().kid());
+        assertThat(expected).hasSize(24);
+        assertThat(fixture.events).hasSize(1).allSatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("PLAYBACK_AUTHORIZED"); assertThat(event.result()).isEqualTo("SUCCESS");
+            assertThat(event.payload().propertyNames()).containsExactlyInAnyOrderElementsOf(expected.keySet());
+            String canonical = JSON.writeValueAsString(expected);
+            assertThat(JSON.writeValueAsString(event.payload())).isEqualTo(canonical);
+            assertThat(event.payloadSha256()).isEqualTo(digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        });
+    }
+
+    private static Map<String,Object> mediaFactFields(ShareMediaCredentialProvider.AuthorizedMediaFacts facts) {
+        return Map.of("evidenceId",facts.evidenceId().toString(),"mediaObjectId",facts.mediaObjectId().toString(),"sha256",facts.sha256(),"sizeBytes",facts.sizeBytes(),
+                "mimeType",facts.mimeType(),"durationSeconds",facts.durationSeconds(),"windowStartNanos",facts.windowStartNanos(),"windowEndNanos",facts.windowEndNanos());
+    }
+
+    private static com.onecall.core.evidence.mediaread.ResolvedMediaObject resolvedMedia(UUID evidenceId, String fault) {
+        var valid = new com.onecall.core.evidence.mediaread.ResolvedMediaObject(DeterministicShareCommandProviders.mediaFacts(evidenceId).mediaObjectId(),
+                "a".repeat(64), 16, "audio/wav", 3600);
+        if (fault.isEmpty()) return valid;
+        var malformed = mock(com.onecall.core.evidence.mediaread.ResolvedMediaObject.class);
+        when(malformed.mediaObjectId()).thenReturn(fault.equals("NULL_OBJECT_ID") ? null : valid.mediaObjectId());
+        when(malformed.sha256()).thenReturn(switch (fault) { case "NULL_HASH" -> null; case "INVALID_HASH" -> "invalid"; case "UPPERCASE_HASH" -> "A".repeat(64); default -> valid.sha256(); });
+        when(malformed.sizeBytes()).thenReturn(switch (fault) { case "ZERO_SIZE" -> 0L; case "NEGATIVE_SIZE" -> -1L; default -> valid.sizeBytes(); });
+        when(malformed.mimeType()).thenReturn(switch (fault) { case "NULL_MIME" -> null; case "BLANK_MIME" -> " \t"; default -> valid.mimeType(); });
+        when(malformed.durationSeconds()).thenReturn(switch (fault) { case "DURATION" -> null; case "ZERO_DURATION" -> 0; case "NEGATIVE_DURATION" -> -1; default -> valid.durationSeconds(); });
+        return malformed;
     }
 
     private static final class MediaFixture {
         final UUID grantId = UUID.randomUUID(), admission = UUID.randomUUID(), subject = UUID.randomUUID(), binding = UUID.randomUUID();
         final UUID account = UUID.randomUUID(), organization = UUID.randomUUID();
+        UUID evidenceId = UUID.randomUUID();
+        String evidenceFault = "";
+        com.onecall.core.evidence.mediaread.ResolvedMediaObject media;
+        final List<Boolean> evidenceOutsideTransaction = new CopyOnWriteArrayList<>();
+        java.util.function.Function<ShareMediaCredentialProvider.MediaAuthorizationCredentialRequest,ShareMediaCredentialProvider.MediaAuthorizationCredentialResult> realProvider;
         final ShareAdmissionRepository repository = mock(ShareAdmissionRepository.class);
         final Transactions transactions = new Transactions();
         final List<AccessEventInsert> events = new CopyOnWriteArrayList<>();
@@ -694,20 +909,62 @@ class ShareAdmissionServiceTests {
             doAnswer(i -> { trace.add("membership-lock"); return null; }).when(repository).acquireMembershipLifecycleLock(any(),any());
             doAnswer(i -> { trace.add("account-lock"); return null; }).when(repository).acquireAccountLifecycleLock(any());
             TransactionTemplate template = new TransactionTemplate(transactions);
-            service = new DefaultShareMediaAuthorizationService(template,repository,ShareAdmissionServiceTests::digest, new ShareMediaCredentialProvider() {
+            var credentialsProvider = new ShareMediaCredentialProvider() {
                 public Result issue(MediaCredentialRequest r) { throw new AssertionError(); }
                 public MediaAuthorizationCredentialResult issueOrReplay(MediaAuthorizationCredentialRequest r) {
                     providerOutsideTransaction.add(!TransactionSynchronizationManager.isActualTransactionActive()); issued.add(r);
-                    if (providerBarrier != null) {
+                    if (providerBarrier != null && r.priorReplayAnchor() == null) {
                         assertThat(events).isEmpty();
                         try { providerBarrier.await(10, TimeUnit.SECONDS); }
                         catch (Exception failure) { throw new AssertionError("Concurrent provider calls did not overlap", failure); }
                     }
                     if (throwProvider) throw new IllegalStateException("provider");
+                    if (realProvider != null) return realProvider.apply(r);
                     if (providerResult != null) return providerResult;
-                    return credentials.computeIfAbsent(r.eventId(), ignored -> new MediaAuthorizationCredentialResult.Issued("credential-private", expires.minusSeconds(180)));
+                    return credentials.computeIfAbsent(r.eventId(), ignored -> new MediaAuthorizationCredentialResult.Issued("credential-private", expires.minusSeconds(180), com.onecall.archtests.sharing.DeterministicShareCommandProviders.mediaReplayAnchor()));
                 }
+            };
+            com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader reader = evidence -> {
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                switch (evidenceFault) {
+                    case "NULL_EVIDENCE_ID" -> new ShareMediaCredentialProvider.AuthorizedMediaFacts(null, UUID.randomUUID(), "a".repeat(64), 16, "audio/wav", 3600, 0, 3_600_000_000_000L);
+                    case "INVALID_EVIDENCE_UUID", "INVALID_OBJECT_UUID" -> UUID.fromString("private-evidence-canary");
+                    case "WINDOW_OVERFLOW" -> Duration.ofSeconds(Long.MAX_VALUE).toNanos();
+                }
+                return switch(evidenceFault) {
+                    case "NULL" -> null;
+                    case "MISSING" -> new com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader.Result.Missing();
+                    case "UNAVAILABLE" -> new com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader.Result.Unavailable();
+                    case "THROWN" -> throw new IllegalStateException("private-evidence-canary");
+                    case "NULL_MEDIA" -> mock(com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader.Result.Found.class);
+                    default -> new com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader.Result.Found(media == null
+                            ? resolvedMedia(evidence, evidenceFault) : media);
+                };
+            };
+            var readers = mock(org.springframework.beans.factory.ObjectProvider.class);
+            when(readers.stream()).thenAnswer(invocation -> {
+                evidenceOutsideTransaction.add(!TransactionSynchronizationManager.isActualTransactionActive());
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                assertThat(TransactionSynchronizationManager.isSynchronizationActive()).isFalse();
+                if (!evidenceFault.isEmpty()) assertThat(transactions.history).containsExactly("begin", "commit", "begin", "commit");
+                if (evidenceFault.equals("THROWING_PROVIDER")) throw new IllegalStateException("private-evidence-canary");
+                if (evidenceFault.equals("NULL_READER")) return java.util.stream.Stream.of((com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader) null);
+                var beans = new org.springframework.beans.factory.support.DefaultListableBeanFactory();
+                if (!evidenceFault.equals("ZERO_READERS")) beans.registerSingleton("reader", reader);
+                if (List.of("MULTIPLE_READERS", "PRIMARY_READERS").contains(evidenceFault)) {
+                    var definition = new org.springframework.beans.factory.support.RootBeanDefinition(com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader.class);
+                    definition.setInstanceSupplier(() -> reader); definition.setPrimary(evidenceFault.equals("PRIMARY_READERS"));
+                    beans.registerBeanDefinition("secondReader", definition);
+                }
+                return beans.getBeanProvider(com.onecall.core.evidence.mediaread.EvidenceMediaObjectReader.class).stream();
             });
+            try {
+                var factory = ShareAdmissionPersistenceConfiguration.class.getDeclaredMethod("shareMediaAuthorizationService", TransactionTemplate.class,
+                        ShareAdmissionRepository.class, ShareAdmissionSha256Provider.class, ShareMediaCredentialProvider.class, org.springframework.beans.factory.ObjectProvider.class);
+                factory.setAccessible(true);
+                service = (DefaultShareMediaAuthorizationService) factory.invoke(new ShareAdmissionPersistenceConfiguration(), template, repository,
+                        (ShareAdmissionSha256Provider) ShareAdmissionServiceTests::digest, credentialsProvider, readers);
+            } catch (ReflectiveOperationException failure) { throw new AssertionError("Production evidence resolver unavailable", failure); }
         }
         ShareAdmissionView.MediaAuthorization authorize(String key, MediaAuthorizationRequest.Purpose purpose) {
             grant = makeGrant();
@@ -716,7 +973,7 @@ class ShareAdmissionServiceTests {
             return service.authorize(new ShareAdmissionCapabilityToken("token-private"),admission,new MediaAuthorizationRequest(key,purpose),
                     member ? () -> Optional.of(new TrustedShareAdmissionCaller(account,organization)) : null);
         }
-        private GrantSnapshot makeGrant() { return new GrantSnapshot(grantId,"share",UUID.randomUUID(),account,member?organization:null,status,member?"ORGANIZATION_MEMBER":"NONE",NOW.minusSeconds(1),expires,0,0,1,null,1,null,null,subject,binding,false,JSON.readTree("{}")); }
+        private GrantSnapshot makeGrant() { return new GrantSnapshot(grantId,"share",evidenceId,account,member?organization:null,status,member?"ORGANIZATION_MEMBER":"NONE",NOW.minusSeconds(1),expires,0,0,1,null,1,null,null,subject,binding,false,JSON.readTree("{}")); }
         private void prepareMemberWitness() {
             Map<String,Object> values = new TreeMap<>(); values.put("verificationMode","ORGANIZATION_MEMBER"); values.put("codeGeneration",0); values.put("revocationGeneration",0);
             values.put("grantExpiresAt",expires.toString()); values.put("admissionExpiresAt",expires.minusSeconds(60).toString()); values.put("sessionExpiresAt",expires.minusSeconds(120).toString());
