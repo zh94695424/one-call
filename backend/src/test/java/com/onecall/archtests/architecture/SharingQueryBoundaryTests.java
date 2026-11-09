@@ -167,7 +167,8 @@ class SharingQueryBoundaryTests {
                             "persistence/SharingCommandPersistenceProperties.java", "provider/ProviderResult.java", "provider/ShareCreationPolicyProvider.java",
                             "provider/CapabilityTokenProvider.java", "provider/ShareExtractionCodeProvider.java", "provider/DesignatedMobileBindingProvider.java",
                             "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java", "provider/ShareRotationPolicyProvider.java",
-                            "credential/MediaPlaybackSigningKeyProvider.java", "credential/MediaPlaybackCredentialAuthority.java", "credential/MediaPlaybackCredentialCodec.java");
+                            "credential/MediaPlaybackSigningKeyProvider.java", "credential/MediaPlaybackCredentialAuthority.java", "credential/MediaPlaybackCredentialCodec.java",
+                            "keysource/MediaPlaybackKeyBundleParser.java", "keysource/FileMediaPlaybackSigningKeyProvider.java", "keysource/MediaPlaybackKeySourceConfiguration.java");
             for (Path path : commandPaths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("org.flywaydb", "spring.datasource", "ONECALL_MIGRATION", "jdbc:", "SELECT *",
@@ -196,7 +197,7 @@ class SharingQueryBoundaryTests {
                         || line.matches("import com\\.onecall\\.core\\.sharing\\.internal\\.playback\\.(MediaCredentialVerifier|OpaquePlaybackCredential|VerifiedMediaClaim|VerifiedMediaClaim\\.PlaybackWindow);"));
             }
         }
-        try (var files = Files.walk(internal)) { assertThat(files.filter(Files::isRegularFile).count()).isEqualTo(76); }
+        try (var files = Files.walk(internal)) { assertThat(files.filter(Files::isRegularFile).count()).isEqualTo(79); }
         var commandApi = namedInterfaces.getByName("customer-command").orElseThrow();
         components(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyRequest.class,
                 "caller", "grantId", "verificationMode", "status", "codeGeneration", "revocationGeneration");
@@ -460,6 +461,60 @@ class SharingQueryBoundaryTests {
         assertThat(modules.getModuleByName("sharing").orElseThrow().getAllowedDependencies(modules).stream()
                 .map(dependency -> dependency.getTargetModule().getIdentifier() + "::" + dependency.getTargetNamedInterface().getName()))
                 .containsExactlyInAnyOrder("evidence::share-projection", "evidence::media-read");
+    }
+
+    @Test void keySourceUsesOnlyLocalReadAndExistingProviderBoundary() throws Exception {
+        Path root = Path.of("src/main/java/com/onecall/core/sharing/internal/keysource");
+        var expected = java.util.Set.of("MediaPlaybackKeyBundleParser.java", "FileMediaPlaybackSigningKeyProvider.java", "MediaPlaybackKeySourceConfiguration.java");
+        try (var files = Files.walk(root)) {
+            assertThat(files.filter(Files::isRegularFile).map(path -> root.relativize(path).toString())).containsExactlyInAnyOrderElementsOf(expected);
+        }
+        var parserImports = java.util.Set.of("com.fasterxml.jackson.annotation.JsonValue",
+                "com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Entry",
+                "com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Result",
+                "com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.Role",
+                "java.nio.ByteBuffer", "java.nio.charset.CharacterCodingException", "java.nio.charset.CodingErrorAction", "java.nio.charset.StandardCharsets",
+                "java.util.ArrayList", "java.util.Arrays", "java.util.Comparator", "java.util.HashSet", "java.util.HexFormat", "java.util.Set",
+                "tools.jackson.core.StreamReadConstraints", "tools.jackson.core.StreamReadFeature", "tools.jackson.core.json.JsonFactory",
+                "tools.jackson.databind.DeserializationFeature", "tools.jackson.databind.JsonNode", "tools.jackson.databind.json.JsonMapper");
+        var fileImports = java.util.Set.of("com.fasterxml.jackson.annotation.JsonValue",
+                "com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider", "java.io.IOException", "java.nio.ByteBuffer",
+                "java.nio.file.Files", "java.nio.file.LinkOption", "java.nio.file.Path", "java.nio.file.StandardOpenOption",
+                "java.nio.file.attribute.BasicFileAttributes", "java.util.Arrays", "java.util.Objects", "java.util.Set");
+        var configImports = java.util.Set.of("com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider",
+                "org.springframework.boot.autoconfigure.condition.ConditionalOnProperty", "org.springframework.context.annotation.Bean",
+                "org.springframework.context.annotation.Configuration", "org.springframework.core.env.Environment");
+        for (String file : expected) {
+            String source = Files.readString(root.resolve(file));
+            assertThat(source.lines().filter(line -> line.startsWith("import ")).map(line -> line.substring(7, line.length() - 1)))
+                    .containsExactlyInAnyOrderElementsOf(file.startsWith("File") ? fileImports : file.contains("Configuration") ? configImports : parserImports);
+            assertThat(source).doesNotContain("NamedInterface", "Serializable", "Logger", "System.out", "System.err", "printStackTrace", "getenv(",
+                    "System.getProperty", "getResource", "classpath:", "java.net", "java.sql", "SecretManager", "KMS", "COS", "@Scheduled", "WatchService",
+                    "cache", "lastGood", "DataSource", "Repository", "Evidence", "Authorization", "MediaPlaybackCredentialAuthority", "issueOrReplay",
+                    "StandardOpenOption.WRITE", "StandardOpenOption.CREATE", "StandardOpenOption.APPEND", "Files.write", "Files.copy", "Files.move", "Files.delete",
+                    "Files.list", "Files.walk", "readAllBytes", "newOutputStream", "@ConditionalOnMissingBean", "@Primary", "@Order", "@Profile");
+            if (!file.contains("Configuration")) assertThat(source).contains("@JsonValue", "[REDACTED]", "String toString()", "new Result.Unavailable()")
+                    .doesNotContain("getProperty(", "Environment", "org.springframework", "throw new IOException(\"", "throw new IllegalArgumentException(\"");
+        }
+        String parser = Files.readString(root.resolve("MediaPlaybackKeyBundleParser.java"));
+        assertThat(parser).contains("65_536", "maxNestingDepth(8)", "STRICT_DUPLICATE_DETECTION", "FAIL_ON_TRAILING_TOKENS",
+                "CodingErrorAction.REPORT", "mapper.readTree(json)", "'\\ufeff'", "Set.of(\"schemaVersion\", \"keys\")",
+                "Set.of(\"kid\", \"role\", \"keyHex\")", "isIntegralNumber()", "version.asInt() != 1", "isArray()", "keys.isEmpty()",
+                "[A-Za-z0-9_-]{1,32}", "!kids.add(kid)", "[0-9a-f]{64}", "Role.valueOf(role)", "material.length != 32",
+                "if (active != null)", "if (active == null)", "Comparator.comparing(Entry::kid)", "new Result.Available(active, verifyOnly)", "Arrays.fill(material");
+        String adapter = Files.readString(root.resolve("FileMediaPlaybackSigningKeyProvider.java"));
+        assertThat(adapter).contains("implements MediaPlaybackSigningKeyProvider", "Result currentKeys()", "path.isAbsolute()", "path.equals(path.normalize())",
+                "source = readBoundedSource(path)", "return parser.parse(source)", "byte[] readBoundedSource(Path path)", "isRegularFile()", "isSymbolicLink()",
+                "Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)", "try (var channel", "MAX_SOURCE_BYTES + 1", "channel.read(target)",
+                "target.position() != before.size()", "before.fileKey()", "before.lastModifiedTime()", "IOException | RuntimeException", "Arrays.fill(source", "Arrays.fill(buffer");
+        String configuration = Files.readString(root.resolve("MediaPlaybackKeySourceConfiguration.java"));
+        assertThat(configuration).contains("@Configuration(proxyBeanMethods = false)", "prefix = \"onecall.sharing.media-playback.signing-key-source\"",
+                "name = \"provider\"", "havingValue = \"file\", matchIfMissing = false", "onecall.sharing.media-playback.signing-key-source.bundle-path",
+                "catch (RuntimeException failure) { path = null; }", "return new FileMediaPlaybackSigningKeyProvider(path);");
+        assertThat(configuration.lines().filter(line -> line.strip().equals("@Bean")).count()).isEqualTo(1);
+        assertThat(Arrays.stream(com.onecall.core.sharing.internal.keysource.MediaPlaybackKeySourceConfiguration.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(org.springframework.context.annotation.Bean.class)).map(java.lang.reflect.Method::getReturnType))
+                .containsExactly(com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.class);
     }
 
     @Test void playbackStateAndOpenPreserveReadOnlyNoProjectionBoundary() throws Exception {
