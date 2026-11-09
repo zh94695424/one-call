@@ -7,6 +7,8 @@ import com.onecall.core.evidence.mediaread.*;
 import com.onecall.core.sharing.internal.admission.*;
 import com.onecall.core.sharing.internal.playback.*;
 import com.onecall.core.sharing.internal.credential.*;
+import com.onecall.core.sharing.internal.keysource.FileMediaPlaybackSigningKeyProvider;
+import com.onecall.core.sharing.internal.keysource.MediaPlaybackKeySourceConfiguration;
 import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose;
 import java.time.*;
@@ -21,6 +23,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class MediaPlaybackConfigurationTests {
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path keyDirectory;
     private final ApplicationContextRunner runner = new ApplicationContextRunner().withAllowBeanDefinitionOverriding(false)
             .withUserConfiguration(MediaPlaybackConfiguration.class);
 
@@ -157,6 +160,131 @@ class MediaPlaybackConfigurationTests {
         runner.withBean("secondVerifier",MediaCredentialVerifier.class,() -> credential -> new MediaCredentialVerifier.Result.Unavailable())
                 .run(context -> { assertThat(context).hasFailed(); assertThat(context.getStartupFailure()).hasRootCauseMessage("Ambiguous playback authority"); });
     }
+
+    @Test void fileSourceRequiresExplicitSelectionAndPath() throws Exception {
+        String path = fileBundle();
+        var composed = runner.withUserConfiguration(MediaPlaybackKeySourceConfiguration.class);
+        for (String[] properties : List.of(new String[0], new String[]{filePath(path)}))
+            composed.withPropertyValues(properties).run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class).doesNotHaveBean(MediaPlaybackSigningKeyProvider.class);
+                assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+            });
+        composed.withPropertyValues(fileSelection(), filePath(path)).run(context -> {
+            assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class).hasSingleBean(MediaPlaybackCredentialAuthority.class);
+            assertThat(context.getBean(MediaPlaybackSigningKeyProvider.class)).isInstanceOf(FileMediaPlaybackSigningKeyProvider.class);
+            var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+            assertThat(authority.verify(new OpaquePlaybackCredential(token(authority)))).isInstanceOf(MediaCredentialVerifier.Result.Verified.class);
+        });
+        for (String invalid : List.of("", " ", "relative", "\0", "${missing.pa22.path}"))
+            composed.withPropertyValues(fileSelection(), filePath(invalid)).run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+                assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+            });
+        composed.withPropertyValues(fileSelection()).run(context -> {
+            assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+            assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+        });
+    }
+
+    @Test void fileSourceSharesOneAuthorityAcrossProfiles() throws Exception {
+        String path = fileBundle();
+        for (String profile : List.of("", "web", "persistence", "web,persistence")) for (boolean consumers : List.of(false, true)) {
+            var composed = runner.withUserConfiguration(MediaPlaybackKeySourceConfiguration.class)
+                    .withPropertyValues(fileSelection(), filePath(path), "spring.profiles.active=" + profile);
+            if (consumers) composed = composed.withUserConfiguration(com.onecall.core.sharing.internal.persistence.ShareAdmissionPersistenceConfiguration.class)
+                    .withInitializer(context -> {
+                        context.getEnvironment().setActiveProfiles("web", "persistence");
+                        context.addBeanFactoryPostProcessor(factory -> factory.registerSingleton("sharingAdmissionDataSource", mock(com.zaxxer.hikari.HikariDataSource.class)));
+                    }).withPropertyValues("onecall.sharing-admission.datasource.enabled=true", "onecall.sharing-admission.datasource.url=jdbc:synthetic:admission",
+                            "onecall.sharing-admission.datasource.username=sharing_admission_role", "onecall.sharing-admission.datasource.password=synthetic");
+            boolean enabled = consumers;
+            composed.run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class).hasSingleBean(ShareMediaCredentialProvider.class)
+                        .hasSingleBean(MediaCredentialVerifier.class).hasSingleBean(MediaPlaybackSigningKeyProvider.class)
+                        .doesNotHaveBean(ControlledMediaReader.class).doesNotHaveBean(EvidenceMediaObjectReader.class);
+                var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+                assertThat(context.getBean(ShareMediaCredentialProvider.class)).isSameAs(authority);
+                assertThat(context.getBean(MediaCredentialVerifier.class)).isSameAs(authority);
+                assertThat(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(MediaPlaybackService.class), "verifier")).isSameAs(authority);
+                if (enabled) for (String name : List.of("shareAdmissionService", "shareMediaAuthorizationService"))
+                    assertThat(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(name), "credentials")).isSameAs(authority);
+                else assertThat(context).doesNotHaveBean(PlaybackStateReader.class).doesNotHaveBean(javax.sql.DataSource.class);
+                assertThat(authority.verify(new OpaquePlaybackCredential(token(authority)))).isInstanceOf(MediaCredentialVerifier.Result.Verified.class);
+            });
+        }
+    }
+
+    @Test void fileSourceAndCustomProviderAreAmbiguousInEitherOrder() throws Exception {
+        String path = fileBundle();
+        for (boolean file : List.of(false, true)) for (boolean reverse : List.of(false, true)) {
+            var primary = mock(MediaPlaybackSigningKeyProvider.class, withSettings().extraInterfaces(org.springframework.core.Ordered.class));
+            when(((org.springframework.core.Ordered) primary).getOrder()).thenReturn(Integer.MIN_VALUE);
+            clearInvocations(primary);
+            var other = mock(MediaPlaybackSigningKeyProvider.class);
+            AtomicReference<FileMediaPlaybackSigningKeyProvider> observed = new AtomicReference<>();
+            var composed = new ApplicationContextRunner().withAllowBeanDefinitionOverriding(false)
+                    .withInitializer(context -> context.addBeanFactoryPostProcessor(factory -> factory.addBeanPostProcessor(
+                            new org.springframework.beans.factory.config.BeanPostProcessor() {
+                                @Override public Object postProcessAfterInitialization(Object bean, String name) {
+                                    if (bean instanceof FileMediaPlaybackSigningKeyProvider provider) {
+                                        var tracked = spy(provider); observed.set(tracked); return tracked;
+                                    }
+                                    return bean;
+                                }
+                            })));
+            if (!reverse) composed = composed.withUserConfiguration(MediaPlaybackConfiguration.class, MediaPlaybackKeySourceConfiguration.class);
+            if (!file && reverse) composed = composed.withBean("otherKeys", MediaPlaybackSigningKeyProvider.class, () -> other);
+            composed = composed.withBean("primaryKeys", MediaPlaybackSigningKeyProvider.class, () -> primary, definition -> definition.setPrimary(true));
+            if (!file && !reverse) composed = composed.withBean("otherKeys", MediaPlaybackSigningKeyProvider.class, () -> other);
+            if (reverse) composed = composed.withUserConfiguration(MediaPlaybackKeySourceConfiguration.class, MediaPlaybackConfiguration.class);
+            if (file) composed = composed.withPropertyValues(fileSelection(), filePath(path));
+            composed.run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class);
+                assertThat(context.getBeansOfType(MediaPlaybackSigningKeyProvider.class)).hasSize(2);
+                var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+                assertUnavailable(authority);
+                assertThat(authority.issueOrReplay(null)).isInstanceOf(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Unavailable.class);
+                var opaque = mock(OpaquePlaybackCredential.class);
+                assertThat(authority.verify(opaque)).isInstanceOf(MediaCredentialVerifier.Result.Unavailable.class);
+                verify(primary, never()).currentKeys(); verify(other, never()).currentKeys(); verifyNoInteractions(opaque);
+                if (file) verify(observed.get(), never()).currentKeys();
+            });
+        }
+    }
+
+    @Test void unsupportedSourceAndInvalidFileKeepUnavailable() throws Exception {
+        String path = fileBundle();
+        var composed = runner.withUserConfiguration(MediaPlaybackKeySourceConfiguration.class);
+        for (String selector : List.of("", "false", "unknown", "file,custom", "file custom"))
+            composed.withPropertyValues("onecall.sharing.media-playback.signing-key-source.provider=" + selector, filePath(path)).run(context -> {
+                assertThat(context).hasNotFailed().doesNotHaveBean(MediaPlaybackSigningKeyProvider.class);
+                assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+            });
+        for (String invalid : List.of("missing", "malformed", "unreadable")) {
+            var target = keyDirectory.resolve(invalid);
+            if (invalid.equals("malformed")) java.nio.file.Files.writeString(target, "{}");
+            composed.withPropertyValues(fileSelection(), filePath(target.toString())).run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+                var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+                try (var files = mockStatic(java.nio.file.Files.class, CALLS_REAL_METHODS)) {
+                    if (invalid.equals("unreadable")) files.when(() -> java.nio.file.Files.readAttributes(target,
+                            java.nio.file.attribute.BasicFileAttributes.class, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                            .thenThrow(new java.nio.file.AccessDeniedException("synthetic-denied"));
+                    assertUnavailable(authority);
+                    assertThat(authority.issueOrReplay(null)).isInstanceOf(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Unavailable.class);
+                }
+            });
+        }
+    }
+
+    private String fileBundle() throws java.io.IOException {
+        byte[] material = new byte[32];
+        for (int index = 0; index < material.length; index++) material[index] = (byte) (index + 1);
+        return java.nio.file.Files.writeString(keyDirectory.resolve("source"), "{\"schemaVersion\":1,\"keys\":[{\"kid\":\"K1\",\"role\":\"ACTIVE\",\"keyHex\":\""
+                + HexFormat.of().formatHex(material) + "\"}]}").toString();
+    }
+    private static String fileSelection() { return "onecall.sharing.media-playback.signing-key-source.provider=file"; }
+    private static String filePath(String path) { return "onecall.sharing.media-playback.signing-key-source.bundle-path=" + path; }
 
     private void persistence(boolean combined) {
         for(boolean reverse:List.of(false,true)) for (String readers : List.of("zero", "single", "multiple", "primary", "throwing", "nullResult", "throwingProvider")) {
