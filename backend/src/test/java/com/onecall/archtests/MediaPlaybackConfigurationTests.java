@@ -9,6 +9,9 @@ import com.onecall.core.sharing.internal.playback.*;
 import com.onecall.core.sharing.internal.credential.*;
 import com.onecall.core.sharing.internal.keysource.FileMediaPlaybackSigningKeyProvider;
 import com.onecall.core.sharing.internal.keysource.MediaPlaybackKeySourceConfiguration;
+import com.onecall.core.sharing.internal.keysource.TencentSsmMediaPlaybackSigningKeyProvider;
+import com.tencentcloudapi.common.provider.CvmRoleCredential;
+import com.tencentcloudapi.ssm.v20190923.SsmClient;
 import com.onecall.archtests.sharing.DeterministicShareCommandProviders;
 import com.onecall.core.sharing.internal.publicadmission.MediaAuthorizationRequest.Purpose;
 import java.time.*;
@@ -331,6 +334,216 @@ class MediaPlaybackConfigurationTests {
                         assertUnavailable(authority);
                     });
         }
+    }
+
+    @Test void tencentSourceRequiresExactExplicitSelection() throws Exception {
+        try (var tencent = mockConstruction(TencentSsmMediaPlaybackSigningKeyProvider.class);
+                var files = mockConstruction(FileMediaPlaybackSigningKeyProvider.class);
+                var clients = mockConstruction(cloudClientType()); var sdk = mockConstruction(SsmClient.class);
+                var roles = mockConstruction(CvmRoleCredential.class)) {
+            for (String selector : Arrays.asList(null, "", " ", "TENCENT-SSM", "Tencent-ssm", "tencent-ssm ", " tencent-ssm", "unknown",
+                    "tencent-ssm,file", "tencent-ssm file", "FILE", "File", " file", "file ", "file,tencent-ssm", "file tencent-ssm", "${missing.pa23.selector}")) {
+                var values = tencentMetadata();
+                if (selector != null) values.put(KEY_SOURCE + "provider", selector);
+                exactProperties(values).run(context -> {
+                    assertThat(context).hasNotFailed().doesNotHaveBean(MediaPlaybackSigningKeyProvider.class);
+                    assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+                });
+            }
+            for (String path : List.of(fileBundle(), "", " ", "relative", "\0", "${missing.pa23.path}")) {
+                var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "tencent-ssm"); values.put(KEY_SOURCE + "bundle-path", path);
+                exactProperties(values).withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                        new org.springframework.core.env.PropertySource<Object>("path-resolution-guard") {
+                            @Override public boolean containsProperty(String name) { return name.equals(KEY_SOURCE + "bundle-path"); }
+                            @Override public Object getProperty(String name) {
+                                if (name.equals(KEY_SOURCE + "bundle-path")) throw new AssertionError("Path must not be resolved");
+                                return null;
+                            }
+                        })).run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(MediaPlaybackSigningKeyProvider.class));
+            }
+            for (String failing : List.of("provider", "bundle-path")) {
+                var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "tencent-ssm");
+                exactProperties(values).withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                        new org.springframework.core.env.PropertySource<Object>("inspection-failure") {
+                            @Override public boolean containsProperty(String name) {
+                                if (failing.equals("bundle-path") && name.equals(KEY_SOURCE + failing)) throw new IllegalStateException();
+                                return false;
+                            }
+                            @Override public Object getProperty(String name) {
+                                if (failing.equals("provider") && name.equals(KEY_SOURCE + failing)) throw new IllegalStateException();
+                                return null;
+                            }
+                        })).run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(MediaPlaybackSigningKeyProvider.class));
+            }
+            assertThat(tencent.constructed()).isEmpty(); assertThat(files.constructed()).isEmpty();
+            assertThat(clients.constructed()).isEmpty(); assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty();
+        }
+        try (var clients = mockConstruction(cloudClientType()); var sdk = mockConstruction(SsmClient.class); var roles = mockConstruction(CvmRoleCredential.class)) {
+            var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "tencent-ssm");
+            exactProperties(values).run(context -> {
+                assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+                assertThat(context.getBean(MediaPlaybackSigningKeyProvider.class)).isInstanceOf(TencentSsmMediaPlaybackSigningKeyProvider.class);
+                assertThat(clients.constructed()).hasSize(1); assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty();
+                verifyNoInteractions(clients.constructed().getFirst());
+            });
+        }
+    }
+
+    @Test void tencentMissingMetadataIsUnavailableWithoutNetwork() throws Exception {
+        try (var clients = mockConstruction(cloudClientType()); var sdk = mockConstruction(SsmClient.class);
+                var roles = mockConstruction(CvmRoleCredential.class); var files = mockConstruction(FileMediaPlaybackSigningKeyProvider.class)) {
+            for (String field : List.of("region", "secret-name", "version-id", "connect-timeout-seconds", "read-timeout-seconds"))
+                for (String invalid : Arrays.asList(null, "", " ", "${missing.pa23.value}", "\0", field.equals("region") ? "INVALID" : field.endsWith("seconds") ? "99" : " trailing ")) {
+                    if (invalid == null && field.endsWith("seconds")) continue;
+                    var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "tencent-ssm");
+                    if (invalid == null) values.remove(KEY_SOURCE + "tencent." + field);
+                    else values.put(KEY_SOURCE + "tencent." + field, invalid);
+                    exactProperties(values).run(context -> {
+                        assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+                        assertThat(context.getBean(MediaPlaybackSigningKeyProvider.class)).isInstanceOf(TencentSsmMediaPlaybackSigningKeyProvider.class);
+                        assertUnavailable(context.getBean(MediaCredentialVerifier.class));
+                        assertThat(context.getBean(MediaPlaybackSigningKeyProvider.class).currentKeys()).isInstanceOf(MediaPlaybackSigningKeyProvider.Result.Unavailable.class);
+                    });
+                }
+            assertThat(clients.constructed()).isEmpty(); assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty(); assertThat(files.constructed()).isEmpty();
+        }
+    }
+
+    @Test void staleTencentMetadataDoesNotSuppressExplicitFileProvider() throws Exception {
+        String path = fileBundle();
+        var fields = List.of("region", "secret-name", "version-id", "connect-timeout-seconds", "read-timeout-seconds");
+        try (var tencent = mockConstruction(TencentSsmMediaPlaybackSigningKeyProvider.class); var clients = mockConstruction(cloudClientType());
+                var sdk = mockConstruction(SsmClient.class); var roles = mockConstruction(CvmRoleCredential.class)) {
+            for (int selected = -1; selected < fields.size(); selected++) for (String form : List.of("absent", "empty", "whitespace", "valid", "invalid", "unresolved")) {
+                Map<String, Object> stale = new HashMap<>();
+                for (int index = 0; index < fields.size(); index++) if ((selected == -1 || index == selected) && !form.equals("absent")) {
+                    String field = fields.get(index);
+                    stale.put(KEY_SOURCE + "tencent." + field, switch (form) {
+                        case "empty" -> ""; case "whitespace" -> " \t"; case "invalid" -> "\0";
+                        case "unresolved" -> "${missing.pa23.stale}"; default -> tencentMetadata().get(KEY_SOURCE + "tencent." + field);
+                    });
+                }
+                AtomicInteger lookups = new AtomicInteger();
+                exactProperties(Map.of(KEY_SOURCE + "provider", "file", KEY_SOURCE + "bundle-path", path)).withInitializer(context ->
+                        context.getEnvironment().getPropertySources().addFirst(new org.springframework.core.env.PropertySource<Object>("stale-tencent", stale) {
+                            @Override public Object getProperty(String name) {
+                                if (name.startsWith(KEY_SOURCE + "tencent.")) { lookups.incrementAndGet(); throw new AssertionError("Unselected metadata inspected"); }
+                                return null;
+                            }
+                        })).run(context -> {
+                            assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+                            assertThat(context.getBean(MediaPlaybackSigningKeyProvider.class)).isInstanceOf(FileMediaPlaybackSigningKeyProvider.class);
+                            assertThat(lookups).hasValue(0);
+                            var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+                            assertThat(authority.verify(new OpaquePlaybackCredential(token(authority)))).isInstanceOf(MediaCredentialVerifier.Result.Verified.class);
+                            assertThat(lookups).hasValue(0);
+                            assertThat(tencent.constructed()).isEmpty(); assertThat(clients.constructed()).isEmpty();
+                            assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty();
+                        });
+            }
+        }
+    }
+
+    @Test void tencentSharesSoleAuthorityAcrossProfiles() throws Exception {
+        for (String profile : List.of("", "web", "persistence", "web,persistence")) for (boolean consumers : List.of(false, true)) {
+            try (var clients = mockConstruction(cloudClientType()); var sdk = mockConstruction(SsmClient.class); var roles = mockConstruction(CvmRoleCredential.class)) {
+                var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "tencent-ssm"); values.put("spring.profiles.active", profile);
+                var composed = exactProperties(values);
+                if (consumers) composed = composed.withUserConfiguration(com.onecall.core.sharing.internal.persistence.ShareAdmissionPersistenceConfiguration.class)
+                        .withInitializer(context -> {
+                            context.getEnvironment().setActiveProfiles("web", "persistence");
+                            context.addBeanFactoryPostProcessor(factory -> factory.registerSingleton("sharingAdmissionDataSource", mock(com.zaxxer.hikari.HikariDataSource.class)));
+                        }).withPropertyValues("onecall.sharing-admission.datasource.enabled=true", "onecall.sharing-admission.datasource.url=jdbc:synthetic:admission",
+                                "onecall.sharing-admission.datasource.username=sharing_admission_role", "onecall.sharing-admission.datasource.password=synthetic");
+                composed.run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class).hasSingleBean(MediaCredentialVerifier.class).hasSingleBean(ShareMediaCredentialProvider.class);
+                    var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+                    assertThat(context.getBean(MediaCredentialVerifier.class)).isSameAs(authority);
+                    assertThat(context.getBean(ShareMediaCredentialProvider.class)).isSameAs(authority);
+                    assertThat(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(MediaPlaybackService.class), "verifier")).isSameAs(authority);
+                    for (String name : List.of("shareAdmissionService", "shareMediaAuthorizationService")) if (context.containsBean(name))
+                        assertThat(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(name), "credentials")).isSameAs(authority);
+                    assertThat(clients.constructed()).hasSize(1); verifyNoInteractions(clients.constructed().getFirst());
+                    assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty();
+                });
+            }
+        }
+    }
+
+    @Test void tencentAndCustomProvidersAreAmbiguousBeforeAnyRead() throws Exception {
+        String path = fileBundle();
+        for (String scenario : List.of("custom", "tencent", "file", "stale-file", "manual")) for (boolean reverse : List.of(false, true))
+            for (boolean configurationFirst : List.of(false, true)) {
+                try (var clients = mockConstruction(cloudClientType()); var sdk = mockConstruction(SsmClient.class);
+                        var roles = mockConstruction(CvmRoleCredential.class); var files = mockConstruction(FileMediaPlaybackSigningKeyProvider.class)) {
+                    MediaPlaybackSigningKeyProvider custom = scenario.equals("manual")
+                            ? mock(FileMediaPlaybackSigningKeyProvider.class)
+                            : mock(MediaPlaybackSigningKeyProvider.class, withSettings().extraInterfaces(org.springframework.core.Ordered.class));
+                    if (custom instanceof org.springframework.core.Ordered ordered) when(ordered.getOrder()).thenReturn(Integer.MIN_VALUE);
+                    MediaPlaybackSigningKeyProvider other = scenario.equals("manual") ? mock(TencentSsmMediaPlaybackSigningKeyProvider.class) : mock(MediaPlaybackSigningKeyProvider.class);
+                    var composed = new ApplicationContextRunner().withAllowBeanDefinitionOverriding(false);
+                    if (configurationFirst) composed = composed.withUserConfiguration(MediaPlaybackConfiguration.class, MediaPlaybackKeySourceConfiguration.class);
+                    String first = reverse ? "otherKeys" : "customKeys", second = reverse ? "customKeys" : "otherKeys";
+                    boolean pair = scenario.equals("custom") || scenario.equals("manual");
+                    if (pair || !reverse) composed = composed.withBean(first, MediaPlaybackSigningKeyProvider.class, () -> reverse ? other : custom, definition -> definition.setPrimary(true));
+                    if (pair || reverse) composed = composed.withBean(second, MediaPlaybackSigningKeyProvider.class, () -> reverse ? custom : other);
+                    if (!configurationFirst) composed = composed.withUserConfiguration(MediaPlaybackKeySourceConfiguration.class, MediaPlaybackConfiguration.class);
+                    if (scenario.equals("tencent")) {
+                        var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "tencent-ssm"); composed = properties(composed, values);
+                    } else if (scenario.contains("file")) {
+                        var values = scenario.equals("stale-file") ? tencentMetadata() : new HashMap<String, Object>();
+                        values.put(KEY_SOURCE + "provider", "file"); values.put(KEY_SOURCE + "bundle-path", path); composed = properties(composed, values);
+                    }
+                    composed.run(context -> {
+                        assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackCredentialAuthority.class);
+                        assertThat(context.getBeansOfType(MediaPlaybackSigningKeyProvider.class)).hasSize(2);
+                        var authority = context.getBean(MediaPlaybackCredentialAuthority.class); assertUnavailable(authority);
+                        assertThat(authority.issueOrReplay(null)).isInstanceOf(ShareMediaCredentialProvider.MediaAuthorizationCredentialResult.Unavailable.class);
+                        var opaque = mock(OpaquePlaybackCredential.class); authority.verify(opaque); verifyNoInteractions(opaque);
+                        for (MediaPlaybackSigningKeyProvider provider : context.getBeansOfType(MediaPlaybackSigningKeyProvider.class).values()) {
+                            if (mockingDetails(provider).isMock()) verify(provider, never()).currentKeys();
+                        }
+                        for (Object client : clients.constructed()) verifyNoInteractions(client);
+                        assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty();
+                    });
+                }
+            }
+    }
+
+    @Test void explicitFileSelectionRemainsIndependentOfTencentClient() throws Exception {
+        try (var tencent = mockConstruction(TencentSsmMediaPlaybackSigningKeyProvider.class); var clients = mockConstruction(cloudClientType());
+                var sdk = mockConstruction(SsmClient.class); var roles = mockConstruction(CvmRoleCredential.class)) {
+            String valid = fileBundle();
+            for (String path : Arrays.asList(null, "", " ", "relative", "\0", "${missing.pa23.file}", valid)) {
+                var values = tencentMetadata(); values.put(KEY_SOURCE + "provider", "file");
+                if (path != null) values.put(KEY_SOURCE + "bundle-path", path);
+                exactProperties(values).run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(MediaPlaybackSigningKeyProvider.class);
+                    assertThat(context.getBean(MediaPlaybackSigningKeyProvider.class)).isInstanceOf(FileMediaPlaybackSigningKeyProvider.class);
+                    var authority = context.getBean(MediaPlaybackCredentialAuthority.class);
+                    if (valid.equals(path)) assertThat(authority.verify(new OpaquePlaybackCredential(token(authority)))).isInstanceOf(MediaCredentialVerifier.Result.Verified.class);
+                    else assertUnavailable(authority);
+                });
+            }
+            assertThat(tencent.constructed()).isEmpty(); assertThat(clients.constructed()).isEmpty(); assertThat(sdk.constructed()).isEmpty(); assertThat(roles.constructed()).isEmpty();
+        }
+    }
+
+    private static final String KEY_SOURCE = "onecall.sharing.media-playback.signing-key-source.";
+    private static Class<?> cloudClientType() throws ClassNotFoundException {
+        return Class.forName("com.onecall.core.sharing.internal.keysource.TencentSsmSecretStringClient");
+    }
+    private static Map<String, Object> tencentMetadata() {
+        var values = new HashMap<String, Object>();
+        values.put(KEY_SOURCE + "tencent.region", "test-region"); values.put(KEY_SOURCE + "tencent.secret-name", "synthetic-name");
+        values.put(KEY_SOURCE + "tencent.version-id", "synthetic-version"); values.put(KEY_SOURCE + "tencent.connect-timeout-seconds", "2");
+        values.put(KEY_SOURCE + "tencent.read-timeout-seconds", "3"); return values;
+    }
+    private ApplicationContextRunner exactProperties(Map<String, Object> values) {
+        return properties(runner.withUserConfiguration(MediaPlaybackKeySourceConfiguration.class), values);
+    }
+    private static ApplicationContextRunner properties(ApplicationContextRunner base, Map<String, Object> values) {
+        return base.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("exact-pa23", values)));
     }
 
     private static void assertUnavailable(MediaCredentialVerifier verifier) {
