@@ -777,6 +777,33 @@ jobs:
           for class_name, names in pa23_additions.items():
               unit_expected.setdefault(class_name, set()).update(names)
 
+          pa25_additions = {
+              "com.onecall.archtests.container.ProductionDatabaseIdentityProvisioningIT": {
+                  "createsExactIdentityGraphAndReplaysWithoutDrift",
+                  "bindsEnvironmentBackedDatasourcesToExactlySixIdentities",
+                  "sharingQueryAssumesOnlySharingRoleAndRestoresPoolIdentity",
+                  "customerQueryAssumesOnlyCustomerRoleAndEnforcesReadOnly",
+                  "commandSwitchesToEvidenceAndRestoresOnTheSameConnection",
+                  "directLoginsRemainDirectAndCannotAssumeOtherIdentities",
+                  "deniesEveryUnapprovedRoleTargetIncludingOwnersAndPredefinedRoles",
+                  "readGraphsDenyWritesAndDistinguishAclFromReadOnlyFailures",
+                  "commandAndAdmissionWriteOnlyWithinTheirFrozenBoundaries",
+                  "missingAndStaleMembershipsFailCheckAndOnlyAbsentEdgesAreReconciled",
+                  "extraReversedTransitiveAndCrossServiceMembershipsFailClosed",
+                  "adminInheritSetAndGrantorOptionDriftFailClosed",
+                  "unsafeAttributesAndLoginShapeMismatchesFailClosed",
+                  "ownershipAndUnexpectedSharedDependenciesFailClosed",
+                  "directPrivilegesMissingGrantsAndGrantOptionsFailClosed",
+                  "publicDatabaseAndDefaultAclDriftFailClosed",
+                  "roleAndDatabaseRoleSettingsFailClosed",
+                  "invalidInputsHistoryAndAuthorityRejectAtomically",
+                  "frozenMigrationsLogicalAclsAndHistoryRemainUnchanged",
+                  "credentialsEndpointsAndSqlDiagnosticsAreRedacted",
+              },
+          }
+          for class_name, names in pa25_additions.items():
+              container_expected.setdefault(class_name, set()).update(names)
+
           source_classes = set()
           for path in Path("src/test/java").rglob("*.java"):
               source = path.read_text()
@@ -834,12 +861,14 @@ jobs:
           pa21_start_totals = [0, 0]
           pa22_start_totals = [0, 0]
           pa23_start_totals = [0, 0]
+          pa25_start_totals = [0, 0]
           line_scan_total = baseline_line_scan_total = 0
           pa19_start_line_scan_total = 0
           pa20_start_line_scan_total = 0
           pa21_start_line_scan_total = 0
           pa22_start_line_scan_total = 0
           pa23_start_line_scan_total = 0
+          pa25_start_line_scan_total = 0
           comment_hits = []
           for path in Path("src/test/java").rglob("*.java"):
               source = path.read_text()
@@ -851,17 +880,19 @@ jobs:
               pa21_names = pa21_additions.get(class_name, set())
               pa22_names = pa22_additions.get(class_name, set())
               pa23_names = pa23_additions.get(class_name, set())
-              additions = pa18_names | pa19_names | pa20_names | pa21_names | pa22_names | pa23_names
+              pa25_names = pa25_additions.get(class_name, set())
+              additions = pa18_names | pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names
               assert additions <= set(names), f"missing PA18/PA19/PA20/PA21/PA22/PA23 additions: {class_name}"
               if names:
                   suite_index = 0 if class_name in unit_expected else 1
                   method_totals[suite_index] += len(names)
                   baseline_totals[suite_index] += len(names) - len(additions)
-                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names | pa21_names | pa22_names | pa23_names)
-                  pa20_start_totals[suite_index] += len(names) - len(pa20_names | pa21_names | pa22_names | pa23_names)
-                  pa21_start_totals[suite_index] += len(names) - len(pa21_names | pa22_names | pa23_names)
-                  pa22_start_totals[suite_index] += len(names) - len(pa22_names | pa23_names)
-                  pa23_start_totals[suite_index] += len(names) - len(pa23_names)
+                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names)
+                  pa20_start_totals[suite_index] += len(names) - len(pa20_names | pa21_names | pa22_names | pa23_names | pa25_names)
+                  pa21_start_totals[suite_index] += len(names) - len(pa21_names | pa22_names | pa23_names | pa25_names)
+                  pa22_start_totals[suite_index] += len(names) - len(pa22_names | pa23_names | pa25_names)
+                  pa23_start_totals[suite_index] += len(names) - len(pa23_names | pa25_names)
+                  pa25_start_totals[suite_index] += len(names) - len(pa25_names)
               baseline_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
                   if match.group(1) in additions else match.group(), source)
@@ -869,24 +900,28 @@ jobs:
               baseline_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in baseline_source.splitlines())
               pa19_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa19_names | pa20_names | pa21_names | pa22_names | pa23_names else match.group(), source)
+                  if match.group(1) in pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names else match.group(), source)
               pa19_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa19_start_source.splitlines())
               pa20_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa20_names | pa21_names | pa22_names | pa23_names else match.group(), source)
+                  if match.group(1) in pa20_names | pa21_names | pa22_names | pa23_names | pa25_names else match.group(), source)
               pa20_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa20_start_source.splitlines())
               pa21_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa21_names | pa22_names | pa23_names else match.group(), source)
+                  if match.group(1) in pa21_names | pa22_names | pa23_names | pa25_names else match.group(), source)
               pa21_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa21_start_source.splitlines())
               pa22_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa22_names | pa23_names else match.group(), source)
+                  if match.group(1) in pa22_names | pa23_names | pa25_names else match.group(), source)
               pa22_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa22_start_source.splitlines())
               pa23_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa23_names else match.group(), source)
+                  if match.group(1) in pa23_names | pa25_names else match.group(), source)
               pa23_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa23_start_source.splitlines())
+              pa25_start_source = method_pattern.sub(
+                  lambda match: match.group().replace("@Test", "", 1)
+                  if match.group(1) in pa25_names else match.group(), source)
+              pa25_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa25_start_source.splitlines())
               comment_hits.extend((path.name, line.strip()) for line in source.splitlines()
                                   if re.search(r"@Test\b", line) and line.lstrip().startswith("//"))
           assert [len(names) for names in pa18_additions.values()] == [9, 6, 1, 13, 1]
@@ -901,15 +936,18 @@ jobs:
           assert pa22_start_totals == [231, 214] and sum(pa22_start_totals) == 445
           assert [len(names) for names in pa23_additions.values()] == [18, 8, 10, 6, 1]
           assert pa23_start_totals == [266, 214] and sum(pa23_start_totals) == 480
-          assert method_totals == [309, 214] and sum(method_totals) == 523
-          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, pa21_start_line_scan_total, pa22_start_line_scan_total, pa23_start_line_scan_total, line_scan_total) == (291, 321, 361, 401, 446, 481, 524)
+          assert pa25_start_totals == [309, 214] and sum(pa25_start_totals) == 523
+          assert pa25_start_line_scan_total == 524
+          assert [len(names) for names in pa25_additions.values()] == [20]
+          assert method_totals == [309, 234] and sum(method_totals) == 543
+          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, pa21_start_line_scan_total, pa22_start_line_scan_total, pa23_start_line_scan_total, line_scan_total) == (291, 321, 361, 401, 446, 481, 544)
           assert comment_hits == [("PostgresContainerIT.java", "// evidence inside this existing method; no new @Test and no catalog weakening.")]
           assert len(unit_expected) == 36
-          assert len(container_expected) == 13
+          assert len(container_expected) == 14
           pom = ET.parse("pom.xml").getroot()
           ns = {"m": "http://maven.apache.org/POM/4.0.0"}
           includes = pom.findall(".//m:plugin[m:artifactId='maven-failsafe-plugin']/m:configuration/m:includes/m:include", ns)
-          assert len(includes) == 13
+          assert len(includes) == 14
           assert {include.text for include in includes} == {"**/" + name.rsplit(".", 1)[1] + ".java" for name in container_expected}
           assert len(container_expected["com.onecall.archtests.container.PublicShareAdmissionIT"]) == 42
           assert len(container_expected["com.onecall.archtests.container.MediaPlaybackIT"]) == 9
@@ -919,8 +957,8 @@ jobs:
           assert len(unit_expected["com.onecall.archtests.sharing.MediaPlaybackCredentialAuthorityTests"]) == 24
           assert len(container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"]) == 9
           exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 309)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 214)
-          print("PA23 exact source=CI=XML inventory passed: 36/309 + 13/214 = 49/523; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> current 309+214=523; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524; POM 13 includes; zero skips/errors/failures")
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 234)
+          print("PA25 exact source=CI=XML inventory passed: 36/309 + 14/234 = 50/543; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> PA25-start 309+214=523 -> current 309+234=543; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524 -> 544; POM 14 includes; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
@@ -1429,6 +1467,7 @@ jobs:
 
           with zipfile.ZipFile("target/onecall-runtime-0.0.1-SNAPSHOT.jar") as product:
               entries = product.namelist()
+              assert not any("pa25-runtime-identities" in entry or "ops/postgresql/" in entry for entry in entries)
               assert len(entries) == len(set(entries))
               for entry in entries:
                   if not entry.startswith("BOOT-INF/classes/"):
