@@ -282,7 +282,7 @@ class PublicShareAdmissionIT {
     @Test void publicGetAndCreatorCreateRevokeRotateListMeRemainUnchanged() throws Exception {
         assertThat(fixture.count("sharing.share_admission")).isZero();
         assertThat(BASE.context.getBeansOfType(com.onecall.core.sharing.internal.application.CustomerShareQueryService.class)).hasSize(1);
-        assertThat(BASE.flyway.info().applied()).hasSize(13);
+        assertThat(BASE.flyway.info().applied()).hasSize(14);
         assertThat(com.onecall.core.customer_iam.internal.web.PublicSharesController.class.getMethod("getPublicShare",String.class,java.security.Principal.class)
                 .getAnnotation(org.springframework.web.bind.annotation.GetMapping.class).path()).containsExactly("/api/v1/public/shares/{capabilityToken}");
     }
