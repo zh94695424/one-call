@@ -4,7 +4,7 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa23-sharing-media-secret-manager-key-source`
+> Branch: `codex/pa24-sharing-media-secret-manager-live-rotation-and-platform-acceptance`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
@@ -12,7 +12,23 @@
 
 ## Active resume checkpoint - 2026-11-10
 
-### PA23 sharing media Secret Manager key source - goal confirmation accepted
+### PA24 sharing media Secret Manager live rotation and platform acceptance - goal confirmation accepted
+
+- Active work unit: `PA24-sharing-media-secret-manager-live-rotation-and-platform-acceptance`; architecture-sensitive deployment/security acceptance work unit for the merged PA23 K20 Secret Manager adapter.
+- Start state: PA23 completed at `final closeout pass`; PR #34 is `MERGED` at `d46140d012acb42574503dc049c2b8778fc116e5`, and the local `origin/main` reference resolves that exact signed merge commit. PA23's product tree equals the merged tree `0672a50f91b053a8d81b5083cb0aa2a5d97859a6`.
+- New managed worktree: `C:\Users\Administrator\.codex\worktrees\pa24-secret-manager-live-rotation\codex-call`; branch `codex/pa24-sharing-media-secret-manager-live-rotation-and-platform-acceptance`; clean at the exact merge commit. PA23 and all earlier worktrees/private `.codex` state remain preserved and excluded.
+- Goal confirmed by the user on 2026-11-10: use the initial Tencent **CVM attached-instance-role** deployment route and prepare the merged K20 Secret Manager source for explicit immutable secret-version rollout and platform acceptance. The deliverable must make the A -> B -> C rollout contract executable/checkable in-repository: A has K1 ACTIVE and issues a credential; B has K2 ACTIVE plus K1 VERIFY_ONLY so old credentials verify/replay while new issuance uses K2; C removes K1 so old verification is Invalid, old replay is Unavailable and fresh K2 issuance still succeeds. Wrong/missing version/config, credential/CAM failure, malformed/ambiguous bundle and source failure remain fail-closed.
+- Success signal: a code-generation-ready operational acceptance contract plus deterministic validation proves the CVM-only role route, explicit version selection, overlap/retirement behavior, operator sequencing, rollback boundaries, redaction, and exact measurable timeout/retry/liveness limitations. Any product-code change must be justified by a concrete gap in the merged provider; read-only documentation/tests are acceptable if the existing behavior already satisfies the contract. Real Secret Manager/CAM resources are not provisioned and live-cloud acceptance is not claimed.
+- Scope boundary: PA21/PA22 authority and credential wire remain authoritative; the PA23 provider remains the sole K20 cloud source; `file` remains explicit and non-fallback. The work unit may add or modify only bounded keysource tests/configuration, architecture assertions, CI inventory, acceptance/runbook documentation and Gateflow artifacts proven necessary by the plan. No generic secret manager, provider SPI, cache/TTL/reloader, application service, public API/DTO, database/migration/ACL, deployment topology, COS/player/CDN/TLS/LB/WAF or Q22 numeric value is introduced.
+- Ownership boundary: sharing owns K20 credential/provider semantics; Platform/Security owns CVM identity attachment, CAM least privilege, Secret Manager region/resource/version provisioning, immutable rollout and real platform acceptance. Operations owns monitoring/evidence collection for latency/availability. No live cloud fixtures or credentials enter the repository.
+- Non-goals: TKE/OIDC or other non-CVM identity modes; secret creation/rotation automation; dynamic version watchers; cache TTL; revoke/recall of already-issued K20 credentials; actual cloud provisioning; changes to V001-V013; merge, approval, mark-ready, reviewer request, external comment or issue mutation.
+- Over-design boundary: one bounded rollout/acceptance contract using the merged provider and existing authority. Do not create a second key registry, version broker, retry framework, credential abstraction or deployment platform. The plan must first determine whether any code change is needed and keep slices behaviorally verifiable.
+- Slice principle: prefer one composed rollout/acceptance slice. Split only if CVM identity/timeout enforcement and A/B/C key-overlap acceptance have security boundaries that cannot be reviewed safely together; default maximum remains three.
+- Blocking open questions: none for planning. The confirmed initial identity route is CVM instance-role; all non-CVM modes are excluded. Exact region, secret resource/version, CAM policy and production probes remain Platform/Security external inputs and cannot be invented.
+- Dispatch protocol: `sub-agents` via one-shot runner processes. Planning/implementation/fixes and the Code Primary Judge remain GPT `gpt-6.1-sol` / high; independent review A uses DeepSeek `ds`; review B uses MiMo V2.6 Flash `mimo26flash`. No task may switch protocol or read the peer conclusion before its own artifact is submitted.
+- Current gate / next entry point: `plan`. Dispatch a fresh Codex / GPT `gpt-6.1-sol` / high task as `pa24-secret-manager-rollout-plan-gpt-20261110-01` to create only `docs/gateflow/pa24-sharing-media-secret-manager-live-rotation-and-platform-acceptance-plan.md`. The plan must be code-generation-ready, derive exact files/tests/docs/inventory, explicitly determine whether the merged provider needs code changes, define the CVM-only A/B/C rollout and evidence contract, and stop before plan review. No source/test/POM/CI/Control edit, commit, push, PR, approval, ready action, reviewer request or external comment is authorized.
+
+### PA23 sharing media Secret Manager key source - final closeout pass
 
 - Active work unit: `PA23-sharing-media-secret-manager-key-source`; backend/security feature for a production Tencent Cloud Secret Manager adapter behind the existing K20 `MediaPlaybackSigningKeyProvider`.
 - Start state: PA22 is `final closeout pass`; PR #33 is `MERGED` at `8a8c2455ad96b9a6adf0daa4bac7549f371da64a`, and a fresh fetch confirms `origin/main` equals that merge commit.
