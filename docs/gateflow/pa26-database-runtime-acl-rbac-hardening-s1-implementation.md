@@ -83,6 +83,35 @@ Both the before-capture and after-validation files match the accepted plan §9; 
 | `V012__sharing_admission_least_privilege.sql` | `ff5e65fe808c8c98b1a71a5abadaab513516206e173fc6a7dada5f599fde39c6` | unchanged |
 | `V013__evidence_media_reader_role.sql` | `1143f4a5a87b6727edc1878cb86b3eadb034d485add81e3a33558150f0a5db8e` | unchanged |
 
+
+### PR Fix 1: Checkout-Independent Predecessor Oracle (2026-11-11)
+
+The raw-byte table above is the **accepted Windows CRLF worktree provenance from plan §9**, not a portable checkout oracle or a Git object ID. It remains valid historical before/after evidence; those values are deliberately retained. Hosted `java-runtime` at PR head `8bd89f7bda832fa19519b64a104807f014fcea45` failed on November 10, 2026 UTC (November 11 Asia/Shanghai) because Linux V001 bytes hash to `946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045`, not the CRLF value. `contract-regressions` passed; that hosted Java run remains a failure, not a retroactive pass.
+
+PR fix 1 changes only the IT oracle: read UTF-8, replace CRLF with LF, then lone CR with LF, encode UTF-8 and SHA256. The independent literal expectations below are not read from Git, V014 output, Flyway history or generated migration metadata. Python byte normalization/hashlib and a separate Perl normalization/GNU `sha256sum` calculation agree for all thirteen files, including the hosted V001 value. SHA256 here is neither a Git blob object ID nor Flyway's checksum.
+
+| Version | Canonical-LF SHA256 (literal IT expectation) |
+| --- | --- |
+| `V001` | `946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045` |
+| `V002` | `534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5` |
+| `V003` | `1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1` |
+| `V004` | `a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc` |
+| `V005` | `2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310` |
+| `V006` | `830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475` |
+| `V007` | `bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659` |
+| `V008` | `2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e` |
+| `V009` | `ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae` |
+| `V010` | `fadd30a3c058c8847d734f83b22af3a93b2c79ab92cba1b0d1a8a547e5f4a343` |
+| `V011` | `f5fddaf46a4a24bec427e5978364aa585f695b4ee9d03d5deb759eef0930e17b` |
+| `V012` | `13e6ae056134cd48b2fa8d840119a3268efe8bfc178d4fee24e7e3feac46f828` |
+| `V013` | `691f9a773e1a4c2d5f8c46b1be18515e1dccdbeadacfd15c5d113fcf1878e9f6` |
+
+The supplied base/candidate V001-V013 files match byte-for-byte, and the final fix audit checks them against the pre-edit capture. No migration file or Git metadata is written. Thus the accepted Git blobs/content stay unchanged: only interpretation of checkout line endings in the test changes; this metadata-free workspace does not claim an independent Git-object database inspection. V014 is also byte-identical and semantically unchanged.
+
+`PA26-PR37-CI-01` and `PA26-PR37-A-01` are **fixed candidates**, pending PR re-review. Every rejection mutation now supplies its intended first `V014_*_REJECTED` category; exact `P0001`, savepoint rollback and full catalog equality remain. PUBLIC and unexpected-sequence ACLs reach `V014_ACL_REJECTED` before dependency checks; actual default privileges reach `V014_DEFAULT_ACL_REJECTED`. Partial/renamed/stale markers reach provenance before topology/attributes; settings precede attributes. Authority negatives also assert `V014_AUTHORITY_REJECTED`. No ordering change or V014 defect is proposed.
+
+Fix commands, two-form hash provenance, all mutation/category pairs, validation outcomes and residuals are recorded in `pa26-database-runtime-acl-rbac-hardening-pr-fix-1.md`. The original S1 counts, artifact hashes, exit disposition and “stop before code review” statements below remain historical S1 evidence, not current artifact metadata or this fix's gate boundary. This fix stops **before PR re-review**. All existing residual classifications and the privilege/public/runtime contract are preserved. Fix-author validation exits 0: focused V014/PA25 2/32 plus Surefire 36/309; final full clean verify 36/309 + 15/246 = 51/555, zero failures/errors/skips; exact source=CI=XML inventory 51/555, scan 556 and fifteen includes. The actual hash helper passes LF/CRLF/lone-CR/mixed copies and rejects non-line-ending corruption. Logs/XML/manifests are outside the repository at `/mnt/d/codex-temp/pa26-pr37-fix1-evidence-20261111-050751`; original failure evidence remains separate and unchanged. No prior residual is closed by these local successes.
+
 ## 4. Test Responsibilities and Runtime Evidence
 
 Exactly twelve ordinary `@Test void` methods were added, with no parameterized/dynamic additions:

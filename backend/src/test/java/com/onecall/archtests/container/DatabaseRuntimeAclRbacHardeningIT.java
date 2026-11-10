@@ -7,6 +7,7 @@ import com.onecall.core.customer_iam.internal.persistence.JooqCustomerContextRep
 import com.onecall.core.evidence.internal.shareprojection.JooqShareableEvidenceProjectionReader;
 import com.onecall.core.evidence.shareprojection.ShareableEvidenceProjectionReader;
 import com.zaxxer.hikari.HikariDataSource;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -49,19 +50,19 @@ class DatabaseRuntimeAclRbacHardeningIT {
     private static final Map<String, String> OWNERS = Map.of(
             "customer_iam", "customer_iam_owner", "organization_access", "organization_access_owner", "evidence", "evidence_owner");
     private static final Map<String, String> FROZEN = Map.ofEntries(
-            Map.entry("001", "96e72bdacb32610dd03975e3e4fd6b828579b574a375e4241482f19c96b4e1c6"),
-            Map.entry("002", "4cf2b66d5ad7870272102c90868a0d9ecbcf9e620ec1bd7ea26dec9541f66505"),
-            Map.entry("003", "4148f4acdeb9e56b57fe2d5d0a4fde616087f87bf16a836569edddbb0c8ae1d7"),
-            Map.entry("004", "8d03b32814baf9a9a812e89d3f56f666a5fb025fc518ab92d454fdcf6f5ea030"),
-            Map.entry("005", "6feb3cbc87014fc83362e6faa33cc8d4107348c31540bf382df320657dc8d065"),
-            Map.entry("006", "7a30ab8a97ad4062918a58dbcfcab97580fdca5752b939dd56c484c425a0a09d"),
-            Map.entry("007", "bf3fc710b76eb7b95b317458089f1f796f9aa42fde50444762db54152a350d81"),
-            Map.entry("008", "32aab5baf90ca09774241f5b9a4dd819e03352c5fbeb7e62d53cde8c3292ddde"),
-            Map.entry("009", "3226255afdf44a2dcc06b55d8059511b6cec5795a38083471f310c1c89bcd1b1"),
-            Map.entry("010", "d48c624d5f5c6d9ec47f0152a61fc48355f1025ac7b8b84cf9343170bfa94559"),
-            Map.entry("011", "ba7d485dce97d6cfd81a9f1c5a2e384b68a82fe865d73af7ee9edc92defde48e"),
-            Map.entry("012", "ff5e65fe808c8c98b1a71a5abadaab513516206e173fc6a7dada5f599fde39c6"),
-            Map.entry("013", "1143f4a5a87b6727edc1878cb86b3eadb034d485add81e3a33558150f0a5db8e"));
+            Map.entry("001", "946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045"),
+            Map.entry("002", "534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5"),
+            Map.entry("003", "1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1"),
+            Map.entry("004", "a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc"),
+            Map.entry("005", "2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310"),
+            Map.entry("006", "830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475"),
+            Map.entry("007", "bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659"),
+            Map.entry("008", "2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e"),
+            Map.entry("009", "ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae"),
+            Map.entry("010", "fadd30a3c058c8847d734f83b22af3a93b2c79ab92cba1b0d1a8a547e5f4a343"),
+            Map.entry("011", "f5fddaf46a4a24bec427e5978364aa585f695b4ee9d03d5deb759eef0930e17b"),
+            Map.entry("012", "13e6ae056134cd48b2fa8d840119a3268efe8bfc178d4fee24e7e3feac46f828"),
+            Map.entry("013", "691f9a773e1a4c2d5f8c46b1be18515e1dccdbeadacfd15c5d113fcf1878e9f6"));
     private static final String OBJECTS = """
             WITH objects AS (
                 SELECT 'schema' AS kind, namespace.oid, 0 AS subid, namespace.nspname AS identity,
@@ -325,60 +326,84 @@ class DatabaseRuntimeAclRbacHardeningIT {
 
     @Test
     void v014RejectsUnsafeRolesMembershipsOwnershipAndSettingsAtomically() throws Exception {
-        List<String> unsafe = List.of(
-                "ALTER ROLE customer_iam_role LOGIN", "ALTER ROLE evidence_role SUPERUSER", "ALTER ROLE customer_iam_role NOINHERIT",
-                "ALTER ROLE evidence_role PASSWORD 'synthetic-nonproduction'", "ALTER ROLE customer_iam_role CONNECTION LIMIT 1",
-                "ALTER ROLE customer_iam_role CREATEDB", "ALTER ROLE evidence_role CREATEROLE",
-                "ALTER ROLE customer_iam_role REPLICATION", "ALTER ROLE evidence_role BYPASSRLS",
-                "ALTER ROLE evidence_role VALID UNTIL 'infinity'", "ALTER ROLE evidence_role SET search_path TO evidence",
-                "ALTER DATABASE pa26 SET search_path TO evidence", "ALTER TABLE customer_iam.customer_account OWNER TO evidence_owner",
-                "GRANT pg_read_all_data TO customer_iam_role", "CREATE ROLE pa26_partial LOGIN NOINHERIT; GRANT customer_iam_role TO pa26_partial",
-                "CREATE ROLE pa26_partial LOGIN NOINHERIT; COMMENT ON ROLE pa26_partial IS 'onecall:pa25:v1:stale'");
-        for (String mutation : unsafe) rejectsAtomically(mutation);
+        for (var rejection : List.of(
+                Map.entry("ALTER ROLE customer_iam_role LOGIN", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE evidence_role SUPERUSER", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE customer_iam_role NOINHERIT", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE evidence_role PASSWORD 'synthetic-nonproduction'", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE customer_iam_role CONNECTION LIMIT 1", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE customer_iam_role CREATEDB", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE evidence_role CREATEROLE", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE customer_iam_role REPLICATION", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE evidence_role BYPASSRLS", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE evidence_role VALID UNTIL 'infinity'", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE evidence_role SET search_path TO evidence", "V014_SETTINGS_REJECTED"),
+                Map.entry("ALTER DATABASE pa26 SET search_path TO evidence", "V014_SETTINGS_REJECTED"),
+                Map.entry("ALTER TABLE customer_iam.customer_account OWNER TO evidence_owner", "V014_OWNERSHIP_REJECTED"),
+                Map.entry("GRANT pg_read_all_data TO customer_iam_role", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("CREATE ROLE pa26_partial LOGIN NOINHERIT; GRANT customer_iam_role TO pa26_partial", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("CREATE ROLE pa26_partial LOGIN NOINHERIT; COMMENT ON ROLE pa26_partial IS 'onecall:pa25:v1:stale'", "V014_PROVENANCE_REJECTED")))
+            rejectsAtomically(rejection.getKey(), rejection.getValue());
         provisionFrozenGraph();
-        for (String mutation : List.of("REVOKE evidence_role FROM pa26_lw", "DROP ROLE pa26_lq",
-                "GRANT evidence_role TO pa26_lw WITH INHERIT TRUE", "GRANT customer_iam_role TO pa26_lc WITH SET FALSE",
-                "GRANT sharing_role TO pa26_lq WITH ADMIN TRUE", "COMMENT ON ROLE pa26_lc IS 'onecall:pa25:v1:wrong-slot'",
-                "ALTER ROLE pa26_lc INHERIT", "ALTER ROLE pa26_lw SET search_path TO evidence",
-                "ALTER ROLE pa26_lc RENAME TO pa26_renamed", "ALTER ROLE pa26_lw NOLOGIN",
-                "ALTER ROLE pa26_lc SUPERUSER", "ALTER ROLE pa26_lw CREATEDB", "ALTER ROLE pa26_lc CREATEROLE",
-                "ALTER ROLE pa26_lw REPLICATION", "ALTER ROLE pa26_lc BYPASSRLS",
-                "ALTER ROLE pa26_lw VALID UNTIL 'infinity'", "ALTER ROLE pa26_lc CONNECTION LIMIT 2",
-                "GRANT customer_iam_role TO evidence_role", "GRANT pg_write_all_data TO pa26_lw",
-                "GRANT SELECT(id) ON customer_iam.customer_account TO pa26_lc")) rejectsAtomically(mutation);
+        for (var rejection : List.of(
+                Map.entry("REVOKE evidence_role FROM pa26_lw", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("DROP ROLE pa26_lq", "V014_PROVENANCE_REJECTED"),
+                Map.entry("GRANT evidence_role TO pa26_lw WITH INHERIT TRUE", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("GRANT customer_iam_role TO pa26_lc WITH SET FALSE", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("GRANT sharing_role TO pa26_lq WITH ADMIN TRUE", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("COMMENT ON ROLE pa26_lc IS 'onecall:pa25:v1:wrong-slot'", "V014_PROVENANCE_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lc INHERIT", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lw SET search_path TO evidence", "V014_SETTINGS_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lc RENAME TO pa26_renamed", "V014_PROVENANCE_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lw NOLOGIN", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lc SUPERUSER", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lw CREATEDB", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lc CREATEROLE", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lw REPLICATION", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lc BYPASSRLS", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lw VALID UNTIL 'infinity'", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("ALTER ROLE pa26_lc CONNECTION LIMIT 2", "V014_ATTRIBUTES_REJECTED"),
+                Map.entry("GRANT customer_iam_role TO evidence_role", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("GRANT pg_write_all_data TO pa26_lw", "V014_TOPOLOGY_REJECTED"),
+                Map.entry("GRANT SELECT(id) ON customer_iam.customer_account TO pa26_lc", "V014_ACL_REJECTED")))
+            rejectsAtomically(rejection.getKey(), rejection.getValue());
         try (Connection connection = admin()) {
             String marker = one(connection, "SELECT shobj_description('pa26_lc'::regrole,'pg_authid')");
             for (String malformed : List.of(marker.replaceFirst("db=[0-9]+", "db=0"), marker.replaceFirst("role=[0-9]+", "role=0"),
                     marker.replace("slot=customer_context", "slot=sharing_command"), marker.replace("name=pa26_lc", "name=pa26_lw"), marker + " "))
-                rejectsAtomically("COMMENT ON ROLE pa26_lc IS '" + malformed + "'");
+                rejectsAtomically("COMMENT ON ROLE pa26_lc IS '" + malformed + "'", "V014_PROVENANCE_REJECTED");
         }
-        try (Connection connection = login("pa26_lc")) { denied(connection, Files.readString(MIGRATIONS.resolve(SCRIPT)), "P0001"); }
+        try (Connection connection = login("pa26_lc")) { rejected(connection, "V014_AUTHORITY_REJECTED"); }
         try (Connection connection = admin()) {
-            execute(connection, "SET ROLE customer_iam_owner"); denied(connection, Files.readString(MIGRATIONS.resolve(SCRIPT)), "P0001");
+            execute(connection, "SET ROLE customer_iam_owner"); rejected(connection, "V014_AUTHORITY_REJECTED");
         }
     }
 
     @Test
     void v014RejectsPublicDefaultAndUnexpectedAclDriftAtomically() throws Exception {
-        for (String mutation : List.of(
-                "GRANT USAGE ON SCHEMA evidence TO PUBLIC", "GRANT SELECT ON customer_iam.auth_identity TO PUBLIC",
-                "CREATE SEQUENCE public.pa26_unexpected; GRANT USAGE ON SEQUENCE public.pa26_unexpected TO evidence_role",
-                "ALTER DEFAULT PRIVILEGES FOR ROLE customer_iam_owner GRANT SELECT ON TABLES TO PUBLIC",
-                "GRANT SELECT(provider_subject_hmac) ON customer_iam.auth_identity TO PUBLIC",
-                "GRANT EXECUTE ON FUNCTION evidence.guard_recording() TO PUBLIC",
-                "ALTER DEFAULT PRIVILEGES FOR ROLE evidence_owner GRANT SELECT ON TABLES TO evidence_role",
-                "ALTER DEFAULT PRIVILEGES FOR ROLE evidence_owner IN SCHEMA evidence GRANT EXECUTE ON FUNCTIONS TO PUBLIC",
-                "GRANT SELECT(provider_subject_hmac) ON customer_iam.auth_identity TO customer_iam_role",
-                "REVOKE INSERT ON evidence.evidence_event FROM evidence_role",
-                "GRANT SELECT ON customer_iam.customer_account TO customer_iam_role WITH GRANT OPTION",
-                "REVOKE SELECT(id) ON organization_access.organization FROM customer_iam_role")) rejectsAtomically(mutation);
+        for (var rejection : List.of(
+                Map.entry("GRANT USAGE ON SCHEMA evidence TO PUBLIC", "V014_ACL_REJECTED"),
+                Map.entry("GRANT SELECT ON customer_iam.auth_identity TO PUBLIC", "V014_ACL_REJECTED"),
+                Map.entry("CREATE SEQUENCE public.pa26_unexpected; GRANT USAGE ON SEQUENCE public.pa26_unexpected TO evidence_role", "V014_ACL_REJECTED"),
+                Map.entry("ALTER DEFAULT PRIVILEGES FOR ROLE customer_iam_owner GRANT SELECT ON TABLES TO PUBLIC", "V014_DEFAULT_ACL_REJECTED"),
+                Map.entry("GRANT SELECT(provider_subject_hmac) ON customer_iam.auth_identity TO PUBLIC", "V014_ACL_REJECTED"),
+                Map.entry("GRANT EXECUTE ON FUNCTION evidence.guard_recording() TO PUBLIC", "V014_ACL_REJECTED"),
+                Map.entry("ALTER DEFAULT PRIVILEGES FOR ROLE evidence_owner GRANT SELECT ON TABLES TO evidence_role", "V014_DEFAULT_ACL_REJECTED"),
+                Map.entry("ALTER DEFAULT PRIVILEGES FOR ROLE evidence_owner IN SCHEMA evidence GRANT EXECUTE ON FUNCTIONS TO PUBLIC", "V014_DEFAULT_ACL_REJECTED"),
+                Map.entry("GRANT SELECT(provider_subject_hmac) ON customer_iam.auth_identity TO customer_iam_role", "V014_ACL_REJECTED"),
+                Map.entry("REVOKE INSERT ON evidence.evidence_event FROM evidence_role", "V014_ACL_REJECTED"),
+                Map.entry("GRANT SELECT ON customer_iam.customer_account TO customer_iam_role WITH GRANT OPTION", "V014_ACL_REJECTED"),
+                Map.entry("REVOKE SELECT(id) ON organization_access.organization FROM customer_iam_role", "V014_ACL_REJECTED")))
+            rejectsAtomically(rejection.getKey(), rejection.getValue());
         latest.migrate();
-        for (String mutation : List.of("GRANT INSERT ON customer_iam.customer_account TO customer_iam_role",
-                "GRANT UPDATE(status) ON evidence.evidence_record TO evidence_role",
-                "GRANT EXECUTE ON FUNCTION evidence.guard_recording() TO evidence_role",
-                "REVOKE SELECT(id) ON evidence.evidence_record FROM evidence_role",
-                "GRANT SELECT(bucket) ON evidence.media_object TO evidence_role",
-                "GRANT USAGE ON SCHEMA platform TO customer_iam_role")) rejectsAtomically(mutation);
+        for (var rejection : List.of(
+                Map.entry("GRANT INSERT ON customer_iam.customer_account TO customer_iam_role", "V014_ACL_REJECTED"),
+                Map.entry("GRANT UPDATE(status) ON evidence.evidence_record TO evidence_role", "V014_ACL_REJECTED"),
+                Map.entry("GRANT EXECUTE ON FUNCTION evidence.guard_recording() TO evidence_role", "V014_ACL_REJECTED"),
+                Map.entry("REVOKE SELECT(id) ON evidence.evidence_record FROM evidence_role", "V014_ACL_REJECTED"),
+                Map.entry("GRANT SELECT(bucket) ON evidence.media_object TO evidence_role", "V014_ACL_REJECTED"),
+                Map.entry("GRANT USAGE ON SCHEMA platform TO customer_iam_role", "V014_ACL_REJECTED")))
+            rejectsAtomically(rejection.getKey(), rejection.getValue());
     }
 
     @Test
@@ -493,12 +518,12 @@ class DatabaseRuntimeAclRbacHardeningIT {
         assertThat(result.getStderr()).isEmpty();
     }
 
-    private void rejectsAtomically(String mutation) throws Exception {
+    private void rejectsAtomically(String mutation, String expectedCategory) throws Exception {
         try (Connection connection = admin()) {
             connection.setAutoCommit(false); execute(connection, mutation);
             String before = catalog(connection);
             var savepoint = connection.setSavepoint();
-            denied(connection, Files.readString(MIGRATIONS.resolve(SCRIPT)), "P0001");
+            rejected(connection, expectedCategory);
             connection.rollback(savepoint);
             assertThat(catalog(connection).equals(before)).isTrue();
             connection.rollback();
@@ -574,7 +599,8 @@ class DatabaseRuntimeAclRbacHardeningIT {
             assertThat(resources).hasSize(14);
             for (Path path : resources) {
                 String version = path.getFileName().toString().substring(1, 4);
-                if (!version.equals("014")) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)))).isEqualTo(FROZEN.get(version));
+                if (!version.equals("014")) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readString(path, StandardCharsets.UTF_8)
+                        .replace("\r\n", "\n").replace("\r", "\n").getBytes(StandardCharsets.UTF_8)))).isEqualTo(FROZEN.get(version));
             }
         }
     }
@@ -583,8 +609,12 @@ class DatabaseRuntimeAclRbacHardeningIT {
     private static void execute(Connection connection, String sql) throws SQLException { try (var statement = connection.createStatement()) { statement.execute(sql); } }
     private static String one(Connection connection, String sql) throws SQLException { try (var statement = connection.createStatement(); var result = statement.executeQuery(sql)) { assertThat(result.next()).isTrue(); return result.getString(1); } }
     private static List<String> strings(Connection connection, String sql) throws SQLException { List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var result = statement.executeQuery(sql)) { while (result.next()) values.add(result.getString(1)); } return values; }
-    private static void denied(Connection connection, String sql, String state) throws SQLException {
+    private static void rejected(Connection connection, String expectedCategory) throws Exception {
+        assertThat(denied(connection, Files.readString(MIGRATIONS.resolve(SCRIPT)), "P0001").getMessage())
+                .startsWith("ERROR: " + expectedCategory + "\n");
+    }
+    private static SQLException denied(Connection connection, String sql, String state) throws SQLException {
         try { execute(connection, sql); throw new AssertionError("Expected SQLSTATE " + state); }
-        catch (SQLException failure) { assertThat(failure.getSQLState()).isEqualTo(state); }
+        catch (SQLException failure) { assertThat(failure.getSQLState()).isEqualTo(state); return failure; }
     }
 }
