@@ -116,7 +116,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa25";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", adminPassword).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(13);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(14);
         try (Connection admin = admin()) {
             assertThat(one(admin, "SELECT current_setting('server_version_num')::integer BETWEEN 160000 AND 169999")).isEqualTo("t");
             assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname !~ '^pg_' AND rolname NOT IN ('postgres','fixture_admin')")).isEqualTo("31");
@@ -196,18 +196,18 @@ class ProductionDatabaseIdentityProvisioningIT {
         var caller = new TrustedCustomerCaller(account, TrustedCustomerCaller.Channel.WEB);
         assertThat(application.getBean(CustomerContextService.class).getCustomerMe(caller).account().accountId()).isEqualTo(account);
         assertFacts("customerQuery", "customer_iam_role", true);
-        template("customerQuery").executeWithoutResult(status -> {
-            DSLContext dsl = dsl("customerQuery");
-            dsl.execute("SET LOCAL ROLE customer_iam_role");
-            jooqDenied(dsl, "UPDATE customer_iam.customer_account SET display_name=display_name", "25006");
-            status.setRollbackOnly();
-        });
+        try (Connection connection = login(EXTERNAL.get(1))) {
+            execute(connection, "SET ROLE customer_iam_role");
+            assertThat(one(connection, "SHOW transaction_read_only")).isEqualTo("off");
+            denied(connection, "UPDATE customer_iam.customer_account SET display_name=display_name", "42501");
+        }
         restored("customerQuery", EXTERNAL.get(1));
     }
 
     @Test
     void commandSwitchesToEvidenceAndRestoresOnTheSameConnection() throws Exception {
         provision();
+        seedSharing();
         startApplication();
         template("sharingCommand").executeWithoutResult(status -> {
             DSLContext context = dsl("sharingCommand");
@@ -217,8 +217,8 @@ class ProductionDatabaseIdentityProvisioningIT {
             context.fetch("SELECT id FROM sharing.evidence_share_grant");
             repository.switchToEvidenceRole(context);
             assertThat(application.getBean("shareableEvidenceProjectionReader", ShareableEvidenceProjectionReader.class)
-                    .readShareableProjection(context, UUID.randomUUID()))
-                    .isInstanceOf(ShareableEvidenceProjectionReader.ReadResult.Missing.class);
+                    .readShareableProjection(context, evidence))
+                    .isInstanceOf(ShareableEvidenceProjectionReader.ReadResult.Found.class);
             assertThat(context.fetchOne("SELECT pg_backend_pid()").get(0, Integer.class)).isEqualTo(pid);
             assertThat(context.fetchOne("SELECT session_user").get(0, String.class)).isEqualTo(EXTERNAL.get(2));
             repository.restoreAndAssertCommandRole(context);
@@ -234,6 +234,7 @@ class ProductionDatabaseIdentityProvisioningIT {
             jooqDenied(context, "SET LOCAL ROLE evidence_role", "42501");
             status.setRollbackOnly();
         });
+        restored("sharingCommand", EXTERNAL.get(2));
         success("apply");
         assertGraph();
     }
@@ -314,8 +315,12 @@ class ProductionDatabaseIdentityProvisioningIT {
         try (Connection connection = login(EXTERNAL.get(1))) {
             execute(connection, "SET ROLE customer_iam_role");
             denied(connection, "DELETE FROM sharing.evidence_share_grant", "42501");
-            execute(connection, "BEGIN READ ONLY");
-            denied(connection, "UPDATE customer_iam.customer_account SET display_name=display_name", "25006");
+            assertThat(one(connection, "SHOW transaction_read_only")).isEqualTo("off");
+            denied(connection, "UPDATE customer_iam.customer_account SET display_name=display_name", "42501");
+        }
+        try (Connection connection = login(EXTERNAL.get(2))) {
+            execute(connection, "BEGIN READ ONLY; SET LOCAL ROLE sharing_command_role");
+            denied(connection, "UPDATE sharing.evidence_share_grant SET status=status WHERE false", "25006");
             execute(connection, "ROLLBACK");
         }
         for (String login : List.of(EXTERNAL.get(0), EXTERNAL.get(1), DIRECT.get(0), DIRECT.get(2))) {
@@ -359,7 +364,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         }
         try (Connection connection = login(EXTERNAL.get(2))) {
             execute(connection, "BEGIN; SET LOCAL ROLE evidence_role");
-            execute(connection, "UPDATE evidence.evidence_record SET status=status WHERE false");
+            denied(connection, "UPDATE evidence.evidence_record SET status=status WHERE false", "42501");
             execute(connection, "ROLLBACK");
         }
     }
@@ -519,6 +524,18 @@ class ProductionDatabaseIdentityProvisioningIT {
                 "SET ROLE sharing_owner; REVOKE SELECT (id) ON sharing.evidence_share_grant FROM sharing_role; GRANT SELECT (share_id) ON sharing.evidence_share_grant TO sharing_role; RESET ROLE", null);
         contaminate("SET ROLE sharing_owner; GRANT SELECT (share_id) ON sharing.evidence_share_grant TO sharing_role WITH GRANT OPTION; RESET ROLE",
                 "SET ROLE sharing_owner; REVOKE GRANT OPTION FOR SELECT (share_id) ON sharing.evidence_share_grant FROM sharing_role; RESET ROLE", null);
+        for (String grant : List.of("INSERT ON customer_iam.customer_account", "UPDATE (display_name) ON customer_iam.customer_account",
+                "EXECUTE ON FUNCTION customer_iam.guard_customer_account()", "SELECT (provider_subject_hmac) ON customer_iam.auth_identity")) {
+            contaminate("GRANT " + grant + " TO customer_iam_role", "REVOKE " + grant + " FROM customer_iam_role", "PA25_ACL_REJECTED");
+        }
+        for (String grant : List.of("INSERT ON evidence.media_object", "UPDATE (status) ON evidence.evidence_record",
+                "EXECUTE ON FUNCTION evidence.guard_recording()", "SELECT (bucket) ON evidence.media_object")) {
+            contaminate("GRANT " + grant + " TO evidence_role", "REVOKE " + grant + " FROM evidence_role", "PA25_ACL_REJECTED");
+        }
+        contaminate("SET ROLE evidence_owner; REVOKE SELECT (id) ON evidence.evidence_record FROM evidence_role; RESET ROLE",
+                "SET ROLE evidence_owner; GRANT SELECT (id) ON evidence.evidence_record TO evidence_role; RESET ROLE", "PA25_ACL_REJECTED");
+        contaminate("SET ROLE customer_iam_owner; GRANT SELECT (id) ON customer_iam.customer_account TO customer_iam_role WITH GRANT OPTION; RESET ROLE",
+                "SET ROLE customer_iam_owner; REVOKE GRANT OPTION FOR SELECT (id) ON customer_iam.customer_account FROM customer_iam_role; RESET ROLE", "PA25_ACL_REJECTED");
         String aclRewrite = "UPDATE pg_attribute SET attacl=ARRAY(SELECT makeaclitem(acl.grantee,CASE WHEN acl.grantee='sharing_role'::regrole THEN %s::regrole ELSE acl.grantor END,acl.privilege_type,acl.is_grantable) FROM aclexplode(attacl) acl) WHERE attrelid='sharing.evidence_share_grant'::regclass AND attname='share_id'";
         contaminate(aclRewrite.formatted("'fixture_admin'"), aclRewrite.formatted("'sharing_owner'"), null);
     }
@@ -594,6 +611,19 @@ class ProductionDatabaseIdentityProvisioningIT {
                 for (String target : TARGETS.get(role)) executeAdmin("REVOKE " + identifier(target) + " FROM " + identifier(role));
             } finally { executeAdmin("DROP ROLE " + identifier(role)); }
         }
+        String finalHistory;
+        try (Connection admin = admin()) { finalHistory = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=14"); }
+        contaminate("DELETE FROM public.flyway_schema_history WHERE installed_rank=14",
+                "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
+        try (Connection admin = admin()) { assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname IN ('pa25_query','pa25_customer','pa25_command')")).isEqualTo("0"); }
+        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=15", "type='BASELINE'", "success=false", "version='14'")) {
+            contaminate("UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=14",
+                    "DELETE FROM public.flyway_schema_history WHERE version IN ('014','14'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
+        }
+        for (String extraVersion : List.of("014", "015")) {
+            contaminate("INSERT INTO public.flyway_schema_history SELECT installed_rank+1000," + literal(extraVersion) + ",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=14",
+                    "DELETE FROM public.flyway_schema_history WHERE installed_rank=1014", "PA25_HISTORY_REJECTED");
+        }
         provision();
         for (String role : EXTERNAL) {
             String marker;
@@ -657,7 +687,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         assertThat(migrationHashes().equals(entryHashes)).isTrue();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         flyway.validate();
-        assertThat(flyway.info().applied()).hasSize(13);
+        assertThat(flyway.info().applied()).hasSize(14);
         assertExactFrozenAcls();
         assertMarkers();
         try (Connection admin = admin()) {
@@ -889,6 +919,9 @@ class ProductionDatabaseIdentityProvisioningIT {
                     """, evidence, subject, recording, event, subject, event, subject, recording);
             bound(admin, "INSERT INTO evidence.evidence_event(id,evidence_id,event_domain,event_id,event_type,payload_redacted,payload_sha256) VALUES (?,?,'EVIDENCE',?,'EVIDENCE_CREATED','{}'::jsonb,repeat('b',64))",
                     UUID.randomUUID(), evidence, event);
+            UUID media = UUID.randomUUID();
+            bound(admin, "INSERT INTO evidence.media_object(id,storage_provider,bucket,object_key,object_version_id,sha256,size_bytes,mime_type,crypto_key_ref) VALUES (?,'COS','synthetic',?,'v1',repeat('c',64),1,'audio/wav','synthetic')", media, media.toString());
+            bound(admin, "INSERT INTO evidence.evidence_artifact(id,evidence_id,media_object_id,artifact_role) VALUES (?,?,?,'ORIGINAL')", UUID.randomUUID(), evidence, media);
             execute(admin, "SET CONSTRAINTS ALL IMMEDIATE");
             execute(admin, "SET LOCAL ROLE sharing_owner");
             var parent = newGrant(grant);
@@ -1004,21 +1037,9 @@ class ProductionDatabaseIdentityProvisioningIT {
 
     private void assertExactFrozenAcls() throws Exception {
         Set<String> expected = Set.of(
-                "customer_iam_role|column|customer_iam.auth_identity|key_version|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.auth_identity|revision|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.auth_identity|status|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.auth_identity|verified_at|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.customer_account|display_name|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.customer_account|revision|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.customer_account|status|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.customer_account|updated_at|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|id_number_ciphertext|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|id_number_hmac|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|legal_name_ciphertext|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|real_name_status|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|revision|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|verification_ref_ciphertext|UPDATE|customer_iam_owner|false",
-                "customer_iam_role|column|customer_iam.identity_profile|verified_at|UPDATE|customer_iam_owner|false",
+                "customer_iam_role|column|customer_iam.customer_account|display_name|SELECT|customer_iam_owner|false",
+                "customer_iam_role|column|customer_iam.customer_account|id|SELECT|customer_iam_owner|false",
+                "customer_iam_role|column|customer_iam.customer_account|status|SELECT|customer_iam_owner|false",
                 "customer_iam_role|column|organization_access.organization|display_name|SELECT|organization_access_owner|false",
                 "customer_iam_role|column|organization_access.organization|id|SELECT|organization_access_owner|false",
                 "customer_iam_role|column|organization_access.organization|status|SELECT|organization_access_owner|false",
@@ -1026,23 +1047,24 @@ class ProductionDatabaseIdentityProvisioningIT {
                 "customer_iam_role|column|organization_access.organization_membership|organization_id|SELECT|organization_access_owner|false",
                 "customer_iam_role|column|organization_access.organization_membership|role|SELECT|organization_access_owner|false",
                 "customer_iam_role|column|organization_access.organization_membership|status|SELECT|organization_access_owner|false",
-                "customer_iam_role|routine|audit.append_fact(timestamp with time zone,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)||EXECUTE|audit_owner|false",
-                "customer_iam_role|routine|customer_iam.guard_auth_identity()||EXECUTE|customer_iam_owner|false",
-                "customer_iam_role|routine|customer_iam.guard_customer_account()||EXECUTE|customer_iam_owner|false",
-                "customer_iam_role|routine|customer_iam.guard_identity_profile()||EXECUTE|customer_iam_owner|false",
-                "customer_iam_role|routine|platform.idempotency_begin(text,text,text)||EXECUTE|platform_reliability_owner|false",
-                "customer_iam_role|routine|platform.idempotency_complete(uuid,integer,text,uuid,jsonb,text)||EXECUTE|platform_reliability_owner|false",
-                "customer_iam_role|routine|platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)||EXECUTE|platform_reliability_owner|false",
-                "customer_iam_role|schema|audit||USAGE|audit_owner|false",
                 "customer_iam_role|schema|customer_iam||USAGE|customer_iam_owner|false",
                 "customer_iam_role|schema|organization_access||USAGE|organization_access_owner|false",
-                "customer_iam_role|schema|platform||USAGE|platform_reliability_owner|false",
-                "customer_iam_role|table|customer_iam.auth_identity||INSERT|customer_iam_owner|false",
-                "customer_iam_role|table|customer_iam.auth_identity||SELECT|customer_iam_owner|false",
-                "customer_iam_role|table|customer_iam.customer_account||INSERT|customer_iam_owner|false",
-                "customer_iam_role|table|customer_iam.customer_account||SELECT|customer_iam_owner|false",
-                "customer_iam_role|table|customer_iam.identity_profile||INSERT|customer_iam_owner|false",
-                "customer_iam_role|table|customer_iam.identity_profile||SELECT|customer_iam_owner|false",
+                "evidence_role|column|evidence.evidence_artifact|artifact_role|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_artifact|evidence_id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_artifact|media_object_id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_record|id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_record|identity_at_capture|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_record|source_ref_id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_record|source_type|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_record|status|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.evidence_record|subject_id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.media_object|id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.media_object|mime_type|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.media_object|sha256|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.media_object|size_bytes|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.recording|media_object_id|SELECT|evidence_owner|false",
+                "evidence_role|column|evidence.recording|validated_duration|SELECT|evidence_owner|false",
+                "evidence_role|schema|evidence||USAGE|evidence_owner|false",
                 "evidence_media_reader_role|column|evidence.evidence_artifact|artifact_role|SELECT|evidence_owner|false",
                 "evidence_media_reader_role|column|evidence.evidence_artifact|evidence_id|SELECT|evidence_owner|false",
                 "evidence_media_reader_role|column|evidence.evidence_artifact|media_object_id|SELECT|evidence_owner|false",
@@ -1059,48 +1081,6 @@ class ProductionDatabaseIdentityProvisioningIT {
                 "evidence_media_reader_role|column|evidence.recording|status|SELECT|evidence_owner|false",
                 "evidence_media_reader_role|column|evidence.recording|validated_duration|SELECT|evidence_owner|false",
                 "evidence_media_reader_role|schema|evidence||USAGE|evidence_owner|false",
-                "evidence_role|column|entitlement_metering.usage_reservation|call_id|SELECT|entitlement_metering_owner|false",
-                "evidence_role|column|entitlement_metering.usage_reservation|id|SELECT|entitlement_metering_owner|false",
-                "evidence_role|column|entitlement_metering.usage_reservation|subject_id|SELECT|entitlement_metering_owner|false",
-                "evidence_role|column|evidence.evidence_record|revision|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.evidence_record|solidified_at|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.evidence_record|status|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.recording|media_object_id|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.recording|revision|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.recording|status|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.recording|validated_at|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.recording|validated_duration|UPDATE|evidence_owner|false",
-                "evidence_role|column|evidence.recording|validated_sha256|UPDATE|evidence_owner|false",
-                "evidence_role|column|ivr.call_record|call_id|SELECT|ivr_owner|false",
-                "evidence_role|column|ivr.call_record|session_id|SELECT|ivr_owner|false",
-                "evidence_role|column|ivr.call_record|subject_id|SELECT|ivr_owner|false",
-                "evidence_role|column|ivr.inbound_session|call_id|SELECT|ivr_owner|false",
-                "evidence_role|column|ivr.inbound_session|id|SELECT|ivr_owner|false",
-                "evidence_role|column|ivr.inbound_session|subject_id|SELECT|ivr_owner|false",
-                "evidence_role|column|subject_number.business_subject|id|SELECT|subject_number_owner|false",
-                "evidence_role|routine|audit.append_fact(timestamp with time zone,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)||EXECUTE|audit_owner|false",
-                "evidence_role|routine|evidence.guard_evidence_event_creation_cycle()||EXECUTE|evidence_owner|false",
-                "evidence_role|routine|evidence.guard_evidence_record()||EXECUTE|evidence_owner|false",
-                "evidence_role|routine|evidence.guard_evidence_record_creation_cycle()||EXECUTE|evidence_owner|false",
-                "evidence_role|routine|evidence.guard_recording()||EXECUTE|evidence_owner|false",
-                "evidence_role|routine|evidence.reject_row_mutation()||EXECUTE|evidence_owner|false",
-                "evidence_role|routine|platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)||EXECUTE|platform_reliability_owner|false",
-                "evidence_role|schema|audit||USAGE|audit_owner|false",
-                "evidence_role|schema|entitlement_metering||USAGE|entitlement_metering_owner|false",
-                "evidence_role|schema|evidence||USAGE|evidence_owner|false",
-                "evidence_role|schema|ivr||USAGE|ivr_owner|false",
-                "evidence_role|schema|platform||USAGE|platform_reliability_owner|false",
-                "evidence_role|schema|subject_number||USAGE|subject_number_owner|false",
-                "evidence_role|table|evidence.evidence_artifact||INSERT|evidence_owner|false",
-                "evidence_role|table|evidence.evidence_artifact||SELECT|evidence_owner|false",
-                "evidence_role|table|evidence.evidence_event||INSERT|evidence_owner|false",
-                "evidence_role|table|evidence.evidence_event||SELECT|evidence_owner|false",
-                "evidence_role|table|evidence.evidence_record||INSERT|evidence_owner|false",
-                "evidence_role|table|evidence.evidence_record||SELECT|evidence_owner|false",
-                "evidence_role|table|evidence.media_object||INSERT|evidence_owner|false",
-                "evidence_role|table|evidence.media_object||SELECT|evidence_owner|false",
-                "evidence_role|table|evidence.recording||INSERT|evidence_owner|false",
-                "evidence_role|table|evidence.recording||SELECT|evidence_owner|false",
                 "sharing_admission_role|column|customer_iam.customer_account|id|SELECT|customer_iam_owner|false",
                 "sharing_admission_role|column|customer_iam.customer_account|status|SELECT|customer_iam_owner|false",
                 "sharing_admission_role|column|evidence.evidence_record|id|SELECT|evidence_owner|false",
@@ -1331,8 +1311,8 @@ class ProductionDatabaseIdentityProvisioningIT {
                         'sharing_admission_role'::regrole,'evidence_media_reader_role'::regrole)
                     ORDER BY 1
                     """);
-            assertThat(expected.size()).isEqualTo(300);
-            assertThat(actual.size()).isEqualTo(300);
+            assertThat(expected.size()).isEqualTo(247);
+            assertThat(actual.size()).isEqualTo(247);
             assertThat(Set.copyOf(actual).equals(expected)).as("independent frozen-source ACL equality").isTrue();
         }
     }

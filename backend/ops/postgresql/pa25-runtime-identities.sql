@@ -42,49 +42,17 @@ DECLARE
   [
     "customer_iam_role",
     "column",
-    "customer_iam.auth_identity",
-    "key_version",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.auth_identity",
-    "revision",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.auth_identity",
-    "status",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.auth_identity",
-    "verified_at",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
     "customer_iam.customer_account",
     "display_name",
-    "UPDATE",
+    "SELECT",
     "customer_iam_owner"
   ],
   [
     "customer_iam_role",
     "column",
     "customer_iam.customer_account",
-    "revision",
-    "UPDATE",
+    "id",
+    "SELECT",
     "customer_iam_owner"
   ],
   [
@@ -92,71 +60,7 @@ DECLARE
     "column",
     "customer_iam.customer_account",
     "status",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.customer_account",
-    "updated_at",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "id_number_ciphertext",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "id_number_hmac",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "legal_name_ciphertext",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "real_name_status",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "revision",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "verification_ref_ciphertext",
-    "UPDATE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "column",
-    "customer_iam.identity_profile",
-    "verified_at",
-    "UPDATE",
+    "SELECT",
     "customer_iam_owner"
   ],
   [
@@ -217,70 +121,6 @@ DECLARE
   ],
   [
     "customer_iam_role",
-    "routine",
-    "audit.append_fact(timestamp with time zone,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)",
-    "",
-    "EXECUTE",
-    "audit_owner"
-  ],
-  [
-    "customer_iam_role",
-    "routine",
-    "customer_iam.guard_auth_identity()",
-    "",
-    "EXECUTE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "routine",
-    "customer_iam.guard_customer_account()",
-    "",
-    "EXECUTE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "routine",
-    "customer_iam.guard_identity_profile()",
-    "",
-    "EXECUTE",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "routine",
-    "platform.idempotency_begin(text,text,text)",
-    "",
-    "EXECUTE",
-    "platform_reliability_owner"
-  ],
-  [
-    "customer_iam_role",
-    "routine",
-    "platform.idempotency_complete(uuid,integer,text,uuid,jsonb,text)",
-    "",
-    "EXECUTE",
-    "platform_reliability_owner"
-  ],
-  [
-    "customer_iam_role",
-    "routine",
-    "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
-    "",
-    "EXECUTE",
-    "platform_reliability_owner"
-  ],
-  [
-    "customer_iam_role",
-    "schema",
-    "audit",
-    "",
-    "USAGE",
-    "audit_owner"
-  ],
-  [
-    "customer_iam_role",
     "schema",
     "customer_iam",
     "",
@@ -294,62 +134,6 @@ DECLARE
     "",
     "USAGE",
     "organization_access_owner"
-  ],
-  [
-    "customer_iam_role",
-    "schema",
-    "platform",
-    "",
-    "USAGE",
-    "platform_reliability_owner"
-  ],
-  [
-    "customer_iam_role",
-    "table",
-    "customer_iam.auth_identity",
-    "",
-    "INSERT",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "table",
-    "customer_iam.auth_identity",
-    "",
-    "SELECT",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "table",
-    "customer_iam.customer_account",
-    "",
-    "INSERT",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "table",
-    "customer_iam.customer_account",
-    "",
-    "SELECT",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "table",
-    "customer_iam.identity_profile",
-    "",
-    "INSERT",
-    "customer_iam_owner"
-  ],
-  [
-    "customer_iam_role",
-    "table",
-    "customer_iam.identity_profile",
-    "",
-    "SELECT",
-    "customer_iam_owner"
   ],
   [
     "evidence_media_reader_role",
@@ -482,41 +266,57 @@ DECLARE
   [
     "evidence_role",
     "column",
-    "entitlement_metering.usage_reservation",
-    "call_id",
+    "evidence.evidence_artifact",
+    "artifact_role",
     "SELECT",
-    "entitlement_metering_owner"
+    "evidence_owner"
   ],
   [
     "evidence_role",
     "column",
-    "entitlement_metering.usage_reservation",
-    "id",
+    "evidence.evidence_artifact",
+    "evidence_id",
     "SELECT",
-    "entitlement_metering_owner"
+    "evidence_owner"
   ],
   [
     "evidence_role",
     "column",
-    "entitlement_metering.usage_reservation",
-    "subject_id",
+    "evidence.evidence_artifact",
+    "media_object_id",
     "SELECT",
-    "entitlement_metering_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "evidence.evidence_record",
-    "revision",
-    "UPDATE",
     "evidence_owner"
   ],
   [
     "evidence_role",
     "column",
     "evidence.evidence_record",
-    "solidified_at",
-    "UPDATE",
+    "id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.evidence_record",
+    "identity_at_capture",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.evidence_record",
+    "source_ref_id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.evidence_record",
+    "source_type",
+    "SELECT",
     "evidence_owner"
   ],
   [
@@ -524,7 +324,47 @@ DECLARE
     "column",
     "evidence.evidence_record",
     "status",
-    "UPDATE",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.evidence_record",
+    "subject_id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.media_object",
+    "id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.media_object",
+    "mime_type",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.media_object",
+    "sha256",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.media_object",
+    "size_bytes",
+    "SELECT",
     "evidence_owner"
   ],
   [
@@ -532,31 +372,7 @@ DECLARE
     "column",
     "evidence.recording",
     "media_object_id",
-    "UPDATE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "evidence.recording",
-    "revision",
-    "UPDATE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "evidence.recording",
-    "status",
-    "UPDATE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "evidence.recording",
-    "validated_at",
-    "UPDATE",
+    "SELECT",
     "evidence_owner"
   ],
   [
@@ -564,144 +380,8 @@ DECLARE
     "column",
     "evidence.recording",
     "validated_duration",
-    "UPDATE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "evidence.recording",
-    "validated_sha256",
-    "UPDATE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "ivr.call_record",
-    "call_id",
     "SELECT",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "ivr.call_record",
-    "session_id",
-    "SELECT",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "ivr.call_record",
-    "subject_id",
-    "SELECT",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "ivr.inbound_session",
-    "call_id",
-    "SELECT",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "ivr.inbound_session",
-    "id",
-    "SELECT",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "ivr.inbound_session",
-    "subject_id",
-    "SELECT",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "column",
-    "subject_number.business_subject",
-    "id",
-    "SELECT",
-    "subject_number_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "audit.append_fact(timestamptz,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)",
-    "",
-    "EXECUTE",
-    "audit_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "evidence.guard_evidence_event_creation_cycle()",
-    "",
-    "EXECUTE",
     "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "evidence.guard_evidence_record()",
-    "",
-    "EXECUTE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "evidence.guard_evidence_record_creation_cycle()",
-    "",
-    "EXECUTE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "evidence.guard_recording()",
-    "",
-    "EXECUTE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "evidence.reject_row_mutation()",
-    "",
-    "EXECUTE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "routine",
-    "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
-    "",
-    "EXECUTE",
-    "platform_reliability_owner"
-  ],
-  [
-    "evidence_role",
-    "schema",
-    "audit",
-    "",
-    "USAGE",
-    "audit_owner"
-  ],
-  [
-    "evidence_role",
-    "schema",
-    "entitlement_metering",
-    "",
-    "USAGE",
-    "entitlement_metering_owner"
   ],
   [
     "evidence_role",
@@ -709,110 +389,6 @@ DECLARE
     "evidence",
     "",
     "USAGE",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "schema",
-    "ivr",
-    "",
-    "USAGE",
-    "ivr_owner"
-  ],
-  [
-    "evidence_role",
-    "schema",
-    "platform",
-    "",
-    "USAGE",
-    "platform_reliability_owner"
-  ],
-  [
-    "evidence_role",
-    "schema",
-    "subject_number",
-    "",
-    "USAGE",
-    "subject_number_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.evidence_artifact",
-    "",
-    "INSERT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.evidence_artifact",
-    "",
-    "SELECT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.evidence_event",
-    "",
-    "INSERT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.evidence_event",
-    "",
-    "SELECT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.evidence_record",
-    "",
-    "INSERT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.evidence_record",
-    "",
-    "SELECT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.media_object",
-    "",
-    "INSERT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.media_object",
-    "",
-    "SELECT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.recording",
-    "",
-    "INSERT",
-    "evidence_owner"
-  ],
-  [
-    "evidence_role",
-    "table",
-    "evidence.recording",
-    "",
-    "SELECT",
     "evidence_owner"
   ],
   [
@@ -2532,6 +2108,12 @@ DECLARE
     "V013__evidence_media_reader_role.sql",
     -611381791,
     "evidence media reader role"
+  ],
+  [
+    "014",
+    "V014__database_runtime_acl_rbac_hardening.sql",
+    -340359494,
+    "database runtime acl rbac hardening"
   ]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
@@ -2875,7 +2457,7 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 13 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 14 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
@@ -2968,7 +2550,7 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 300 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 247 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';

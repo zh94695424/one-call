@@ -194,6 +194,7 @@
                 <include>**/MediaPlaybackIT.java</include>
                 <include>**/MediaGatewayTransportIT.java</include>
                 <include>**/ProductionDatabaseIdentityProvisioningIT.java</include>
+                <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

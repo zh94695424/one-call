@@ -1093,6 +1093,7 @@ class PostgresContainerIT {
         flyway = Flyway.configure()
                 .dataSource(url, DB_USER, PASSWORD)
                 .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("013"))
                 .load();
         stagedV008Migration = Flyway.configure()
                 .dataSource(url, DB_USER, PASSWORD)
@@ -1392,6 +1393,17 @@ class PostgresContainerIT {
 
         flyway.validate();
         assertThat(flyway.info().pending()).isEmpty();
+        assertThat(flyway.info().all()).hasSize(14);
+        assertThat(flyway.info().applied()).hasSize(13);
+        var aboveTarget = java.util.Arrays.stream(flyway.info().all())
+                .filter(info -> info.getVersion().getVersion().equals("014")).toList();
+        assertThat(aboveTarget).hasSize(1);
+        assertThat(aboveTarget.getFirst().getScript()).isEqualTo("V014__database_runtime_acl_rbac_hardening.sql");
+        assertThat(aboveTarget.getFirst().getState()).isEqualTo(org.flywaydb.core.api.MigrationState.ABOVE_TARGET);
+        assertThat(aboveTarget.getFirst().getState().isApplied()).isFalse();
+        assertThat(java.util.Arrays.stream(flyway.info().all()).filter(info -> info.getState().isApplied())
+                .map(info -> info.getState()).distinct().toList())
+                .containsExactly(org.flywaydb.core.api.MigrationState.SUCCESS);
 
         MigrateResult repeated = flyway.migrate();
         assertThat(repeated.migrationsExecuted).isZero();
@@ -10779,7 +10791,8 @@ class PostgresContainerIT {
                         "V010__sharing_role_least_privilege.sql",
                         "V011__sharing_public_read_least_privilege.sql",
                         "V012__sharing_admission_least_privilege.sql",
-                        "V013__evidence_media_reader_role.sql");
+                        "V013__evidence_media_reader_role.sql",
+                        "V014__database_runtime_acl_rbac_hardening.sql");
     }
 
     /**

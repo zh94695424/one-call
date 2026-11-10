@@ -1,5 +1,27 @@
 # 生产安全设计规范（S1+S2+S3：敏感数据、认证域、媒体、审计与脱敏）
 
+## PA26 Current Runtime Boundary (V014)
+
+This section supersedes the two target roles' V001–V013 capability claims, not the frozen structural/business model or any other role. Apply/validate V001 → V014 before PA25 apply/check; a V013-only database is rejected. V014 is append-only and privilege-only: no production Java/configuration, role graph, ownership, business object, trigger/function definition, PUBLIC or default-ACL change. No future customer/profile mutation or evidence uploader capability is reserved.
+
+All grants below are explicit owner-issued grants without grant option. There are no target-role table-level grants.
+
+| Role | Schema USAGE only | Exact column SELECT only |
+| --- | --- | --- |
+| `customer_iam_role` | `customer_iam`, `organization_access` | `customer_iam.customer_account(id,display_name,status)`; `organization_access.organization(id,display_name,status)`; `organization_access.organization_membership(organization_id,account_id,role,status)` |
+| `evidence_role` | `evidence` | `evidence.evidence_record(id,subject_id,status,source_type,source_ref_id,identity_at_capture)`; `evidence.evidence_artifact(evidence_id,media_object_id,artifact_role)`; `evidence.media_object(id,sha256,size_bytes,mime_type)`; `evidence.recording(media_object_id,validated_duration)` |
+
+The grantors are `customer_iam_owner`, `organization_access_owner` and `evidence_owner` for their respective objects. Customer has 12 explicit tuples (2 schema + 10 column), replacing 39; evidence has 16 (1 + 15), replacing 42. PA25's independent seven-role oracle is exactly 247 tuples: the other 219 are unchanged. Neither target can read any `auth_identity`, `identity_profile` or `evidence_event` column; evidence cannot read storage locators/keys or remaining recording/record payloads. No INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, sequence privilege, schema CREATE, application routine EXECUTE or grant option remains. FOR UPDATE/FOR SHARE are denied. PostgreSQL built-ins are not revoked.
+
+The historical customer `platform`/`audit` USAGE and four append/idempotency routines, three IAM guard EXECUTEs, all three IAM table SELECT/INSERT and fifteen IAM UPDATE-column tuples are superseded by the customer row above. Its seven organization projection columns remain. Evidence's five old table SELECT/INSERT pairs, nine UPDATE columns, five guard EXECUTEs, two append routines, former subject/IVR/entitlement column reads and `subject_number`/`ivr`/`entitlement_metering`/`platform`/`audit` USAGE are removed. Owner fixtures retain ordinary invoker guards and force deferred FK/cycle checks before leaving their owner role; guard definitions are not upgraded to SECURITY DEFINER.
+
+Six logins / seven effective roles / four edges remain: LQ → `sharing_role`; LC → `customer_iam_role`; LW → `sharing_command_role` and separately `evidence_role`; three direct login boundaries remain unchanged. Each edge is ADMIN FALSE / INHERIT FALSE / SET TRUE. SET ROLE authority follows `session_user`: LW command ↔ evidence restoration is allowed; LC cannot enter evidence/command. No additional membership or production Java switch is introduced. Exact PA25 v1 database-OID/role-OID/slot/name provenance is retained; non-NULL externally assigned verifiers are allowed and preserved byte-identically, never printed or cleared. No unmarked-name adoption or broad ACL repair exists.
+
+The current required inventory is 36 classes / 309 Surefire methods + 15 / 246 Failsafe = 51 / 555; annotation scan 556 (one historical comment), fifteen exact Failsafe includes. `PostgresContainerIT` deliberately proves only the V001–V013 historical prefix (64 methods); the twelve-method PA26 suite and every other latest-chain application/provisioning suite prove V014. Counts are requirements, not a substitute for zero-skip XML evidence.
+
+Projection access remains cross-row sensitive, especially `identity_at_capture`; no RLS/tenant boundary or content declassification is claimed. Platform/Database/Security retain Q17/Q23, migrator/comment custody, external login selection, pg_hba/TLS and exclusive administration; Security/Operations retain rotation, old-session invalidation and pool drain. Live production connection, credential assignment, deployment/rotation acceptance: **NOT EXECUTED**. Production readiness: **NOT CLAIMED**.
+
+
 > Work unit：`A3-production-security-design-spec`
 >
 > Slice：S1 — 敏感数据保护、密钥层级、轮换/恢复与历史 replay 兼容；S2 — 认证域、服务身份、凭据、签名与 replay 拒绝；S3 — 媒体凭证、COS 私有策略、审计访问、高风险控制与确定性脱敏

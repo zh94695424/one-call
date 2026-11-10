@@ -48,7 +48,7 @@ class SharingAdmissionRoleLeastPrivilegeIT {
             connection.setAutoCommit(true); statement.execute("ALTER ROLE sharing_admission_role PASSWORD '"+BASE.password+"'");
         }
         assertThat(BASE.flyway.migrate().migrationsExecuted).isZero();
-        assertThat(BASE.flyway.info().applied()).hasSize(13);
+        assertThat(BASE.flyway.info().applied()).hasSize(14);
         assertThat(BASE.flyway.info().applied()[11].getScript()).isEqualTo("V012__sharing_admission_least_privilege.sql");
     }
     @Test void v012GrantsExactSchemasAndColumnsWithoutFunctionExecution() throws Exception {

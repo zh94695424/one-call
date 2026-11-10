@@ -1,5 +1,49 @@
 # A0 Production Data Model and Initial Flyway Schema Specification
 
+## PA26 Current Runtime Boundary (V014)
+
+This section supersedes the two target roles' V001–V013 capability claims, not the frozen structural/business model or any other role. Apply/validate V001 → V014 before PA25 apply/check; a V013-only database is rejected. V014 is append-only and privilege-only: no production Java/configuration, role graph, ownership, business object, trigger/function definition, PUBLIC or default-ACL change. No future customer/profile mutation or evidence uploader capability is reserved.
+
+All grants below are explicit owner-issued grants without grant option. There are no target-role table-level grants.
+
+| Role | Schema USAGE only | Exact column SELECT only |
+| --- | --- | --- |
+| `customer_iam_role` | `customer_iam`, `organization_access` | `customer_iam.customer_account(id,display_name,status)`; `organization_access.organization(id,display_name,status)`; `organization_access.organization_membership(organization_id,account_id,role,status)` |
+| `evidence_role` | `evidence` | `evidence.evidence_record(id,subject_id,status,source_type,source_ref_id,identity_at_capture)`; `evidence.evidence_artifact(evidence_id,media_object_id,artifact_role)`; `evidence.media_object(id,sha256,size_bytes,mime_type)`; `evidence.recording(media_object_id,validated_duration)` |
+
+The grantors are `customer_iam_owner`, `organization_access_owner` and `evidence_owner` for their respective objects. Customer has 12 explicit tuples (2 schema + 10 column), replacing 39; evidence has 16 (1 + 15), replacing 42. PA25's independent seven-role oracle is exactly 247 tuples: the other 219 are unchanged. Neither target can read any `auth_identity`, `identity_profile` or `evidence_event` column; evidence cannot read storage locators/keys or remaining recording/record payloads. No INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, sequence privilege, schema CREATE, application routine EXECUTE or grant option remains. FOR UPDATE/FOR SHARE are denied. PostgreSQL built-ins are not revoked.
+
+The historical customer `platform`/`audit` USAGE and four append/idempotency routines, three IAM guard EXECUTEs, all three IAM table SELECT/INSERT and fifteen IAM UPDATE-column tuples are superseded by the customer row above. Its seven organization projection columns remain. Evidence's five old table SELECT/INSERT pairs, nine UPDATE columns, five guard EXECUTEs, two append routines, former subject/IVR/entitlement column reads and `subject_number`/`ivr`/`entitlement_metering`/`platform`/`audit` USAGE are removed. Owner fixtures retain ordinary invoker guards and force deferred FK/cycle checks before leaving their owner role; guard definitions are not upgraded to SECURITY DEFINER.
+
+Six logins / seven effective roles / four edges remain: LQ → `sharing_role`; LC → `customer_iam_role`; LW → `sharing_command_role` and separately `evidence_role`; three direct login boundaries remain unchanged. Each edge is ADMIN FALSE / INHERIT FALSE / SET TRUE. SET ROLE authority follows `session_user`: LW command ↔ evidence restoration is allowed; LC cannot enter evidence/command. No additional membership or production Java switch is introduced. Exact PA25 v1 database-OID/role-OID/slot/name provenance is retained; non-NULL externally assigned verifiers are allowed and preserved byte-identically, never printed or cleared. No unmarked-name adoption or broad ACL repair exists.
+
+The current required inventory is 36 classes / 309 Surefire methods + 15 / 246 Failsafe = 51 / 555; annotation scan 556 (one historical comment), fifteen exact Failsafe includes. `PostgresContainerIT` deliberately proves only the V001–V013 historical prefix (64 methods); the twelve-method PA26 suite and every other latest-chain application/provisioning suite prove V014. Counts are requirements, not a substitute for zero-skip XML evidence.
+
+Projection access remains cross-row sensitive, especially `identity_at_capture`; no RLS/tenant boundary or content declassification is claimed. Platform/Database/Security retain Q17/Q23, migrator/comment custody, external login selection, pg_hba/TLS and exclusive administration; Security/Operations retain rotation, old-session invalidation and pool drain. Live production connection, credential assignment, deployment/rotation acceptance: **NOT EXECUTED**. Production readiness: **NOT CLAIMED**.
+
+### Complete Historical-to-Current Supersession Ledger
+
+Input anchors refer to the accepted pre-S1 document, not shifted line numbers. The original text and machine-frozen blocks below remain historical. The current table above is the binding replacement at every listed target-role capability occurrence; unrelated-role portions of shared rows are expressly untouched.
+
+| Pre-S1 input anchors / sections | Historical claim retained as history | Current disposition |
+| --- | --- | --- |
+| 245, 272, 280, 296–298; schema/owner/table catalog | V008/V009 role creation, module ownership and runtime labels | Identity/ownership history unchanged; labels do not imply writes or table-wide reads. |
+| 329–333; evidence table catalog | Evidence media/artifact/event INSERT and recording/record lifecycle UPDATE | No target writes; only the evidence projection row above. Event has no read. |
+| 626, 664, 700; customer account/auth/profile dictionaries | Customer account/profile/identity UPDATE and profile verification workflow | No customer runtime mutation, auth/profile read or local guard EXECUTE. Historical workflows are not implemented current privileges. |
+| 2087, 2225, 2262; evidence dictionaries | Evidence table-wide SELECT/INSERT on media, artifacts and events | Exact four media columns / three artifact columns; no event SELECT or INSERT. |
+| 3074, 3320, 3540, 3554–3555, 4200; workspace/cross-module reads | Customer organization USAGE and seven SELECT columns; no foreign writes/row locks | Retained unchanged, plus only account(id,display_name,status); no lifecycle-lock privilege inferred. |
+| 3538–3539, 3542 and adjacent platform/audit routine rows in §10.7 | Customer platform/audit USAGE; idempotency_begin/idempotency_complete/outbox_append/append_fact EXECUTE | All removed for customer only; all other grantees remain untouched. |
+| 3564–3566; IAM owned-table ACL rows | Customer table SELECT/INSERT and fifteen UPDATE columns | Replaced by three account column SELECTs; auth/profile entirely inaccessible. |
+| 3599; guard-function execution description | Customer local guard EXECUTE | Removed for customer; owner-trigger invocation and all unrelated module grants unchanged. |
+| 3994, 3996–4000; §10.21 evidence/cross-schema rows | Evidence own USAGE plus five cross-service USAGE/append capabilities | Only evidence schema USAGE remains for evidence; shared-row unrelated grantees unchanged. |
+| 4008–4012; evidence owned-table ACL rows | Five table SELECT/INSERT pairs and nine UPDATE columns | No table/write grants; exactly fifteen evidence projection columns. |
+| 4021–4024; evidence foreign SELECT rows | Subject id, IVR call/session/subject and usage-reservation columns | All ten foreign column grants removed, not deferred future privileges. |
+| 4036; sharing projection collaborator | Owner-local projection under evidence role, no storage locator exposure | Actual Java projection reader uses the exact fifteen columns above; no new SQL wrapper/function is created. |
+| 4037; capability summary | Evidence uses platform/audit append functions | Superseded: no EXECUTE or USAGE in those schemas for evidence; sharing-role claims untouched. |
+| 4058; deferred creation-cycle explanation | Evidence runtime inserts with broad local SELECT for invoker triggers | Historical V008 fixture capability only. Current owner writes keep all original invoker/deferred-FK behavior; runtime readers cannot insert. |
+| 4254, 4264–4265, 4276; V008 migration order | Evidence schema creation, guard EXECUTE, cross-service USAGE/read/append grants | Immutable migration history only; V014 subsequently removes those runtime capabilities. Role/DDL order and frozen model remain unchanged. |
+
+
 - Task label: `a0-spec-pr1-fix1-ds-20261023-01`; historical labels remain `a0-spec-aggregate-fix2-ds-20261023-01`, `a0-spec-aggregate-fix1-ds-20261022-01`, `a0-spec-s1-impl-ds-20261022-01`, `a0-spec-s1-fix1-ds-20261022-01`, `a0-spec-s1-fix2-ds-20261022-01`, `a0-spec-s1-eof-fix-ds-20261022-01`, `a0-spec-s2-implementation-ds-20261022-01`, `a0-spec-s2-fix1-ds-20261022-01`, `a0-spec-s2-fix2-ds-20261022-01`, `a0-spec-s2-fix3-ds-20261022-01`, `a0-spec-s2-fix4-ds-20261022-01`, `a0-spec-s3-impl-ds-20261022-01`, `a0-spec-s3-fix1-ds-20261022-01` and `a0-spec-s3-fix2-ds-20261022-01`
 - Work unit: `A0-production-data-model-schema-spec`
 - Gate: `PR review fix` (bounded PR fix 1), cumulative S1-S3 specification. Slice S1 (V001-V003) is accepted at checkpoint `5404d9caa73b72c412ca2065bef19dfb46d154d3`; slice S2 (V004-V007) is accepted at checkpoint `8934df90c15dcd8173486c6ad753ab27c91ac765`; slice S3 (V008-V009) is accepted at checkpoint `9ad33e8727596366c0a844b7dffcce3eb028891b`. Aggregate deepreview `docs/reviews/code-review-20261023-002432.md` is accepted at checkpoint `2002cc9c2bff89600588a8d437cd894869f08c61`; aggregate fix 1 corrected the earlier 11 accepted findings, and aggregate fix 2 corrected the bounded F-01/F-02 access-identity residual and the three replay/digest clarifications. This PR fix 1 corrects the five accepted PR-review findings and the accepted ticket-expiry clarification without changing the accepted data-model shape. PR lifecycle and current gate state are authoritative only in `docs/gateflow/project-execution-control.md`; aggregate or runtime acceptance beyond the recorded checkpoint is not claimed.
