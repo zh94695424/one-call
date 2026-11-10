@@ -168,7 +168,8 @@ class SharingQueryBoundaryTests {
                             "provider/CapabilityTokenProvider.java", "provider/ShareExtractionCodeProvider.java", "provider/DesignatedMobileBindingProvider.java",
                             "provider/Sha256Provider.java", "provider/ExtractionCodeMaterial.java", "provider/ShareRotationPolicyProvider.java",
                             "credential/MediaPlaybackSigningKeyProvider.java", "credential/MediaPlaybackCredentialAuthority.java", "credential/MediaPlaybackCredentialCodec.java",
-                            "keysource/MediaPlaybackKeyBundleParser.java", "keysource/FileMediaPlaybackSigningKeyProvider.java", "keysource/MediaPlaybackKeySourceConfiguration.java");
+                            "keysource/MediaPlaybackKeyBundleParser.java", "keysource/FileMediaPlaybackSigningKeyProvider.java", "keysource/MediaPlaybackKeySourceConfiguration.java",
+                            "keysource/TencentSsmMediaPlaybackSigningKeyProvider.java", "keysource/TencentSsmSecretStringClient.java");
             for (Path path : commandPaths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("org.flywaydb", "spring.datasource", "ONECALL_MIGRATION", "jdbc:", "SELECT *",
@@ -197,7 +198,7 @@ class SharingQueryBoundaryTests {
                         || line.matches("import com\\.onecall\\.core\\.sharing\\.internal\\.playback\\.(MediaCredentialVerifier|OpaquePlaybackCredential|VerifiedMediaClaim|VerifiedMediaClaim\\.PlaybackWindow);"));
             }
         }
-        try (var files = Files.walk(internal)) { assertThat(files.filter(Files::isRegularFile).count()).isEqualTo(79); }
+        try (var files = Files.walk(internal)) { assertThat(files.filter(Files::isRegularFile).count()).isEqualTo(81); }
         var commandApi = namedInterfaces.getByName("customer-command").orElseThrow();
         components(com.onecall.core.sharing.internal.provider.ShareRotationPolicyProvider.RotationPolicyRequest.class,
                 "caller", "grantId", "verificationMode", "status", "codeGeneration", "revocationGeneration");
@@ -465,7 +466,8 @@ class SharingQueryBoundaryTests {
 
     @Test void keySourceUsesOnlyLocalReadAndExistingProviderBoundary() throws Exception {
         Path root = Path.of("src/main/java/com/onecall/core/sharing/internal/keysource");
-        var expected = java.util.Set.of("MediaPlaybackKeyBundleParser.java", "FileMediaPlaybackSigningKeyProvider.java", "MediaPlaybackKeySourceConfiguration.java");
+        var expected = java.util.Set.of("MediaPlaybackKeyBundleParser.java", "FileMediaPlaybackSigningKeyProvider.java", "MediaPlaybackKeySourceConfiguration.java",
+                "TencentSsmMediaPlaybackSigningKeyProvider.java", "TencentSsmSecretStringClient.java");
         try (var files = Files.walk(root)) {
             assertThat(files.filter(Files::isRegularFile).map(path -> root.relativize(path).toString())).containsExactlyInAnyOrderElementsOf(expected);
         }
@@ -482,9 +484,10 @@ class SharingQueryBoundaryTests {
                 "java.nio.file.Files", "java.nio.file.LinkOption", "java.nio.file.Path", "java.nio.file.StandardOpenOption",
                 "java.nio.file.attribute.BasicFileAttributes", "java.util.Arrays", "java.util.Objects", "java.util.Set");
         var configImports = java.util.Set.of("com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider",
-                "org.springframework.boot.autoconfigure.condition.ConditionalOnProperty", "org.springframework.context.annotation.Bean",
-                "org.springframework.context.annotation.Configuration", "org.springframework.core.env.Environment");
-        for (String file : expected) {
+                "org.springframework.context.annotation.Bean", "org.springframework.context.annotation.Condition", "org.springframework.context.annotation.ConditionContext",
+                "org.springframework.context.annotation.Conditional", "org.springframework.context.annotation.Configuration", "org.springframework.core.env.Environment",
+                "org.springframework.core.type.AnnotatedTypeMetadata");
+        for (String file : java.util.Set.of("MediaPlaybackKeyBundleParser.java", "FileMediaPlaybackSigningKeyProvider.java", "MediaPlaybackKeySourceConfiguration.java")) {
             String source = Files.readString(root.resolve(file));
             assertThat(source.lines().filter(line -> line.startsWith("import ")).map(line -> line.substring(7, line.length() - 1)))
                     .containsExactlyInAnyOrderElementsOf(file.startsWith("File") ? fileImports : file.contains("Configuration") ? configImports : parserImports);
@@ -508,13 +511,65 @@ class SharingQueryBoundaryTests {
                 "Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)", "try (var channel", "MAX_SOURCE_BYTES + 1", "channel.read(target)",
                 "target.position() != before.size()", "before.fileKey()", "before.lastModifiedTime()", "IOException | RuntimeException", "Arrays.fill(source", "Arrays.fill(buffer");
         String configuration = Files.readString(root.resolve("MediaPlaybackKeySourceConfiguration.java"));
-        assertThat(configuration).contains("@Configuration(proxyBeanMethods = false)", "prefix = \"onecall.sharing.media-playback.signing-key-source\"",
-                "name = \"provider\"", "havingValue = \"file\", matchIfMissing = false", "onecall.sharing.media-playback.signing-key-source.bundle-path",
+        assertThat(configuration).contains("@Configuration(proxyBeanMethods = false)", "\"onecall.sharing.media-playback.signing-key-source.\"",
+                "@Conditional(FileSelection.class)", "@Conditional(TencentSelection.class)", "onecall.sharing.media-playback.signing-key-source.bundle-path",
+                "\"file\".equals(context.getEnvironment().getProperty(PREFIX + \"provider\"))",
+                "\"tencent-ssm\".equals(context.getEnvironment().getProperty(PREFIX + \"provider\"))",
+                "!context.getEnvironment().containsProperty(PREFIX + \"bundle-path\")",
                 "catch (RuntimeException failure) { path = null; }", "return new FileMediaPlaybackSigningKeyProvider(path);");
-        assertThat(configuration.lines().filter(line -> line.strip().equals("@Bean")).count()).isEqualTo(1);
+        String fileCondition = configuration.substring(configuration.indexOf("static final class FileSelection"), configuration.indexOf("static final class TencentSelection"));
+        assertThat(fileCondition).doesNotContain("tencent.", "containsProperty", "bundle-path", "Settings", "trim(", "equalsIgnoreCase");
+        assertThat(configuration.lines().filter(line -> line.strip().equals("@Bean")).count()).isEqualTo(2);
         assertThat(Arrays.stream(com.onecall.core.sharing.internal.keysource.MediaPlaybackKeySourceConfiguration.class.getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(org.springframework.context.annotation.Bean.class)).map(java.lang.reflect.Method::getReturnType))
-                .containsExactly(com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.class);
+                .containsExactly(com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.class,
+                        com.onecall.core.sharing.internal.credential.MediaPlaybackSigningKeyProvider.class);
+    }
+
+    @Test void tencentKeySourceConfinesSdkAndPreservesExistingAuthority() throws Exception {
+        Path production = Path.of("src/main/java");
+        Path root = production.resolve("com/onecall/core/sharing/internal/keysource");
+        Path clientPath = root.resolve("TencentSsmSecretStringClient.java");
+        var sdkImports = java.util.Set.of("com.tencentcloudapi.common.exception.TencentCloudSDKException",
+                "com.tencentcloudapi.common.profile.ClientProfile", "com.tencentcloudapi.common.profile.HttpProfile",
+                "com.tencentcloudapi.common.provider.CvmRoleCredential", "com.tencentcloudapi.ssm.v20190923.SsmClient",
+                "com.tencentcloudapi.ssm.v20190923.models.GetSecretValueRequest", "com.tencentcloudapi.ssm.v20190923.models.GetSecretValueResponse");
+        try (var paths = Files.walk(production)) {
+            for (Path path : paths.filter(Files::isRegularFile).filter(path -> path.toString().endsWith(".java")).toList()) {
+                String source = Files.readString(path);
+                if (!path.equals(clientPath)) assertThat(source).doesNotContain("com.tencentcloudapi", "okhttp3", "okio.");
+            }
+        }
+        String client = Files.readString(clientPath);
+        assertThat(client.lines().filter(line -> line.startsWith("import com.tencentcloudapi.")).map(line -> line.substring(7, line.length() - 1)))
+                .containsExactlyInAnyOrderElementsOf(sdkImports);
+        assertThat(client).contains("private synchronized SsmClient client()", "if (client == null) client = factory.create(settings)",
+                "new SsmClient(new CvmRoleCredential(), settings.region, profile)", "new HttpProfile()", "HttpProfile.REQ_POST", "HttpProfile.REQ_HTTPS",
+                "ssm.tencentcloudapi.com", "http.setConnTimeout(settings.connectSeconds)", "http.setReadTimeout(settings.readSeconds)",
+                "http.setWriteTimeout(settings.connectSeconds)", "new ClientProfile(ClientProfile.SIGN_TC3_256, http)",
+                "profile.setDebug(false)", "profile.setUnsignedPayload(false)", "request.setSecretName(settings.secretName)", "request.setVersionId(settings.versionId)",
+                "response == null", "!settings.secretName.equals(response.getSecretName())", "!settings.versionId.equals(response.getVersionId())",
+                "response.getSecretBinary()", "response.getSecretString()", "!binary.isEmpty()", "secret.isBlank()", "TencentCloudSDKException | RuntimeException");
+        assertThat(client.split("\\.GetSecretValue\\(", -1)).hasSize(2);
+        String provider = Files.readString(root.resolve("TencentSsmMediaPlaybackSigningKeyProvider.java"));
+        assertThat(provider).contains("implements MediaPlaybackSigningKeyProvider", "Result currentKeys()", "settings == null || reader == null",
+                "String secret = reader.read()", "secret.length() > MediaPlaybackKeyBundleParser.MAX_SOURCE_BYTES", "CodingErrorAction.REPORT",
+                "target.position() > MediaPlaybackKeyBundleParser.MAX_SOURCE_BYTES", "return parser.parse(source)", "Arrays.fill(source", "Arrays.fill(buffer",
+                "connect == null ? 2", "read == null ? 3", "1_024", "256", "[a-z0-9]+(?:-[a-z0-9]+)+");
+        for (String source : List.of(client, provider)) {
+            assertThat(source).contains("@JsonValue", "[REDACTED]", "String toString()")
+                    .doesNotContain("NamedInterface", "Serializable", "Logger", "System.out", "System.err", "printStackTrace", "getMessage(", "getCause(", "getRequestId(",
+                            "DefaultCredentialsProvider", "EnvironmentVariable", "ProfileCredentials", "OIDC", "new Credential(", "SecretId", "SecretKey", "getSnapshot(",
+                            "getenv(", "System.getProperty", "java.net", "metadata.tencentyun", "okhttp3", "okio.", "Base64", "getResource", "Files.",
+                            "FileMediaPlayback", "Repository", "DataSource", "java.sql", "org.springframework.web", "jakarta.servlet", "MediaPlaybackCredentialAuthority",
+                            "issueOrReplay", "@Scheduled", "Executor", "Thread", "Timer", "cache", "lastGood", "TTL", "ttl", "retry(", "sleep(", "fallback",
+                            "CreateSecret", "UpdateSecret", "DeleteSecret", "ListSecrets", "DescribeSecret", "PutSecret", "EnableSecret", "DisableSecret",
+                            "setEncryptionPublicKey", "setEncryptionAlgorithm", "setProxy", "setHttpClient", "setSsl", "setHostname", "setRootDomain", "setApigwEndpoint");
+        }
+        String configuration = Files.readString(root.resolve("MediaPlaybackKeySourceConfiguration.java"));
+        assertThat(configuration).doesNotContain("@Primary", "@Order", "@ConditionalOnMissingBean", "@Profile", "trim(", "equalsIgnoreCase", "new SsmClient", "CvmRoleCredential");
+        String authority = Files.readString(production.resolve("com/onecall/core/sharing/internal/credential/MediaPlaybackCredentialAuthority.java"));
+        assertThat(authority.indexOf("providers.size() != 1")).isLessThan(authority.indexOf("currentKeys()"));
     }
 
     @Test void playbackStateAndOpenPreserveReadOnlyNoProjectionBoundary() throws Exception {
