@@ -14,7 +14,7 @@
 
 ## What changed
 
-The final PR range contains exactly 18 docs-only paths: the cumulative PA24 plan, Plan Fix 1, the composed S1 runbook/validation document, Control bookkeeping, four plan reviews, six code reviews, and four PR reviews. There are no product, test, POM, CI, migration, ACL, API, protocol, deployment, topology or V001-V008 changes.
+The reviewed implementation and review range contains exactly 18 docs-only paths: the cumulative PA24 plan, Plan Fix 1, the composed S1 runbook/validation document, Control bookkeeping, four plan reviews, six code reviews, and four PR reviews. The final closeout delivery branch adds this closeout summary, for a final total of 19 docs-only paths. There are no product, test, POM, CI, migration, ACL, API, protocol, deployment, topology or V001-V008 changes.
 
 The implementation-free acceptance decision remains justified. The merged PA23 K20 provider already supplies:
 
