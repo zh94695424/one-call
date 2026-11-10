@@ -193,6 +193,7 @@
                 <include>**/EvidenceMediaReadIT.java</include>
                 <include>**/MediaPlaybackIT.java</include>
                 <include>**/MediaGatewayTransportIT.java</include>
+                <include>**/ProductionDatabaseIdentityProvisioningIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>
