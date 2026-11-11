@@ -116,7 +116,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa25";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", adminPassword).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(14);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(15);
         try (Connection admin = admin()) {
             assertThat(one(admin, "SELECT current_setting('server_version_num')::integer BETWEEN 160000 AND 169999")).isEqualTo("t");
             assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname !~ '^pg_' AND rolname NOT IN ('postgres','fixture_admin')")).isEqualTo("31");
@@ -612,17 +612,17 @@ class ProductionDatabaseIdentityProvisioningIT {
             } finally { executeAdmin("DROP ROLE " + identifier(role)); }
         }
         String finalHistory;
-        try (Connection admin = admin()) { finalHistory = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=14"); }
-        contaminate("DELETE FROM public.flyway_schema_history WHERE installed_rank=14",
+        try (Connection admin = admin()) { finalHistory = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=15"); }
+        contaminate("DELETE FROM public.flyway_schema_history WHERE installed_rank=15",
                 "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
         try (Connection admin = admin()) { assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname IN ('pa25_query','pa25_customer','pa25_command')")).isEqualTo("0"); }
-        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=15", "type='BASELINE'", "success=false", "version='14'")) {
-            contaminate("UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=14",
-                    "DELETE FROM public.flyway_schema_history WHERE version IN ('014','14'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
+        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=16", "type='BASELINE'", "success=false", "version='15'")) {
+            contaminate("UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=15",
+                    "DELETE FROM public.flyway_schema_history WHERE version IN ('015','15'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
         }
-        for (String extraVersion : List.of("014", "015")) {
-            contaminate("INSERT INTO public.flyway_schema_history SELECT installed_rank+1000," + literal(extraVersion) + ",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=14",
-                    "DELETE FROM public.flyway_schema_history WHERE installed_rank=1014", "PA25_HISTORY_REJECTED");
+        for (String extraVersion : List.of("015", "016")) {
+            contaminate("INSERT INTO public.flyway_schema_history SELECT installed_rank+1000," + literal(extraVersion) + ",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=15",
+                    "DELETE FROM public.flyway_schema_history WHERE installed_rank=1015", "PA25_HISTORY_REJECTED");
         }
         provision();
         for (String role : EXTERNAL) {
@@ -687,7 +687,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         assertThat(migrationHashes().equals(entryHashes)).isTrue();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         flyway.validate();
-        assertThat(flyway.info().applied()).hasSize(14);
+        assertThat(flyway.info().applied()).hasSize(15);
         assertExactFrozenAcls();
         assertMarkers();
         try (Connection admin = admin()) {
@@ -1037,6 +1037,21 @@ class ProductionDatabaseIdentityProvisioningIT {
 
     private void assertExactFrozenAcls() throws Exception {
         Set<String> expected = Set.of(
+                "customer_iam_role|schema|subject_number||USAGE|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.business_subject|id|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.business_subject|owner_account_id|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.business_subject|owner_organization_id|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.business_subject|real_name_status|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.business_subject|created_at|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.caller_number_binding|id|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.caller_number_binding|subject_id|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.caller_number_binding|number_masked|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.caller_number_binding|number_type|SELECT|subject_number_owner|false",
+                "customer_iam_role|column|subject_number.caller_number_binding|status|SELECT|subject_number_owner|false",
+                "customer_iam_role|schema|activation_consent||USAGE|activation_consent_owner|false",
+                "customer_iam_role|column|activation_consent.service_activation|subject_id|SELECT|activation_consent_owner|false",
+                "customer_iam_role|column|activation_consent.service_activation|status|SELECT|activation_consent_owner|false",
+
                 "customer_iam_role|column|customer_iam.customer_account|display_name|SELECT|customer_iam_owner|false",
                 "customer_iam_role|column|customer_iam.customer_account|id|SELECT|customer_iam_owner|false",
                 "customer_iam_role|column|customer_iam.customer_account|status|SELECT|customer_iam_owner|false",
@@ -1311,8 +1326,8 @@ class ProductionDatabaseIdentityProvisioningIT {
                         'sharing_admission_role'::regrole,'evidence_media_reader_role'::regrole)
                     ORDER BY 1
                     """);
-            assertThat(expected.size()).isEqualTo(247);
-            assertThat(actual.size()).isEqualTo(247);
+            assertThat(expected.size()).isEqualTo(261);
+            assertThat(actual.size()).isEqualTo(261);
             assertThat(Set.copyOf(actual).equals(expected)).as("independent frozen-source ACL equality").isTrue();
         }
     }

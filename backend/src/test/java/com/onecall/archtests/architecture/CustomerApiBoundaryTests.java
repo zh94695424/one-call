@@ -41,6 +41,22 @@ class CustomerApiBoundaryTests {
                 jakarta.servlet.http.HttpServletRequest.class).getAnnotation(org.springframework.web.bind.annotation.GetMapping.class);
         assertThat(sharesMapping.path()).containsExactly("/api/v1/customer/shares");
         assertThat(sharesMapping.produces()).containsExactly("application/json");
+        var businessController = com.onecall.core.customer_iam.internal.web.CustomerBusinessNumbersController.class;
+        var businessMethod = businessController.getMethod("listCustomerBusinessNumbers", java.security.Principal.class, jakarta.servlet.http.HttpServletRequest.class);
+        assertThat(businessMethod.getReturnType()).isEqualTo(com.onecall.core.customer_iam.internal.web.BusinessNumberPage.class);
+        var businessMapping = businessMethod.getAnnotation(org.springframework.web.bind.annotation.GetMapping.class);
+        assertThat(businessMapping.path()).containsExactly("/api/v1/customer/business-numbers");
+        assertThat(businessMapping.produces()).containsExactly("application/json");
+        assertThat(Arrays.stream(com.onecall.core.customer_iam.internal.web.BusinessNumberPage.class.getRecordComponents()).map(java.lang.reflect.RecordComponent::getName))
+                .containsExactly("items", "nextCursor", "hasMore");
+        assertThat(Arrays.stream(com.onecall.core.customer_iam.internal.web.BusinessNumberPage.Item.class.getRecordComponents()).map(java.lang.reflect.RecordComponent::getName))
+                .containsExactly("bindingId", "subjectId", "numberMasked", "numberType", "bindingStatus", "activationStatus", "realNameStatus");
+        var businessParameters = businessController.getConstructors()[0].getParameters();
+        assertThat(businessParameters).hasSize(3);
+        assertThat(businessParameters[0].getParameterizedType().getTypeName()).isEqualTo("org.springframework.beans.factory.ObjectProvider<com.onecall.core.customer_iam.internal.application.CustomerBusinessNumberQueryService>");
+        assertThat(businessParameters[1].getParameterizedType().getTypeName()).isEqualTo("org.springframework.beans.factory.ObjectProvider<com.onecall.core.customer_iam.internal.web.CustomerBusinessNumberCursorCodec>");
+        assertThat(businessParameters[0].getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()).isEqualTo("customerBusinessNumberQueryService");
+        assertThat(businessParameters[1].getAnnotation(org.springframework.beans.factory.annotation.Qualifier.class).value()).isEqualTo("customerBusinessNumberCursorCodec");
         var publicController = com.onecall.core.customer_iam.internal.web.PublicSharesController.class;
         var publicMethod = publicController.getMethod("getPublicShare", String.class, java.security.Principal.class);
         assertThat(publicMethod.getReturnType()).isEqualTo(com.onecall.core.sharing.internal.publicquery.PublicShareView.class);
@@ -71,7 +87,7 @@ class CustomerApiBoundaryTests {
         Path root = Path.of("src/main/java/com/onecall/core/customer_iam/internal");
         try (var files = Files.walk(root)) {
             var paths = files.filter(Files::isRegularFile).toList();
-            assertThat(paths).hasSize(26);
+            assertThat(paths).hasSize(32);
             for (Path path : paths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("com.onecall.core.organization_access",
@@ -143,7 +159,7 @@ class CustomerApiBoundaryTests {
     @Test
     void profileAndVerifierArtifactsCannotEscapeIntoProduction() throws Exception {
         for (String name : List.of("web/CustomerWebConfiguration.java", "web/CustomerMeController.java",
-                "web/CustomerSharesController.java", "web/CustomerApiErrorController.java", "web/PublicSharesController.java")) {
+                "web/CustomerSharesController.java", "web/CustomerBusinessNumbersController.java", "web/CustomerApiErrorController.java", "web/PublicSharesController.java")) {
             String source = Files.readString(Path.of("src/main/java/com/onecall/core/customer_iam/internal", name));
             assertThat(source).contains("@Profile(\"web\")", "ConditionalOnWebApplication.Type.SERVLET");
         }

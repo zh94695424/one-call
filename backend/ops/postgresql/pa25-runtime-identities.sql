@@ -2014,6 +2014,118 @@ DECLARE
     "",
     "USAGE",
     "sharing_owner"
+  ],
+  [
+    "customer_iam_role",
+    "schema",
+    "subject_number",
+    "",
+    "USAGE",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.business_subject",
+    "id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.business_subject",
+    "owner_account_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.business_subject",
+    "owner_organization_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.business_subject",
+    "real_name_status",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.business_subject",
+    "created_at",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "subject_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "number_masked",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "number_type",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "status",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "schema",
+    "activation_consent",
+    "",
+    "USAGE",
+    "activation_consent_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "activation_consent.service_activation",
+    "subject_id",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "activation_consent.service_activation",
+    "status",
+    "SELECT",
+    "activation_consent_owner"
   ]
 ]$frozen$::jsonb;
     expected_owners jsonb := $owners${
@@ -2114,6 +2226,12 @@ DECLARE
     "V014__database_runtime_acl_rbac_hardening.sql",
     -340359494,
     "database runtime acl rbac hardening"
+  ],
+  [
+    "015",
+    "V015__customer_business_number_read_privileges.sql",
+    -1316980027,
+    "customer business number read privileges"
   ]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
@@ -2457,7 +2575,7 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 14 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 15 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
@@ -2550,7 +2668,7 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 247 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 261 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';

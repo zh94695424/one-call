@@ -108,7 +108,7 @@ class DatabaseRuntimeAclRbacHardeningIT {
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa26";
         assertThat(Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration")
                 .target("013").load().migrate().migrationsExecuted).isEqualTo(13);
-        latest = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
+        latest = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").target("014").load();
         postgres.copyFileToContainer(MountableFile.forHostPath(Path.of("ops/postgresql/pa25-runtime-identities.sql").toAbsolutePath()), "/tmp/pa26-identities.sql");
         account = UUID.randomUUID(); evidence = UUID.randomUUID(); subject = UUID.randomUUID();
     }
@@ -124,8 +124,11 @@ class DatabaseRuntimeAclRbacHardeningIT {
             assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
             assertOracle();
             assertThat(identities().equals(privateBefore)).isTrue();
+            var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(1);
+            current.validate();
+            assertThat(current.info().applied()).hasSize(15);
             psql("apply"); psql("check");
-            assertOracle();
         }
     }
 
@@ -138,7 +141,7 @@ class DatabaseRuntimeAclRbacHardeningIT {
                 .withExposedPorts(5432).waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa26";
-        latest = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
+        latest = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").target("014").load();
         assertThat(latest.migrate().migrationsExecuted).isEqualTo(14);
         latest.validate();
         assertThat(latest.info().applied()).hasSize(14);
@@ -147,7 +150,7 @@ class DatabaseRuntimeAclRbacHardeningIT {
             assertThat(strings(connection, "SELECT installed_rank||'|'||version||'|'||type||'|'||success FROM public.flyway_schema_history ORDER BY installed_rank"))
                     .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 14)
                             .mapToObj(rank -> rank + "|%03d|SQL|true".formatted(rank)).toList());
-            var resolved = latest.info().all();
+            var resolved = latest.info().applied();
             for (var migration : resolved) {
                 assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE script='" + migration.getScript()
                         + "' AND checksum=" + migration.getChecksum() + " AND description='" + migration.getDescription() + "'"))
@@ -320,6 +323,10 @@ class DatabaseRuntimeAclRbacHardeningIT {
                 assertOracle();
             }
             assertThat(latest.migrate().migrationsExecuted).isZero(); latest.validate();
+            var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(1);
+            current.validate();
+            assertThat(current.info().applied()).hasSize(15);
             psql("apply"); psql("check"); psql("apply"); psql("check");
         }
     }
@@ -596,10 +603,10 @@ class DatabaseRuntimeAclRbacHardeningIT {
     private static void assertFrozen() throws Exception {
         try (var paths = Files.list(MIGRATIONS)) {
             var resources = paths.filter(path -> path.getFileName().toString().matches("V\\d{3}__.*\\.sql")).sorted().toList();
-            assertThat(resources).hasSize(14);
+            assertThat(resources).hasSize(15);
             for (Path path : resources) {
                 String version = path.getFileName().toString().substring(1, 4);
-                if (!version.equals("014")) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readString(path, StandardCharsets.UTF_8)
+                if (FROZEN.containsKey(version)) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readString(path, StandardCharsets.UTF_8)
                         .replace("\r\n", "\n").replace("\r", "\n").getBytes(StandardCharsets.UTF_8)))).isEqualTo(FROZEN.get(version));
             }
         }
