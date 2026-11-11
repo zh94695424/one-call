@@ -100,7 +100,8 @@
 - Reviewer B candidate `PA27-PR38-B-01` is `rejected-with-reason`: its snapshot hash `c069ea53...44fc` reflects `git archive` CRLF materialization on the Windows review export. The actual PR blob and worktree are both LF: `git rev-parse HEAD:<V015>` and `git hash-object -- <V015>` both equal `5b9b724a12f5ba99c6f56358ab2be83236b0e333`, size 44,740 bytes, and raw SHA256 `1697A69FD39A61A9F8F7E0C1D2D699DEDA965840B58F7FF9937308F5670191C3`. The documented raw hash is therefore correct for the PR; neither V015 nor documentation requires a change.
 - Controller PR-review adjudication: no accepted finding or blocking question remains. Reviewer A/B evidence-root inaccessibility and snapshot CRLF limitations are `deferred-with-owner` to Controller/CI evidence custody and review transport; the Controller's sealed full execution remains authoritative for this checkpoint. Reverse-scope exact-code and historical wording observations remain nonblocking Backend/Test/docs opportunities. All plan residuals retain owners.
 - Accepted PR-review decision: accept the complete PR #38 review with no further code change. Accepted PR-review checkpoint scope is exactly the two PR review artifacts plus this Control.
-- Current gate / next entry point: `accepted PR review commit`; after the protected local checkpoint is committed and pushed, verify local/branch/PR heads and enter `draft-PR-pass` followed by `final closeout`. No merge, approval, mark-ready action, reviewer request, external comment or issue mutation is authorized.
+- Accepted PR-review checkpoint `ac20c7febde0112c8ca7ef60a81003b437fcf689` contains exactly the two PR review artifacts and this Control.
+- Current gate / next entry point: `push`, then `draft-PR-pass` and `final closeout` after local branch and PR heads are verified equal. No merge, approval, mark-ready action, reviewer request, external comment or issue mutation is authorized.
 
 ## Historical resume checkpoint - 2026-11-11
 
