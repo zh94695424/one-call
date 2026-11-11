@@ -2,6 +2,10 @@ package com.onecall.core.customer_iam.internal.persistence;
 
 import com.onecall.core.customer_iam.internal.application.CustomerContextService;
 import com.onecall.core.customer_iam.internal.application.CustomerBusinessNumberQueryService;
+import com.onecall.core.customer_iam.internal.application.CustomerSubjectDetailQueryService;
+import com.onecall.core.subject_number.customersubjectquery.CustomerSubjectAccessReader;
+import com.onecall.core.evidence.customerquery.CustomerSubjectEvidenceCountReader;
+import com.onecall.core.catalog_order.customerquery.CustomerSubjectOrderCountReader;
 import com.onecall.core.customer_iam.internal.web.CustomerBusinessNumberCursorCodec;
 import com.onecall.core.customer_iam.internal.web.CustomerBusinessNumberCursorProperties;
 import com.onecall.core.subject_number.customerquery.CustomerBusinessNumberReader;
@@ -32,6 +36,30 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Profile("web")
 @EnableConfigurationProperties({CustomerPersistenceProperties.class, CustomerBusinessNumberCursorProperties.class})
 public class CustomerPersistenceConfiguration {
+    @Bean
+    @Lazy
+    TransactionTemplate customerSubjectDetailTransactionTemplate(
+            @Qualifier("customerQueryTransactionManager") DataSourceTransactionManager manager) {
+        TransactionTemplate template = new TransactionTemplate(manager);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template;
+    }
+
+    @Bean
+    @Lazy
+    CustomerSubjectDetailQueryService customerSubjectDetailQueryService(
+            @Qualifier("customerSubjectDetailTransactionTemplate") TransactionTemplate template,
+            @Qualifier("customerQueryDsl") DSLContext context,
+            @Qualifier("customerBusinessNumberAccessRepository") JooqCustomerBusinessNumberAccessRepository repository,
+            @Qualifier("customerSubjectAccessReader") CustomerSubjectAccessReader subjectReader,
+            @Qualifier("customerActivationStatusReader") CustomerActivationStatusReader activationReader,
+            @Qualifier("customerSubjectEvidenceCountReader") CustomerSubjectEvidenceCountReader evidenceReader,
+            @Qualifier("customerSubjectOrderCountReader") CustomerSubjectOrderCountReader orderReader) {
+        return new CustomerSubjectDetailQueryService(template, context, repository, subjectReader, activationReader, evidenceReader, orderReader);
+    }
+
     @Bean(destroyMethod = "close")
     @Lazy
     HikariDataSource customerQueryDataSource(CustomerPersistenceProperties properties) {

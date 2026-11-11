@@ -2126,6 +2126,70 @@ DECLARE
     "status",
     "SELECT",
     "activation_consent_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.subject_risk_state",
+    "caller_number_binding_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "subject_number.subject_risk_state",
+    "state",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "customer_iam_role",
+    "schema",
+    "evidence",
+    "",
+    "USAGE",
+    "evidence_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "subject_id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "customer_iam_role",
+    "schema",
+    "catalog_order",
+    "",
+    "USAGE",
+    "catalog_order_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.customer_order",
+    "subject_id",
+    "SELECT",
+    "catalog_order_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.customer_order",
+    "account_id",
+    "SELECT",
+    "catalog_order_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.customer_order",
+    "owner_organization_id",
+    "SELECT",
+    "catalog_order_owner"
   ]
 ]$frozen$::jsonb;
     expected_owners jsonb := $owners${
@@ -2232,6 +2296,12 @@ DECLARE
     "V015__customer_business_number_read_privileges.sql",
     -1316980027,
     "customer business number read privileges"
+  ],
+  [
+    "016",
+    "V016__customer_subject_detail_read_privileges.sql",
+    1669606497,
+    "customer subject detail read privileges"
   ]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
@@ -2575,7 +2645,7 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 15 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 16 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
@@ -2668,7 +2738,7 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 261 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 269 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';

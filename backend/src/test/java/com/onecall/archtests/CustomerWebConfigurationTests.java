@@ -183,15 +183,19 @@ class CustomerWebConfigurationTests {
         for (Class<?> configuration : List.of(CustomerPersistenceConfiguration.class, SharingPersistenceConfiguration.class,
                 com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class)) {
             Map<String, List<String>> expected = configuration == CustomerPersistenceConfiguration.class
-                    ? Map.of("customerQueryDataSource", List.of(), "customerQueryTransactionManager", List.of("customerQueryDataSource"),
-                            "customerQueryTransactionTemplate", List.of("customerQueryTransactionManager"),
-                            "customerQueryDsl", List.of("customerQueryDataSource"), "customerContextRepository", List.of("customerQueryDsl"),
-                            "customerContextService", List.of("customerQueryTransactionTemplate", "customerQueryDsl", "customerContextRepository"),
-                            "customerBusinessNumberTransactionTemplate", List.of("customerQueryTransactionManager"),
-                            "customerBusinessNumberAccessRepository", List.of("customerQueryDsl"),
-                            "customerBusinessNumberQueryService", List.of("customerBusinessNumberTransactionTemplate", "customerQueryDsl",
-                                    "customerBusinessNumberAccessRepository", "customerBusinessNumberReader", "customerActivationStatusReader"),
-                            "customerBusinessNumberCursorCodec", List.of())
+                    ? Map.ofEntries(Map.entry("customerQueryDataSource", List.of()),
+                            Map.entry("customerQueryTransactionManager", List.of("customerQueryDataSource")),
+                            Map.entry("customerQueryTransactionTemplate", List.of("customerQueryTransactionManager")),
+                            Map.entry("customerQueryDsl", List.of("customerQueryDataSource")),
+                            Map.entry("customerContextRepository", List.of("customerQueryDsl")),
+                            Map.entry("customerContextService", List.of("customerQueryTransactionTemplate", "customerQueryDsl", "customerContextRepository")),
+                            Map.entry("customerBusinessNumberTransactionTemplate", List.of("customerQueryTransactionManager")),
+                            Map.entry("customerBusinessNumberAccessRepository", List.of("customerQueryDsl")),
+                            Map.entry("customerBusinessNumberQueryService", List.of("customerBusinessNumberTransactionTemplate", "customerQueryDsl",
+                                    "customerBusinessNumberAccessRepository", "customerBusinessNumberReader", "customerActivationStatusReader")),
+                            Map.entry("customerBusinessNumberCursorCodec", List.of()),
+                            Map.entry("customerSubjectDetailTransactionTemplate", List.of("customerQueryTransactionManager")),
+                            Map.entry("customerSubjectDetailQueryService", List.of("customerSubjectDetailTransactionTemplate", "customerQueryDsl", "customerBusinessNumberAccessRepository", "customerSubjectAccessReader", "customerActivationStatusReader", "customerSubjectEvidenceCountReader", "customerSubjectOrderCountReader")))
                     : configuration == SharingPersistenceConfiguration.class
                     ? Map.of("sharingQueryDataSource", List.of(), "sharingQueryTransactionManager", List.of("sharingQueryDataSource"),
                             "sharingQueryTransactionTemplate", List.of("sharingQueryTransactionManager"),
