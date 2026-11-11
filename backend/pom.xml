@@ -195,6 +195,8 @@
                 <include>**/MediaGatewayTransportIT.java</include>
                 <include>**/ProductionDatabaseIdentityProvisioningIT.java</include>
                 <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
+                <include>**/CustomerBusinessNumbersIT.java</include>
+                <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

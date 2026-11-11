@@ -38,7 +38,7 @@ class ModuleBoundaryTests {
             "operations_audit", "platform_reliability");
 
     private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
-            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission")),
+            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission", "subject_number::customer-business-number-query", "activation_consent::customer-activation-query")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of()),
@@ -110,8 +110,8 @@ class ModuleBoundaryTests {
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("exactly two production edges exist: customer_iam -> sharing -> evidence")
-                .containsExactlyInAnyOrder("sharing", "evidence");
+                .as("exactly four production edges exist: customer query owners and sharing -> evidence")
+                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent");
     }
 
     @Test
@@ -120,13 +120,15 @@ class ModuleBoundaryTests {
         modules.verify();
         var allowed = modules.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(modules);
-        assertThat(allowed).hasSize(4);
+        assertThat(allowed).hasSize(6);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-command"),
                         org.assertj.core.api.Assertions.tuple("sharing", "public-query"),
-                        org.assertj.core.api.Assertions.tuple("sharing", "public-admission"));
+                        org.assertj.core.api.Assertions.tuple("sharing", "public-admission"),
+                        org.assertj.core.api.Assertions.tuple("subject_number", "customer-business-number-query"),
+                        org.assertj.core.api.Assertions.tuple("activation_consent", "customer-activation-query"));
         var sharing = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
                 .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
@@ -216,12 +218,14 @@ class ModuleBoundaryTests {
                 .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
         var allowed = production.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(production);
-        assertThat(allowed).hasSize(4);
+        assertThat(allowed).hasSize(6);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-command"),
                         org.assertj.core.api.Assertions.tuple("sharing", "public-query"),
-                        org.assertj.core.api.Assertions.tuple("sharing", "public-admission"));
+                        org.assertj.core.api.Assertions.tuple("sharing", "public-admission"),
+                        org.assertj.core.api.Assertions.tuple("subject_number", "customer-business-number-query"),
+                        org.assertj.core.api.Assertions.tuple("activation_consent", "customer-activation-query"));
     }
 }

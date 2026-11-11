@@ -1,6 +1,11 @@
 package com.onecall.core.customer_iam.internal.persistence;
 
 import com.onecall.core.customer_iam.internal.application.CustomerContextService;
+import com.onecall.core.customer_iam.internal.application.CustomerBusinessNumberQueryService;
+import com.onecall.core.customer_iam.internal.web.CustomerBusinessNumberCursorCodec;
+import com.onecall.core.customer_iam.internal.web.CustomerBusinessNumberCursorProperties;
+import com.onecall.core.subject_number.customerquery.CustomerBusinessNumberReader;
+import com.onecall.core.activation_consent.customerquery.CustomerActivationStatusReader;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
@@ -25,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("web")
-@EnableConfigurationProperties(CustomerPersistenceProperties.class)
+@EnableConfigurationProperties({CustomerPersistenceProperties.class, CustomerBusinessNumberCursorProperties.class})
 public class CustomerPersistenceConfiguration {
     @Bean(destroyMethod = "close")
     @Lazy
@@ -78,5 +83,39 @@ public class CustomerPersistenceConfiguration {
             @Qualifier("customerQueryDsl") DSLContext context,
             @Qualifier("customerContextRepository") CustomerContextRepository repository) {
         return new CustomerContextService(template, context, repository);
+    }
+
+    @Bean
+    @Lazy
+    TransactionTemplate customerBusinessNumberTransactionTemplate(
+            @Qualifier("customerQueryTransactionManager") DataSourceTransactionManager manager) {
+        TransactionTemplate template = new TransactionTemplate(manager);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template;
+    }
+
+    @Bean
+    @Lazy
+    JooqCustomerBusinessNumberAccessRepository customerBusinessNumberAccessRepository(@Qualifier("customerQueryDsl") DSLContext context) {
+        return new JooqCustomerBusinessNumberAccessRepository(context);
+    }
+
+    @Bean
+    @Lazy
+    CustomerBusinessNumberQueryService customerBusinessNumberQueryService(
+            @Qualifier("customerBusinessNumberTransactionTemplate") TransactionTemplate template,
+            @Qualifier("customerQueryDsl") DSLContext context,
+            @Qualifier("customerBusinessNumberAccessRepository") JooqCustomerBusinessNumberAccessRepository repository,
+            @Qualifier("customerBusinessNumberReader") CustomerBusinessNumberReader reader,
+            @Qualifier("customerActivationStatusReader") CustomerActivationStatusReader activationReader) {
+        return new CustomerBusinessNumberQueryService(template, context, repository, reader, activationReader);
+    }
+
+    @Bean
+    @Lazy
+    CustomerBusinessNumberCursorCodec customerBusinessNumberCursorCodec(CustomerBusinessNumberCursorProperties properties) {
+        return new CustomerBusinessNumberCursorCodec(properties);
     }
 }

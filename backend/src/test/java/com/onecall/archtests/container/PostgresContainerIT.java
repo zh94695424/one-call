@@ -1393,7 +1393,7 @@ class PostgresContainerIT {
 
         flyway.validate();
         assertThat(flyway.info().pending()).isEmpty();
-        assertThat(flyway.info().all()).hasSize(14);
+        assertThat(flyway.info().all()).hasSize(15);
         assertThat(flyway.info().applied()).hasSize(13);
         var aboveTarget = java.util.Arrays.stream(flyway.info().all())
                 .filter(info -> info.getVersion().getVersion().equals("014")).toList();
@@ -1401,6 +1401,12 @@ class PostgresContainerIT {
         assertThat(aboveTarget.getFirst().getScript()).isEqualTo("V014__database_runtime_acl_rbac_hardening.sql");
         assertThat(aboveTarget.getFirst().getState()).isEqualTo(org.flywaydb.core.api.MigrationState.ABOVE_TARGET);
         assertThat(aboveTarget.getFirst().getState().isApplied()).isFalse();
+        var v015 = java.util.Arrays.stream(flyway.info().all())
+                .filter(info -> info.getVersion().getVersion().equals("015")).toList();
+        assertThat(v015).hasSize(1);
+        assertThat(v015.getFirst().getScript()).isEqualTo("V015__customer_business_number_read_privileges.sql");
+        assertThat(v015.getFirst().getState()).isEqualTo(org.flywaydb.core.api.MigrationState.ABOVE_TARGET);
+        assertThat(v015.getFirst().getState().isApplied()).isFalse();
         assertThat(java.util.Arrays.stream(flyway.info().all()).filter(info -> info.getState().isApplied())
                 .map(info -> info.getState()).distinct().toList())
                 .containsExactly(org.flywaydb.core.api.MigrationState.SUCCESS);
@@ -10792,7 +10798,8 @@ class PostgresContainerIT {
                         "V011__sharing_public_read_least_privilege.sql",
                         "V012__sharing_admission_least_privilege.sql",
                         "V013__evidence_media_reader_role.sql",
-                        "V014__database_runtime_acl_rbac_hardening.sql");
+                        "V014__database_runtime_acl_rbac_hardening.sql",
+                        "V015__customer_business_number_read_privileges.sql");
     }
 
     /**

@@ -46,7 +46,7 @@ class EvidenceMediaReadRoleLeastPrivilegeIT {
                             "013|evidence media reader role|V013__evidence_media_reader_role.sql|SQL|true");
             assertThat(strings(connection, "SELECT current_setting('server_version_num')::integer BETWEEN 160000 AND 169999")).containsExactly("t");
         }
-        assertThat(BASE.flyway.info().applied()).hasSize(14);
+        assertThat(BASE.flyway.info().applied()).hasSize(15);
     }
 
     @Test

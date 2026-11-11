@@ -217,7 +217,7 @@ Latest-chain application fixtures/suites move only their final-chain history exp
 
 Paths below are prospective S1 authorization only, not paths changed by this planning task. No wildcard production/test expansion. Any necessary additional path or changed test count returns to Controller before implementation scope expansion. N = new, M = modify. All paths are repository-relative.
 
-Exact prospective allowlist: **48 unique paths = 25 M + 23 N** (original 44 + two existing tests + two existing docs). By section: production 18 (4 M/14 N), database/tests/CI 25 (17 M/8 N), documentation 5 (4 M/1 N). The two planning artifacts are not S1 implementation targets and are not counted here.
+Exact implementation allowlist after Controller adjudication `PA27-S1-IMPL-01`: **49 unique paths = 26 M + 23 N** (the accepted 48 plus the one existing sharing boundary test). By section: production 18 (4 M/14 N), database/tests/CI 26 (18 M/8 N), documentation 5 (4 M/1 N). The cumulative plan correction and S1-fix artifact are separately authorized fix outputs, not counted in this implementation allowlist; the historical plan-fix-1 artifact remains read-only. Test targets stay 40/341 + 17/272 = 57/613, scan 614 and seventeen Failsafe includes.
 
 ### 7.1 Production
 
@@ -273,6 +273,7 @@ N backend/src/test/java/com/onecall/archtests/container/CustomerBusinessNumberRe
 N backend/src/test/java/com/onecall/archtests/container/CustomerBusinessNumbersFixture.java
 M backend/src/test/java/com/onecall/archtests/architecture/ModuleBoundaryTests.java
 M backend/src/test/java/com/onecall/archtests/architecture/CustomerApiBoundaryTests.java
+M backend/src/test/java/com/onecall/archtests/architecture/SharingQueryBoundaryTests.java
 M backend/src/test/java/com/onecall/archtests/CustomerWebConfigurationTests.java
 M backend/src/test/java/com/onecall/archtests/container/ProductionDatabaseIdentityProvisioningIT.java
 M backend/src/test/java/com/onecall/archtests/container/DatabaseRuntimeAclRbacHardeningIT.java
@@ -302,6 +303,8 @@ Document current V015/customer26/global261 boundary; mark V014/customer12/global
 Bounded docs/14 and docs/17 exception: in each, preserve the PA26 V014 section as historical evidence, relabel its heading `PA26 Historical Runtime Boundary (V014; superseded by PA27 V015)` and add a historical-only notice covering its capability rows, history prerequisites and inventory claims. Add a preceding `PA27 Current Runtime Boundary (V015)` section explicitly superseding that section and any older current customer-capability rows, without rewriting the structural/business/security model. The current section must state customer **26 = 4 schema + 22 column**, evidence **16** unchanged, seven-role global **261**, other-role **219** unchanged, and V015 delta **14 = 2 schema + 12 column**, listing the exact owner-issued/no-grant-option additions in §6.1 plus retained V014 reads. State V001-V014 unchanged, required fifteen-row history before current PA25 apply/check (V014-only rejected), unchanged six-login/seven-role/four-edge graph, no table SELECT/business writes/privileges outside the delta, current inventory §9 and no production acceptance claim. README, runbook and both new current sections must agree; 12/247 and fourteen-row prerequisites may remain only as explicitly historical claims. All unrelated docs/14/docs/17 content and other frozen architecture/API documents remain unchanged; OpenAPI and V001-V014 remain byte-frozen.
 
 ## 8. Exact test manifest and assertions
+
+Controller adjudication `PA27-S1-IMPL-01` authorizes only the exact four-to-six customer allowed-dependency expectation update in existing `SharingQueryBoundaryTests.sharingQueryApiAndProjectionAreExact`: retain `sharing::customer-query`, `sharing::customer-command`, `sharing::public-query`, `sharing::public-admission` and add exactly `subject_number::customer-business-number-query` and `activation_consent::customer-activation-query` to `containsExactlyInAnyOrder`. Preserve every other assertion and behavior. The class remains eight ordinary `@Test` methods; no class/method/annotation/inventory count changes or assertion weakening are authorized.
 
 All additions are ordinary, uniquely named `@Test void` methods. Use loops/table data **inside** each method, no parameterized/repeated/factory/dynamic/conditional/disabled tests. No new test annotation in comments. Fixture helper has zero test methods. Do not rename or remove existing methods to satisfy counts. The following fenced blocks are the exact addition manifest.
 

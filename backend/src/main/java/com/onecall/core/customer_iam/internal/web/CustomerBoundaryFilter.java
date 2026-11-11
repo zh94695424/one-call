@@ -50,7 +50,8 @@ public final class CustomerBoundaryFilter implements Filter {
         problems.headers(response);
         String servletPath = request.getServletPath();
         boolean admittedPath = "/api/v1/customer/me".equals(servletPath)
-                || "/api/v1/customer/shares".equals(servletPath);
+                || "/api/v1/customer/shares".equals(servletPath)
+                || "/api/v1/customer/business-numbers".equals(servletPath);
         boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
         boolean revoke = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/customer/shares/[^/;%]+/revocations");
