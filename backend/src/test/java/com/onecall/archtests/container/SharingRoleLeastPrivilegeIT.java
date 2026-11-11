@@ -59,7 +59,7 @@ class SharingRoleLeastPrivilegeIT {
         POSTGRES.start();
         url = "jdbc:postgresql://" + POSTGRES.getHost() + ":" + POSTGRES.getMappedPort(5432) + "/sharing_least_privilege";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", PASSWORD).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(15);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(16);
         try (Connection admin = admin(); Statement statement = admin.createStatement()) {
             try (var rows = statement.executeQuery("SELECT rolpassword IS NULL FROM pg_authid WHERE rolname='sharing_public_read_role'")) {
                 assertThat(rows.next()).isTrue();
@@ -566,7 +566,7 @@ class SharingRoleLeastPrivilegeIT {
             System.out.println("PA13 PostgreSQL 16 evidence: " + rows.getString(2) + "; image=" + POSTGRES.getDockerImageName()
                     + "; imageId=" + POSTGRES.getContainerInfo().getImageId());
         }
-        assertThat(flyway.info().applied()).hasSize(15);
+        assertThat(flyway.info().applied()).hasSize(16);
         assertThat(flyway.info().applied()[10].getVersion().getVersion()).isEqualTo("011");
         assertThat(flyway.info().applied()[11].getVersion().getVersion()).isEqualTo("012");
         assertThat(flyway.info().applied()[11].getScript()).isEqualTo("V012__sharing_admission_least_privilege.sql");
@@ -576,6 +576,8 @@ class SharingRoleLeastPrivilegeIT {
         assertThat(flyway.info().applied()[13].getScript()).isEqualTo("V014__database_runtime_acl_rbac_hardening.sql");
         assertThat(flyway.info().applied()[14].getVersion().getVersion()).isEqualTo("015");
         assertThat(flyway.info().applied()[14].getScript()).isEqualTo("V015__customer_business_number_read_privileges.sql");
+        assertThat(flyway.info().applied()[15].getVersion().getVersion()).isEqualTo("016");
+        assertThat(flyway.info().applied()[15].getScript()).isEqualTo("V016__customer_subject_detail_read_privileges.sql");
         assertThat(flyway.info().applied()[9].getVersion().getVersion()).isEqualTo("010");
         assertThat(flyway.info().applied()[9].getScript()).isEqualTo("V010__sharing_role_least_privilege.sql");
         assertThat(flyway.info().applied()[9].getDescription()).isEqualTo("sharing role least privilege");

@@ -159,8 +159,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 341:
-              sys.exit("expected exactly 341 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 375:
+              sys.exit("expected exactly 375 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -899,6 +899,91 @@ jobs:
               target = container_expected if class_name.endswith("IT") else unit_expected
               target.setdefault(class_name, set()).update(names)
 
+          pa28_unit_additions = {
+              'com.onecall.archtests.CustomerSubjectsWebTests': {
+                  'getUsesExactAuthenticatedSubjectRouteAndFourFieldResponse',
+                  'unsupportedMethodsExtraSegmentsAndTrailingRoutesRemainNotFound',
+                  'missingMalformedDuplicateAndRejectedBearerNeverResolveService',
+                  'unavailableVerifierFailsClosedBeforeSubjectResolution',
+                  'trustedSelectedWorkspaceIsTheOnlyAuthority',
+                  'malformedAbbreviatedAndDottedSubjectValuesReturnValidationFailed',
+                  'extraQueryParametersAndGetBodiesAreIgnoredWithoutChangingScope',
+                  'invalidTrustedWorkspacePrecedesPathValidation',
+                  'missingServiceAndPersistenceFailuresUseSanitizedUnavailable',
+                  'subjectNotFoundForbiddenAndInternalUseExistingProblemEnvelope',
+                  'responseNeverAddsOptionalClaimOwnershipOrContentFields',
+                  'subjectReadDoesNotRequireCursorKeyAndExistingRoutesStayUnchanged',
+              },
+              'com.onecall.core.customer_iam.internal.application.CustomerSubjectDetailQueryServiceTests': {
+                  'personalAndOrganizationScopesUseOnlyVerifiedCaller',
+                  'nullCallerWorkspaceAndSubjectFailClosedBeforeQueries',
+                  'roleIsAssumedAndAssertedBeforeLifecycleAndSubjectQueries',
+                  'roleAssumptionOrAssertionFailureIsUnavailableWithoutOwnerReads',
+                  'inactiveContextPrecedesSubjectAndRiskReads',
+                  'missingOwnedSubjectIsEmptyAndInvalidProjectionIsInternal',
+                  'openRiskPrecedesActivationAndBothCounts',
+                  'missingActivationDefaultsInactiveAndPresentStatesAreExact',
+                  'nullExtraUnknownAndMisboundActivationProjectionsAreInternal',
+                  'zeroAndLongCountsAreExactAndNegativeCountsFailClosed',
+                  'sqlTransactionAndBeanFailuresAreRedactedAndUnknownFaultsAreInternal',
+                  'oneReadOnlyRepeatableTransactionContainsOrderedOwnerReadsAndNoWrites',
+              },
+              'com.onecall.archtests.CustomerSubjectDetailConfigurationTests': {
+                  'defaultAndNonWebProfilesRemainInert',
+                  'webWiringIsLazyAndSubjectValidationDoesNotCreatePools',
+                  'subjectTemplateHasIndependentReadOnlyRepeatableNewTransactionSettings',
+                  'ownerReadersShareExactlyTheQualifiedCustomerDsl',
+                  'controllerUsesOnlyQualifiedSubjectServiceProviderAndProblemWriter',
+                  'missingResourcesFailClosedWithoutCursorEvidenceMediaOrCommandResources',
+              },
+              'com.onecall.archtests.architecture.CustomerSubjectDetailBoundaryTests': {
+                  'subjectEvidenceAndOrderExposeOnlyMinimalNamedQueryInterfaces',
+                  'customerCompositionContainsNoForeignSqlOrInternalImports',
+                  'v016AddsOnlyTheEightRequiredPrivilegeTuplesAndPa25Uses269AndSixteen',
+                  'openApiAndV001ThroughV015RemainFrozenAcrossNewlineRepresentations',
+              },
+          }
+          pa28_container_additions = {
+              'com.onecall.archtests.container.CustomerSubjectsIT': {
+                  'postgres16LatestChainAndCustomerRuntimeRoleAreUsed',
+                  'personalOwnerReadsExactlyFourRequiredFields',
+                  'allFourActiveOrganizationRolesReadOnlySelectedOrganizationSubjects',
+                  'organizationCountsIncludeOtherPurchasersButNotOtherWorkspaces',
+                  'missingAndInactiveAccountsAreForbiddenBeforeSubjectLookup',
+                  'missingInactiveAndForeignSelectedOrganizationsAreForbidden',
+                  'missingInactiveAndRemovedMembershipsAreForbiddenForEveryRole',
+                  'missingUnownedForeignAccountAndForeignWorkspaceSubjectsAreUniformNotFound',
+                  'openRiskOnAnyActiveDisabledOrRetiredBindingIsForbidden',
+                  'noBindingsNoRiskAndClearedRiskDoNotInventDenial',
+                  'missingActivationDefaultsInactiveAndEveryStoredStatusIsReturned',
+                  'evidenceCountsEveryStatusForOnlyTheAccessibleSubject',
+                  'personalOrderCountsAllPaymentStatesOnlyInPersonalWorkspace',
+                  'emptyAndMultipleCountsNeverMultiplyAcrossBindingsOrActivation',
+                  'lifecycleRiskActivationAndCountsShareOneRepeatableReadSnapshot',
+                  'committedLifecycleAndRiskChangesAreRecheckedOnNextRequest',
+                  'successDenialAndDependencyFailurePerformZeroBusinessWrites',
+                  'pooledRoleReadOnlyIsolationAutoCommitAndAmbientTransactionsRestore',
+                  'responsesProblemsAndCapturedLogsNeverDiscloseSecretsOrRowContents',
+                  'cursorlessUuidValidationAndIgnoredInputsPreserveExistingCustomerEndpoints',
+              },
+              'com.onecall.archtests.container.CustomerSubjectDetailReadPrivilegeIT': {
+                  'v015DeniesEveryMissingRiskEvidenceAndOrderCapabilityWith42501',
+                  'v016FreshAndUpgradeHaveExactSixteenHistoryEntriesAndFrozenPredecessors',
+                  'v016AddsExactlyEightOwnerIssuedTuplesAndMatchesIndependent269Oracle',
+                  'customerRoleReadsOnlyApprovedColumnsAndDeniesAllOtherCapabilitiesWith42501',
+                  'v016ReplayPreservesAclsRolesCredentialsDefinitionsAndBusinessRows',
+                  'v016RejectsPartialWidenedWrongGrantorAndGrantOptionStatesAtomically',
+                  'v016RejectsAuthorityRoleGraphOwnershipSettingsPublicAndDefaultDriftAtomically',
+                  'pa25RequiresExactV016HistoryAndIndependent269TupleOracleWithoutRepair',
+                  'allSixLoginsAndSevenEffectiveRolesRetainExactMembershipBoundaries',
+                  'realCustomerPoolRestoresRoleAndTransactionAfterSuccessAndFailure',
+              },
+          }
+          pa28_additions = pa28_unit_additions | pa28_container_additions
+          for target, additions in ((unit_expected, pa28_unit_additions), (container_expected, pa28_container_additions)):
+              for class_name, names in additions.items():
+                  target.setdefault(class_name, set()).update(names)
+
           source_classes = set()
           for path in Path("src/test/java").rglob("*.java"):
               source = path.read_text()
@@ -957,6 +1042,7 @@ jobs:
           pa22_start_totals = [0, 0]
           pa23_start_totals = [0, 0]
           pa25_start_totals = [0, 0]
+          pa28_start_totals = [0, 0]
           pa27_start_totals = [0, 0]
           line_scan_total = baseline_line_scan_total = 0
           pa19_start_line_scan_total = 0
@@ -965,6 +1051,7 @@ jobs:
           pa22_start_line_scan_total = 0
           pa23_start_line_scan_total = 0
           pa25_start_line_scan_total = 0
+          pa28_start_line_scan_total = 0
           pa27_start_line_scan_total = 0
           comment_hits = []
           for path in Path("src/test/java").rglob("*.java"):
@@ -980,22 +1067,28 @@ jobs:
               pa25_names = pa25_additions.get(class_name, set())
               pa26_names = pa26_additions.get(class_name, set())
               pa27_names = pa27_additions.get(class_name, set())
-              additions = pa18_names | pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names
+              pa28_names = pa28_additions.get(class_name, set())
+              additions = pa18_names | pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names
               assert additions <= set(names), f"missing PA18/PA19/PA20/PA21/PA22/PA23 additions: {class_name}"
               if names:
                   suite_index = 0 if class_name in unit_expected else 1
                   method_totals[suite_index] += len(names)
-                  pa27_start_totals[suite_index] += len(names) - len(pa27_names)
+                  pa28_start_totals[suite_index] += len(names) - len(pa28_names)
+                  pa27_start_totals[suite_index] += len(names) - len(pa27_names | pa28_names)
                   baseline_totals[suite_index] += len(names) - len(additions)
-                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names)
-                  pa20_start_totals[suite_index] += len(names) - len(pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names)
-                  pa21_start_totals[suite_index] += len(names) - len(pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names)
-                  pa22_start_totals[suite_index] += len(names) - len(pa22_names | pa23_names | pa25_names | pa26_names | pa27_names)
-                  pa23_start_totals[suite_index] += len(names) - len(pa23_names | pa25_names | pa26_names | pa27_names)
-                  pa25_start_totals[suite_index] += len(names) - len(pa25_names | pa26_names | pa27_names)
+                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names)
+                  pa20_start_totals[suite_index] += len(names) - len(pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names)
+                  pa21_start_totals[suite_index] += len(names) - len(pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names)
+                  pa22_start_totals[suite_index] += len(names) - len(pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names)
+                  pa23_start_totals[suite_index] += len(names) - len(pa23_names | pa25_names | pa26_names | pa27_names | pa28_names)
+                  pa25_start_totals[suite_index] += len(names) - len(pa25_names | pa26_names | pa27_names | pa28_names)
+              pa28_start_source = method_pattern.sub(
+                  lambda match: match.group().replace("@Test", "", 1)
+                  if match.group(1) in pa28_names else match.group(), source)
+              pa28_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa28_start_source.splitlines())
               pa27_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa27_names else match.group(), source)
+                  if match.group(1) in pa27_names | pa28_names else match.group(), source)
               pa27_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa27_start_source.splitlines())
               baseline_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
@@ -1004,27 +1097,27 @@ jobs:
               baseline_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in baseline_source.splitlines())
               pa19_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names else match.group(), source)
+                  if match.group(1) in pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names else match.group(), source)
               pa19_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa19_start_source.splitlines())
               pa20_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names else match.group(), source)
+                  if match.group(1) in pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names else match.group(), source)
               pa20_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa20_start_source.splitlines())
               pa21_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names else match.group(), source)
+                  if match.group(1) in pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names else match.group(), source)
               pa21_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa21_start_source.splitlines())
               pa22_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa22_names | pa23_names | pa25_names | pa26_names | pa27_names else match.group(), source)
+                  if match.group(1) in pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names else match.group(), source)
               pa22_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa22_start_source.splitlines())
               pa23_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa23_names | pa25_names | pa26_names | pa27_names else match.group(), source)
+                  if match.group(1) in pa23_names | pa25_names | pa26_names | pa27_names | pa28_names else match.group(), source)
               pa23_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa23_start_source.splitlines())
               pa25_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa25_names | pa26_names | pa27_names else match.group(), source)
+                  if match.group(1) in pa25_names | pa26_names | pa27_names | pa28_names else match.group(), source)
               pa25_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa25_start_source.splitlines())
               comment_hits.extend((path.name, line.strip()) for line in source.splitlines()
                                   if re.search(r"@Test\b", line) and line.lstrip().startswith("//"))
@@ -1047,15 +1140,19 @@ jobs:
           assert pa27_start_totals == [309, 246] and sum(pa27_start_totals) == 555
           assert pa27_start_line_scan_total == 556
           assert [len(names) for names in pa27_additions.values()] == [12, 8, 8, 4, 18, 8]
-          assert method_totals == [341, 272] and sum(method_totals) == 613
-          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, pa21_start_line_scan_total, pa22_start_line_scan_total, pa23_start_line_scan_total, line_scan_total) == (291, 321, 361, 401, 446, 481, 614)
+          assert [len(names) for names in pa28_unit_additions.values()] == [12, 12, 6, 4]
+          assert [len(names) for names in pa28_container_additions.values()] == [20, 10]
+          assert pa28_start_totals == [341, 272] and sum(pa28_start_totals) == 613
+          assert pa28_start_line_scan_total == 614
+          assert method_totals == [375, 302] and sum(method_totals) == 677
+          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, pa21_start_line_scan_total, pa22_start_line_scan_total, pa23_start_line_scan_total, line_scan_total) == (291, 321, 361, 401, 446, 481, 678)
           assert comment_hits == [("PostgresContainerIT.java", "// evidence inside this existing method; no new @Test and no catalog weakening.")]
-          assert len(unit_expected) == 40
-          assert len(container_expected) == 17
+          assert len(unit_expected) == 44
+          assert len(container_expected) == 19
           pom = ET.parse("pom.xml").getroot()
           ns = {"m": "http://maven.apache.org/POM/4.0.0"}
           includes = pom.findall(".//m:plugin[m:artifactId='maven-failsafe-plugin']/m:configuration/m:includes/m:include", ns)
-          assert len(includes) == 17
+          assert len(includes) == 19
           assert {include.text for include in includes} == {"**/" + name.rsplit(".", 1)[1] + ".java" for name in container_expected}
           assert len(container_expected["com.onecall.archtests.container.PublicShareAdmissionIT"]) == 42
           assert len(container_expected["com.onecall.archtests.container.MediaPlaybackIT"]) == 9
@@ -1064,9 +1161,9 @@ jobs:
           assert len(unit_expected["com.onecall.archtests.architecture.SharingQueryBoundaryTests"]) == 8
           assert len(unit_expected["com.onecall.archtests.sharing.MediaPlaybackCredentialAuthorityTests"]) == 24
           assert len(container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"]) == 9
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 341)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 272)
-          print("PA27 exact source=CI=XML inventory passed: 40/341 + 17/272 = 57/613; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> PA25-start 309+214=523 -> PA26-start 309+234=543 -> PA27-start 309+246=555 -> current 341+272=613; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524 -> 544 -> 556 -> 614; POM 17 includes; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 375)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 302)
+          print("PA28 exact source=CI=XML inventory passed: 44/375 + 19/302 = 63/677; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> PA25-start 309+214=523 -> PA26-start 309+234=543 -> PA27-start 309+246=555 -> PA28-start 341+272=613 -> current 375+302=677; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524 -> 544 -> 556 -> 614 -> 678; POM 19 includes; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
@@ -1116,6 +1213,9 @@ jobs:
                             ("POST", "/api/v1/public/shares/synthetic", {}, 404, "NOT_FOUND", "Not found"),
                             ("GET", "/api/v1/public/shares/a%2Fb", {}, 404, "NOT_FOUND", "Not found"),
                             ("GET", "/api/v1/public/shares/a%2Fb", {"Authorization": "bad", "Accept": "text/html", "X-Trace-Id": "untrusted"}, 404, "NOT_FOUND", "Not found")]
+                  probes.extend([("GET", "/api/v1/customer/subjects/00000000-0000-0000-0000-000000000001", {}, 401, "UNAUTHENTICATED", "Authentication required"),
+                                 ("GET", "/api/v1/customer/subjects/00000000-0000-0000-0000-000000000001", {"Authorization": "Bearer smoke-opaque"}, 503, "SERVICE_UNAVAILABLE", "Service unavailable"),
+                                 ("POST", "/api/v1/customer/subjects/00000000-0000-0000-0000-000000000001", {}, 404, "NOT_FOUND", "Not found")])
                   probes.extend([("GET", "/internal/media-gateway/v1/playback", {}, 401, "UNAUTHENTICATED", "Authentication required"),
                                  ("GET", "/internal/media-gateway/v1/playback", {"Authorization": "Bearer smoke-opaque"}, 503, "MEDIA_UNAVAILABLE", "Media unavailable")])
                   for method, path, headers, status, code, title in probes:

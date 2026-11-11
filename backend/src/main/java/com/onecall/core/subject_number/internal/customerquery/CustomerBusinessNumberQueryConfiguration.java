@@ -1,6 +1,7 @@
 package com.onecall.core.subject_number.internal.customerquery;
 
 import com.onecall.core.subject_number.customerquery.CustomerBusinessNumberReader;
+import com.onecall.core.subject_number.customersubjectquery.CustomerSubjectAccessReader;
 import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -11,6 +12,12 @@ import org.springframework.context.annotation.Profile;
 @Configuration(proxyBeanMethods = false)
 @Profile("web")
 public class CustomerBusinessNumberQueryConfiguration {
+    @Bean
+    @Lazy
+    CustomerSubjectAccessReader customerSubjectAccessReader(@Qualifier("customerQueryDsl") DSLContext context) {
+        return new JooqCustomerSubjectAccessReader(context);
+    }
+
     @Bean
     @Lazy
     CustomerBusinessNumberReader customerBusinessNumberReader(@Qualifier("customerQueryDsl") DSLContext context) {

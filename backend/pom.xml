@@ -197,6 +197,8 @@
                 <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
                 <include>**/CustomerBusinessNumbersIT.java</include>
                 <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>
+                <include>**/CustomerSubjectsIT.java</include>
+                <include>**/CustomerSubjectDetailReadPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

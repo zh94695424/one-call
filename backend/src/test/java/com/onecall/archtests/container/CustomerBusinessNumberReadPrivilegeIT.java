@@ -36,8 +36,12 @@ class CustomerBusinessNumberReadPrivilegeIT {
 
     @BeforeEach void start() throws Exception { fixture = new CustomerBusinessNumbersFixture(); fixture.start("014"); }
     @AfterEach void stop() { if (fixture != null) fixture.close(); }
-    private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load(); }
+    private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("015").load(); }
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
+    private void latest() {
+        var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load();
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1); latest.validate(); assertThat(latest.info().applied()).hasSize(16);
+    }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
     }
@@ -99,14 +103,15 @@ class CustomerBusinessNumberReadPrivilegeIT {
     @Test
     void v015FreshAndUpgradeHaveExactFifteenHistoryEntriesAndFrozenBytes() throws Exception {
         Map<String, byte[]> frozen = new TreeMap<>();
-        try (var files = Files.list(SCRIPT.getParent())) { for (var file : files.filter(path -> !path.equals(SCRIPT)).toList()) frozen.put(file.toString(), Files.readAllBytes(file)); }
+        try (var files = Files.list(SCRIPT.getParent())) { for (var file : files.filter(path -> !path.equals(SCRIPT) && !path.getFileName().toString().startsWith("V016__")).toList()) frozen.put(file.toString(), Files.readAllBytes(file)); }
         upgrade(); assertThat(current().info().applied()).hasSize(15); assertThat(current().info().pending()).isEmpty();
         for (var entry : frozen.entrySet()) assertThat(Files.readAllBytes(Path.of(entry.getKey()))).isEqualTo(entry.getValue());
         try (var connection = fixture.admin()) {
             assertThat(strings(connection, "SELECT version||'|'||script||'|'||checksum FROM public.flyway_schema_history WHERE installed_rank=15")).containsExactly("015|V015__customer_business_number_read_privileges.sql|-1316980027");
         }
-        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start(null);
-        assertThat(current().info().applied()).hasSize(15); assertThat(fixture.psql("check").getExitCode()).isZero();
+        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start("015");
+        assertThat(current().info().applied()).hasSize(15);
+        latest(); fixture.provision(); assertThat(fixture.psql("check").getExitCode()).isZero();
     }
 
     @Test
@@ -137,7 +142,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
 
     @Test
     void customerRoleReadsOnlyApprovedColumnsAndDeniesEveryOtherCapabilityWith42501() throws Exception {
-        upgrade(); fixture.provision();
+        upgrade(); frozenGraph();
         Set<String> before = acls();
         try (var admin = fixture.admin(); var connection = fixture.runtime()) {
             connection.setAutoCommit(false); execute(connection, "SET LOCAL ROLE customer_iam_role");
@@ -175,7 +180,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
 
     @Test
     void v015ReplayPreservesAclsGraphCredentialsDefinitionsAndBusinessData() throws Exception {
-        frozenGraph(); upgrade(); fixture.provision(); fixture.seed();
+        frozenGraph(); upgrade(); fixture.seed();
         String before; try (var connection = fixture.admin()) { before = catalog(connection); }
         String business = fixture.businessSnapshot(); Set<String> acls = acls();
         for (int replay = 0; replay < 2; replay++) {
@@ -208,7 +213,9 @@ class CustomerBusinessNumberReadPrivilegeIT {
     @Test
     void pa25ApplyCheckRequireExactV015HistoryAndIndependent261TupleOracle() throws Exception {
         assertThat(fixture.psql("apply").getExitCode()).isNotZero(); assertThat(fixture.psql("check").getExitCode()).isNotZero();
-        upgrade(); fixture.provision();
+        upgrade(); assertThat(acls()).hasSize(261);
+        for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero();
+        latest(); fixture.provision();
         List<String[]> additions = new ArrayList<>();
         additions.add(new String[]{"subject_number", "", "subject_number_owner"}); additions.add(new String[]{"activation_consent", "", "activation_consent_owner"});
         for (var entry : APPROVED.entrySet()) if (entry.getKey().startsWith("subject_number.") || entry.getKey().startsWith("activation_consent."))
@@ -228,7 +235,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
                 execute(connection, "GRANT SELECT (number_hmac) ON subject_number.caller_number_binding TO customer_iam_role");
             }
             Set<String> widenedAcls = acls();
-            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(262);
+            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(270);
             assertThat(widenedAcls).contains("customer_iam_role|column|subject_number.caller_number_binding|number_hmac|SELECT|subject_number_owner|false");
             String widenedCatalog; try (var connection = fixture.admin()) { widenedCatalog = catalog(connection); }
             for (String mode : List.of("apply", "check")) {
@@ -247,19 +254,19 @@ class CustomerBusinessNumberReadPrivilegeIT {
         assertThat(fixture.psql("check").getExitCode()).isZero();
         assertThat(acls()).containsExactlyInAnyOrderElementsOf(cleanAcls);
         try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(cleanCatalog); }
-        for (String assignment : List.of("checksum=0", "script='wrong.sql'", "description='wrong'", "type='BASELINE'", "success=false", "version='15'", "installed_rank=16")) {
+        for (String assignment : List.of("checksum=0", "script='wrong.sql'", "description='wrong'", "type='BASELINE'", "success=false", "version='15'", "installed_rank=17")) {
             String history; try (var connection = fixture.admin()) { history = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=15"); execute(connection, "UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=15"); }
             try { for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE version IN ('015','15')"); execute(connection, "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,?::jsonb)", history); } }
         }
-        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(261);
+        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(269);
     }
 
     @Test
     void allSixLoginBoundariesAndRolePoolRestorationRemainUnchanged() throws Exception {
         frozenGraph(); String identities; try (var connection = fixture.admin()) { identities = one(connection, "SELECT jsonb_agg(to_jsonb(value) ORDER BY oid)::text FROM pg_authid value"); }
         upgrade(); try (var connection = fixture.admin()) { assertThat(one(connection, "SELECT jsonb_agg(to_jsonb(value) ORDER BY oid)::text FROM pg_authid value").equals(identities)).isTrue(); }
-        fixture.provision(); fixture.web(); fixture.seed(); fixture.json("personal", "", 200); fixture.cleanPool();
+        latest(); fixture.provision(); fixture.web(); fixture.seed(); fixture.json("personal", "", 200); fixture.cleanPool();
         fixture.json("org4", "", 403); fixture.cleanPool();
         var result = fixture.psql("check"); assertThat(result.getExitCode()).isZero(); assertThat(result.getStdout().strip()).isEqualTo("PA25_CHECK_OK logins=6 effective_roles=7 memberships=4");
     }
