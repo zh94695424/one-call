@@ -79,7 +79,7 @@ class CustomerWebConfigurationTests {
                 "ONECALL_CUSTOMER_DB_USERNAME", "CANARY", "ONECALL_CUSTOMER_DB_PASSWORD", "CANARY"))) {
             assertThat(context).isNotInstanceOf(ServletWebServerApplicationContext.class);
             for (String name : List.of("customerQueryDataSource", "customerContextService", "customerMeController",
-                    "customerBoundaryFilterRegistration", "customerPersistenceConfiguration")) {
+                    "customerBoundaryFilterRegistration", "customerPersistenceConfiguration", "customerSubjectClaimCommandService", "customerSubjectClaimsController", "subjectClaimCommandDataSource", "customerSubjectClaimService")) {
                 assertThat(context.containsBean(name)).as(name).isFalse();
             }
             assertThat(context.getBeanFactory().containsSingleton("customerQueryDataSource")).isFalse();
@@ -103,6 +103,11 @@ class CustomerWebConfigurationTests {
             assertThat(context.getBeansOfType(CustomerProblemWriter.class)).hasSize(1);
             assertThat(context.getBeansOfType(CustomerApiErrorController.class)).hasSize(1);
             assertThat(context.getBeansOfType(CustomerMeController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(com.onecall.core.customer_iam.internal.web.CustomerSubjectClaimsController.class)).hasSize(1);
+            assertThat(context.containsBeanDefinition("customerSubjectClaimCommandService")).isTrue();
+            assertThat(context.getBeanFactory().containsSingleton("customerSubjectClaimCommandService")).isFalse();
+            assertThat(context.containsBean("subjectClaimCommandDataSource")).isFalse();
+            assertThat(context.containsBean("customerSubjectClaimService")).isFalse();
             assertThat(context.getBeansOfType(FilterRegistrationBean.class).values().stream()
                     .filter(registration -> registration.getFilter() instanceof CustomerBoundaryFilter)).hasSize(1);
             assertThat(context.containsBean("customerApiErrorController")).isTrue();
@@ -180,6 +185,19 @@ class CustomerWebConfigurationTests {
 
     @Test
     void customerAndSharingGraphsUseExactQualifiers() {
+        var claimController = com.onecall.core.customer_iam.internal.web.CustomerSubjectClaimsController.class;
+        assertThat(claimController.getAnnotation(org.springframework.context.annotation.Profile.class).value()).containsExactly("web");
+        assertThat(claimController.getAnnotation(org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.class).type())
+                .isEqualTo(org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET);
+        var claimParameters = claimController.getConstructors()[0].getParameters();
+        assertThat(claimParameters).hasSize(2);
+        assertThat(claimParameters[0].getParameterizedType().getTypeName()).isEqualTo("org.springframework.beans.factory.ObjectProvider<com.onecall.core.customer_iam.internal.application.CustomerSubjectClaimCommandService>");
+        assertThat(claimParameters[0].getAnnotation(Qualifier.class).value()).isEqualTo("customerSubjectClaimCommandService");
+        var composer = Arrays.stream(com.onecall.core.customer_iam.internal.web.CustomerWebConfiguration.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("customerSubjectClaimCommandService")).findFirst().orElseThrow();
+        assertThat(composer.isAnnotationPresent(Lazy.class)).isTrue();
+        assertThat(composer.getParameters()[0].getAnnotation(Qualifier.class).value()).isEqualTo("customerSubjectClaimService");
+        assertThat(composer.getGenericParameterTypes()[0].getTypeName()).isEqualTo("org.springframework.beans.factory.ObjectProvider<com.onecall.core.subject_number.customerclaim.CustomerSubjectClaimService>");
         for (Class<?> configuration : List.of(CustomerPersistenceConfiguration.class, SharingPersistenceConfiguration.class,
                 com.onecall.core.sharing.internal.persistence.SharingCommandPersistenceConfiguration.class)) {
             Map<String, List<String>> expected = configuration == CustomerPersistenceConfiguration.class

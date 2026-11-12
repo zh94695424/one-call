@@ -43,7 +43,7 @@ class CustomerBusinessNumberBoundaryTests {
             }
         }
         var modules = ApplicationModules.of(OneCallApplication.class);
-        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(10);
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(11);
         modules.verify();
     }
 

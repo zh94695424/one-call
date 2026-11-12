@@ -19,6 +19,14 @@ import org.springframework.core.Ordered;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class CustomerWebConfiguration {
     @Bean
+    @org.springframework.context.annotation.Lazy
+    com.onecall.core.customer_iam.internal.application.CustomerSubjectClaimCommandService customerSubjectClaimCommandService(
+            @org.springframework.beans.factory.annotation.Qualifier("customerSubjectClaimService")
+            ObjectProvider<com.onecall.core.subject_number.customerclaim.CustomerSubjectClaimService> owner) {
+        return new com.onecall.core.customer_iam.internal.application.CustomerSubjectClaimCommandService(owner);
+    }
+
+    @Bean
     WebServerFactoryCustomizer<TomcatServletWebServerFactory> customerEncodedSolidusHandlingCustomizer() {
         return factory -> factory.addConnectorCustomizers(connector ->
                 connector.setEncodedSolidusHandling(EncodedSolidusHandling.PASS_THROUGH.getValue()));
