@@ -90,6 +90,10 @@ public final class CustomerProblemWriter {
         write(response, code.name(), traceId);
     }
 
+    public void write(HttpServletResponse response, com.onecall.core.subject_number.customerclaim.SubjectClaimException.Code code, UUID traceId) throws IOException {
+        write(response, code.name(), traceId);
+    }
+
     private void write(HttpServletResponse response, String code, UUID traceId) throws IOException {
         if (response.isCommitted()) { return; }
         int status = switch (code) {
@@ -102,6 +106,7 @@ public final class CustomerProblemWriter {
             case "SERVICE_UNAVAILABLE" -> 503;
             case "SHARE_RISK_BLOCKED", "SHARE_ACCESS_POLICY_UNAVAILABLE" -> 403;
             case "SHARE_CREATION_CONFLICT", "SHARE_TRANSITION_CONFLICT", "SHARE_GENERATION_STALE" -> 409;
+            case "CLAIM_RISK_BLOCKED", "CLAIM_REPLAY_CONFLICT", "CLAIM_CONTEXT_CONFLICT" -> 409;
             case "SHARE_REVOKED", "SHARE_EXPIRED" -> 410;
             default -> 500;
         };
@@ -118,6 +123,9 @@ public final class CustomerProblemWriter {
             case "SHARE_RISK_BLOCKED" -> "Share risk blocked";
             case "SHARE_ACCESS_POLICY_UNAVAILABLE" -> "Sharing policy unavailable";
             case "SHARE_CREATION_CONFLICT" -> "Share creation conflict";
+            case "CLAIM_RISK_BLOCKED" -> "Claim risk blocked";
+            case "CLAIM_REPLAY_CONFLICT" -> "Claim replay conflict";
+            case "CLAIM_CONTEXT_CONFLICT" -> "Claim context conflict";
             case "SHARE_TRANSITION_CONFLICT" -> "Share transition conflict";
             case "SHARE_GENERATION_STALE" -> "Share generation stale";
             case "SHARE_REVOKED" -> "Share revoked";

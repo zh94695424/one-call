@@ -113,7 +113,7 @@ class SharingQueryBoundaryTests {
         assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)
                 .stream().map(dependency -> dependency.getTargetModule().getIdentifier()+"::"+dependency.getTargetNamedInterface().getName()))
                 .containsExactlyInAnyOrder("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission",
-                        "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query");
+                        "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command");
         var admissionMethod = com.onecall.core.sharing.internal.publicadmission.ShareAdmissionService.class.getMethod("admit",
                 com.onecall.core.sharing.internal.publicadmission.ShareAdmissionCapabilityToken.class,
                 com.onecall.core.sharing.internal.publicadmission.ShareAdmissionRequest.class, java.util.Optional.class);

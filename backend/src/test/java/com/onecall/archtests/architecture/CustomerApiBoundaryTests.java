@@ -87,7 +87,7 @@ class CustomerApiBoundaryTests {
         Path root = Path.of("src/main/java/com/onecall/core/customer_iam/internal");
         try (var files = Files.walk(root)) {
             var paths = files.filter(Files::isRegularFile).toList();
-            assertThat(paths).hasSize(39);
+            assertThat(paths).hasSize(43);
             for (Path path : paths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("com.onecall.core.organization_access",
@@ -159,7 +159,7 @@ class CustomerApiBoundaryTests {
     @Test
     void profileAndVerifierArtifactsCannotEscapeIntoProduction() throws Exception {
         for (String name : List.of("web/CustomerWebConfiguration.java", "web/CustomerMeController.java",
-                "web/CustomerSharesController.java", "web/CustomerBusinessNumbersController.java", "web/CustomerApiErrorController.java", "web/PublicSharesController.java")) {
+                "web/CustomerSubjectClaimsController.java", "web/CustomerSharesController.java", "web/CustomerBusinessNumbersController.java", "web/CustomerApiErrorController.java", "web/PublicSharesController.java")) {
             String source = Files.readString(Path.of("src/main/java/com/onecall/core/customer_iam/internal", name));
             assertThat(source).contains("@Profile(\"web\")", "ConditionalOnWebApplication.Type.SERVLET");
         }

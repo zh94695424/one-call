@@ -56,6 +56,7 @@ public final class CustomerBoundaryFilter implements Filter {
                 || "/api/v1/customer/shares".equals(servletPath)
                 || "/api/v1/customer/business-numbers".equals(servletPath);
         boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
+        boolean claim = "POST".equals(request.getMethod()) && "/api/v1/customer/subject-claims".equals(servletPath);
         boolean revoke = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/customer/shares/[^/;%]+/revocations");
         boolean rotate = "POST".equals(request.getMethod())
@@ -66,7 +67,7 @@ public final class CustomerBoundaryFilter implements Filter {
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions");
         boolean publicMediaAuthorization = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions/[^/;%]+/media-authorizations");
-        if (!("GET".equals(request.getMethod()) && admittedPath || create || revoke || rotate || publicRead || publicAdmission || publicMediaAuthorization)
+        if (!("GET".equals(request.getMethod()) && admittedPath || create || claim || revoke || rotate || publicRead || publicAdmission || publicMediaAuthorization)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
@@ -75,7 +76,7 @@ public final class CustomerBoundaryFilter implements Filter {
             var authorization = request.getHeaders("Authorization");
             var principal = (publicRead || publicAdmission || publicMediaAuthorization) && (authorization == null || !authorization.hasMoreElements()) ? null
                     : new CustomerRequestPrincipal(authenticator.authenticate(authorization));
-            if (revoke || rotate) {
+            if (claim || revoke || rotate) {
                 var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
                 if (keys.size() != 1) throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 String key = keys.getFirst();
@@ -84,7 +85,7 @@ public final class CustomerBoundaryFilter implements Filter {
                     throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 request.setAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey", key);
             }
-            if (create || revoke || rotate || publicAdmission || publicMediaAuthorization) {
+            if (claim || create || revoke || rotate || publicAdmission || publicMediaAuthorization) {
                 try {
                     var types = java.util.Collections.list(request.getHeaders("Content-Type"));
                     if (types.size() != 1) throw new IllegalArgumentException();
