@@ -33,11 +33,19 @@ class CustomerSubjectDetailBoundaryTests {
         for (Class<?> seam : List.of(CustomerSubjectAccessReader.class, CustomerSubjectEvidenceCountReader.class, CustomerSubjectOrderCountReader.class)) {
             assertThat(seam.isInterface()).isTrue();
             for (var method : seam.getDeclaredMethods()) {
-                assertThat(method.getParameterTypes()).allMatch(type -> type == UUID.class);
+                if (seam == CustomerSubjectAccessReader.class && method.getName().equals("hasOpenRisk")
+                        && Arrays.equals(method.getParameterTypes(), new Class<?>[] {Set.class})) {
+                    assertThat(method.getGenericParameterTypes()[0].getTypeName()).isEqualTo("java.util.Set<java.util.UUID>");
+                } else {
+                    assertThat(method.getParameterTypes()).allMatch(type -> type == UUID.class);
+                }
                 assertThat(method.getGenericReturnType().getTypeName()).doesNotContain("org.jooq", "org.springframework", ".internal.", "java.sql");
             }
         }
-        assertThat(CustomerSubjectAccessReader.class.getDeclaredMethods()).hasSize(2);
+        assertThat(CustomerSubjectAccessReader.class.getDeclaredMethods()).hasSize(4);
+        assertThat(CustomerSubjectAccessReader.class.getMethod("findOwnedSubjectIds", UUID.class, UUID.class).getGenericReturnType().getTypeName())
+                .isEqualTo("java.util.Set<java.util.UUID>");
+        assertThat(CustomerSubjectAccessReader.class.getMethod("hasOpenRisk", Set.class).getReturnType()).isEqualTo(boolean.class);
         assertThat(CustomerSubjectAccessReader.class.getMethod("findOwnedSubject", UUID.class, UUID.class, UUID.class).getGenericReturnType().getTypeName()).isEqualTo("java.util.Optional<java.util.UUID>");
         assertThat(CustomerSubjectAccessReader.class.getMethod("hasOpenRisk", UUID.class).getReturnType()).isEqualTo(boolean.class);
         assertThat(CustomerSubjectEvidenceCountReader.class.getDeclaredMethods()).hasSize(1);
@@ -46,7 +54,7 @@ class CustomerSubjectDetailBoundaryTests {
         assertThat(CustomerSubjectOrderCountReader.class.getMethod("countForWorkspace", UUID.class, UUID.class, UUID.class).getReturnType()).isEqualTo(long.class);
         for (var entry : Map.of("subject_number", "customer-subject-query", "evidence", "customer-subject-count-query", "catalog_order", "customer-subject-count-query").entrySet())
             assertThat(modules.getModuleByName(entry.getKey()).orElseThrow().getNamedInterfaces().getByName(entry.getValue())).isPresent();
-        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(9);
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(10);
     }
 
     @Test
@@ -77,7 +85,7 @@ class CustomerSubjectDetailBoundaryTests {
         assertThat(complete).containsAll(old);
         assertThat(migration).contains("namespace.nspname = 'evidence'", "NOT IN (15, 16)", "installed_rank <= 15", "V016_RECONCILIATION_REJECTED");
         String pa25 = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(pa25).contains("expected_resolved) <> 269", "history) <> 16", "V016__customer_subject_detail_read_privileges.sql");
+        assertThat(pa25).contains("expected_resolved) <> 288", "history) <> 17", "V017__customer_evidence_read_privileges.sql");
     }
     private Set<String> tuples(String source, String tag) {
         String marker = "$" + tag + "$";

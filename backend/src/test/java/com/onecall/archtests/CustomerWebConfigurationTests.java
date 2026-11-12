@@ -194,6 +194,10 @@ class CustomerWebConfigurationTests {
                             Map.entry("customerBusinessNumberQueryService", List.of("customerBusinessNumberTransactionTemplate", "customerQueryDsl",
                                     "customerBusinessNumberAccessRepository", "customerBusinessNumberReader", "customerActivationStatusReader")),
                             Map.entry("customerBusinessNumberCursorCodec", List.of()),
+                            Map.entry("customerEvidenceTransactionTemplate", List.of("customerQueryTransactionManager")),
+                            Map.entry("customerEvidenceQueryService", List.of("customerEvidenceTransactionTemplate", "customerQueryDsl",
+                                    "customerBusinessNumberAccessRepository", "customerSubjectAccessReader", "customerEvidenceReader")),
+                            Map.entry("customerEvidenceCursorCodec", List.of()),
                             Map.entry("customerSubjectDetailTransactionTemplate", List.of("customerQueryTransactionManager")),
                             Map.entry("customerSubjectDetailQueryService", List.of("customerSubjectDetailTransactionTemplate", "customerQueryDsl", "customerBusinessNumberAccessRepository", "customerSubjectAccessReader", "customerActivationStatusReader", "customerSubjectEvidenceCountReader", "customerSubjectOrderCountReader")))
                     : configuration == SharingPersistenceConfiguration.class

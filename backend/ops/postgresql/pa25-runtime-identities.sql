@@ -2191,6 +2191,25 @@ DECLARE
     "SELECT",
     "catalog_order_owner"
   ]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "status", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "source_type", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "source_ref_id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "identity_at_capture", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "consent_version", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "created_at", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_record", "solidified_at", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_artifact", "evidence_id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_artifact", "media_object_id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.evidence_artifact", "artifact_role", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.media_object", "id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.media_object", "sha256", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.media_object", "size_bytes", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.media_object", "mime_type", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.recording", "id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.recording", "media_object_id", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.recording", "status", "SELECT", "evidence_owner", false]
+  , ["customer_iam_role", "column", "evidence.recording", "validated_duration", "SELECT", "evidence_owner", false]
 ]$frozen$::jsonb;
     expected_owners jsonb := $owners${
   "platform": "platform_reliability_owner",
@@ -2303,6 +2322,8 @@ DECLARE
     1669606497,
     "customer subject detail read privileges"
   ]
+  , ["017", "V017__customer_evidence_read_privileges.sql", -41822162,
+     "customer evidence read privileges"]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
   "platform.idempotency_begin": {
@@ -2645,7 +2666,7 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 16 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 17 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
@@ -2738,7 +2759,7 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 269 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 288 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';

@@ -1393,7 +1393,7 @@ class PostgresContainerIT {
 
         flyway.validate();
         assertThat(flyway.info().pending()).isEmpty();
-        assertThat(flyway.info().all()).hasSize(16);
+        assertThat(flyway.info().all()).hasSize(17);
         assertThat(flyway.info().applied()).hasSize(13);
         var aboveTarget = java.util.Arrays.stream(flyway.info().all())
                 .filter(info -> info.getVersion().getVersion().equals("014")).toList();
@@ -1413,6 +1413,12 @@ class PostgresContainerIT {
         assertThat(v016.getFirst().getScript()).isEqualTo("V016__customer_subject_detail_read_privileges.sql");
         assertThat(v016.getFirst().getState()).isEqualTo(org.flywaydb.core.api.MigrationState.ABOVE_TARGET);
         assertThat(v016.getFirst().getState().isApplied()).isFalse();
+        var v017 = java.util.Arrays.stream(flyway.info().all())
+                .filter(info -> info.getVersion().getVersion().equals("017")).toList();
+        assertThat(v017).hasSize(1);
+        assertThat(v017.getFirst().getScript()).isEqualTo("V017__customer_evidence_read_privileges.sql");
+        assertThat(v017.getFirst().getState()).isEqualTo(org.flywaydb.core.api.MigrationState.ABOVE_TARGET);
+        assertThat(v017.getFirst().getState().isApplied()).isFalse();
         assertThat(java.util.Arrays.stream(flyway.info().all()).filter(info -> info.getState().isApplied())
                 .map(info -> info.getState()).distinct().toList())
                 .containsExactly(org.flywaydb.core.api.MigrationState.SUCCESS);
@@ -10806,7 +10812,8 @@ class PostgresContainerIT {
                         "V013__evidence_media_reader_role.sql",
                         "V014__database_runtime_acl_rbac_hardening.sql",
                         "V015__customer_business_number_read_privileges.sql",
-                        "V016__customer_subject_detail_read_privileges.sql");
+                "V016__customer_subject_detail_read_privileges.sql",
+                "V017__customer_evidence_read_privileges.sql");
     }
 
     /**

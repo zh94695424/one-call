@@ -119,7 +119,7 @@ class CustomerSubjectDetailQueryServiceTests {
         failure(CustomerContextException.Code.INTERNAL, this::read);
         when(subjects.findOwnedSubject(subject, account, null)).thenReturn(Optional.of(UUID.randomUUID()));
         failure(CustomerContextException.Code.INTERNAL, this::read);
-        verify(subjects, never()).hasOpenRisk(any());
+        verify(subjects, never()).hasOpenRisk(org.mockito.ArgumentMatchers.<UUID>any());
         verifyNoInteractions(activations, evidence, orders);
     }
 

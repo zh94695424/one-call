@@ -12,16 +12,19 @@ import org.junit.jupiter.api.*;
 class CustomerSubjectDetailReadPrivilegeIT {
     private CustomerBusinessNumbersFixture fixture;
     private static final Path SCRIPT = Path.of("src/main/resources/db/migration/V016__customer_subject_detail_read_privileges.sql");
-    private static final Map<String, List<String>> APPROVED = Map.of(
-            "customer_iam.customer_account", List.of("id", "display_name", "status"),
-            "organization_access.organization", List.of("id", "display_name", "status"),
-            "organization_access.organization_membership", List.of("account_id", "organization_id", "role", "status"),
-            "subject_number.business_subject", List.of("id", "owner_account_id", "owner_organization_id", "real_name_status", "created_at"),
-            "subject_number.caller_number_binding", List.of("id", "subject_id", "number_masked", "number_type", "status"),
-            "activation_consent.service_activation", List.of("subject_id", "status"),
-            "subject_number.subject_risk_state", List.of("caller_number_binding_id", "state"),
-            "evidence.evidence_record", List.of("subject_id"),
-            "catalog_order.customer_order", List.of("subject_id", "account_id", "owner_organization_id"));
+    private static final Map<String, List<String>> APPROVED = Map.ofEntries(
+            Map.entry("customer_iam.customer_account", List.of("id", "display_name", "status")),
+            Map.entry("organization_access.organization", List.of("id", "display_name", "status")),
+            Map.entry("organization_access.organization_membership", List.of("account_id", "organization_id", "role", "status")),
+            Map.entry("subject_number.business_subject", List.of("id", "owner_account_id", "owner_organization_id", "real_name_status", "created_at")),
+            Map.entry("subject_number.caller_number_binding", List.of("id", "subject_id", "number_masked", "number_type", "status")),
+            Map.entry("activation_consent.service_activation", List.of("subject_id", "status")),
+            Map.entry("subject_number.subject_risk_state", List.of("caller_number_binding_id", "state")),
+            Map.entry("evidence.evidence_record", List.of("id", "subject_id", "status", "source_type", "source_ref_id", "identity_at_capture", "consent_version", "created_at", "solidified_at")),
+            Map.entry("evidence.evidence_artifact", List.of("evidence_id", "media_object_id", "artifact_role")),
+            Map.entry("evidence.media_object", List.of("id", "sha256", "size_bytes", "mime_type")),
+            Map.entry("evidence.recording", List.of("id", "media_object_id", "status", "validated_duration")),
+            Map.entry("catalog_order.customer_order", List.of("subject_id", "account_id", "owner_organization_id")));
     private static final String ACL = """
             WITH objects AS (
                 SELECT 'schema' AS kind,n.oid,0 AS subid,n.nspname::text AS identity,'' AS column_name,n.nspacl AS acl FROM pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema'
@@ -39,7 +42,8 @@ class CustomerSubjectDetailReadPrivilegeIT {
 
     @BeforeEach void start() throws Exception { fixture = new CustomerBusinessNumbersFixture(); fixture.start("015"); }
     @AfterEach void stop() { if (fixture != null) fixture.close(); }
-    private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load(); }
+    private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("016").load(); }
+    private Flyway latest() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("017").load(); }
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -362,6 +366,10 @@ class CustomerSubjectDetailReadPrivilegeIT {
                 "sharing_role|schema|customer_iam||USAGE|customer_iam_owner|false",
                 "sharing_role|schema|organization_access||USAGE|organization_access_owner|false",
                 "sharing_role|schema|sharing||USAGE|sharing_owner|false"); }
+    private Set<String> currentOracle() { Set<String> expected = new TreeSet<>(oracle()); expected.addAll(Set.of(
+            "customer_iam_role|column|evidence.evidence_record|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|identity_at_capture|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|status|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|source_type|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|source_ref_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|consent_version|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|created_at|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|solidified_at|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|evidence_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|media_object_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|artifact_role|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|sha256|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|size_bytes|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|mime_type|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|media_object_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|status|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|validated_duration|SELECT|evidence_owner|false")); return expected; }
+    private void rejectsPa25WithoutMutation() throws Exception { Set<String> before = acls(); for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); assertThat(acls()).isEqualTo(before); }
+    private void currentHistory() throws Exception { try (var connection = fixture.admin()) { assertThat(current().info().applied()).hasSize(17); assertThat(one(connection, "SELECT version||'|'||script||'|'||checksum||'|'||installed_rank||'|'||success FROM public.flyway_schema_history ORDER BY installed_rank DESC LIMIT 1")).isEqualTo("017|V017__customer_evidence_read_privileges.sql|-41822162|17|true"); } }
     private List<String[]> additions() {
         return List.of(
                 new String[]{"subject_number.subject_risk_state", "caller_number_binding_id", "subject_number_owner"},
@@ -397,7 +405,7 @@ class CustomerSubjectDetailReadPrivilegeIT {
         }
         upgrade(); history();
         for (var entry : before.entrySet()) assertThat(Files.readAllBytes(entry.getKey())).isEqualTo(entry.getValue());
-        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start(null); history();
+        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start("016"); history();
         assertThat(current().migrate().migrationsExecuted).isZero();
     }
     private void history() throws Exception {
@@ -427,7 +435,8 @@ class CustomerSubjectDetailReadPrivilegeIT {
     @Test
     void v016AddsExactlyEightOwnerIssuedTuplesAndMatchesIndependent269Oracle() throws Exception {
         Set<String> before = acls(); assertThat(before).hasSize(261);
-        upgrade(); Set<String> after = acls(); assertThat(after).isEqualTo(oracle()).hasSize(269);
+        upgrade(); Set<String> after = acls(); assertThat(after).hasSize(269);
+        assertThat(after).isEqualTo(oracle());
         var delta = new TreeSet<>(after); delta.removeAll(before);
         assertThat(delta).containsExactlyInAnyOrder(
                 "customer_iam_role|column|subject_number.subject_risk_state|caller_number_binding_id|SELECT|subject_number_owner|false",
@@ -445,7 +454,7 @@ class CustomerSubjectDetailReadPrivilegeIT {
     }
     @Test
     void customerRoleReadsOnlyApprovedColumnsAndDeniesAllOtherCapabilitiesWith42501() throws Exception {
-        upgrade(); fixture.provision();
+        assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory();
         Set<String> before = acls();
         try (var admin = fixture.admin(); var connection = fixture.runtime()) {
             connection.setAutoCommit(false); execute(connection, "SET LOCAL ROLE customer_iam_role");
@@ -529,26 +538,28 @@ class CustomerSubjectDetailReadPrivilegeIT {
 
     @Test
     void pa25RequiresExactV016HistoryAndIndependent269TupleOracleWithoutRepair() throws Exception {
-        for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero();
-        upgrade(); fixture.provision();
+        rejectsPa25WithoutMutation();
+        upgrade(); history(); assertThat(acls()).isEqualTo(oracle());
+        rejectsPa25WithoutMutation();
+        assertThat(latest().migrate().migrationsExecuted).isEqualTo(1); fixture.provision(); currentHistory(); assertThat(acls()).isEqualTo(currentOracle());
         for (var addition : additions()) {
             try (var connection = fixture.admin()) { execute(connection, "SET ROLE " + addition[2]); execute(connection, "REVOKE " + capability(addition) + " FROM customer_iam_role"); }
             Set<String> before = acls();
             try { for (String mode : List.of("apply", "check")) { assertThat(fixture.psql(mode).getExitCode()).isNotZero(); assertThat(acls()).isEqualTo(before); } }
             finally { try (var connection = fixture.admin()) { execute(connection, "SET ROLE " + addition[2]); execute(connection, "GRANT " + capability(addition) + " TO customer_iam_role"); } }
         }
-        for (String mutation : List.of("checksum=0", "version='16'", "installed_rank=17", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'")) {
+        for (String mutation : List.of("checksum=0", "version='16'", "installed_rank=18", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'")) {
             String row;
             try (var connection = fixture.admin()) { row = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=16"); execute(connection, "UPDATE public.flyway_schema_history SET " + mutation + " WHERE installed_rank=16"); }
             try { for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE version IN ('016','16')"); execute(connection, "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,?::jsonb)", row); } }
         }
-        assertThat(acls()).isEqualTo(oracle()); assertThat(fixture.psql("check").getExitCode()).isZero();
+        assertThat(acls()).isEqualTo(currentOracle()); assertThat(fixture.psql("check").getExitCode()).isZero();
     }
 
     @Test
     void allSixLoginsAndSevenEffectiveRolesRetainExactMembershipBoundaries() throws Exception {
-        frozenGraph(); upgrade(); fixture.provision();
+        frozenGraph(); assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory();
         try (var admin = fixture.admin()) {
             assertThat(one(admin, "SELECT count(*) FROM pg_auth_members WHERE member IN ('pa27_customer'::regrole,'pa27_query'::regrole,'pa27_command'::regrole) AND NOT admin_option AND NOT inherit_option AND set_option")).isEqualTo("4");
         }
@@ -564,12 +575,12 @@ class CustomerSubjectDetailReadPrivilegeIT {
                 connection.rollback();
             }
         }
-        assertThat(acls()).isEqualTo(oracle());
+        assertThat(acls()).isEqualTo(currentOracle());
     }
 
     @Test
     void realCustomerPoolRestoresRoleAndTransactionAfterSuccessAndFailure() throws Exception {
-        upgrade(); fixture.provision(); fixture.seed(); fixture.web();
+        assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory(); fixture.seed(); fixture.web();
         var service = fixture.context.getBean("customerSubjectDetailQueryService", com.onecall.core.customer_iam.internal.application.CustomerSubjectDetailQueryService.class);
         UUID subject; try (var connection = fixture.admin()) { subject = UUID.fromString(one(connection, "SELECT id FROM subject_number.business_subject WHERE owner_account_id='" + fixture.account + "' LIMIT 1")); }
         var caller = new com.onecall.core.customer_iam.internal.application.TrustedCustomerCaller(fixture.account,
