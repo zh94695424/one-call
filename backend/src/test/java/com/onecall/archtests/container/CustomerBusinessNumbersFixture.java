@@ -63,7 +63,7 @@ final class CustomerBusinessNumbersFixture implements AutoCloseable {
         var configuration = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration");
         if (target != null) configuration.target(target);
         var flyway = configuration.load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(target == null ? 16 : Integer.parseInt(target));
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(target == null ? 17 : Integer.parseInt(target));
         flyway.validate();
         postgres.copyFileToContainer(MountableFile.forHostPath(Path.of("ops/postgresql/pa25-runtime-identities.sql").toAbsolutePath()), "/tmp/pa27-identities.sql");
         if (target == null) provision();
@@ -86,7 +86,8 @@ final class CustomerBusinessNumbersFixture implements AutoCloseable {
                 .initializers(application -> application.getEnvironment().getPropertySources().addFirst(new MapPropertySource("pa27", Map.of(
                         "onecall.customer.persistence.url", url, "onecall.customer.persistence.username", "pa27_customer",
                         "onecall.customer.persistence.password", password,
-                        "onecall.customer.business-numbers.cursor-hmac-key", Base64.getEncoder().encodeToString(new byte[32]))))).run();
+                        "onecall.customer.business-numbers.cursor-hmac-key", Base64.getEncoder().encodeToString(new byte[32]),
+                        "onecall.customer.evidence.cursor-hmac-key", Base64.getEncoder().encodeToString(new byte[32]))))).run();
         context.getBean("customerQueryDataSource", HikariDataSource.class).setMaximumPoolSize(1);
     }
 

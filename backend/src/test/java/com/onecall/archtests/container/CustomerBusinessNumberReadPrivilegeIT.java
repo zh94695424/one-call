@@ -40,7 +40,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private void latest() {
         var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1); latest.validate(); assertThat(latest.info().applied()).hasSize(16);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(2); latest.validate(); assertThat(latest.info().applied()).hasSize(17);
     }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -103,7 +103,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
     @Test
     void v015FreshAndUpgradeHaveExactFifteenHistoryEntriesAndFrozenBytes() throws Exception {
         Map<String, byte[]> frozen = new TreeMap<>();
-        try (var files = Files.list(SCRIPT.getParent())) { for (var file : files.filter(path -> !path.equals(SCRIPT) && !path.getFileName().toString().startsWith("V016__")).toList()) frozen.put(file.toString(), Files.readAllBytes(file)); }
+        try (var files = Files.list(SCRIPT.getParent())) { for (var file : files.filter(path -> !path.equals(SCRIPT) && !path.getFileName().toString().startsWith("V016__") && !path.getFileName().toString().startsWith("V017__")).toList()) frozen.put(file.toString(), Files.readAllBytes(file)); }
         upgrade(); assertThat(current().info().applied()).hasSize(15); assertThat(current().info().pending()).isEmpty();
         for (var entry : frozen.entrySet()) assertThat(Files.readAllBytes(Path.of(entry.getKey()))).isEqualTo(entry.getValue());
         try (var connection = fixture.admin()) {
@@ -235,7 +235,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
                 execute(connection, "GRANT SELECT (number_hmac) ON subject_number.caller_number_binding TO customer_iam_role");
             }
             Set<String> widenedAcls = acls();
-            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(270);
+            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(289);
             assertThat(widenedAcls).contains("customer_iam_role|column|subject_number.caller_number_binding|number_hmac|SELECT|subject_number_owner|false");
             String widenedCatalog; try (var connection = fixture.admin()) { widenedCatalog = catalog(connection); }
             for (String mode : List.of("apply", "check")) {
@@ -254,12 +254,12 @@ class CustomerBusinessNumberReadPrivilegeIT {
         assertThat(fixture.psql("check").getExitCode()).isZero();
         assertThat(acls()).containsExactlyInAnyOrderElementsOf(cleanAcls);
         try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(cleanCatalog); }
-        for (String assignment : List.of("checksum=0", "script='wrong.sql'", "description='wrong'", "type='BASELINE'", "success=false", "version='15'", "installed_rank=17")) {
+        for (String assignment : List.of("checksum=0", "script='wrong.sql'", "description='wrong'", "type='BASELINE'", "success=false", "version='15'", "installed_rank=18")) {
             String history; try (var connection = fixture.admin()) { history = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=15"); execute(connection, "UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=15"); }
             try { for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE version IN ('015','15')"); execute(connection, "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,?::jsonb)", history); } }
         }
-        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(269);
+        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(288);
     }
 
     @Test

@@ -67,9 +67,9 @@ final class SharingQueryFixture implements AutoCloseable {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/sharing_query";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(16);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(17);
         flyway.validate();
-        assertThat(flyway.info().applied()).hasSize(16);
+        assertThat(flyway.info().applied()).hasSize(17);
         try (Connection admin = admin()) {
             execute(admin, "CREATE ROLE " + login + " LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '" + password + "'");
             execute(admin, "GRANT sharing_role TO " + login);

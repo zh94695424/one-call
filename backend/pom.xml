@@ -199,6 +199,8 @@
                 <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>
                 <include>**/CustomerSubjectsIT.java</include>
                 <include>**/CustomerSubjectDetailReadPrivilegeIT.java</include>
+                <include>**/CustomerEvidenceIT.java</include>
+                <include>**/CustomerEvidenceReadPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

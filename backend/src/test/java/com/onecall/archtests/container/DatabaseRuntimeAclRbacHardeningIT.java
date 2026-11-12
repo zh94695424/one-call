@@ -125,9 +125,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
             assertOracle();
             assertThat(identities().equals(privateBefore)).isTrue();
             var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(2);
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(3);
             current.validate();
-            assertThat(current.info().applied()).hasSize(16);
+            assertThat(current.info().applied()).hasSize(17);
             psql("apply"); psql("check");
         }
     }
@@ -324,9 +324,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
             }
             assertThat(latest.migrate().migrationsExecuted).isZero(); latest.validate();
             var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(2);
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(3);
             current.validate();
-            assertThat(current.info().applied()).hasSize(16);
+            assertThat(current.info().applied()).hasSize(17);
             psql("apply"); psql("check"); psql("apply"); psql("check");
         }
     }
@@ -603,7 +603,7 @@ class DatabaseRuntimeAclRbacHardeningIT {
     private static void assertFrozen() throws Exception {
         try (var paths = Files.list(MIGRATIONS)) {
             var resources = paths.filter(path -> path.getFileName().toString().matches("V\\d{3}__.*\\.sql")).sorted().toList();
-            assertThat(resources).hasSize(16);
+            assertThat(resources).hasSize(17);
             for (Path path : resources) {
                 String version = path.getFileName().toString().substring(1, 4);
                 if (FROZEN.containsKey(version)) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readString(path, StandardCharsets.UTF_8)

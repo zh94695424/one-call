@@ -1,6 +1,10 @@
 package com.onecall.core.customer_iam.internal.persistence;
 
 import com.onecall.core.customer_iam.internal.application.CustomerContextService;
+import com.onecall.core.customer_iam.internal.application.CustomerEvidenceQueryService;
+import com.onecall.core.customer_iam.internal.web.CustomerEvidenceCursorCodec;
+import com.onecall.core.customer_iam.internal.web.CustomerEvidenceCursorProperties;
+import com.onecall.core.evidence.customerevidencequery.CustomerEvidenceReader;
 import com.onecall.core.customer_iam.internal.application.CustomerBusinessNumberQueryService;
 import com.onecall.core.customer_iam.internal.application.CustomerSubjectDetailQueryService;
 import com.onecall.core.subject_number.customersubjectquery.CustomerSubjectAccessReader;
@@ -34,8 +38,36 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("web")
-@EnableConfigurationProperties({CustomerPersistenceProperties.class, CustomerBusinessNumberCursorProperties.class})
+@EnableConfigurationProperties({CustomerPersistenceProperties.class, CustomerBusinessNumberCursorProperties.class, CustomerEvidenceCursorProperties.class})
 public class CustomerPersistenceConfiguration {
+    @Bean
+    @Lazy
+    TransactionTemplate customerEvidenceTransactionTemplate(
+            @Qualifier("customerQueryTransactionManager") DataSourceTransactionManager manager) {
+        TransactionTemplate template = new TransactionTemplate(manager);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template;
+    }
+
+    @Bean
+    @Lazy
+    CustomerEvidenceQueryService customerEvidenceQueryService(
+            @Qualifier("customerEvidenceTransactionTemplate") TransactionTemplate template,
+            @Qualifier("customerQueryDsl") DSLContext context,
+            @Qualifier("customerBusinessNumberAccessRepository") JooqCustomerBusinessNumberAccessRepository repository,
+            @Qualifier("customerSubjectAccessReader") CustomerSubjectAccessReader subjects,
+            @Qualifier("customerEvidenceReader") CustomerEvidenceReader evidence) {
+        return new CustomerEvidenceQueryService(template, context, repository, subjects, evidence);
+    }
+
+    @Bean
+    @Lazy
+    CustomerEvidenceCursorCodec customerEvidenceCursorCodec(CustomerEvidenceCursorProperties properties) {
+        return new CustomerEvidenceCursorCodec(properties);
+    }
+
     @Bean
     @Lazy
     TransactionTemplate customerSubjectDetailTransactionTemplate(
