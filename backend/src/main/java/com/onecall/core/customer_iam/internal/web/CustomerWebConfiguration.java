@@ -20,6 +20,14 @@ import org.springframework.core.Ordered;
 public class CustomerWebConfiguration {
     @Bean
     @org.springframework.context.annotation.Lazy
+    com.onecall.core.customer_iam.internal.application.CustomerSubjectActivationCommandService customerSubjectActivationCommandService(
+            @org.springframework.beans.factory.annotation.Qualifier("customerSubjectActivationService")
+            ObjectProvider<com.onecall.core.activation_consent.customeractivation.CustomerSubjectActivationService> owner) {
+        return new com.onecall.core.customer_iam.internal.application.CustomerSubjectActivationCommandService(owner);
+    }
+
+    @Bean
+    @org.springframework.context.annotation.Lazy
     com.onecall.core.customer_iam.internal.application.CustomerSubjectClaimCommandService customerSubjectClaimCommandService(
             @org.springframework.beans.factory.annotation.Qualifier("customerSubjectClaimService")
             ObjectProvider<com.onecall.core.subject_number.customerclaim.CustomerSubjectClaimService> owner) {

@@ -1,4 +1,10 @@
 onecall:
+  activation-command:
+    enabled: ${ONECALL_ACTIVATION_COMMAND_ENABLED:false}
+    datasource:
+      url: ${ONECALL_ACTIVATION_COMMAND_DB_URL:}
+      username: ${ONECALL_ACTIVATION_COMMAND_DB_USERNAME:}
+      password: ${ONECALL_ACTIVATION_COMMAND_DB_PASSWORD:}
   subject-claim-command:
     enabled: ${ONECALL_SUBJECT_CLAIM_COMMAND_ENABLED:false}
     datasource:
