@@ -94,6 +94,10 @@ public final class CustomerProblemWriter {
         write(response, code.name(), traceId);
     }
 
+    public void write(HttpServletResponse response, com.onecall.core.activation_consent.customeractivation.SubjectActivationException.Code code, UUID traceId) throws IOException {
+        write(response, code.name(), traceId);
+    }
+
     private void write(HttpServletResponse response, String code, UUID traceId) throws IOException {
         if (response.isCommitted()) { return; }
         int status = switch (code) {
@@ -102,6 +106,7 @@ public final class CustomerProblemWriter {
             case "NOT_FOUND", "SHARE_TOKEN_INVALID" -> 404;
             case "VALIDATION_FAILED" -> 422;
             case "CURSOR_INVALID" -> 400;
+            case "CONSENT_REQUIRED", "ACTIVATION_CONSENT_DECLINED" -> 409;
             case "RATE_LIMITED" -> 429;
             case "SERVICE_UNAVAILABLE" -> 503;
             case "SHARE_RISK_BLOCKED", "SHARE_ACCESS_POLICY_UNAVAILABLE" -> 403;
@@ -118,6 +123,8 @@ public final class CustomerProblemWriter {
             case "SHARE_EXPIRED" -> "Share expired";
             case "VALIDATION_FAILED" -> "Request validation failed";
             case "CURSOR_INVALID" -> "Invalid cursor";
+            case "CONSENT_REQUIRED" -> "Current consent required";
+            case "ACTIVATION_CONSENT_DECLINED" -> "Activation consent declined";
             case "RATE_LIMITED" -> "Too many requests";
             case "SERVICE_UNAVAILABLE" -> "Service unavailable";
             case "SHARE_RISK_BLOCKED" -> "Share risk blocked";
