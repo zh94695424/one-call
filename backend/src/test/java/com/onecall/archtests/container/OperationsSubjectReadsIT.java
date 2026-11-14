@@ -104,13 +104,38 @@ class OperationsSubjectReadsIT {
 
     @Test
     void allBindingRiskStatesAndAbsentActivationHaveExactProjection() throws Exception {
-        UUID subject = fixture.subject();
-        fixture.risk(fixture.binding(subject, new UUID(0, 1), "RETIRED", "111****0000"), "CLEARED");
-        fixture.risk(fixture.binding(subject, new UUID(0, 2), "DISABLED", "222****0000"), "OPEN");
-        var item = fixture.get(OperationsSubjectReadFixture.BASE).path("items").get(0);
-        assertThat(item.path("riskState").asString()).isEqualTo("OPEN");
-        assertThat(item.path("activationStatus").asString()).isEqualTo("INACTIVE");
-        assertThat(fixture.get(OperationsSubjectReadFixture.BASE + "/" + subject).has("activation")).isFalse();
+        UUID active = fixture.subject();
+        fixture.risk(fixture.binding(active, UUID.randomUUID(), "ACTIVE", "111****0000"), "CLEARED");
+        UUID disabled = fixture.subject();
+        fixture.risk(fixture.binding(disabled, new UUID(1, 1), "DISABLED", "222****0000"), "CLEARED");
+        fixture.risk(fixture.binding(disabled, new UUID(1, 2), "DISABLED", "999****0000"), "OPEN");
+        UUID retired = fixture.subject();
+        fixture.risk(fixture.binding(retired, UUID.randomUUID(), "RETIRED", "333****0000"), "CLEARED");
+        UUID withoutRisk = fixture.subject();
+        fixture.binding(withoutRisk, UUID.randomUUID(), "DISABLED", "444****0000");
+        UUID allCleared = fixture.subject();
+        fixture.risk(fixture.binding(allCleared, UUID.randomUUID(), "ACTIVE", "555****0000"), "CLEARED");
+        fixture.risk(fixture.binding(allCleared, UUID.randomUUID(), "DISABLED", "888****0000"), "CLEARED");
+        fixture.risk(fixture.binding(allCleared, UUID.randomUUID(), "RETIRED", "777****0000"), "CLEARED");
+        UUID mixed = fixture.subject();
+        fixture.risk(fixture.binding(mixed, UUID.randomUUID(), "ACTIVE", "666****0000"), "CLEARED");
+        fixture.risk(fixture.binding(mixed, UUID.randomUUID(), "RETIRED", "999****0000"), "OPEN");
+        var expected = Map.of(active, List.of("CLEARED", "111****0000"), disabled, List.of("OPEN", "222****0000"),
+                retired, List.of("CLEARED", "333****0000"), withoutRisk, List.of("CLEARED", "444****0000"),
+                allCleared, List.of("CLEARED", "555****0000"), mixed, List.of("OPEN", "666****0000"));
+        for (var entry : expected.entrySet()) {
+            var items = fixture.get(OperationsSubjectReadFixture.BASE + "?subjectId=" + entry.getKey()).path("items");
+            assertThat(items.size()).isEqualTo(1);
+            var item = items.get(0);
+            var detail = fixture.get(OperationsSubjectReadFixture.BASE + "/" + entry.getKey());
+            assertThat(item.path("subjectId").asString()).isEqualTo(entry.getKey().toString());
+            assertThat(item.path("riskState").asString()).isEqualTo(entry.getValue().get(0));
+            assertThat(detail.path("riskState").asString()).isEqualTo(entry.getValue().get(0));
+            assertThat(item.path("maskedNumber").asString()).isEqualTo(entry.getValue().get(1));
+            assertThat(detail.path("maskedNumber").asString()).isEqualTo(entry.getValue().get(1));
+            assertThat(item.path("activationStatus").asString()).isEqualTo("INACTIVE");
+            assertThat(detail.has("activation")).isFalse();
+        }
     }
 
     @Test
@@ -232,17 +257,25 @@ class OperationsSubjectReadsIT {
 
     @Test
     void detailHistoryZeroOneHundredAndOverflowAreBounded() throws Exception {
-        for (int size : List.of(0, 100, 101)) {
+        for (var sizes : List.of(List.of(0, 0), List.of(1, 1), List.of(100, 100),
+                List.of(101, 1), List.of(1, 101), List.of(101, 101))) {
+            int bindingCount = sizes.get(0);
+            int claimCount = sizes.get(1);
             UUID subject = fixture.subject();
-            for (int index = 1; index <= size; index++) {
-                fixture.binding(subject, new UUID(size, index), "RETIRED", "***");
-                fixture.claim(subject, new UUID(size, index), "REJECTED", fixture.time);
+            for (int index = 1; index <= bindingCount; index++) {
+                fixture.binding(subject, UUID.randomUUID(), "RETIRED", "***");
             }
-            if (size == 101) problem(fixture.request("GET", OperationsSubjectReadFixture.BASE + "/" + subject, "admin"), 503, "SERVICE_UNAVAILABLE");
-            else {
+            for (int index = 1; index <= claimCount; index++) {
+                fixture.claim(subject, UUID.randomUUID(), "REJECTED", fixture.time);
+            }
+            if (bindingCount > 100 || claimCount > 100) {
+                var response = fixture.request("GET", OperationsSubjectReadFixture.BASE + "/" + subject, "admin");
+                problem(response, 503, "SERVICE_UNAVAILABLE");
+                assertThat(response.body()).doesNotContain("bindings", "claims", "maskedNumber", subject.toString(), "PRIVATE_", "SQL", "42501");
+            } else {
                 var body = fixture.get(OperationsSubjectReadFixture.BASE + "/" + subject);
-                assertThat(body.path("bindings").size()).isEqualTo(size);
-                assertThat(body.path("claims").size()).isEqualTo(size);
+                assertThat(body.path("bindings").size()).isEqualTo(bindingCount);
+                assertThat(body.path("claims").size()).isEqualTo(claimCount);
             }
         }
     }

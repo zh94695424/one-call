@@ -234,7 +234,9 @@ class OperationsSubjectReadRoleLeastPrivilegeIT {
     private static String catalog(Connection connection) throws Exception {
         return one(connection, "SELECT md5(string_agg(oid::text||rolname||rolsuper::text||rolinherit::text,',' ORDER BY oid)) FROM pg_roles")
                 + one(connection, "SELECT md5(string_agg(oid::text||coalesce(proacl::text,'')||prosrc,',' ORDER BY oid)) FROM pg_proc")
-                + one(connection, "SELECT md5(string_agg(oid::text||coalesce(relacl::text,''),',' ORDER BY oid)) FROM pg_class");
+                + one(connection, "SELECT md5(string_agg(oid::text||coalesce(relacl::text,''),',' ORDER BY oid)) FROM pg_class")
+                + one(connection, "SELECT md5(string_agg(roleid::text||':'||member::text||':'||grantor::text||':'||admin_option::text||':'||inherit_option::text||':'||set_option::text,',' ORDER BY roleid,member,grantor)) FROM pg_auth_members")
+                + one(connection, "SELECT md5(string_agg(attrelid::text||':'||attnum::text||':'||coalesce(attacl::text,''),',' ORDER BY attrelid,attnum)) FROM pg_attribute");
     }
 
     private static String one(Connection connection, String sql, Object... arguments) throws SQLException {

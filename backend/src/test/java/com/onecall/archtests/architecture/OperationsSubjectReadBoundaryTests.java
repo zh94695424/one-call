@@ -55,6 +55,15 @@ class OperationsSubjectReadBoundaryTests {
         for (int index = 0; index < OWNERS.size(); index++) {
             String text = source(OWNERS.get(index) + "/internal/operationsread/" + ADAPTERS.get(index) + ".java");
             assertThat(text).contains("SELECT ", "context.scoped(Role.").doesNotContain("SELECT *", "number_ciphertext", "number_hmac", "verification_ref_ciphertext", "recording_url", "playback", "object_key");
+            var references = java.util.regex.Pattern.compile("\\b(?:FROM|JOIN)\\s+(?!LATERAL\\b)([a-z_][a-z0-9_]*(?:\\.[a-z_][a-z0-9_]*)?)\\b",
+                    java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text).results().map(match -> match.group(1)).toList();
+            assertThat(references).as(ADAPTERS.get(index)).isNotEmpty();
+            String owner = OWNERS.get(index);
+            assertThat(references).as(ADAPTERS.get(index)).anyMatch(reference -> reference.startsWith(owner + "."))
+                    .allSatisfy(reference -> {
+                        if ("subject_number".equals(owner) && "safe_subjects".equals(reference)) return;
+                        assertThat(reference).startsWith(owner + ".");
+                    });
         }
         assertThat(source("evidence/internal/operationsread/JooqOperationsEvidenceCounter.java")).contains("count(subject_id)", "WHERE subject_id = CAST(? AS uuid)").doesNotContain("JOIN");
         assertThat(source("catalog_order/internal/operationsread/JooqOperationsOrderCounter.java")).contains("count(subject_id)", "WHERE subject_id = CAST(? AS uuid)").doesNotContain("JOIN");

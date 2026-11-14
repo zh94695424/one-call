@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.jooq.DSLContext;
@@ -33,11 +34,15 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class OperationsSubjectReadConfigurationTests {
-    private AnnotationConfigApplicationContext context(String profile, boolean enabled) {
+    @SafeVarargs
+    private AnnotationConfigApplicationContext context(String profile, boolean enabled, Map<String, Object>... cursorProperties) {
         var context = new AnnotationConfigApplicationContext();
         context.getEnvironment().setActiveProfiles(profile);
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("read", Map.of(
                 "onecall.operations-subject-read.enabled", Boolean.toString(enabled))));
+        for (int index = 0; index < cursorProperties.length; index++) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("cursor-shape-" + index, cursorProperties[index]));
+        }
         context.register(OperationsSubjectReadPersistenceConfiguration.class);
         context.refresh();
         return context;
@@ -116,7 +121,7 @@ class OperationsSubjectReadConfigurationTests {
     }
 
     @Test
-    void missingCredentialsAndCursorKeysFailAtAffectedRequestNotBoot() {
+    void missingCredentialsAndCursorKeysFailAtAffectedRequestNotBoot() throws Exception {
         try (var context = context("persistence", true)) {
             assertThat(context.isActive()).isTrue();
             var properties = context.getBean(OperationsSubjectReadProperties.class);
@@ -124,6 +129,96 @@ class OperationsSubjectReadConfigurationTests {
             assertThatThrownBy(() -> new OperationsSubjectCursorCodec(properties))
                     .isInstanceOfSatisfying(Failure.class, failure -> assertThat(failure.code()).isEqualTo(Code.SERVICE_UNAVAILABLE));
             assertThat(context.getBeanFactory().containsSingleton("operationsSubjectReadDataSource")).isFalse();
+        }
+        String prefix = "onecall.operations-subject-read.cursor.";
+        String material = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32]);
+        byte[] rotated = new byte[32];
+        Arrays.fill(rotated, (byte) 71);
+        String secondMaterial = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(rotated);
+        var shapes = List.<Map<String, Object>>of(
+                Map.of(prefix + "active-key-id", "first", prefix + "keys[1].id", "first", prefix + "keys[1].material", material),
+                Map.of(prefix + "active-key-id", "first", prefix + "keys[0].id", "first", prefix + "keys[0].material", material,
+                        prefix + "keys[3].id", "second", prefix + "keys[3].material", secondMaterial),
+                Map.of(prefix + "active-key-id", "first", prefix + "keys[0].id", "first"),
+                Map.of(prefix + "active-key-id", "first", prefix + "keys[0].id", "first", prefix + "keys[0].material", material,
+                        prefix + "keys[0].comment", "unexpected"),
+                Map.of(prefix + "active-key-id", "first", prefix + "keys[0].id", "first", prefix + "keys[0].material", material),
+                Map.of(prefix + "active-key-id", "second", prefix + "keys[0].id", "first", prefix + "keys[0].material", material,
+                        prefix + "keys[1].id", "second", prefix + "keys[1].material", secondMaterial));
+        for (int index = 0; index < shapes.size(); index++) {
+            var shape = shapes.get(index);
+            for (String profile : List.of("default", "web")) {
+                try (var context = context(profile, true, shape)) {
+                    assertThat(context.isActive()).isTrue();
+                    assertThat(context.getBeanNamesForType(HikariDataSource.class)).isEmpty();
+                    assertThat(context.getBeanNamesForType(OperationsSubjectReadService.class)).isEmpty();
+                }
+            }
+            try (var context = context("persistence", true, shape)) {
+                assertThat(context.isActive()).isTrue();
+                var properties = context.getBean(OperationsSubjectReadProperties.class);
+                assertThat(context.getBeanFactory().containsSingleton("operationsSubjectReadDataSource")).isFalse();
+                UUID employeeId = UUID.randomUUID();
+                UUID subjectId = UUID.randomUUID();
+                var now = java.time.OffsetDateTime.parse("2026-11-14T00:00:00Z");
+                var datasource = mock(DataSource.class);
+                var connection = mock(java.sql.Connection.class);
+                when(datasource.getConnection()).thenReturn(connection);
+                when(connection.getAutoCommit()).thenReturn(true);
+                when(connection.createStatement()).thenReturn(mock(java.sql.Statement.class));
+                var dsl = mock(DSLContext.class);
+                var employee = mock(org.jooq.Record.class);
+                when(employee.get("id", UUID.class)).thenReturn(employeeId);
+                when(employee.get("status", String.class)).thenReturn("ACTIVE");
+                when(employee.get("role", String.class)).thenReturn("OPS");
+                when(employee.get("revision", Integer.class)).thenReturn(1);
+                when(dsl.fetchOne(anyString(), any(Object[].class))).thenReturn(employee);
+                var time = mock(org.jooq.Record.class);
+                when(time.get("now", java.time.OffsetDateTime.class)).thenReturn(now);
+                when(dsl.fetchSingle("SELECT transaction_timestamp() AS now")).thenReturn(time);
+                var subjects = mock(SubjectReader.class);
+                when(subjects.detail(subjectId, 101)).thenReturn(Optional.of(new DetailFacts(
+                        new SubjectFacts(subjectId, "WEB", null, null, "UNVERIFIED", false, now.toInstant()), List.of(), List.of())));
+                when(subjects.fetchCandidates(any(), any(), anyInt())).thenReturn(List.of());
+                var activations = mock(ActivationReader.class);
+                when(activations.find(any())).thenReturn(Map.of());
+                var trials = mock(TrialReader.class);
+                when(trials.find(any(), any())).thenReturn(Optional.empty());
+                var beans = context.getBeanFactory();
+                beans.registerSingleton("operationsSubjectReadDataSource", datasource);
+                beans.registerSingleton("operationsSubjectReadDsl", dsl);
+                beans.registerSingleton("operationsSubjectReadContext", mock(OperationsReadContext.class));
+                beans.registerSingleton("subjects", subjects);
+                beans.registerSingleton("activations", activations);
+                beans.registerSingleton("trials", trials);
+                beans.registerSingleton("evidence", mock(EvidenceCounter.class));
+                beans.registerSingleton("orders", mock(OrderCounter.class));
+                var service = context.getBean(OperationsSubjectReadService.class);
+                var caller = new Caller(employeeId, "onecall:employee-session:v1");
+                assertThat(service.detail(caller, new RawDetailRequest(subjectId.toString(), Map.of(), List.of())).subjectId()).isEqualTo(subjectId);
+                clearInvocations(subjects);
+                assertThatThrownBy(() -> service.list(caller, new RawListRequest(Map.of("unexpected", List.of("value")), List.of())))
+                        .isInstanceOfSatisfying(Failure.class, failure -> assertThat(failure.code()).isEqualTo(Code.VALIDATION_FAILED));
+                var request = new RawListRequest(Map.of(), List.of());
+                if (index < 4) {
+                    assertThatThrownBy(() -> new OperationsSubjectCursorCodec(properties)).isInstanceOfSatisfying(Failure.class,
+                            failure -> assertThat(failure.code()).isEqualTo(Code.SERVICE_UNAVAILABLE)).hasMessage("Operations read failed");
+                    assertThatThrownBy(() -> service.list(caller, request)).isInstanceOfSatisfying(Failure.class,
+                            failure -> assertThat(failure.code()).isEqualTo(Code.SERVICE_UNAVAILABLE)).hasMessage("Operations read failed");
+                    verifyNoInteractions(subjects);
+                } else {
+                    assertThat(properties.cursor().validatedKeys()).hasSize(index - 3);
+                    var codec = new OperationsSubjectCursorCodec(properties);
+                    var anchor = new Anchor(now.toInstant(), subjectId);
+                    byte[] digest = OperationsSubjectReadRequest.list(request).digest();
+                    assertThat(codec.decode(codec.encode(anchor, digest), digest)).isEqualTo(anchor);
+                    assertThat(service.list(caller, request).items()).isEmpty();
+                    verify(subjects).fetchCandidates(any(), any(), anyInt());
+                }
+                when(employee.get("status", String.class)).thenReturn("DISABLED");
+                assertThatThrownBy(() -> service.list(caller, request)).isInstanceOfSatisfying(Failure.class,
+                        failure -> assertThat(failure.code()).isEqualTo(Code.FORBIDDEN));
+            }
         }
     }
 
