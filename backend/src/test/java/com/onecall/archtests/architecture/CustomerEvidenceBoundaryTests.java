@@ -82,9 +82,13 @@ class CustomerEvidenceBoundaryTests {
             var named = modules.getModuleByName(entry.getKey()).orElseThrow().getNamedInterfaces().getByName(entry.getValue()).orElseThrow();
             assertThat(named.asJavaClasses().map(value -> value.getName())).noneMatch(value -> value.contains(".internal."));
         }
-        assertThat(modules.getModuleByName("subject_number").orElseThrow().getAllowedDependencies(modules)).isEmpty();
+        assertThat(modules.getModuleByName("subject_number").orElseThrow().getAllowedDependencies(modules).stream()
+                .map(dependency -> dependency.getTargetModule().getIdentifier() + "::" + dependency.getTargetNamedInterface().getName()))
+                .containsExactly("operations_iam::operations-subject-read");
         assertThat(modules.getModuleByName("evidence").orElseThrow().getAllowedDependencies(modules).stream()
-                .map(value -> value.getTargetModule().getIdentifier().toString())).containsExactly("entitlement_metering");
+                .map(dependency -> dependency.getTargetModule().getIdentifier()
+                        + (dependency.getTargetNamedInterface().isUnnamed() ? "" : "::" + dependency.getTargetNamedInterface().getName())))
+                .containsExactlyInAnyOrder("entitlement_metering", "operations_iam::operations-subject-read");
     }
 
     private void signature(Class<?> owner, String name, String result, String... parameters) {
