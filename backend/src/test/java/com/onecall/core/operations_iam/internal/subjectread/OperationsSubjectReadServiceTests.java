@@ -203,7 +203,7 @@ class OperationsSubjectReadServiceTests {
 
     @Test
     void candidateBudgetExhaustionNeverInventsTailOrContinuation() throws Exception {
-        var fixture = new ServiceFixture();
+        var fixture = new ServiceFixture(() -> 0L);
         var batch = new java.util.concurrent.atomic.AtomicInteger();
         when(fixture.subjects.fetchCandidates(any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenAnswer(invocation -> {
             int offset = batch.getAndIncrement() * 101;
@@ -215,6 +215,78 @@ class OperationsSubjectReadServiceTests {
                 fixture.raw(Map.of("activationStatus", List.of("ACTIVE")))));
         assertThat(batch.get()).isEqualTo(100);
         verify(fixture.connection).rollback();
+
+        for (String slowOwner : List.of("candidates", "activations")) {
+            var elapsed = new java.util.concurrent.atomic.AtomicLong(Long.MAX_VALUE - 2_000_000_000L);
+            var timed = new ServiceFixture(elapsed::get);
+            var batches = new java.util.concurrent.atomic.AtomicInteger();
+            when(timed.subjects.fetchCandidates(any(), any(), anyInt())).thenAnswer(invocation -> {
+                int offset = batches.getAndIncrement() * 101;
+                var candidates = new ArrayList<Candidate>();
+                for (int identifier = 20000 - offset; identifier > 20000 - offset - 101; identifier--) {
+                    candidates.add(timed.candidate(identifier, false));
+                }
+                if ("candidates".equals(slowOwner)) elapsed.addAndGet(1_000_000_000L);
+                return candidates;
+            });
+            when(timed.activations.find(any())).thenAnswer(invocation -> {
+                if ("activations".equals(slowOwner)) elapsed.addAndGet(1_000_000_000L);
+                return batches.get() == 1 ? Map.of(new UUID(0, 20000), new ActivationFacts("ACTIVE", 1)) : Map.of();
+            });
+            timed.failure(Code.SERVICE_UNAVAILABLE, () -> timed.service.list(timed.caller,
+                    timed.raw(Map.of("activationStatus", List.of("ACTIVE")))));
+            assertThat(batches.get()).as(slowOwner).isEqualTo(5);
+            verify(timed.activations, times("candidates".equals(slowOwner) ? 4 : 5)).find(any());
+            verify(timed.context).exit();
+            verify(timed.connection).rollback();
+            verify(timed.connection, never()).commit();
+            verify(timed.connection).close();
+        }
+
+        var withinBudgetNanos = new java.util.concurrent.atomic.AtomicLong();
+        var withinBudget = new ServiceFixture(withinBudgetNanos::get);
+        when(withinBudget.subjects.fetchCandidates(any(), any(), anyInt())).thenAnswer(invocation -> {
+            withinBudgetNanos.addAndGet(4_999_999_999L);
+            return List.of();
+        });
+        for (int request = 0; request < 2; request++) {
+            var page = withinBudget.service.list(withinBudget.caller, withinBudget.raw(Map.of()));
+            assertThat(page.items()).isEmpty();
+            assertThat(page.hasMore()).isFalse();
+            assertThat(page.nextCursor()).isNull();
+        }
+        verify(withinBudget.connection, times(2)).commit();
+        verify(withinBudget.connection, never()).rollback();
+
+        for (String stage : List.of("entry", "authority", "detail", "trial", "evidence", "orders", "exit")) {
+            var elapsed = new java.util.concurrent.atomic.AtomicLong();
+            var timed = new ServiceFixture(elapsed::get);
+            switch (stage) {
+                case "entry" -> doAnswer(invocation -> { elapsed.set(5_000_000_000L); return null; }).when(timed.context).enter();
+                case "authority" -> when(timed.dsl.fetchOne(anyString(), any(Object[].class))).thenAnswer(invocation -> {
+                    elapsed.set(5_000_000_000L); return timed.employee;
+                });
+                case "detail" -> when(timed.subjects.detail(SUBJECT, 101)).thenAnswer(invocation -> {
+                    elapsed.set(5_000_000_000L); return Optional.of(timed.detail(List.of(), List.of()));
+                });
+                case "trial" -> when(timed.trials.find(any(), any())).thenAnswer(invocation -> {
+                    elapsed.set(5_000_000_000L); return Optional.empty();
+                });
+                case "evidence" -> when(timed.evidence.count(SUBJECT)).thenAnswer(invocation -> { elapsed.set(5_000_000_000L); return 0L; });
+                case "orders" -> when(timed.orders.count(SUBJECT)).thenAnswer(invocation -> { elapsed.set(5_000_000_000L); return 0L; });
+                case "exit" -> doAnswer(invocation -> { elapsed.set(5_000_000_000L); return null; }).when(timed.context).exit();
+                default -> throw new AssertionError(stage);
+            }
+            timed.failure(Code.SERVICE_UNAVAILABLE, () -> timed.service.detail(timed.caller, timed.rawDetail()));
+            if (Set.of("entry", "authority").contains(stage)) verifyNoInteractions(timed.subjects);
+            if ("detail".equals(stage)) verifyNoInteractions(timed.activations, timed.trials, timed.evidence, timed.orders);
+            if ("trial".equals(stage)) verifyNoInteractions(timed.evidence, timed.orders);
+            if ("evidence".equals(stage)) verifyNoInteractions(timed.orders);
+            verify(timed.context).exit();
+            verify(timed.connection).rollback();
+            verify(timed.connection, never()).commit();
+            verify(timed.connection).close();
+        }
     }
 
     @Test
@@ -351,6 +423,10 @@ class OperationsSubjectReadServiceTests {
         final DefaultOperationsSubjectReadService service;
 
         ServiceFixture() throws Exception {
+            this(System::nanoTime);
+        }
+
+        ServiceFixture(java.util.function.LongSupplier nanoTime) throws Exception {
             when(connection.getAutoCommit()).thenReturn(true);
             when(source.getConnection()).thenReturn(connection);
             transaction = new TransactionTemplate(new DataSourceTransactionManager(source));
@@ -379,7 +455,7 @@ class OperationsSubjectReadServiceTests {
             service = new DefaultOperationsSubjectReadService(transaction, dsl, context,
                     new OperationsSubjectReadProperties(true, null, new OperationsSubjectReadProperties.Cursor("unit-key", List.of(key))),
                     beans.getBeanProvider(SubjectReader.class), beans.getBeanProvider(ActivationReader.class),
-                    beans.getBeanProvider(TrialReader.class), beans.getBeanProvider(EvidenceCounter.class), beans.getBeanProvider(OrderCounter.class));
+                    beans.getBeanProvider(TrialReader.class), beans.getBeanProvider(EvidenceCounter.class), beans.getBeanProvider(OrderCounter.class), nanoTime);
         }
 
         Candidate candidate(long identifier, boolean risk) {
@@ -406,52 +482,52 @@ class OperationsSubjectReadServiceTests {
                 new org.springframework.dao.DataAccessResourceFailureException(CANARY),
                 new CannotCreateTransactionException(CANARY),
                 new BeanCreationException("privateReadDependency", CANARY),
-                new IllegalStateException(CANARY));
+                new IllegalStateException(CANARY),
+                new Failure(Code.NOT_FOUND),
+                new Failure(Code.SERVICE_UNAVAILABLE));
         for (RuntimeException failure : failures) {
-            for (String path : List.of("/api/v1/operations/subjects", "/api/v1/operations/subjects/" + SUBJECT)) {
-                var connection = mock(Connection.class);
-                when(connection.getAutoCommit()).thenReturn(true);
-                var source = mock(DataSource.class);
-                when(source.getConnection()).thenReturn(connection);
-                var manager = new DataSourceTransactionManager(source);
-                manager.setRollbackOnCommitFailure(true);
-                var transaction = new TransactionTemplate(manager);
-                transaction.setReadOnly(true);
-                transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
-                transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-                transaction.setTimeout(5);
-                var dsl = mock(DSLContext.class);
-                when(dsl.fetchOne(anyString(), any(Object[].class))).thenThrow(failure);
-                var context = mock(OperationsReadContext.class);
-                var beans = new DefaultListableBeanFactory();
-                var service = new DefaultOperationsSubjectReadService(transaction, dsl, context,
-                        new OperationsSubjectReadProperties(true, null, null),
-                        beans.getBeanProvider(SubjectReader.class), beans.getBeanProvider(ActivationReader.class),
-                        beans.getBeanProvider(TrialReader.class), beans.getBeanProvider(EvidenceCounter.class),
-                        beans.getBeanProvider(OrderCounter.class));
-                beans.registerSingleton("operationsSubjectReadService", service);
-                var mvc = MockMvcBuilders.standaloneSetup(new OperationsSubjectReadController(
-                        beans.getBeanProvider(OperationsSubjectReadService.class), new OperationsProblemWriter())).build();
-                var principal = new OperationsRequestPrincipal(new Caller(EMPLOYEE, "onecall:employee-session:v1"));
-                var response = mvc.perform(get(path).principal(principal)).andReturn().getResponse();
-                boolean unknown = failure instanceof IllegalStateException;
-                assertThat(response.getStatus()).as("%s on %s", failure.getClass().getSimpleName(), path)
-                        .isEqualTo(unknown ? 500 : 503);
-                assertThat(response.getContentType()).startsWith("application/problem+json");
-                var problem = JsonMapper.builder().build().readTree(response.getContentAsByteArray());
-                assertThat(problem.propertyNames()).containsExactlyInAnyOrder("type", "title", "status", "code", "traceId");
-                assertThat(problem.path("code").asString()).isEqualTo(unknown ? "INTERNAL" : "SERVICE_UNAVAILABLE");
-                assertThat(problem.path("status").asInt()).isEqualTo(unknown ? 500 : 503);
-                UUID.fromString(problem.path("traceId").asString());
-                assertThat(response.getContentAsString()).doesNotContain(CANARY, "privateReadDependency", "42501", "SQLException");
-                assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
-                assertThat(response.getHeader("Pragma")).isEqualTo("no-cache");
-                assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
-                assertThat(response.getHeaders("Set-Cookie")).isEmpty();
-                verify(context).enter();
-                verify(context).exit();
-                verify(connection).rollback();
-                verify(connection).close();
+            for (String origin : List.of("authority", "owner", "structure")) {
+                if ("structure".equals(origin) && !(failure instanceof IllegalStateException)) continue;
+                for (String path : List.of("/api/v1/operations/subjects", "/api/v1/operations/subjects/" + SUBJECT)) {
+                    var fixture = new ServiceFixture();
+                    if ("authority".equals(origin)) {
+                        when(fixture.dsl.fetchOne(anyString(), any(Object[].class))).thenThrow(failure);
+                    } else if ("owner".equals(origin)) {
+                        when(fixture.subjects.fetchCandidates(any(), any(), anyInt())).thenThrow(failure);
+                        when(fixture.subjects.detail(SUBJECT, 101)).thenThrow(failure);
+                    } else {
+                        when(fixture.subjects.fetchCandidates(any(), any(), anyInt())).thenReturn(null);
+                        when(fixture.subjects.detail(SUBJECT, 101)).thenReturn(null);
+                    }
+                    fixture.beans.registerSingleton("operationsSubjectReadService", fixture.service);
+                    var mvc = MockMvcBuilders.standaloneSetup(new OperationsSubjectReadController(
+                            fixture.beans.getBeanProvider(OperationsSubjectReadService.class), new OperationsProblemWriter())).build();
+                    var principal = new OperationsRequestPrincipal(new Caller(EMPLOYEE, "onecall:employee-session:v1"));
+                    var response = mvc.perform(get(path).principal(principal)).andReturn().getResponse();
+                    boolean unknown = !"structure".equals(origin) && failure instanceof IllegalStateException;
+                    boolean notFound = !"structure".equals(origin) && failure instanceof Failure known && known.code() == Code.NOT_FOUND;
+                    int expectedStatus = unknown ? 500 : notFound ? 404 : 503;
+                    String expectedCode = unknown ? "INTERNAL" : notFound ? "NOT_FOUND" : "SERVICE_UNAVAILABLE";
+                    assertThat(response.getStatus()).as("%s from %s on %s", failure.getClass().getSimpleName(), origin, path)
+                            .isEqualTo(expectedStatus);
+                    assertThat(response.getContentType()).startsWith("application/problem+json");
+                    var problem = JsonMapper.builder().build().readTree(response.getContentAsByteArray());
+                    assertThat(problem.propertyNames()).containsExactlyInAnyOrder("type", "title", "status", "code", "traceId");
+                    assertThat(problem.path("code").asString()).isEqualTo(expectedCode);
+                    assertThat(problem.path("status").asInt()).isEqualTo(expectedStatus);
+                    UUID.fromString(problem.path("traceId").asString());
+                    assertThat(response.getContentAsString()).doesNotContain(CANARY, "privateReadDependency", "42501", "SQLException",
+                            "IllegalStateException", "BeanCreationException", "DataAccessException", "stackTrace", "cause");
+                    assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+                    assertThat(response.getHeader("Pragma")).isEqualTo("no-cache");
+                    assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff");
+                    assertThat(response.getHeaders("Set-Cookie")).isEmpty();
+                    verify(fixture.context).enter();
+                    verify(fixture.context).exit();
+                    verify(fixture.connection).rollback();
+                    verify(fixture.connection, never()).commit();
+                    verify(fixture.connection).close();
+                }
             }
         }
     }

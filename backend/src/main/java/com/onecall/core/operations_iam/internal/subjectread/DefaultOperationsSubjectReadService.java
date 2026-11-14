@@ -16,7 +16,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import org.jooq.DSLContext;
 import org.springframework.beans.BeansException;
@@ -26,6 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 public final class DefaultOperationsSubjectReadService implements OperationsSubjectReadService {
     private static final String AUDIENCE = "onecall:employee-session:v1";
+    private static final long REQUEST_BUDGET_NANOS = TimeUnit.SECONDS.toNanos(5);
     private static final Set<String> ACTIVATION_STATUSES = Set.of("INACTIVE", "ACTIVE", "SUSPENDED");
     private static final Set<String> CLAIM_STATUSES = Set.of("ACCEPTED", "REJECTED", "CONFLICT");
     private final TransactionTemplate transaction;
@@ -37,16 +40,25 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
     private final ObjectProvider<TrialReader> trials;
     private final ObjectProvider<EvidenceCounter> evidence;
     private final ObjectProvider<OrderCounter> orders;
+    private final LongSupplier nanoTime;
 
     public DefaultOperationsSubjectReadService(TransactionTemplate transaction, DSLContext dsl, OperationsReadContext context,
             OperationsSubjectReadProperties properties, ObjectProvider<SubjectReader> subjects, ObjectProvider<ActivationReader> activations,
             ObjectProvider<TrialReader> trials, ObjectProvider<EvidenceCounter> evidence, ObjectProvider<OrderCounter> orders) {
+        this(transaction, dsl, context, properties, subjects, activations, trials, evidence, orders, System::nanoTime);
+    }
+
+    DefaultOperationsSubjectReadService(TransactionTemplate transaction, DSLContext dsl, OperationsReadContext context,
+            OperationsSubjectReadProperties properties, ObjectProvider<SubjectReader> subjects, ObjectProvider<ActivationReader> activations,
+            ObjectProvider<TrialReader> trials, ObjectProvider<EvidenceCounter> evidence, ObjectProvider<OrderCounter> orders,
+            LongSupplier nanoTime) {
         this.transaction = transaction; this.dsl = dsl; this.context = context; this.properties = properties;
         this.subjects = subjects; this.activations = activations; this.trials = trials; this.evidence = evidence; this.orders = orders;
+        this.nanoTime = nanoTime;
     }
 
     @Override public SubjectPage list(Caller caller, RawListRequest raw) {
-        return read(caller, now -> {
+        return read(caller, (now, deadline) -> {
             var request = OperationsSubjectReadRequest.list(raw);
             var codec = new OperationsSubjectCursorCodec(properties);
             byte[] digest = request.digest();
@@ -58,8 +70,9 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
             int batchSize = filtered ? 101 : request.limit() + 1;
             boolean exhausted = false;
             for (int batch = 0; batch < (filtered ? 100 : 1); batch++) {
+                checkBudget(deadline);
                 Optional<Anchor> seek = anchor;
-                List<Candidate> candidates = owner(() -> subjectReader.fetchCandidates(request.filters(), seek, batchSize));
+                List<Candidate> candidates = owner(deadline, () -> subjectReader.fetchCandidates(request.filters(), seek, batchSize));
                 require(candidates != null && candidates.size() <= batchSize);
                 var identifiers = new LinkedHashSet<UUID>();
                 Anchor previous = seek.orElse(null);
@@ -72,7 +85,7 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
                     if (previous != null) require(before(current, previous));
                     previous = current;
                 }
-                Map<UUID, ActivationFacts> states = owner(() -> activationReader.find(Set.copyOf(identifiers)));
+                Map<UUID, ActivationFacts> states = owner(deadline, () -> activationReader.find(Set.copyOf(identifiers)));
                 validateActivations(identifiers, states);
                 for (Candidate candidate : candidates) {
                     SubjectFacts facts = candidate.subject();
@@ -101,14 +114,14 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
     }
 
     @Override public OperationsSubjectDetail detail(Caller caller, RawDetailRequest raw) {
-        return read(caller, now -> {
+        return read(caller, (now, deadline) -> {
             UUID subjectId = OperationsSubjectReadRequest.detail(raw);
             SubjectReader subjectReader = one(subjects);
             ActivationReader activationReader = one(activations);
             TrialReader trialReader = one(trials);
             EvidenceCounter evidenceCounter = one(evidence);
             OrderCounter orderCounter = one(orders);
-            Optional<DetailFacts> found = owner(() -> subjectReader.detail(subjectId, 101));
+            Optional<DetailFacts> found = owner(deadline, () -> subjectReader.detail(subjectId, 101));
             require(found != null);
             DetailFacts facts = found.orElseThrow(() -> new Failure(Code.NOT_FOUND));
             validateSubject(facts.subject());
@@ -121,14 +134,14 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
                 return rank != 0 ? rank : left.bindingId().toString().compareTo(right.bindingId().toString());
             }).orElse(null);
             require(Objects.equals(masked(facts.subject().maskedNumber()), display == null ? null : masked(display.numberMasked())));
-            Map<UUID, ActivationFacts> activation = owner(() -> activationReader.find(Set.of(subjectId)));
+            Map<UUID, ActivationFacts> activation = owner(deadline, () -> activationReader.find(Set.of(subjectId)));
             validateActivations(Set.of(subjectId), activation);
             ActivationFacts state = activation.get(subjectId);
-            Optional<TrialFacts> trial = owner(() -> trialReader.find(subjectId, now));
+            Optional<TrialFacts> trial = owner(deadline, () -> trialReader.find(subjectId, now));
             require(trial != null);
             TrialSummary trialSummary = trial.map(value -> trial(value, subjectId, now)).orElse(null);
-            long evidenceCount = owner(() -> evidenceCounter.count(subjectId));
-            long orderCount = owner(() -> orderCounter.count(subjectId));
+            long evidenceCount = owner(deadline, () -> evidenceCounter.count(subjectId));
+            long orderCount = owner(deadline, () -> orderCounter.count(subjectId));
             require(evidenceCount >= 0 && orderCount >= 0);
             SubjectFacts subject = facts.subject();
             return new OperationsSubjectDetail(subject.subjectId(), subject.source(), masked(subject.maskedNumber()), subject.realNameStatus(),
@@ -137,13 +150,20 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
         });
     }
 
-    private <Result> Result read(Caller caller, Function<Instant, Result> operation) {
+    private <Result> Result read(Caller caller, BiFunction<Instant, Long, Result> operation) {
+        long deadline = nanoTime.getAsLong() + REQUEST_BUDGET_NANOS;
         try {
             return transaction.execute(status -> {
+                Result result;
                 try {
+                    checkBudget(deadline);
                     context.enter();
-                    return operation.apply(authority(caller));
+                    checkBudget(deadline);
+                    result = operation.apply(authority(caller, deadline), deadline);
+                    checkBudget(deadline);
                 } finally { context.exit(); }
+                checkBudget(deadline);
+                return result;
             });
         } catch (Failure known) { throw known; }
         catch (org.jooq.exception.DataAccessException | org.springframework.dao.DataAccessException | TransactionException | BeansException unavailable) {
@@ -151,10 +171,10 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
         }
     }
 
-    private Instant authority(Caller caller) {
+    private Instant authority(Caller caller, long deadline) {
         if (caller == null || caller.employeeId() == null || caller.audience() == null || caller.audience().isBlank()) throw unavailable();
         if (!AUDIENCE.equals(caller.audience())) throw new Failure(Code.UNAUTHENTICATED);
-        var row = dsl.fetchOne("SELECT id, status, role, revision FROM operations_iam.employee_account WHERE id = CAST(? AS uuid)", caller.employeeId());
+        var row = owner(deadline, () -> dsl.fetchOne("SELECT id, status, role, revision FROM operations_iam.employee_account WHERE id = CAST(? AS uuid)", caller.employeeId()));
         if (row == null) throw new Failure(Code.UNAUTHENTICATED);
         String status = row.get("status", String.class);
         String role = row.get("role", String.class);
@@ -162,7 +182,7 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
         require(caller.employeeId().equals(row.get("id", UUID.class)) && status != null && Set.of("ACTIVE", "DISABLED").contains(status)
                 && role != null && Set.of("ADMIN", "OPS").contains(role) && revision != null && revision >= 1);
         if ("DISABLED".equals(status)) throw new Failure(Code.FORBIDDEN);
-        var time = dsl.fetchSingle("SELECT transaction_timestamp() AS now").get("now", OffsetDateTime.class);
+        var time = owner(deadline, () -> dsl.fetchSingle("SELECT transaction_timestamp() AS now")).get("now", OffsetDateTime.class);
         require(time != null);
         return time.toInstant();
     }
@@ -175,9 +195,20 @@ public final class DefaultOperationsSubjectReadService implements OperationsSubj
         } catch (RuntimeException failure) { throw unavailable(); }
     }
 
-    private static <Result> Result owner(Supplier<Result> operation) {
-        try { return operation.get(); }
-        catch (RuntimeException failure) { throw unavailable(); }
+    private <Result> Result owner(long deadline, Supplier<Result> operation) {
+        checkBudget(deadline);
+        try {
+            Result result = operation.get();
+            checkBudget(deadline);
+            return result;
+        } catch (Failure known) { throw known; }
+        catch (org.jooq.exception.DataAccessException | org.springframework.dao.DataAccessException | TransactionException | BeansException failure) {
+            throw unavailable();
+        }
+    }
+
+    private void checkBudget(long deadline) {
+        if (deadline - nanoTime.getAsLong() <= 0) throw unavailable();
     }
 
     private static void validateSubject(SubjectFacts subject) {

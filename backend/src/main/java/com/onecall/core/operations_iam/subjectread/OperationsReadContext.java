@@ -10,7 +10,14 @@ import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 public final class OperationsReadContext {
-    public enum Role { SUBJECT, ACTIVATION, TRIAL, EVIDENCE, ORDER }
+    public enum Role {
+        SUBJECT("subject_number_role"), ACTIVATION("activation_consent_role"), TRIAL("entitlement_metering_role"),
+        EVIDENCE("evidence_role"), ORDER("catalog_order_role");
+
+        private final String databaseRole;
+
+        Role(String databaseRole) { this.databaseRole = databaseRole; }
+    }
     private record State(Connection connection, String login, int backend) { }
     private final DataSource dataSource;
     private final DSLContext dsl;
@@ -39,17 +46,8 @@ public final class OperationsReadContext {
     public <Result> Result scoped(Role role, Supplier<Result> operation) {
         try {
             assertRole("operations_iam_role");
-            switch (role) {
-                case SUBJECT -> dsl.execute("SET LOCAL ROLE subject_number_role");
-                case ACTIVATION -> dsl.execute("SET LOCAL ROLE activation_consent_role");
-                case TRIAL -> dsl.execute("SET LOCAL ROLE entitlement_metering_role");
-                case EVIDENCE -> dsl.execute("SET LOCAL ROLE evidence_role");
-                case ORDER -> dsl.execute("SET LOCAL ROLE catalog_order_role");
-            }
-            assertRole(switch (role) {
-                case SUBJECT -> "subject_number_role"; case ACTIVATION -> "activation_consent_role";
-                case TRIAL -> "entitlement_metering_role"; case EVIDENCE -> "evidence_role"; case ORDER -> "catalog_order_role";
-            });
+            dsl.execute("SET LOCAL ROLE " + role.databaseRole);
+            assertRole(role.databaseRole);
             return operation.get();
         } finally {
             try {
