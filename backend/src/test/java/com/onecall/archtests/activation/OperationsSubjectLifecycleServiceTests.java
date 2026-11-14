@@ -26,6 +26,10 @@ class OperationsSubjectLifecycleServiceTests {
     static final Caller CALLER = new Caller(EMPLOYEE, "onecall:employee-session:v1");
     static final Instant TIME = Instant.parse("2026-11-13T00:00:00Z");
     static Command command(String action, int revision) { return new Command(SUBJECT, action, "reason", BigInteger.valueOf(revision)); }
+    static Transition persistedWitness(String channel, String actionDomain, String statusEvent, String fingerprint, Instant occurredAt) {
+        if ("OPERATIONS".equals(actionDomain)) return new Transition(UUID.randomUUID(), ACTIVATION, SUBJECT, "SUSPENDED", "ACTIVE", 1, 2, channel, actionDomain, "original", "ACTIVATION_STATUS", statusEvent, fingerprint, null, EMPLOYEE, "CLIENT_ACTIVATION_ACCEPTED", null, occurredAt);
+        return new Transition(UUID.randomUUID(), ACTIVATION, SUBJECT, "INACTIVE", "ACTIVE", 1, 2, channel, actionDomain, "original", "ACTIVATION_STATUS", statusEvent, fingerprint, UUID.randomUUID(), null, "CLIENT_ACTIVATION_ACCEPTED", UUID.randomUUID(), occurredAt);
+    }
     static final class Harness {
         final DSLContext context = mock(DSLContext.class);
         final OperationsLifecycleRepository repository = mock(OperationsLifecycleRepository.class);
@@ -145,6 +149,15 @@ class OperationsSubjectLifecycleServiceTests {
     void unusableHeadTransitionOrEmployeeContextFailsClosed() throws Exception {
         var harness = new Harness(); harness.head = new Head(ACTIVATION, SUBJECT, "UNKNOWN", 2, TIME, TIME); harness.denied(command("action", 2), CALLER, Code.SERVICE_UNAVAILABLE); harness.noWrites();
         harness = new Harness(); harness.witness = null; harness.denied(command("action", 2), CALLER, Code.SERVICE_UNAVAILABLE); harness.noWrites();
+        for (var malformed : List.of(
+                persistedWitness("WEB", "ACTIVATION", ActivationSemantics.statusEvent(ACTIVATION, 2), "invalid-fingerprint", TIME.minusSeconds(1)),
+                persistedWitness("WEB", "OPERATIONS", ActivationSemantics.statusEvent(ACTIVATION, 2), "a".repeat(64), TIME.minusSeconds(1)),
+                persistedWitness("OPERATIONS", "ACTIVATION", ActivationSemantics.statusEvent(ACTIVATION, 2), "a".repeat(64), TIME.minusSeconds(1)),
+                persistedWitness("WEB", "ACTIVATION", "wrong-status-event", "a".repeat(64), TIME.minusSeconds(1)),
+                persistedWitness("OPERATIONS", "OPERATIONS", ActivationSemantics.statusEvent(ACTIVATION, 2), "b".repeat(64), TIME.minusSeconds(1)),
+                persistedWitness("WEB", "ACTIVATION", ActivationSemantics.statusEvent(ACTIVATION, 2), "a".repeat(64), TIME.minusSeconds(2)))) {
+            harness = new Harness(); harness.witness = malformed; harness.denied(command("action", 2), CALLER, Code.SERVICE_UNAVAILABLE); harness.noWrites();
+        }
         for (var kind : EmployeeAdministratorLock.Failure.Kind.values()) { harness = new Harness(); when(harness.employee.lockEmployeeAdministrator(EMPLOYEE)).thenThrow(new EmployeeAdministratorLock.Failure(kind)); harness.denied(command("action", 2), CALLER, Code.SERVICE_UNAVAILABLE); harness.noWrites(); }
         harness = new Harness(); when(harness.employee.lockEmployeeAdministrator(EMPLOYEE)).thenThrow(new IllegalStateException("SECRET")); harness.denied(command("action", 2), CALLER, Code.INTERNAL); harness.noWrites();
         harness = new Harness(); harness.denied(command("action", 2), new Caller(EMPLOYEE, "wrong"), Code.SERVICE_UNAVAILABLE); harness.noWrites();

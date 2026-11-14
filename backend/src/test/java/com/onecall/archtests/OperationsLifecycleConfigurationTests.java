@@ -35,6 +35,10 @@ class OperationsLifecycleConfigurationTests {
     void defaultWebAndDisabledProfilesCreateNoLifecyclePool() throws Exception {
         for (String profile : List.of("default", "web", "persistence")) new ApplicationContextRunner().withInitializer(context -> context.getEnvironment().setActiveProfiles(profile))
             .withUserConfiguration(OperationsLifecyclePersistenceConfiguration.class, DefaultEmployeeAdministratorLock.class).run(context -> { assertThat(context).hasNotFailed(); for (String name : List.of("operationsLifecycleDataSource", "operationsLifecycleTransactionManager", "operationsLifecycleDsl", "operationsSubjectLifecycleService", "employeeAdministratorLock")) assertThat(context).doesNotHaveBean(name); });
+        new ApplicationContextRunner().withInitializer(context -> context.getEnvironment().setActiveProfiles("web"))
+            .withPropertyValues("onecall.operations-lifecycle.enabled=true")
+            .withUserConfiguration(OperationsLifecyclePersistenceConfiguration.class, DefaultEmployeeAdministratorLock.class)
+            .run(context -> { assertThat(context).hasNotFailed(); for (String name : List.of("operationsLifecycleDataSource", "operationsLifecycleTransactionManager", "operationsLifecycleDsl", "operationsSubjectLifecycleService", "employeeAdministratorLock")) assertThat(context).doesNotHaveBean(name); });
     }
     @Test
     void explicitEnablementRequiresDedicatedNonblankCredentials() throws Exception {
@@ -69,10 +73,23 @@ class OperationsLifecycleConfigurationTests {
     void missingAndAmbiguousOwnerCollaboratorsFailClosed() throws Exception {
         for (int count : List.of(0, 2)) {
             try (var context = new AnnotationConfigApplicationContext()) {
+                context.getEnvironment().setActiveProfiles("persistence");
+                context.getEnvironment().getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("enabled", Map.of(
+                        "onecall.operations-lifecycle.enabled", "true",
+                        "onecall.operations-lifecycle.datasource.url", "jdbc:postgresql://localhost/operations",
+                        "onecall.operations-lifecycle.datasource.username", "operations",
+                        "onecall.operations-lifecycle.datasource.password", "operations")));
+                ((DefaultListableBeanFactory) context.getBeanFactory()).setAllowBeanDefinitionOverriding(true);
+                context.register(OperationsLifecyclePersistenceConfiguration.class);
+                var transaction = mock(TransactionTemplate.class); var repository = mock(OperationsLifecycleRepository.class); var dataSource = mock(DataSource.class);
+                context.registerBean("operationsLifecycleDataSource", DataSource.class, () -> dataSource);
+                context.registerBean("operationsLifecycleTransactionTemplate", TransactionTemplate.class, () -> transaction);
+                context.registerBean("operationsLifecycleDsl", DSLContext.class, () -> mock(DSLContext.class));
+                context.registerBean("operationsLifecycleRepository", OperationsLifecycleRepository.class, () -> repository);
                 for (int index = 0; index < count; index++) context.registerBean("employee" + index, EmployeeAdministratorLock.class, () -> mock(EmployeeAdministratorLock.class));
-                var transaction = mock(TransactionTemplate.class); var repository = mock(OperationsLifecycleRepository.class);
-                context.registerBean(DefaultOperationsSubjectLifecycleService.class, () -> new DefaultOperationsSubjectLifecycleService(transaction, mock(DSLContext.class), repository, context.getBeanProvider(EmployeeAdministratorLock.class)));
-                context.refresh(); unavailable(context.getBean(DefaultOperationsSubjectLifecycleService.class)); verifyNoInteractions(transaction, repository);
+                context.refresh();
+                verify(transaction).afterPropertiesSet(); clearInvocations(transaction);
+                unavailable(context.getBean("operationsSubjectLifecycleService", DefaultOperationsSubjectLifecycleService.class)); verifyNoInteractions(transaction, repository);
             }
         }
         var beans = new DefaultListableBeanFactory(); var definition = new RootBeanDefinition(EmployeeAdministratorLock.class, () -> { throw new IllegalStateException("SECRET"); }); definition.setLazyInit(true); beans.registerBeanDefinition("broken", definition);
