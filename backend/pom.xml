@@ -205,6 +205,8 @@
                 <include>**/SubjectClaimRoleLeastPrivilegeIT.java</include>
                 <include>**/CustomerSubjectActivationsIT.java</include>
                 <include>**/ActivationCommandRoleLeastPrivilegeIT.java</include>
+                <include>**/OperationsSubjectLifecycleIT.java</include>
+                <include>**/OperationsLifecycleRoleLeastPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

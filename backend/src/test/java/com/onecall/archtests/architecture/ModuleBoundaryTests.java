@@ -42,7 +42,7 @@ class ModuleBoundaryTests {
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of()),
-            Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial")),
+            Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial", "operations_iam::subject-lifecycle-command", "operations_iam::employee-administrator-lock")),
             Map.entry("ivr", Set.of("subject_number", "activation_consent",
                     "entitlement_metering", "evidence")),
             Map.entry("catalog_order", Set.of("customer_iam", "subject_number")),
@@ -110,8 +110,8 @@ class ModuleBoundaryTests {
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("exactly seven production edges exist: customer query owners, sharing -> evidence and activation_consent -> entitlement_metering")
-                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering");
+                .as("exactly eight production edges exist: customer query owners, sharing -> evidence and activation_consent -> entitlement_metering and operations_iam")
+                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam");
     }
 
     @Test

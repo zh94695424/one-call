@@ -45,6 +45,13 @@ public final class CustomerBoundaryFilter implements Filter {
             throws IOException, ServletException {
         HttpServletRequest request = (HttpServletRequest) incoming;
         HttpServletResponse response = (HttpServletResponse) outgoing;
+        String operationsPath = request.getServletPath();
+        if ("POST".equals(request.getMethod()) && operationsPath != null
+                && operationsPath.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)")
+                && (request.getContextPath() + operationsPath).equals(request.getRequestURI())) {
+            chain.doFilter(request, response);
+            return;
+        }
         UUID traceId = UUID.randomUUID();
         request.setAttribute(TRACE_ATTRIBUTE, traceId);
         problems.headers(response);
