@@ -8,7 +8,7 @@
 - Base: merged PA32 `699a18a6f218aaef3ab8c9ab164c1b4101c6fadf`
 - Accepted slice: `5cec8a6da16c3531b8e21afadee85144320641a3`
 - Accepted aggregate review: `5a84503ac342befdc4d8e56af587f5a273ef5357`
-- Local status: ready; no push or draft PR has been created.
+- Remote status: user authorized push; Draft PR [#44](https://github.com/zh94695424/one-call/pull/44) has been created. PR review is the current gate.
 
 ## Delivered scope
 
@@ -54,4 +54,4 @@ The branch is locally ready for a Draft PR titled:
 
 `PA33: add Operations subject read foundation`
 
-Do not push, create the draft PR, merge, approve, mark ready for review, request reviewers or write external comments until the user explicitly authorizes remote state changes.
+The user authorized push and Draft PR creation. Do not merge, approve, mark ready for review, request GitHub reviewers or write external comments.
