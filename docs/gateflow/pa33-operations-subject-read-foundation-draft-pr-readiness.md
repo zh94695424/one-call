@@ -23,7 +23,7 @@
 - request-local cooperative five-second budget in addition to per-statement database limits
 - no OpenAPI, docs/14/15/17, schema, grant or migration change; V001-V017 remain frozen
 
-Final branch diff from merged PA32 contains 53 paths: the approved 37 implementation paths plus 16 PA33 gate/review artifacts. It contains 19 intended local commits and no generated `target`, XML, JAR, class, `node_modules`, `.codex` or private `.pa*` path.
+Final branch diff from merged PA32 contains 54 paths: the approved 37 implementation paths plus 17 PA33 gate/review artifacts. Every local commit from that base is an intended PA33 gate/bookkeeping commit, and no generated `target`, XML, JAR, class, `node_modules`, `.codex` or private `.pa*` path is tracked.
 
 ## Verification
 
