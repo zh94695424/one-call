@@ -14,6 +14,29 @@ public final class OperationsProblemWriter {
         response.setHeader("Pragma", "no-cache");
         response.setHeader("X-Content-Type-Options", "nosniff");
     }
+    public void write(HttpServletResponse response,
+            com.onecall.core.operations_iam.subjectread.OperationsSubjectReadService.Code code, UUID traceId) throws IOException {
+        if (response.isCommitted()) return;
+        int status = switch (code) {
+            case CURSOR_INVALID, CURSOR_FILTER_MISMATCH -> 400;
+            case UNAUTHENTICATED -> 401; case FORBIDDEN -> 403; case NOT_FOUND -> 404;
+            case VALIDATION_FAILED -> 422; case RATE_LIMITED -> 429; case SERVICE_UNAVAILABLE -> 503; case INTERNAL -> 500;
+        };
+        String title = switch (code) {
+            case CURSOR_INVALID -> "Invalid cursor"; case CURSOR_FILTER_MISMATCH -> "Cursor filter mismatch";
+            case UNAUTHENTICATED -> "Authentication required"; case FORBIDDEN -> "Access denied"; case NOT_FOUND -> "Not found";
+            case VALIDATION_FAILED -> "Request validation failed"; case RATE_LIMITED -> "Too many requests";
+            case SERVICE_UNAVAILABLE -> "Service unavailable"; case INTERNAL -> "Internal error";
+        };
+        response.reset();
+        headers(response);
+        response.setStatus(status);
+        response.setContentType("application/problem+json");
+        if (status == 401) response.setHeader("WWW-Authenticate", "Bearer");
+        byte[] body = mapper.writeValueAsBytes(new Problem("about:blank", title, status, code.name(), traceId.toString()));
+        response.setContentLength(body.length);
+        response.getOutputStream().write(body);
+    }
     public void write(HttpServletResponse response, Code code, UUID traceId) throws IOException {
         if (response.isCommitted()) return;
         int status = switch (code) {

@@ -52,6 +52,13 @@ public final class CustomerBoundaryFilter implements Filter {
             chain.doFilter(request, response);
             return;
         }
+        if ("GET".equals(request.getMethod()) && operationsPath != null
+                && ("/api/v1/operations/subjects".equals(operationsPath)
+                || operationsPath.matches("/api/v1/operations/subjects/[^/;%]+"))
+                && (request.getContextPath() + operationsPath).equals(request.getRequestURI())) {
+            chain.doFilter(request, response);
+            return;
+        }
         UUID traceId = UUID.randomUUID();
         request.setAttribute(TRACE_ATTRIBUTE, traceId);
         problems.headers(response);

@@ -41,13 +41,13 @@ class ModuleBoundaryTests {
             Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission", "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
-            Map.entry("subject_number", Set.of()),
-            Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial", "operations_iam::subject-lifecycle-command", "operations_iam::employee-administrator-lock")),
+            Map.entry("subject_number", Set.of("operations_iam::operations-subject-read")),
+            Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial", "operations_iam::subject-lifecycle-command", "operations_iam::employee-administrator-lock", "operations_iam::operations-subject-read")),
             Map.entry("ivr", Set.of("subject_number", "activation_consent",
                     "entitlement_metering", "evidence")),
-            Map.entry("catalog_order", Set.of("customer_iam", "subject_number")),
-            Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number")),
-            Map.entry("evidence", Set.of("entitlement_metering")),
+            Map.entry("catalog_order", Set.of("customer_iam", "subject_number", "operations_iam::operations-subject-read")),
+            Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number", "operations_iam::operations-subject-read")),
+            Map.entry("evidence", Set.of("entitlement_metering", "operations_iam::operations-subject-read")),
             Map.entry("sharing", Set.of("evidence::share-projection", "evidence::media-read")),
             Map.entry("ai_orchestration", Set.of("evidence", "entitlement_metering")),
             Map.entry("notary", Set.of("evidence")),
@@ -110,8 +110,8 @@ class ModuleBoundaryTests {
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("exactly eight production edges exist: customer query owners, sharing -> evidence and activation_consent -> entitlement_metering and operations_iam")
-                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam");
+                .as("exactly twelve production edges exist: retained eight plus subject_number, entitlement_metering, evidence and catalog_order -> operations_iam")
+                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam");
     }
 
     @Test

@@ -27,12 +27,15 @@ public final class OperationsBoundaryFilter implements Filter {
         request.setAttribute(TRACE, trace);
         problems.headers(response);
         String path = request.getServletPath();
-        if (!"POST".equals(request.getMethod()) || path == null || !path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)")
+        boolean read = "GET".equals(request.getMethod()) && path != null
+                && ("/api/v1/operations/subjects".equals(path) || path.matches("/api/v1/operations/subjects/[^/;%]+"));
+        if (!(read || "POST".equals(request.getMethod()) && path != null && path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)"))
                 || !(request.getContextPath() + path).equals(request.getRequestURI())) {
             problems.write(response, Code.NOT_FOUND, trace); return;
         }
         try {
             var principal = new OperationsRequestPrincipal(authenticator.authenticate(request.getHeaders("Authorization")));
+            if (!read) {
             var keys = Collections.list(request.getHeaders("Idempotency-Key"));
             if (keys.size() != 1 || !OperationsSubjectLifecycleJsonBinder.validText(keys.getFirst(), 128)) throw new Failure(Code.VALIDATION_FAILED);
             request.setAttribute(ACTION, keys.getFirst());
@@ -53,6 +56,7 @@ public final class OperationsBoundaryFilter implements Filter {
                         return specificity != 0 ? specificity : Double.compare(right.getQualityValue(), left.getQualityValue());
                     }).findFirst();
             if (!accepted.isEmpty() && (compatible.isEmpty() || compatible.get().getQualityValue() == 0)) throw new Failure(Code.INTERNAL);
+            }
             var trusted = new HttpServletRequestWrapper(request) {
                 @Override public Principal getUserPrincipal() { return principal; }
                 @Override public String getRemoteUser() { return principal.getName(); }
