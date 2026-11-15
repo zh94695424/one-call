@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("web")
@@ -22,6 +23,19 @@ public class OperationsWebConfiguration {
         var registration = new FilterRegistrationBean<>(new OperationsBoundaryFilter(new EmployeeBearerAuthenticator(verifiers), problems));
         registration.addUrlPatterns("/api/v1/operations/*");
         registration.setDispatcherTypes(DispatcherType.REQUEST);
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
+    @Bean
+    FilterRegistrationBean<OperationsBoundaryFilter> operationsErrorBoundaryFilterRegistration(ObjectProvider<EmployeeSessionVerifier> verifiers, OperationsProblemWriter problems, Environment environment) {
+        String path = environment.getProperty("server.error.path", "/error");
+        if (!path.matches("/[A-Za-z0-9_./~-]*") || path.contains("//")
+                || java.util.Arrays.stream(path.split("/")).anyMatch(segment -> ".".equals(segment) || "..".equals(segment))) {
+            throw new IllegalStateException("Invalid server.error.path");
+        }
+        var registration = new FilterRegistrationBean<>(new OperationsBoundaryFilter(new EmployeeBearerAuthenticator(verifiers), problems));
+        registration.addUrlPatterns(path);
+        registration.setDispatcherTypes(DispatcherType.ERROR);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
     }

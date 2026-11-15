@@ -209,6 +209,8 @@
                 <include>**/OperationsLifecycleRoleLeastPrivilegeIT.java</include>
                 <include>**/OperationsSubjectReadsIT.java</include>
                 <include>**/OperationsSubjectReadRoleLeastPrivilegeIT.java</include>
+                <include>**/OperationsActivationReadsIT.java</include>
+                <include>**/OperationsActivationReadRoleLeastPrivilegeIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

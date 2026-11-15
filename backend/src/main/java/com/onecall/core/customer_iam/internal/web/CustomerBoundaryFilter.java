@@ -53,7 +53,7 @@ public final class CustomerBoundaryFilter implements Filter {
             return;
         }
         if ("GET".equals(request.getMethod()) && operationsPath != null
-                && ("/api/v1/operations/subjects".equals(operationsPath)
+                && ("/api/v1/operations/subjects".equals(operationsPath) || "/api/v1/operations/activations".equals(operationsPath)
                 || operationsPath.matches("/api/v1/operations/subjects/[^/;%]+"))
                 && (request.getContextPath() + operationsPath).equals(request.getRequestURI())) {
             chain.doFilter(request, response);
