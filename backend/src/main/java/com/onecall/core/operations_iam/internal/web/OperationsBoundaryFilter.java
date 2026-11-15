@@ -23,12 +23,22 @@ public final class OperationsBoundaryFilter implements Filter {
     @Override public void doFilter(ServletRequest incoming, ServletResponse outgoing, FilterChain chain) throws IOException, ServletException {
         var request = (HttpServletRequest) incoming;
         var response = (HttpServletResponse) outgoing;
+        if (request.getDispatcherType() == DispatcherType.ERROR) {
+            if ((request.getContextPath() + "/api/v1/operations/activations").equals(request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI))
+                    && "TRACE".equals(request.getAttribute(RequestDispatcher.ERROR_METHOD))) {
+                problems.write(response, Code.NOT_FOUND, UUID.randomUUID());
+            } else {
+                chain.doFilter(incoming, outgoing);
+            }
+            return;
+        }
         UUID trace = UUID.randomUUID();
         request.setAttribute(TRACE, trace);
         problems.headers(response);
         String path = request.getServletPath();
         boolean read = "GET".equals(request.getMethod()) && path != null
-                && ("/api/v1/operations/subjects".equals(path) || path.matches("/api/v1/operations/subjects/[^/;%]+"));
+                && ("/api/v1/operations/subjects".equals(path) || "/api/v1/operations/activations".equals(path)
+                || path.matches("/api/v1/operations/subjects/[^/;%]+"));
         if (!(read || "POST".equals(request.getMethod()) && path != null && path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)"))
                 || !(request.getContextPath() + path).equals(request.getRequestURI())) {
             problems.write(response, Code.NOT_FOUND, trace); return;
