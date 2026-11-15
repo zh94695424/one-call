@@ -3,12 +3,13 @@
 ## Status
 
 - Work unit: `PA34-operations-activation-history-read-foundation`
-- Gate: `ready-to-open-draft-PR`
+- Gate at the original 2026-11-15 pre-push checkpoint: `ready-to-open-draft-PR`
 - Branch: `codex/pa34-next-work-unit`
 - Target base: `main` at merged PA33 `e423b4b7e3f0d673bd2ad3fa579c36ca585af13c`
 - Accepted slice: `e48e830a7625fa57b244a675165df48c47b2060d`
 - Accepted aggregate deepreview: `3d7de3a68b96cb9496ac0f850829356a3ac3ce0a`
-- Remote status: no PA34 push and no Draft PR exist. This artifact is local readiness only.
+- Historical remote status at that pre-push checkpoint on 2026-11-15: no PA34 push or Draft PR existed; the readiness evidence below records that local checkpoint, not future remote knowledge.
+- PR-fix annotation (2026-11-15): Controller subsequently recorded branch `codex/pa34-next-work-unit` pushed and Draft PR #45 OPEN against `main`, reviewed remote head `a12d9bae70a864af8a72b2cda657a33c4674c069`. This annotation reports Controller evidence, not a new remote query or action; it does not relabel the historical verification below as hosted evidence.
 
 ## Delivered scope
 
@@ -121,6 +122,9 @@ Production readiness is not claimed.
 
 ## Remote-action boundary
 
-The branch is locally ready for the Draft PR above. Do not push, create the Draft
-PR, merge, approve, mark ready for review, request reviewers or write external
-comments until the user explicitly authorizes those remote actions.
+At the original pre-push checkpoint the branch was locally ready for the proposed
+Draft PR above, with remote actions awaiting explicit authorization. Controller
+later authorized and recorded the push and creation of Draft PR #45. The current
+bounded author-fix gate authorizes no stage, commit, push, PR update, merge,
+approval, mark-ready action, reviewer request, external comment or re-review.
+Stop for Controller; this historical readiness artifact grants no remote permission.

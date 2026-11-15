@@ -61,7 +61,6 @@ final class OperationsActivationReadFixture implements AutoCloseable {
                 execute(connection, "ALTER ROLE pa27_query PASSWORD '" + base.password + "'");
             }
             var settings = new HashMap<String, Object>(); String prefix = "onecall.operations-subject-read.";
-            settings.put("server.error.path", "/internal/pa34-error");
             settings.put("spring.web.error.path", "/internal/pa34-error");
             settings.put(prefix + "enabled", "true"); settings.put(prefix + "datasource.url", base.url); settings.put(prefix + "datasource.username", login); settings.put(prefix + "datasource.password", password);
             var key = com.onecall.archtests.operations.OperationsActivationReadTestProviders.properties().cursor().keys().getFirst();

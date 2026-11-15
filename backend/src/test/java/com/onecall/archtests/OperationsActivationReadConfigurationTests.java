@@ -34,12 +34,17 @@ class OperationsActivationReadConfigurationTests {
             if (enabled && "persistence".equals(profile)) continue;
             try (var context = context(profile, enabled, Map.of())) { assertThat(context.getBeanNamesForType(OperationsActivationReadService.class)).isEmpty(); assertThat(context.getBeanNamesForType(ActivationHistoryReader.class)).isEmpty(); assertThat(context.getBeanNamesForType(javax.sql.DataSource.class)).isEmpty(); }
         }
-        for (String configured : List.of("default", "/internal/failure-34")) {
+        for (Map<String, Object> configured : List.of(
+                Map.<String, Object>of(),
+                Map.<String, Object>of("spring.web.error.path", "/internal/failure-34"),
+                Map.<String, Object>of("spring.web.error.path", "/internal/failure-34", "server.error.path", "/legacy/failure-34"),
+                Map.<String, Object>of("server.error.path", "/legacy/failure-34"),
+                Map.<String, Object>of("server.error.path", "legacy-invalid-secret-34"))) {
             try (var context = new org.springframework.web.context.support.AnnotationConfigWebApplicationContext()) {
                 context.setServletContext(new org.springframework.mock.web.MockServletContext()); context.getEnvironment().setActiveProfiles("web");
-                if (!"default".equals(configured)) context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("error-path", Map.of("server.error.path", configured)));
+                context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("error-path", configured));
                 context.register(com.onecall.core.operations_iam.internal.web.OperationsWebConfiguration.class); context.refresh();
-                String expected = "default".equals(configured) ? "/error" : configured;
+                String expected = (String) configured.getOrDefault("spring.web.error.path", "/error");
                 org.springframework.boot.web.servlet.FilterRegistrationBean<?> errors = context.getBean("operationsErrorBoundaryFilterRegistration", org.springframework.boot.web.servlet.FilterRegistrationBean.class);
                 assertThat(errors.getUrlPatterns()).containsExactly(expected); assertThat(errors.getOrder()).isEqualTo(org.springframework.core.Ordered.HIGHEST_PRECEDENCE);
                 var servlet = mock(jakarta.servlet.ServletContext.class); var mapping = mock(jakarta.servlet.FilterRegistration.Dynamic.class);
@@ -55,9 +60,11 @@ class OperationsActivationReadConfigurationTests {
         for (String malformed : List.of("", "relative", "//error", "/error/*", "/error?x", "/error#x", "/error%2f", "/../error", "/error/./nested", "/error;path", "/error\\path", "/error\n")) {
             try (var context = new org.springframework.web.context.support.AnnotationConfigWebApplicationContext()) {
                 context.setServletContext(new org.springframework.mock.web.MockServletContext()); context.getEnvironment().setActiveProfiles("web");
-                context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("error-path", Map.of("server.error.path", malformed)));
+                context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("error-path", Map.of("spring.web.error.path", malformed, "server.error.path", "/legacy/fallback-34")));
                 context.register(com.onecall.core.operations_iam.internal.web.OperationsWebConfiguration.class);
-                assertThatThrownBy(context::refresh).hasRootCauseInstanceOf(IllegalStateException.class).hasStackTraceContaining("Invalid server.error.path");
+                assertThatThrownBy(context::refresh).hasRootCauseInstanceOf(IllegalStateException.class)
+                        .rootCause().hasMessage("Invalid error dispatch path");
+                assertThat(context.getBeanFactory().containsSingleton("operationsErrorBoundaryFilterRegistration")).isFalse();
             }
         }
     }

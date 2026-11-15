@@ -28,10 +28,10 @@ public class OperationsWebConfiguration {
     }
     @Bean
     FilterRegistrationBean<OperationsBoundaryFilter> operationsErrorBoundaryFilterRegistration(ObjectProvider<EmployeeSessionVerifier> verifiers, OperationsProblemWriter problems, Environment environment) {
-        String path = environment.getProperty("server.error.path", "/error");
+        String path = environment.getProperty("spring.web.error.path", "/error");
         if (!path.matches("/[A-Za-z0-9_./~-]*") || path.contains("//")
                 || java.util.Arrays.stream(path.split("/")).anyMatch(segment -> ".".equals(segment) || "..".equals(segment))) {
-            throw new IllegalStateException("Invalid server.error.path");
+            throw new IllegalStateException("Invalid error dispatch path");
         }
         var registration = new FilterRegistrationBean<>(new OperationsBoundaryFilter(new EmployeeBearerAuthenticator(verifiers), problems));
         registration.addUrlPatterns(path);

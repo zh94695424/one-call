@@ -1,6 +1,7 @@
 package com.onecall.core.operations_iam.internal.activationread;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import static com.onecall.archtests.operations.OperationsActivationReadTestProviders.properties;
 import com.onecall.core.operations_iam.internal.subjectread.*;
 import com.onecall.core.operations_iam.subjectread.OperationsActivationReadPorts.Anchor;
@@ -8,8 +9,10 @@ import com.onecall.core.operations_iam.subjectread.OperationsSubjectReadService.
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.*;
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.spec.*;
 import org.junit.jupiter.api.Test;
@@ -20,6 +23,7 @@ class OperationsActivationCursorCodecTests {
     private void failure(Code code, Runnable operation) {
         assertThatThrownBy(operation::run).isInstanceOfSatisfying(Failure.class, problem -> {
             assertThat(problem.code()).isEqualTo(code); assertThat(problem.getCause()).isNull();
+            assertThat(problem.getMessage()).isEqualTo("Operations read failed");
         });
     }
     private String encoded(byte[] bytes) { return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }
@@ -90,12 +94,30 @@ class OperationsActivationCursorCodecTests {
         failure(Code.CURSOR_INVALID, () -> previous.decode(token));
     }
     @Test
-    void missingInvalidAndDuplicateKeyConfigurationIsUnavailable() {
+    void missingInvalidAndDuplicateKeyConfigurationIsUnavailable() throws Exception {
         failure(Code.SERVICE_UNAVAILABLE, () -> new OperationsActivationCursorCodec(null));
         failure(Code.SERVICE_UNAVAILABLE, () -> new OperationsActivationCursorCodec(new OperationsSubjectReadProperties(true, null, null)));
         for (var configuration : List.of(ring("missing"), ring("bad", key("other", 0)), ring("same", key("same", 0), key("same", 1)), ring("one", key("one", 0), key("two", 0)), ring("bad id", key("bad id", 0)), ring("bad", new OperationsSubjectReadProperties.KeyEntry("bad", "invalid")), ring("one", key("one", 0), key("two", 1), key("three", 2), key("four", 3)))) {
             failure(Code.SERVICE_UNAVAILABLE, () -> new OperationsActivationCursorCodec(configuration));
         }
+        String token = codec.encode(anchor);
+        try (var provider = mockStatic(Cipher.class, CALLS_REAL_METHODS)) {
+            provider.when(() -> Cipher.getInstance("AES/GCM/NoPadding")).thenThrow(new NoSuchAlgorithmException("provider-detail-canary"));
+            failure(Code.SERVICE_UNAVAILABLE, () -> codec.decode(token));
+            failure(Code.SERVICE_UNAVAILABLE, () -> codec.encode(anchor));
+            failure(Code.CURSOR_INVALID, () -> codec.decode("malformed"));
+            var cipher = mock(Cipher.class);
+            when(cipher.doFinal(any(byte[].class))).thenThrow(new BadPaddingException("padding-detail-canary"));
+            provider.when(() -> Cipher.getInstance("AES/GCM/NoPadding")).thenReturn(cipher);
+            failure(Code.CURSOR_INVALID, () -> codec.decode(token));
+            failure(Code.SERVICE_UNAVAILABLE, () -> codec.encode(anchor));
+        }
+        try (var provider = mockStatic(MessageDigest.class, CALLS_REAL_METHODS)) {
+            provider.when(() -> MessageDigest.getInstance("SHA-256")).thenThrow(new NoSuchAlgorithmException("digest-detail-canary"));
+            failure(Code.SERVICE_UNAVAILABLE, () -> codec.decode(token));
+            failure(Code.SERVICE_UNAVAILABLE, () -> codec.encode(anchor));
+        }
+        assertThat(codec.decode(token)).isEqualTo(anchor);
     }
     @Test
     void authenticatedMalformedAnchorPayloadsFailClosed() throws Exception {

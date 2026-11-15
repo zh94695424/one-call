@@ -100,9 +100,21 @@ class OperationsActivationReadsIT {
             var response = fixture.request("GET", path, "admin");
             assertThat(response.statusCode()).as(path).isEqualTo(404); assertThat(response.body()).doesNotContain("transitionId", "items", "event-"); assertThat(response.headers().firstValue("WWW-Authenticate")).isEmpty(); problem(response, 404, "NOT_FOUND");
         }
-        assertThat(fixture.context.getEnvironment().getProperty("server.error.path")).isEqualTo("/internal/pa34-error");
-        assertThat(fixture.context.getBean(org.springframework.boot.autoconfigure.web.WebProperties.class).getError().getPath()).isEqualTo("/internal/pa34-error");
-        for (String path : List.of("/api/v1/customer/me", "/api/v1/operations/subjects", BASE + "/")) problem(fixture.request("TRACE", path, "admin"), 500, "INTERNAL");
+        String effectiveErrorPath = fixture.context.getEnvironment().getProperty("spring.web.error.path");
+        assertThat(effectiveErrorPath).isEqualTo("/internal/pa34-error");
+        assertThat(fixture.context.getBean(org.springframework.boot.autoconfigure.web.WebProperties.class).getError().getPath()).isEqualTo(effectiveErrorPath);
+        try (var defaultErrors = new org.springframework.boot.builder.SpringApplicationBuilder(com.onecall.core.OneCallApplication.class)
+                .profiles("web").run("--server.port=0", "--spring.main.web-application-type=servlet", "--spring.main.banner-mode=off")) {
+            assertThat(defaultErrors.getBean(org.springframework.boot.autoconfigure.web.WebProperties.class).getError().getPath()).isEqualTo("/error");
+            int defaultPort = ((org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext) defaultErrors).getWebServer().getPort();
+            for (String path : List.of(BASE, "/api/v1/customer/me", "/api/v1/operations/subjects", BASE + "/")) {
+                var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:" + defaultPort + path))
+                        .timeout(java.time.Duration.ofSeconds(10)).header("Authorization", "Bearer admin")
+                        .method("TRACE", java.net.http.HttpRequest.BodyPublishers.noBody()).build();
+                var response = fixture.client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                problem(response, BASE.equals(path) ? 404 : 500, BASE.equals(path) ? "NOT_FOUND" : "INTERNAL");
+            }
+        }
     }
     @Test
     void realHttpParametersDefaultsDuplicatesAndBoundsAreExact() throws Exception {

@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -72,7 +73,8 @@ public final class OperationsActivationCursorCodec {
             int nanos = payload.getInt();
             if (nanos < 0 || nanos >= 1_000_000_000 || nanos % 1000 != 0) throw new IllegalArgumentException();
             return new Anchor(Instant.ofEpochSecond(seconds, nanos), new UUID(payload.getLong(), payload.getLong()));
-        } catch (GeneralSecurityException | RuntimeException invalid) { throw new Failure(Code.CURSOR_INVALID); }
+        } catch (BadPaddingException | RuntimeException invalid) { throw new Failure(Code.CURSOR_INVALID); }
+        catch (GeneralSecurityException unavailable) { throw new Failure(Code.SERVICE_UNAVAILABLE); }
     }
 
     private static byte[] header(String keyId) {
