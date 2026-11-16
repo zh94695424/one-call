@@ -213,7 +213,7 @@ class OperationsSubjectReadRoleLeastPrivilegeIT {
         fixture.get(OperationsSubjectReadFixture.BASE + "/" + subject);
         try (var connection = fixture.admin()) {
             assertThat(catalog(connection)).isEqualTo(before);
-            assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("17");
+            assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("18");
         }
     }
 

@@ -1,3 +1,67 @@
+## PA36 Current Runtime Boundary (V018)
+
+This section is authoritative. Everything after `<!-- PA36 HISTORICAL BODY -->` is retained historical/non-current evidence, including all formerly undated PA25 instructions and counts. Do not use those old three-input commands for current provisioning.
+
+### Privilege and history boundary
+
+V001 → V018 is exactly 18 successful SQL history rows. V001–V017 bytes and signed Flyway checksums remain frozen. V018 (`V018__evidence_role_ivr_association_read_privileges.sql`, description `evidence role ivr association read privileges`) has signed checksum **1606293398**, raw SHA256 **892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817**, LF SHA256 **892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817** (new file is LF).
+
+V018's only mutation is owner-issued, non-grantable `SELECT(session_id,call_id)` on `evidence.evidence_record` to `evidence_role`. Its independent evidence-only oracle is **16→18**, not a cross-module 408/410 predicate. The eight readable record columns are `id,subject_id,status,source_type,source_ref_id,identity_at_capture,session_id,call_id`. All other record columns, broad table SELECT, writes, grant options, new routines and ownership remain denied. Associations are existing `session_id uuid` and canonical `call_id text`, not interchangeable identifiers or values inferred from `source_ref_id`; no backfill or business/schema change occurs.
+
+The PA25-only exact nine-monitored-role oracle is **408→410**: original seven **288→290** (customer53 + evidence18 + others219), plus unchanged Operations14 + IVR106 = **120 unchanged tuples** newly monitored, not newly granted. V018 checks exact predecessor17 history and optional self18 metadata/non-null checksum; Flyway validate and PA25 pin its concrete self checksum. Raw replay does not authenticate its own checksum. Only clean evidence16 or complete evidence18 states are accepted; partial/extra/wrong-grantor/grant-option/history/provenance/topology drift is rejected atomically with sanitized P0001 categories, never reconciled by revocation or widening. Non-target ACLs/owners/definitions are preserved rather than forced to the PA25 oracle. The cooperative advisory lock is `(725025,1)`; exclusive administration remains required.
+
+### Existing shared Operations reader identity
+
+Four required, distinct externally assigned inputs: `sharing_login`, `customer_login`, `command_login`, **`operations_login`**. Slots are `sharing_query`, `customer_context`, `sharing_command`, **`operations_ivr_read`**. LO binds the existing `onecall.operations-subject-read.datasource.url|username|password` property family and `operationsSubjectReadDataSource`; no new pool, production enum, role hierarchy or PA35 code is added.
+
+The exact eleven approved pairs are:
+
+```text
+LQ -> sharing_role
+LC -> customer_iam_role
+LW -> sharing_command_role
+LW -> evidence_role
+LO -> operations_iam_role
+LO -> subject_number_role
+LO -> activation_consent_role
+LO -> entitlement_metering_role
+LO -> evidence_role
+LO -> catalog_order_role
+LO -> ivr_role
+```
+
+Each edge is `ADMIN FALSE, INHERIT FALSE, SET TRUE` with an actual unmanaged superuser grantor. LO has exactly seven SET roles, no eighth; no object rights before SET. All four external logins are LOGIN NOINHERIT with safe flags, no role/database settings or object/default privileges/ownership; creation uses PASSWORD NULL, not a ready credential. Operations/IVR and the four shared-context targets retain migration-default true INHERIT and NOLOGIN; their attributes are never altered. Existing direct logins remain `sharing_public_read_role`, `sharing_admission_role`, `evidence_media_reader_role`, with zero touching edges.
+
+Current success markers are exactly `PA25_APPLY_OK logins=7 effective_roles=9 memberships=11` and `PA25_CHECK_OK logins=7 effective_roles=9 memberships=11`. Here **effective_roles=9 means exact-ACL-monitored roles**, not all reachable targets. Separate shared_context_targets are subject_number_role, activation_consent_role, entitlement_metering_role, catalog_order_role: capability boundary13, managed names13 (external4 + monitored9), full boundary17 (including context4). Project roles are31 before provisioning and35 afterward. No context-target ACL inventory is added to410. Apply/check require history18; three-input invocations fail closed. Complete old three-slot/four-edge provisioning upgrades without altering old OIDs/password verifiers/comments/grantors. Creation-only UTF-8 PA25 v1 markers bind database OID, role OID, slot and exact name; protect comment/catalog writers, never adopt, restamp or force-recover an unmarked collision.
+
+### Role-wide amplification and limits
+
+Read amplification is role-wide, not Operations-only. Every direct/externally authorized holder or SET assumer and owner-maintenance consumer of evidence_role gains both scalar associations. Verified production consumers include:
+
+- `DefaultCustomerShareCommandService`: `backend/src/main/java/com/onecall/core/sharing/internal/commandservice/DefaultCustomerShareCommandService.java`.
+- `JooqSharingCommandRepository`: `backend/src/main/java/com/onecall/core/sharing/internal/persistence/JooqSharingCommandRepository.java`.
+- `ShareableEvidenceProjectionReader`: `backend/src/main/java/com/onecall/core/evidence/shareprojection/ShareableEvidenceProjectionReader.java`.
+- `JooqOperationsEvidenceCounter`: `backend/src/main/java/com/onecall/core/evidence/internal/operationsread/JooqOperationsEvidenceCounter.java` through `OperationsReadContext.Role.EVIDENCE`.
+
+LW's customer-sharing command path already assumes evidence_role. This change grants no application authority or response/log payload. customer_iam_role evidence-list ACLs remain V017-only. Full identity_at_capture JSON is already readable at the raw role boundary; scalar-safe output/redaction is an application control, not JSON-path ACL. No media bytes, payloads, URLs, locators, bucket/object/crypto identifiers, snapshot, contact or playback authority is added.
+
+Existing Operations/IVR/context roles retain writes and sensitive cross-module rights: **explicit SET is not a read-only privilege sandbox**. LO is a trusted backend credential; the existing REQUIRES_NEW, read-only REPEATABLE_READ transaction and fixed role restoration are application safety controls. Authentication, authorization, PA35 owner collaborator, tenancy/RLS and playback policy remain separate. No production readiness is claimed.
+
+### Current provisioning and validation
+
+After protected offline superuser Flyway migration/validate through018, use psql `-X -w -v ON_ERROR_STOP=1` with the four externally supplied names, never secrets in Git or command output:
+
+```sh
+psql -X -w -v mode=apply -v sharing_login="$SHARING_LOGIN" -v customer_login="$CUSTOMER_LOGIN" -v command_login="$COMMAND_LOGIN" -v operations_login="$OPERATIONS_LOGIN" -f backend/ops/postgresql/pa25-runtime-identities.sql
+psql -X -w -v mode=check -v sharing_login="$SHARING_LOGIN" -v customer_login="$CUSTOMER_LOGIN" -v command_login="$COMMAND_LOGIN" -v operations_login="$OPERATIONS_LOGIN" -f backend/ops/postgresql/pa25-runtime-identities.sql
+```
+
+Stop on any sanitized rejection; check never repairs, apply only creates missing provenanced external identities/approved edges. Do not revoke drift or alter base roles to get a pass. Provision credentials using protected external controls, then validate all seven ordinary TCP/TLS logins, no inherited privileges, seven LO SET targets and session/transaction/pool restoration after success/failure. TLS/pg_hba, credential assignment/rotation, new-connection old-password denial, pool drain/old-session policy, marker custody, cluster-global cross-database dependencies and exclusive administration are Platform/Security/Operations acceptance prerequisites **NOT EXECUTED** here; PASSWORD NULL is not credential readiness. Shared advisory locking is cooperative only. PA25 runbook Q17/Q23 remains historical context, not evidence of these live proofs.
+
+Current test inventory: Surefire77/712 + Failsafe32/520 =109 classes/1232 ordinary methods; annotation lines1233 with one historical comment. PA25 remains20 methods; PA36 adds8+16. POM includes32. XML must show failures0/errors0/skipped0; source/static assertions are not runtime evidence. Controller owns full PostgreSQL16/Docker/packaging validation and external production acceptance; production readiness NOT CLAIMED. No dependencies, wrappers, OpenAPI, V001–V017 or application code change.
+
+<!-- PA36 HISTORICAL BODY -->
+
 # 生产安全设计规范（S1+S2+S3：敏感数据、认证域、媒体、审计与脱敏）
 
 ## PA29 Current Runtime Boundary (V017)

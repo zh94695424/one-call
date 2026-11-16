@@ -85,7 +85,7 @@ class CustomerSubjectDetailBoundaryTests {
         assertThat(complete).containsAll(old);
         assertThat(migration).contains("namespace.nspname = 'evidence'", "NOT IN (15, 16)", "installed_rank <= 15", "V016_RECONCILIATION_REJECTED");
         String pa25 = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(pa25).contains("expected_resolved) <> 288", "history) <> 17", "V017__customer_evidence_read_privileges.sql");
+        assertThat(pa25).contains("expected_resolved) <> 410", "history) <> 18", "V017__customer_evidence_read_privileges.sql");
     }
     private Set<String> tuples(String source, String tag) {
         String marker = "$" + tag + "$";

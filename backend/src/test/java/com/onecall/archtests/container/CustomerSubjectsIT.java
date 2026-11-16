@@ -74,7 +74,7 @@ class CustomerSubjectsIT {
     void postgres16LatestChainAndCustomerRuntimeRoleAreUsed() throws Exception {
         try (var connection = fixture.admin()) {
             assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999);
-            assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE success AND type='SQL'")).isEqualTo("17");
+            assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE success AND type='SQL'")).isEqualTo("18");
         }
         counts(fixture.subject, "personal", "INACTIVE", 0, 0);
         assertThat(fixture.states).isNotEmpty().allMatch(value -> value.startsWith("customer_iam_role|pa27_customer|on|repeatable read|"));

@@ -79,8 +79,8 @@ class OperationsLifecycleBoundaryTests {
             Map.entry("../backend/src/main/resources/db/migration/V015__customer_business_number_read_privileges.sql", new String[] {"c069ea5393138d208c885b3fff852882412d3e9fd418ad0626ffff90717544fc", "1697a69fd39a61a9f8f7e0c1d2d699deda965840b58f7ff9937308f5670191c3"}),
             Map.entry("../backend/src/main/resources/db/migration/V016__customer_subject_detail_read_privileges.sql", new String[] {"a9913a9fad57fdba5a07b8be20cee5e4c81c4d113120d1c19851c276145eea5c", "988a9876943ae07a32210bc0380128294fc823817f5b6c3d4a44a28dfdd4696f"}),
             Map.entry("../backend/src/main/resources/db/migration/V017__customer_evidence_read_privileges.sql", new String[] {"74f0b860c6da0d2ebc4d03b9baa94010f2ece5c1e4a1a4512a34ffe64044dcc3", "57f1cac30dabdaee3e08fd43baaf6e696b453473ee8753f4c5da44cb0ecafbad"}));
-        for (var entry : hashes.entrySet()) { byte[] bytes = Files.readAllBytes(Path.of(entry.getKey())); String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); assertThat(actual).as(entry.getKey()).isIn((Object[]) entry.getValue()); }
-        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(paths.filter(path -> path.toString().endsWith(".sql")).count()).isEqualTo(17); }
+        for (var entry : hashes.entrySet()) { byte[] bytes = historicalBytes(entry.getKey(), Files.readAllBytes(Path.of(entry.getKey()))); String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); assertThat(actual).as(entry.getKey()).isIn((Object[]) entry.getValue()); }
+        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(paths.filter(path -> path.toString().endsWith(".sql")).count()).isEqualTo(18); }
     }
     @Test
     void auditOutboxFingerprintAndResponseFieldSetsAreExact() throws Exception {
@@ -89,4 +89,14 @@ class OperationsLifecycleBoundaryTests {
         String sql = source("activation_consent/internal/operations/JooqOperationsLifecycleRepository.java"); assertThat(sql).contains("\"status\", row.fromStatus(), \"revision\", row.fromRevision(), \"reasonCode\", row.reason()", "row.statusEvent(), UUID.randomUUID().toString()");
         String outbox = sql.substring(sql.indexOf("String payload ="), sql.indexOf("var result = context.fetchOne(\"SELECT platform")); assertThat(outbox).doesNotContain("employeeId", "reason()", "password", "bearer"); assertThat(outbox.split("\"[a-zA-Z]+\",", -1).length - 1).isEqualTo(13);
     }
+    private static byte[] historicalBytes(String name, byte[] bytes) throws Exception {
+        if (!name.endsWith("docs/17-production-security-design-spec.md")) return bytes;
+        String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
+        String lf = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(lf).isEqualTo("663b6cb4bce60c2937a8d52b4bc788595912fe1908e1847f8d7a7e152ab2eeaf");
+        String marker = "\n<!-- PA36 HISTORICAL BODY -->\n\n";
+        int offset = text.indexOf(marker); assertThat(offset).isGreaterThan(0); assertThat(text.indexOf(marker, offset + 1)).isEqualTo(-1);
+        return text.substring(offset + marker.length()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
 }

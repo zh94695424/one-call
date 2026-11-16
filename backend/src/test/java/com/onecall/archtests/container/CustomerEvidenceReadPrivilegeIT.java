@@ -43,6 +43,7 @@ class CustomerEvidenceReadPrivilegeIT {
     @BeforeEach void start() throws Exception { fixture = new CustomerBusinessNumbersFixture(); fixture.start("016"); }
     @AfterEach void stop() { if (fixture != null) fixture.close(); }
     private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("017").load(); }
+    private void latest() { var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("018").load(); assertThat(latest.migrate().migrationsExecuted).isEqualTo(1); latest.validate(); }
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -410,6 +411,7 @@ class CustomerEvidenceReadPrivilegeIT {
         Set<String> result = new TreeSet<>(oracle()); result.addAll(expectedDelta());
         assertThat(result).hasSize(288); return result;
     }
+    private Set<String> latestOracle() { Set<String> expected = new TreeSet<>(currentOracle()); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); return expected; }
     private void history() throws Exception {
         current().validate(); assertThat(current().info().applied()).hasSize(17); assertThat(current().info().pending()).isEmpty();
         try (var connection = fixture.admin()) {
@@ -484,7 +486,7 @@ class CustomerEvidenceReadPrivilegeIT {
         Map<Path, byte[]> before = frozenFiles();
         upgrade(); history();
         for (var entry : before.entrySet()) assertThat(Files.readAllBytes(entry.getKey())).isEqualTo(entry.getValue());
-        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start(null); history();
+        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start("017"); history();
         assertThat(current().migrate().migrationsExecuted).isZero();
         for (var entry : before.entrySet()) assertThat(Files.readAllBytes(entry.getKey())).isEqualTo(entry.getValue());
         assertThat(acls()).isEqualTo(currentOracle());
@@ -504,7 +506,7 @@ class CustomerEvidenceReadPrivilegeIT {
     }
     @Test
     void customerRoleReadsOnlyApprovedFactsAndDeniesAllSensitiveCapabilitiesWith42501() throws Exception {
-        upgrade(); fixture.provision(); fixture.seed(); seedEvidence();
+        upgrade(); frozenGraph(); fixture.seed(); seedEvidence();
         Set<String> before = acls();
         assertThat(before).isEqualTo(currentOracle());
         try (var admin = fixture.admin(); var connection = fixture.runtime()) {
@@ -636,14 +638,14 @@ class CustomerEvidenceReadPrivilegeIT {
 
     @Test
     void pa25RequiresExactV017HistoryAndIndependent288OracleWithoutRepair() throws Exception {
-        pa25RejectedWithoutRepair(); upgrade(); fixture.provision(); fixture.seed();
+        pa25RejectedWithoutRepair(); upgrade(); latest(); fixture.provision(); fixture.seed();
         for (var addition : additions()) {
             try (var connection = fixture.admin()) { execute(connection, "SET ROLE evidence_owner; REVOKE " + capability(addition) + " FROM customer_iam_role"); }
             try { pa25RejectedWithoutRepair(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "SET ROLE evidence_owner; GRANT " + capability(addition) + " TO customer_iam_role"); } }
         }
-        for (int rank : List.of(16, 17)) {
-            for (String mutation : List.of("checksum=0", "version='" + rank + "'", "installed_rank=18", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'", "DELETE")) {
+        for (int rank : List.of(16, 17, 18)) {
+            for (String mutation : List.of("checksum=0", "version='" + rank + "'", "installed_rank=19", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'", "DELETE")) {
                 String row;
                 try (var connection = fixture.admin()) {
                     row = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=" + rank);
@@ -656,23 +658,23 @@ class CustomerEvidenceReadPrivilegeIT {
                 } }
             }
         }
-        for (String version : List.of("017", "018")) {
-            try (var connection = fixture.admin()) { execute(connection, "INSERT INTO public.flyway_schema_history SELECT 1017,?,description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=17", version); }
+        for (String version : List.of("018", "019")) {
+            try (var connection = fixture.admin()) { execute(connection, "INSERT INTO public.flyway_schema_history SELECT 1018,?,description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=18", version); }
             try { pa25RejectedWithoutRepair(); }
-            finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE installed_rank=1017"); } }
+            finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE installed_rank=1018"); } }
         }
         String before; try (var connection = fixture.admin()) { before = catalog(connection); }
         for (int replay = 0; replay < 2; replay++) for (String mode : List.of("apply", "check")) {
             assertThat(fixture.psql(mode).getExitCode()).isZero();
             try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(before); }
-            assertThat(acls()).isEqualTo(currentOracle());
+            assertThat(acls()).isEqualTo(latestOracle());
         }
-        history();
+        assertThat(current().info().applied()).hasSize(18);
     }
 
     @Test
     void sixLoginsSevenEffectiveRolesAndFourMembershipEdgesRemainExact() throws Exception {
-        frozenGraph(); upgrade(); fixture.provision();
+        frozenGraph(); upgrade();
         List<String> roles = List.of("sharing_role", "customer_iam_role", "sharing_command_role", "evidence_role", "sharing_public_read_role", "sharing_admission_role", "evidence_media_reader_role");
         List<String> logins = List.of("pa27_query", "pa27_customer", "pa27_command", "sharing_public_read_role", "sharing_admission_role", "evidence_media_reader_role");
         Map<String, List<String>> targets = Map.of("pa27_query", List.of("sharing_role"), "pa27_customer", List.of("customer_iam_role"), "pa27_command", List.of("sharing_command_role", "evidence_role"));
@@ -727,7 +729,7 @@ class CustomerEvidenceReadPrivilegeIT {
 
     @Test
     void realCustomerPoolRestoresRoleAndTransactionAfterSuccessAndFailure() throws Exception {
-        upgrade(); fixture.provision(); fixture.seed(); UUID evidence = seedEvidence(); fixture.web();
+        upgrade(); frozenGraph(); fixture.seed(); UUID evidence = seedEvidence(); fixture.web();
         var service = fixture.context.getBean("customerEvidenceQueryService", com.onecall.core.customer_iam.internal.application.CustomerEvidenceQueryService.class);
         var caller = new com.onecall.core.customer_iam.internal.application.TrustedCustomerCaller(fixture.account,
                 com.onecall.core.customer_iam.internal.application.TrustedCustomerCaller.Channel.WEB,
