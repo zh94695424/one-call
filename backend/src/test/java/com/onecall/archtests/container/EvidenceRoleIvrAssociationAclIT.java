@@ -638,8 +638,13 @@ public class EvidenceRoleIvrAssociationAclIT {
             for (String column : strings(admin, "SELECT attname FROM pg_attribute WHERE attrelid='evidence.evidence_record'::regclass AND attnum>0 AND NOT attisdropped")) if (!RECORD_COLUMNS.contains(column)) denied(connection, "SELECT " + column + " FROM evidence.evidence_record");
             for (String sql : List.of("SELECT * FROM evidence.evidence_record", "UPDATE evidence.evidence_record SET status=status", "DELETE FROM evidence.evidence_record", "INSERT INTO evidence.evidence_record DEFAULT VALUES", "SELECT id FROM evidence.evidence_record FOR UPDATE", "SELECT id FROM evidence.evidence_record FOR SHARE", "CREATE TABLE evidence.pa36_forbidden(id integer)", "SELECT object_key FROM evidence.media_object", "SELECT snapshot FROM evidence.evidence_record", "SELECT evidence.guard_evidence_record()")) denied(connection, sql);
             var savepoint = connection.setSavepoint();
-            try { execute(connection, "GRANT SELECT (call_id) ON evidence.evidence_record TO customer_iam_role"); }
-            catch (SQLException denied) { assertThat(denied.getSQLState()).isEqualTo("42501"); connection.rollback(savepoint); }
+            try {
+                execute(connection, "GRANT SELECT (call_id) ON evidence.evidence_record TO customer_iam_role");
+                try (var statement = connection.createStatement(); var result = statement.executeQuery("SELECT has_column_privilege('customer_iam_role', 'evidence.evidence_record', 'call_id', 'SELECT')")) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getObject(1, Boolean.class)).isEqualTo(false);
+                }
+            } finally { connection.rollback(savepoint); }
             connection.rollback();
         }
         assertThat(acls()).isEqualTo(currentOracle());

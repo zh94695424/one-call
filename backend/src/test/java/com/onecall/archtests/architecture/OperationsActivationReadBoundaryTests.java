@@ -108,7 +108,7 @@ class OperationsActivationReadBoundaryTests {
         if (!name.endsWith("docs/17-production-security-design-spec.md")) return bytes;
         String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
         String lf = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        assertThat(lf).isEqualTo("663b6cb4bce60c2937a8d52b4bc788595912fe1908e1847f8d7a7e152ab2eeaf");
+        assertThat(lf).isEqualTo("4e7df589380f70ba7e9e1a5b7e9c1542ca6ed89313a775dacfc91e109852ceb6");
         String marker = "\n<!-- PA36 HISTORICAL BODY -->\n\n";
         int offset = text.indexOf(marker); assertThat(offset).isGreaterThan(0); assertThat(text.indexOf(marker, offset + 1)).isEqualTo(-1);
         return text.substring(offset + marker.length()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
