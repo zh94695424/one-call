@@ -43,7 +43,7 @@ class CustomerSubjectDetailReadPrivilegeIT {
     @BeforeEach void start() throws Exception { fixture = new CustomerBusinessNumbersFixture(); fixture.start("015"); }
     @AfterEach void stop() { if (fixture != null) fixture.close(); }
     private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("016").load(); }
-    private Flyway latest() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("017").load(); }
+    private Flyway latest() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("018").load(); }
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -367,9 +367,9 @@ class CustomerSubjectDetailReadPrivilegeIT {
                 "sharing_role|schema|organization_access||USAGE|organization_access_owner|false",
                 "sharing_role|schema|sharing||USAGE|sharing_owner|false"); }
     private Set<String> currentOracle() { Set<String> expected = new TreeSet<>(oracle()); expected.addAll(Set.of(
-            "customer_iam_role|column|evidence.evidence_record|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|identity_at_capture|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|status|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|source_type|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|source_ref_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|consent_version|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|created_at|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|solidified_at|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|evidence_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|media_object_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|artifact_role|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|sha256|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|size_bytes|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|mime_type|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|media_object_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|status|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|validated_duration|SELECT|evidence_owner|false")); return expected; }
+            "customer_iam_role|column|evidence.evidence_record|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|identity_at_capture|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|status|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|source_type|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|source_ref_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|consent_version|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|created_at|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_record|solidified_at|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|evidence_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|media_object_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.evidence_artifact|artifact_role|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|sha256|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|size_bytes|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.media_object|mime_type|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|media_object_id|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|status|SELECT|evidence_owner|false", "customer_iam_role|column|evidence.recording|validated_duration|SELECT|evidence_owner|false")); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); return expected; }
     private void rejectsPa25WithoutMutation() throws Exception { Set<String> before = acls(); for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); assertThat(acls()).isEqualTo(before); }
-    private void currentHistory() throws Exception { try (var connection = fixture.admin()) { assertThat(current().info().applied()).hasSize(17); assertThat(one(connection, "SELECT version||'|'||script||'|'||checksum||'|'||installed_rank||'|'||success FROM public.flyway_schema_history ORDER BY installed_rank DESC LIMIT 1")).isEqualTo("017|V017__customer_evidence_read_privileges.sql|-41822162|17|true"); } }
+    private void currentHistory() throws Exception { try (var connection = fixture.admin()) { assertThat(current().info().applied()).hasSize(18); assertThat(one(connection, "SELECT version||'|'||script||'|'||checksum||'|'||installed_rank||'|'||success FROM public.flyway_schema_history ORDER BY installed_rank DESC LIMIT 1")).isEqualTo("018|V018__evidence_role_ivr_association_read_privileges.sql|1606293398|18|true"); } }
     private List<String[]> additions() {
         return List.of(
                 new String[]{"subject_number.subject_risk_state", "caller_number_binding_id", "subject_number_owner"},
@@ -454,7 +454,7 @@ class CustomerSubjectDetailReadPrivilegeIT {
     }
     @Test
     void customerRoleReadsOnlyApprovedColumnsAndDeniesAllOtherCapabilitiesWith42501() throws Exception {
-        assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory();
+        assertThat(latest().migrate().migrationsExecuted).isEqualTo(3); fixture.provision(); currentHistory();
         Set<String> before = acls();
         try (var admin = fixture.admin(); var connection = fixture.runtime()) {
             connection.setAutoCommit(false); execute(connection, "SET LOCAL ROLE customer_iam_role");
@@ -541,14 +541,14 @@ class CustomerSubjectDetailReadPrivilegeIT {
         rejectsPa25WithoutMutation();
         upgrade(); history(); assertThat(acls()).isEqualTo(oracle());
         rejectsPa25WithoutMutation();
-        assertThat(latest().migrate().migrationsExecuted).isEqualTo(1); fixture.provision(); currentHistory(); assertThat(acls()).isEqualTo(currentOracle());
+        assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory(); assertThat(acls()).isEqualTo(currentOracle());
         for (var addition : additions()) {
             try (var connection = fixture.admin()) { execute(connection, "SET ROLE " + addition[2]); execute(connection, "REVOKE " + capability(addition) + " FROM customer_iam_role"); }
             Set<String> before = acls();
             try { for (String mode : List.of("apply", "check")) { assertThat(fixture.psql(mode).getExitCode()).isNotZero(); assertThat(acls()).isEqualTo(before); } }
             finally { try (var connection = fixture.admin()) { execute(connection, "SET ROLE " + addition[2]); execute(connection, "GRANT " + capability(addition) + " TO customer_iam_role"); } }
         }
-        for (String mutation : List.of("checksum=0", "version='16'", "installed_rank=18", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'")) {
+        for (String mutation : List.of("checksum=0", "version='16'", "installed_rank=19", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'")) {
             String row;
             try (var connection = fixture.admin()) { row = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=16"); execute(connection, "UPDATE public.flyway_schema_history SET " + mutation + " WHERE installed_rank=16"); }
             try { for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); }
@@ -559,7 +559,7 @@ class CustomerSubjectDetailReadPrivilegeIT {
 
     @Test
     void allSixLoginsAndSevenEffectiveRolesRetainExactMembershipBoundaries() throws Exception {
-        frozenGraph(); assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory();
+        frozenGraph(); assertThat(latest().migrate().migrationsExecuted).isEqualTo(3); fixture.provision(); currentHistory();
         try (var admin = fixture.admin()) {
             assertThat(one(admin, "SELECT count(*) FROM pg_auth_members WHERE member IN ('pa27_customer'::regrole,'pa27_query'::regrole,'pa27_command'::regrole) AND NOT admin_option AND NOT inherit_option AND set_option")).isEqualTo("4");
         }
@@ -580,7 +580,7 @@ class CustomerSubjectDetailReadPrivilegeIT {
 
     @Test
     void realCustomerPoolRestoresRoleAndTransactionAfterSuccessAndFailure() throws Exception {
-        assertThat(latest().migrate().migrationsExecuted).isEqualTo(2); fixture.provision(); currentHistory(); fixture.seed(); fixture.web();
+        assertThat(latest().migrate().migrationsExecuted).isEqualTo(3); fixture.provision(); currentHistory(); fixture.seed(); fixture.web();
         var service = fixture.context.getBean("customerSubjectDetailQueryService", com.onecall.core.customer_iam.internal.application.CustomerSubjectDetailQueryService.class);
         UUID subject; try (var connection = fixture.admin()) { subject = UUID.fromString(one(connection, "SELECT id FROM subject_number.business_subject WHERE owner_account_id='" + fixture.account + "' LIMIT 1")); }
         var caller = new com.onecall.core.customer_iam.internal.application.TrustedCustomerCaller(fixture.account,

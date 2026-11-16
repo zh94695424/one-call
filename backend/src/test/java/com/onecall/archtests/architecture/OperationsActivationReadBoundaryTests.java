@@ -94,14 +94,24 @@ class OperationsActivationReadBoundaryTests {
         assertThat(entries.stream().map(entry -> entry.group(2))).containsExactlyInAnyOrderElementsOf(hashes.keySet());
         for (var entry : entries) {
             assertThat(entry.group(1)).isEqualTo(hashes.get(entry.group(2))[0]);
-            byte[] bytes = Files.readAllBytes(Path.of("..").resolve(entry.group(2)));
+            byte[] bytes = historicalBytes(entry.group(2), Files.readAllBytes(Path.of("..").resolve(entry.group(2))));
             assertThat(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))).as(entry.group(2)).isIn((Object[]) hashes.get(entry.group(2)));
         }
-        try (var files = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet())).hasSize(17).containsExactlyInAnyOrderElementsOf(entries.stream().map(entry -> entry.group(2)).filter(path -> path.contains("/migration/")).map(path -> Path.of(path).getFileName().toString()).toList()); }
+        try (var files = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet())).hasSize(18).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(entries.stream().map(entry -> entry.group(2)).filter(path -> path.contains("/migration/")).map(path -> Path.of(path).getFileName().toString()), java.util.stream.Stream.of("V018__evidence_role_ivr_association_read_privileges.sql")).toList()); }
     }
     @Test
     void employeeVerifierAndFilterLockstepStayIndependentAndExact() throws Exception {
         for (String filter : List.of("operations_iam/internal/web/OperationsBoundaryFilter.java", "customer_iam/internal/web/CustomerBoundaryFilter.java")) assertThat(source(filter)).contains("\"/api/v1/operations/activations\".equals(", "\"GET\".equals(", ".equals(request.getRequestURI())").doesNotContain("startsWith(\"/api/v1/operations/activations");
         try (var paths = Files.walk(ROOT)) { for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) assertThat(Files.readString(path)).doesNotContain("implements EmployeeSessionVerifier"); }
     }
+    private static byte[] historicalBytes(String name, byte[] bytes) throws Exception {
+        if (!name.endsWith("docs/17-production-security-design-spec.md")) return bytes;
+        String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
+        String lf = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(lf).isEqualTo("4e7df589380f70ba7e9e1a5b7e9c1542ca6ed89313a775dacfc91e109852ceb6");
+        String marker = "\n<!-- PA36 HISTORICAL BODY -->\n\n";
+        int offset = text.indexOf(marker); assertThat(offset).isGreaterThan(0); assertThat(text.indexOf(marker, offset + 1)).isEqualTo(-1);
+        return text.substring(offset + marker.length()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
 }

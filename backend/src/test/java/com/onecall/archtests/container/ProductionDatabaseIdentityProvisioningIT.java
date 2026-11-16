@@ -65,17 +65,22 @@ import org.testcontainers.utility.MountableFile;
 class ProductionDatabaseIdentityProvisioningIT {
     private static final Path SCRIPT = Path.of("ops/postgresql/pa25-runtime-identities.sql");
     private static final String CONTAINER_SCRIPT = "/tmp/pa25-runtime-identities.sql";
-    private static final List<String> EXTERNAL = List.of("pa25_query", "pa25_customer", "pa25_command");
+    private static final List<String> EXTERNAL = List.of("pa25_query", "pa25_customer", "pa25_command", "pa36_operations");
     private static final List<String> DIRECT = List.of("sharing_public_read_role", "sharing_admission_role", "evidence_media_reader_role");
     private static final List<String> EFFECTIVE = List.of("sharing_role", "customer_iam_role", "sharing_command_role", "evidence_role",
-            "sharing_public_read_role", "sharing_admission_role", "evidence_media_reader_role");
-    private static final List<String> LOGINS = java.util.stream.Stream.concat(EXTERNAL.stream(), DIRECT.stream()).toList();
+            "sharing_public_read_role", "sharing_admission_role", "evidence_media_reader_role", "operations_iam_role", "ivr_role");
+    private static final List<String> LEGACY_LOGINS = java.util.stream.Stream.concat(EXTERNAL.stream().limit(3), DIRECT.stream()).toList();
+    private static final List<String> LOGINS = java.util.stream.Stream.concat(LEGACY_LOGINS.stream(), EXTERNAL.stream().skip(3)).toList();
+    private static final List<String> SHARED_CONTEXT_TARGETS = List.of("subject_number_role", "activation_consent_role", "entitlement_metering_role", "catalog_order_role");
+    private static final List<String> CAPABILITY_BOUNDARY = java.util.stream.Stream.concat(EFFECTIVE.stream(), SHARED_CONTEXT_TARGETS.stream()).toList();
+    private static final List<String> BOUNDARY = java.util.stream.Stream.concat(EXTERNAL.stream(), CAPABILITY_BOUNDARY.stream()).toList();
     private static final List<String> MANAGED = java.util.stream.Stream.concat(EXTERNAL.stream(), EFFECTIVE.stream()).toList();
-    private static final List<String> SLOTS = List.of("sharing_query", "customer_context", "sharing_command");
+    private static final List<String> SLOTS = List.of("sharing_query", "customer_context", "sharing_command", "operations_ivr_read");
     private static final List<String> POOLS = List.of("sharingQuery", "customerQuery", "sharingCommand", "publicShareQuery", "sharingAdmission", "evidenceMediaRead");
     private static final Map<String, List<String>> TARGETS = Map.of(
             EXTERNAL.get(0), List.of("sharing_role"), EXTERNAL.get(1), List.of("customer_iam_role"),
-            EXTERNAL.get(2), List.of("sharing_command_role", "evidence_role"));
+            EXTERNAL.get(2), List.of("sharing_command_role", "evidence_role"),
+            EXTERNAL.get(3), List.of("operations_iam_role", "subject_number_role", "activation_consent_role", "entitlement_metering_role", "evidence_role", "catalog_order_role", "ivr_role"));
     private static final List<String> SNAPSHOTS = List.of(
             "SELECT row_to_json(value)::text FROM pg_authid value ORDER BY oid",
             "SELECT (to_jsonb(value)-'oid')::text FROM pg_auth_members value ORDER BY roleid,member,grantor",
@@ -116,7 +121,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa25";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", adminPassword).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(17);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(18);
         try (Connection admin = admin()) {
             assertThat(one(admin, "SELECT current_setting('server_version_num')::integer BETWEEN 160000 AND 169999")).isEqualTo("t");
             assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname !~ '^pg_' AND rolname NOT IN ('postgres','fixture_admin')")).isEqualTo("31");
@@ -155,11 +160,11 @@ class ProductionDatabaseIdentityProvisioningIT {
         provision();
         startApplication();
         assertThat(application.getBeansOfType(HikariDataSource.class)).hasSize(6);
-        for (int index = 0; index < LOGINS.size(); index++) {
+        for (int index = 0; index < LEGACY_LOGINS.size(); index++) {
             HikariDataSource pool = application.getBean(POOLS.get(index) + "DataSource", HikariDataSource.class);
-            assertThat(pool.getUsername().equals(LOGINS.get(index))).isTrue();
+            assertThat(pool.getUsername().equals(LEGACY_LOGINS.get(index))).isTrue();
             assertThat(pool.getJdbcUrl().equals(url)).isTrue();
-            try (Connection connection = pool.getConnection()) { identity(connection, LOGINS.get(index), LOGINS.get(index)); }
+            try (Connection connection = pool.getConnection()) { identity(connection, LEGACY_LOGINS.get(index), LEGACY_LOGINS.get(index)); }
         }
         for (String invalid : List.of("", EXTERNAL.get(2))) {
             safeInvalid(() -> new SharingPublicReadPersistenceProperties(url, invalid, passwords.get(DIRECT.get(0))));
@@ -280,7 +285,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         int rejected = 0;
         for (String login : LOGINS) {
             try (Connection connection = login(login)) {
-                for (String target : EFFECTIVE) {
+                for (String target : CAPABILITY_BOUNDARY) {
                     boolean permitted = target.equals(login) || TARGETS.getOrDefault(login, List.of()).contains(target);
                     for (String prefix : List.of("SET ROLE ", "SET LOCAL ROLE ")) {
                         connection.setAutoCommit(false);
@@ -300,8 +305,9 @@ class ProductionDatabaseIdentityProvisioningIT {
                 }
             }
         }
-        assertThat(allowed).isEqualTo(7);
-        assertThat(rejected).isEqualTo(35);
+        assertThat(allowed).isEqualTo(14);
+        assertThat(rejected).isEqualTo(77);
+        assertThat(allowed + rejected).isEqualTo(91);
     }
 
     @Test
@@ -382,7 +388,7 @@ class ProductionDatabaseIdentityProvisioningIT {
                 assertMarkers();
             }
         }
-        rejectBothWithNames(List.of("pa25_replacement", EXTERNAL.get(1), EXTERNAL.get(2)), null);
+        rejectBothWithNames(List.of("pa25_replacement", EXTERNAL.get(1), EXTERNAL.get(2), EXTERNAL.get(3)), null);
         for (String fixed : List.of("sharing_command_role", DIRECT.get(0))) {
             contaminate("ALTER ROLE " + identifier(fixed) + " RENAME TO pa25_missing",
                     "ALTER ROLE pa25_missing RENAME TO " + identifier(fixed), null);
@@ -442,13 +448,13 @@ class ProductionDatabaseIdentityProvisioningIT {
     @Test
     void unsafeAttributesAndLoginShapeMismatchesFailClosed() throws Exception {
         provision();
-        for (String role : MANAGED) {
+        for (String role : BOUNDARY) {
             for (String flag : List.of("SUPERUSER", "CREATEDB", "CREATEROLE", "REPLICATION", "BYPASSRLS")) {
                 contaminate("ALTER ROLE " + identifier(role) + " " + flag,
                         "ALTER ROLE " + identifier(role) + " NO" + flag, null);
             }
             boolean login = LOGINS.contains(role);
-            boolean inherit = List.of("sharing_role", "customer_iam_role", "evidence_role").contains(role);
+            boolean inherit = java.util.stream.Stream.concat(List.of("sharing_role", "customer_iam_role", "evidence_role", "operations_iam_role", "ivr_role").stream(), SHARED_CONTEXT_TARGETS.stream()).toList().contains(role);
             contaminate("ALTER ROLE " + identifier(role) + (login ? " NOLOGIN" : " LOGIN"),
                     "ALTER ROLE " + identifier(role) + (login ? " LOGIN" : " NOLOGIN"), null);
             contaminate("ALTER ROLE " + identifier(role) + (inherit ? " NOINHERIT" : " INHERIT"),
@@ -460,7 +466,7 @@ class ProductionDatabaseIdentityProvisioningIT {
             contaminate("ALTER ROLE " + identifier(role) + " VALID UNTIL '2000-01-01 00:00:00+00'",
                     restoreValidity, null);
         }
-        for (String role : EFFECTIVE.subList(0, 4)) {
+        for (String role : CAPABILITY_BOUNDARY.stream().filter(role -> !DIRECT.contains(role)).toList()) {
             password(role, UUID.randomUUID().toString());
             try { rejectBoth(null); } finally { password(role, null); }
         }
@@ -513,7 +519,7 @@ class ProductionDatabaseIdentityProvisioningIT {
             contaminate("GRANT CONNECT ON DATABASE pa25 TO " + identifier(role), "REVOKE CONNECT ON DATABASE pa25 FROM " + identifier(role), null);
         }
         for (String role : EFFECTIVE) {
-            String schema = role.equals("customer_iam_role") ? "customer_iam" : role.startsWith("evidence") ? "evidence" : "sharing";
+            String schema = role.equals("operations_iam_role") ? "operations_iam" : role.equals("ivr_role") ? "ivr" : role.equals("customer_iam_role") ? "customer_iam" : role.startsWith("evidence") ? "evidence" : "sharing";
             String owner = schema + "_owner";
             contaminate("SET ROLE " + owner + "; REVOKE USAGE ON SCHEMA " + schema + " FROM " + identifier(role) + "; RESET ROLE",
                     "SET ROLE " + owner + "; GRANT USAGE ON SCHEMA " + schema + " TO " + identifier(role) + "; RESET ROLE", null);
@@ -572,7 +578,7 @@ class ProductionDatabaseIdentityProvisioningIT {
     @Test
     void roleAndDatabaseRoleSettingsFailClosed() throws Exception {
         provision();
-        for (String role : MANAGED) {
+        for (String role : BOUNDARY) {
             for (String setting : List.of("search_path TO sharing", "default_transaction_read_only TO on", "session_preload_libraries TO ''")) {
                 String key = setting.substring(0, setting.indexOf(' '));
                 contaminate("ALTER ROLE " + identifier(role) + " SET " + setting,
@@ -598,10 +604,10 @@ class ProductionDatabaseIdentityProvisioningIT {
         for (String mode : List.of("", "APPLY", "unknown")) reject(mode, "PA25_INPUT_REJECTED");
         rejectInvocation(List.of(), "PA25_INPUT_REJECTED", "pa25", "fixture_admin");
         for (String name : List.of("", "pg_bad", "public", "sharing_role", "sharing_owner", "fixture_admin", "a".repeat(64), "bad'; SELECT 1; --")) {
-            rejectBothWithNames(List.of(name, EXTERNAL.get(1), EXTERNAL.get(2)), null);
+            rejectBothWithNames(List.of(name, EXTERNAL.get(1), EXTERNAL.get(2), EXTERNAL.get(3)), null);
         }
-        rejectBothWithNames(List.of(EXTERNAL.get(1), EXTERNAL.get(1), EXTERNAL.get(2)), null);
-        for (int slot = 0; slot < 3; slot++) {
+        rejectBothWithNames(List.of(EXTERNAL.get(1), EXTERNAL.get(1), EXTERNAL.get(2), EXTERNAL.get(3)), null);
+        for (int slot = 0; slot < 4; slot++) {
             String role = EXTERNAL.get(slot);
             executeAdmin("CREATE ROLE " + identifier(role) + " LOGIN NOINHERIT");
             try {
@@ -612,17 +618,17 @@ class ProductionDatabaseIdentityProvisioningIT {
             } finally { executeAdmin("DROP ROLE " + identifier(role)); }
         }
         String finalHistory;
-        try (Connection admin = admin()) { finalHistory = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=17"); }
-        contaminate("DELETE FROM public.flyway_schema_history WHERE installed_rank=17",
+        try (Connection admin = admin()) { finalHistory = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=18"); }
+        contaminate("DELETE FROM public.flyway_schema_history WHERE installed_rank=18",
                 "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
-        try (Connection admin = admin()) { assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname IN ('pa25_query','pa25_customer','pa25_command')")).isEqualTo("0"); }
-        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=18", "type='BASELINE'", "success=false", "version='17'")) {
-            contaminate("UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=17",
-                    "DELETE FROM public.flyway_schema_history WHERE version IN ('017','17'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
+        try (Connection admin = admin()) { assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname IN ('pa25_query','pa25_customer','pa25_command','pa36_operations')")).isEqualTo("0"); }
+        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=19", "type='BASELINE'", "success=false", "version='18'")) {
+            contaminate("UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=18",
+                    "DELETE FROM public.flyway_schema_history WHERE version IN ('018','18'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
         }
-        for (String extraVersion : List.of("017", "018")) {
-            contaminate("INSERT INTO public.flyway_schema_history SELECT installed_rank+1000," + literal(extraVersion) + ",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=17",
-                    "DELETE FROM public.flyway_schema_history WHERE installed_rank=1017", "PA25_HISTORY_REJECTED");
+        for (String extraVersion : List.of("018", "019")) {
+            contaminate("INSERT INTO public.flyway_schema_history SELECT installed_rank+1000," + literal(extraVersion) + ",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=18",
+                    "DELETE FROM public.flyway_schema_history WHERE installed_rank=1018", "PA25_HISTORY_REJECTED");
         }
         String predecessor;
         try (Connection admin = admin()) { predecessor = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=15"); }
@@ -632,6 +638,10 @@ class ProductionDatabaseIdentityProvisioningIT {
         try (Connection admin = admin()) { v016Predecessor = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=16"); }
         contaminate("UPDATE public.flyway_schema_history SET checksum=0 WHERE installed_rank=16",
                 "DELETE FROM public.flyway_schema_history WHERE installed_rank=16; INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(v016Predecessor) + "::jsonb)", "PA25_HISTORY_REJECTED");
+        String v017Predecessor;
+        try (Connection admin = admin()) { v017Predecessor = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=17"); }
+        contaminate("UPDATE public.flyway_schema_history SET checksum=0 WHERE installed_rank=17",
+                "DELETE FROM public.flyway_schema_history WHERE installed_rank=17; INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(v017Predecessor) + "::jsonb)", "PA25_HISTORY_REJECTED");
         provision();
         for (String role : EXTERNAL) {
             String marker;
@@ -695,13 +705,13 @@ class ProductionDatabaseIdentityProvisioningIT {
         assertThat(migrationHashes().equals(entryHashes)).isTrue();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         flyway.validate();
-        assertThat(flyway.info().applied()).hasSize(17);
+        assertThat(flyway.info().applied()).hasSize(18);
         assertExactFrozenAcls();
         assertMarkers();
         try (Connection admin = admin()) {
             assertThat(catalogAcls(admin).equals(aclBefore)).isTrue();
-            assertThat(strings(admin, "SELECT row_to_json(value)::text FROM pg_shdescription value WHERE objoid NOT IN ('pa25_query'::regrole,'pa25_customer'::regrole,'pa25_command'::regrole) ORDER BY objoid,classoid").equals(comments)).isTrue();
-            assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname !~ '^pg_' AND rolname NOT IN ('postgres','fixture_admin')")).isEqualTo("34");
+            assertThat(strings(admin, "SELECT row_to_json(value)::text FROM pg_shdescription value WHERE objoid NOT IN ('pa25_query'::regrole,'pa25_customer'::regrole,'pa25_command'::regrole,'pa36_operations'::regrole) ORDER BY objoid,classoid").equals(comments)).isTrue();
+            assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname !~ '^pg_' AND rolname NOT IN ('postgres','fixture_admin')")).isEqualTo("35");
             assertThat(one(admin, "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'pa25%'")).isEqualTo("0");
         }
     }
@@ -714,7 +724,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         success("apply");
         success("check");
         String canary = "pa25_canary_'_SQL_DETAIL_BINDINGS_jdbc:postgresql://not-a-real-endpoint/fixture";
-        rejectBothWithNames(List.of(canary, EXTERNAL.get(1), EXTERNAL.get(2)), "PA25_INPUT_REJECTED");
+        rejectBothWithNames(List.of(canary, EXTERNAL.get(1), EXTERNAL.get(2), EXTERNAL.get(3)), "PA25_INPUT_REJECTED");
         contaminate("COMMENT ON ROLE pa25_query IS " + literal(canary),
                 markerRestoreSql(EXTERNAL.get(0)), "PA25_PROVENANCE_REJECTED");
         try (Connection connection = login(EXTERNAL.get(0))) { denied(connection, "SET ROLE fixture_admin", "42501"); }
@@ -815,7 +825,7 @@ class ProductionDatabaseIdentityProvisioningIT {
 
     private static List<String> arguments(String mode, List<String> names) {
         return List.of("-v", "mode=" + mode, "-v", "sharing_login=" + names.get(0),
-                "-v", "customer_login=" + names.get(1), "-v", "command_login=" + names.get(2));
+                "-v", "customer_login=" + names.get(1), "-v", "command_login=" + names.get(2), "-v", "operations_login=" + names.get(3));
     }
 
     private org.testcontainers.containers.Container.ExecResult invocation(List<String> variables, String database, String user) throws Exception {
@@ -833,7 +843,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         var result = invocation(arguments(mode, EXTERNAL), "pa25", "fixture_admin");
         assertThat(result.getExitCode()).as("PA25 script exit; raw diagnostics withheld").isZero();
         assertThat(result.getStderr().isBlank()).isTrue();
-        assertThat(result.getStdout().strip()).isEqualTo("PA25_" + mode.toUpperCase(java.util.Locale.ROOT) + "_OK logins=6 effective_roles=7 memberships=4");
+        assertThat(result.getStdout().strip()).isEqualTo("PA25_" + mode.toUpperCase(java.util.Locale.ROOT) + "_OK logins=7 effective_roles=9 memberships=11");
     }
 
     private void reject(String mode, String category) throws Exception { rejectInvocation(arguments(mode, EXTERNAL), category, "pa25", "fixture_admin"); }
@@ -880,9 +890,9 @@ class ProductionDatabaseIdentityProvisioningIT {
     }
 
     private void assertGraph() throws Exception {
-        List<String> expected = List.of("customer_iam_role|pa25_customer|false|false|true|true",
-                "evidence_role|pa25_command|false|false|true|true", "sharing_command_role|pa25_command|false|false|true|true",
-                "sharing_role|pa25_query|false|false|true|true");
+        List<String> expected = TARGETS.entrySet().stream().flatMap(entry -> entry.getValue().stream()
+                .map(target -> target + "|" + entry.getKey() + "|false|false|true|true")).sorted().toList();
+        assertThat(expected).hasSize(11);
         try (Connection admin = admin()) {
             assertThat(strings(admin, "SELECT target.rolname||'|'||member_role.rolname||'|'||membership.admin_option||'|'||membership.inherit_option||'|'||membership.set_option||'|'||grantor.rolsuper FROM pg_auth_members membership JOIN pg_roles target ON target.oid=membership.roleid JOIN pg_roles member_role ON member_role.oid=membership.member JOIN pg_roles grantor ON grantor.oid=membership.grantor WHERE target.rolname NOT LIKE 'pg_%' OR member_role.rolname NOT LIKE 'pg_%' ORDER BY 1")).containsExactlyElementsOf(expected);
         }
@@ -955,11 +965,11 @@ class ProductionDatabaseIdentityProvisioningIT {
         Map<String, Object> environment = new LinkedHashMap<>();
         List<String> prefixes = List.of("ONECALL_DB", "ONECALL_CUSTOMER_DB", "ONECALL_SHARING_COMMAND_DB",
                 "ONECALL_SHARING_PUBLIC_READ_DATASOURCE", "ONECALL_SHARING_ADMISSION_DATASOURCE", "ONECALL_EVIDENCE_MEDIA_READ_DATASOURCE");
-        for (int index = 0; index < LOGINS.size(); index++) {
+        for (int index = 0; index < LEGACY_LOGINS.size(); index++) {
             String prefix = prefixes.get(index);
             environment.put(prefix + "_URL", url);
-            environment.put(prefix + "_USERNAME", LOGINS.get(index));
-            environment.put(prefix + "_PASSWORD", passwords.get(LOGINS.get(index)));
+            environment.put(prefix + "_USERNAME", LEGACY_LOGINS.get(index));
+            environment.put(prefix + "_PASSWORD", passwords.get(LEGACY_LOGINS.get(index)));
         }
         environment.put("ONECALL_SHARING_COMMAND_ENABLED", "true");
         environment.put("ONECALL_SHARING_ADMISSION_DATASOURCE_ENABLED", "true");
@@ -1358,11 +1368,12 @@ class ProductionDatabaseIdentityProvisioningIT {
                     ) SELECT grantee::regrole::text||'|'||kind||'|'||object_name||'|'||column_name||'|'||privilege_type||'|'||grantor::regrole::text||'|'||is_grantable
                     FROM facts WHERE grantee IN ('sharing_role'::regrole,'customer_iam_role'::regrole,
                         'sharing_command_role'::regrole,'evidence_role'::regrole,'sharing_public_read_role'::regrole,
-                        'sharing_admission_role'::regrole,'evidence_media_reader_role'::regrole)
+                        'sharing_admission_role'::regrole,'evidence_media_reader_role'::regrole,'operations_iam_role'::regrole,'ivr_role'::regrole)
                     ORDER BY 1
                     """);
-            assertThat(expected.size()).isEqualTo(288);
-            assertThat(actual.size()).isEqualTo(288);
+            expected = new java.util.HashSet<>(expected); expected.addAll(EvidenceRoleIvrAssociationAclIT.additionalOracle());
+            assertThat(expected.size()).isEqualTo(410);
+            assertThat(actual.size()).isEqualTo(410);
             assertThat(Set.copyOf(actual).equals(expected)).as("independent frozen-source ACL equality").isTrue();
         }
     }

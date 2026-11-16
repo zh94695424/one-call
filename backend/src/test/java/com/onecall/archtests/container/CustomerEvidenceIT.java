@@ -79,7 +79,7 @@ class CustomerEvidenceIT {
     void postgres16LatestChainAndVerifiedCustomerRoutesAreWired() throws Exception {
         try (var connection = fixture.admin()) {
             assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999);
-            assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE success AND type='SQL'")).isEqualTo("17");
+            assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE success AND type='SQL'")).isEqualTo("18");
         }
         try (var connection = fixture.base.runtime()) { assertThat(one(connection, "SELECT current_user||'|'||session_user")).isEqualTo("pa27_customer|pa27_customer"); }
         assertThat(fixture.ids(list(""))).containsExactly(fixture.evidence);

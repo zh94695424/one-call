@@ -95,9 +95,10 @@ class ActivationCommandRoleLeastPrivilegeIT {
     void fixtureCleanupAndFrozenAclInventoryRemainExact() throws Exception {
         var oracleType = CustomerEvidenceReadPrivilegeIT.class; var aclField = oracleType.getDeclaredField("ACL"); aclField.setAccessible(true); var oracleMethod = oracleType.getDeclaredMethod("currentOracle"); oracleMethod.setAccessible(true);
         Set<String> actual = new TreeSet<>(); try (var connection = fixture.admin(); var statement = connection.createStatement(); var rows = statement.executeQuery((String) aclField.get(null))) { while (rows.next()) actual.add(rows.getString(1)); }
-        assertThat(actual).hasSize(288).isEqualTo(oracleMethod.invoke(new CustomerEvidenceReadPrivilegeIT()));
+        Set<String> expected = new TreeSet<>((Set<String>) oracleMethod.invoke(new CustomerEvidenceReadPrivilegeIT())); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta());
+        assertThat(actual).hasSize(290).isEqualTo(expected);
         var delta = oracleType.getDeclaredMethod("expectedDelta"); delta.setAccessible(true); assertThat((Set<?>) delta.invoke(new CustomerEvidenceReadPrivilegeIT())).hasSize(19);
-        assertThat(fixture.scalar("SELECT count(*) FROM public.flyway_schema_history WHERE success")).isEqualTo("17");
+        assertThat(fixture.scalar("SELECT count(*) FROM public.flyway_schema_history WHERE success")).isEqualTo("18");
         fixture.accept("event"); fixture.reset(); assertThat(fixture.counts()).containsOnly(0L); clean();
     }
 }

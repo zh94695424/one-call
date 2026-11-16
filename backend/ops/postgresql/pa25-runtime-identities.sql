@@ -21,21 +21,29 @@
 \else
 \set command_login ''
 \endif
+\if :{?operations_login}
+\else
+\set operations_login ''
+\endif
 BEGIN;
 \o /dev/null
 SELECT set_config('pa25.mode', :'mode', true),
        set_config('pa25.sharing_login', :'sharing_login', true),
        set_config('pa25.customer_login', :'customer_login', true),
-       set_config('pa25.command_login', :'command_login', true);
+       set_config('pa25.command_login', :'command_login', true),
+       set_config('pa25.operations_login', :'operations_login', true);
 DO $pa25$
 DECLARE
     failure_category text := 'PA25_INPUT_REJECTED';
     requested_mode text := current_setting('pa25.mode');
     external_names text[] := ARRAY[current_setting('pa25.sharing_login'),
-        current_setting('pa25.customer_login'), current_setting('pa25.command_login')];
-    slots text[] := ARRAY['sharing_query', 'customer_context', 'sharing_command'];
+        current_setting('pa25.customer_login'), current_setting('pa25.command_login'), current_setting('pa25.operations_login')];
+    slots text[] := ARRAY['sharing_query', 'customer_context', 'sharing_command', 'operations_ivr_read'];
     effective_names text[] := ARRAY['sharing_role', 'customer_iam_role', 'sharing_command_role',
-        'evidence_role', 'sharing_public_read_role', 'sharing_admission_role', 'evidence_media_reader_role'];
+        'evidence_role', 'sharing_public_read_role', 'sharing_admission_role', 'evidence_media_reader_role', 'operations_iam_role', 'ivr_role'];
+    shared_context_targets text[] := ARRAY['subject_number_role', 'activation_consent_role', 'entitlement_metering_role', 'catalog_order_role'];
+    boundary_names text[];
+    boundary_oids oid[];
     managed_names text[];
     login_names text[];
     expected_acls jsonb := $frozen$[
@@ -2190,26 +2198,1154 @@ DECLARE
     "owner_organization_id",
     "SELECT",
     "catalog_order_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "status",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "source_type",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "source_ref_id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "identity_at_capture",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "consent_version",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "created_at",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_record",
+    "solidified_at",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_artifact",
+    "evidence_id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_artifact",
+    "media_object_id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.evidence_artifact",
+    "artifact_role",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.media_object",
+    "id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.media_object",
+    "sha256",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.media_object",
+    "size_bytes",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.media_object",
+    "mime_type",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.recording",
+    "id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.recording",
+    "media_object_id",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.recording",
+    "status",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "evidence.recording",
+    "validated_duration",
+    "SELECT",
+    "evidence_owner",
+    false
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.evidence_record",
+    "session_id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "evidence_role",
+    "column",
+    "evidence.evidence_record",
+    "call_id",
+    "SELECT",
+    "evidence_owner"
+  ],
+  [
+    "operations_iam_role",
+    "schema",
+    "platform",
+    "",
+    "USAGE",
+    "platform_reliability_owner"
+  ],
+  [
+    "operations_iam_role",
+    "routine",
+    "platform.idempotency_begin(text,text,text)",
+    "",
+    "EXECUTE",
+    "platform_reliability_owner"
+  ],
+  [
+    "operations_iam_role",
+    "routine",
+    "platform.idempotency_complete(uuid,integer,text,uuid,jsonb,text)",
+    "",
+    "EXECUTE",
+    "platform_reliability_owner"
+  ],
+  [
+    "operations_iam_role",
+    "routine",
+    "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
+    "",
+    "EXECUTE",
+    "platform_reliability_owner"
+  ],
+  [
+    "operations_iam_role",
+    "schema",
+    "audit",
+    "",
+    "USAGE",
+    "audit_owner"
+  ],
+  [
+    "operations_iam_role",
+    "routine",
+    "audit.append_fact(timestamp with time zone,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)",
+    "",
+    "EXECUTE",
+    "audit_owner"
+  ],
+  [
+    "operations_iam_role",
+    "schema",
+    "operations_iam",
+    "",
+    "USAGE",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "table",
+    "operations_iam.employee_account",
+    "",
+    "SELECT",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "table",
+    "operations_iam.employee_account",
+    "",
+    "INSERT",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "column",
+    "operations_iam.employee_account",
+    "display_name",
+    "UPDATE",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "column",
+    "operations_iam.employee_account",
+    "role",
+    "UPDATE",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "column",
+    "operations_iam.employee_account",
+    "status",
+    "UPDATE",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "column",
+    "operations_iam.employee_account",
+    "revision",
+    "UPDATE",
+    "operations_iam_owner"
+  ],
+  [
+    "operations_iam_role",
+    "routine",
+    "operations_iam.guard_employee_account()",
+    "",
+    "EXECUTE",
+    "operations_iam_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "platform",
+    "",
+    "USAGE",
+    "platform_reliability_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "platform.idempotency_begin(text,text,text)",
+    "",
+    "EXECUTE",
+    "platform_reliability_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "platform.idempotency_complete(uuid,integer,text,uuid,jsonb,text)",
+    "",
+    "EXECUTE",
+    "platform_reliability_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)",
+    "",
+    "EXECUTE",
+    "platform_reliability_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "audit",
+    "",
+    "USAGE",
+    "audit_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "audit.append_fact(timestamp with time zone,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)",
+    "",
+    "EXECUTE",
+    "audit_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "activation_consent",
+    "",
+    "USAGE",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "entitlement_metering",
+    "",
+    "USAGE",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "ivr",
+    "",
+    "USAGE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.outbound_call_task",
+    "",
+    "SELECT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.outbound_call_task",
+    "",
+    "INSERT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "status",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "reason_code",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "claimed_call_id",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "claimed_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "terminal_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "updated_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.outbound_call_task",
+    "revision",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.inbound_session",
+    "",
+    "SELECT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.inbound_session",
+    "",
+    "INSERT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.inbound_session",
+    "status",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.inbound_session",
+    "confirmed_subject_id",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.inbound_session",
+    "guidance_status",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.inbound_session",
+    "confirmed_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.inbound_session",
+    "revision",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.call_record",
+    "",
+    "SELECT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.call_record",
+    "",
+    "INSERT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "task_id",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "status",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "started_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "bridged_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "recording_started_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "recording_ended_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "ended_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "authoritative_seconds",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "end_reason",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_record",
+    "revision",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.call_leg",
+    "",
+    "SELECT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.call_leg",
+    "",
+    "INSERT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_leg",
+    "state",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_leg",
+    "answered_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_leg",
+    "ended_at",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_leg",
+    "end_reason",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_leg",
+    "revision",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.call_event",
+    "",
+    "SELECT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.call_event",
+    "",
+    "INSERT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_event",
+    "processing_status",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_event",
+    "reason_code",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "ivr.call_event",
+    "revision",
+    "UPDATE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.ivr_decision",
+    "",
+    "SELECT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "table",
+    "ivr.ivr_decision",
+    "",
+    "INSERT",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "ivr.guard_outbound_call_task()",
+    "",
+    "EXECUTE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "ivr.guard_inbound_session()",
+    "",
+    "EXECUTE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "ivr.guard_call_record_parties()",
+    "",
+    "EXECUTE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "routine",
+    "ivr.guard_call_leg()",
+    "",
+    "EXECUTE",
+    "ivr_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "customer_iam",
+    "",
+    "USAGE",
+    "customer_iam_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "customer_iam.customer_account",
+    "id",
+    "SELECT",
+    "customer_iam_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "customer_iam.customer_account",
+    "status",
+    "SELECT",
+    "customer_iam_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "organization_access",
+    "",
+    "USAGE",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "organization_access.organization",
+    "id",
+    "SELECT",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "organization_access.organization",
+    "status",
+    "SELECT",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "organization_access.organization_membership",
+    "organization_id",
+    "SELECT",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "organization_access.organization_membership",
+    "account_id",
+    "SELECT",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "organization_access.organization_membership",
+    "role",
+    "SELECT",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "organization_access.organization_membership",
+    "status",
+    "SELECT",
+    "organization_access_owner"
+  ],
+  [
+    "ivr_role",
+    "schema",
+    "subject_number",
+    "",
+    "USAGE",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.business_subject",
+    "id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.business_subject",
+    "owner_account_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.business_subject",
+    "owner_organization_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.business_subject",
+    "revision",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "subject_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "number_hmac",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "status",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "verified_at",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.caller_number_binding",
+    "revision",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.subject_risk_state",
+    "caller_number_binding_id",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.subject_risk_state",
+    "risk_type",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.subject_risk_state",
+    "state",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "subject_number.subject_risk_state",
+    "revision",
+    "SELECT",
+    "subject_number_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_balance",
+    "id",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_balance",
+    "grant_id",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_balance",
+    "granted_units",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_balance",
+    "reserved_units",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_balance",
+    "consumed_units",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_balance",
+    "status",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_grant",
+    "id",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_grant",
+    "subject_id",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_grant",
+    "entitlement_type",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_grant",
+    "granted_units",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_grant",
+    "valid_from",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "entitlement_metering.entitlement_grant",
+    "expires_at",
+    "SELECT",
+    "entitlement_metering_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.service_activation",
+    "id",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.service_activation",
+    "subject_id",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.service_activation",
+    "status",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.service_activation",
+    "revision",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "subject_id",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "purpose",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "channel",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "policy_code",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "policy_version",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "prompt_version",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "action",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "event_domain",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "event_id",
+    "SELECT",
+    "activation_consent_owner"
+  ],
+  [
+    "ivr_role",
+    "column",
+    "activation_consent.consent_record",
+    "accepted_at",
+    "SELECT",
+    "activation_consent_owner"
   ]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "status", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "source_type", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "source_ref_id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "identity_at_capture", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "consent_version", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "created_at", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_record", "solidified_at", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_artifact", "evidence_id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_artifact", "media_object_id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.evidence_artifact", "artifact_role", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.media_object", "id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.media_object", "sha256", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.media_object", "size_bytes", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.media_object", "mime_type", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.recording", "id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.recording", "media_object_id", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.recording", "status", "SELECT", "evidence_owner", false]
-  , ["customer_iam_role", "column", "evidence.recording", "validated_duration", "SELECT", "evidence_owner", false]
 ]$frozen$::jsonb;
     expected_owners jsonb := $owners${
   "platform": "platform_reliability_owner",
@@ -2321,9 +3457,19 @@ DECLARE
     "V016__customer_subject_detail_read_privileges.sql",
     1669606497,
     "customer subject detail read privileges"
+  ],
+  [
+    "017",
+    "V017__customer_evidence_read_privileges.sql",
+    -41822162,
+    "customer evidence read privileges"
+  ],
+  [
+    "018",
+    "V018__evidence_role_ivr_association_read_privileges.sql",
+    1606293398,
+    "evidence role ivr association read privileges"
   ]
-  , ["017", "V017__customer_evidence_read_privileges.sql", -41822162,
-     "customer evidence read privileges"]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
   "platform.idempotency_begin": {
@@ -2609,7 +3755,7 @@ BEGIN
     IF requested_mode NOT IN ('apply', 'check') THEN
         RAISE EXCEPTION 'rejected';
     END IF;
-    IF (SELECT count(DISTINCT name COLLATE "C") FROM unnest(external_names) name) <> 3 THEN
+    IF (SELECT count(DISTINCT name COLLATE "C") FROM unnest(external_names) name) <> 4 THEN
         RAISE EXCEPTION 'rejected';
     END IF;
     FOREACH role_name IN ARRAY external_names LOOP
@@ -2618,6 +3764,7 @@ BEGIN
            OR role_name COLLATE "C" ~ '[^a-z0-9_]'
            OR role_name LIKE 'pg\_%' ESCAPE '\'
            OR role_name = ANY(effective_names)
+           OR role_name = ANY(shared_context_targets)
            OR role_name = ANY(ARRAY(SELECT key FROM jsonb_each_text(expected_owners)))
            OR role_name = ANY(ARRAY(SELECT value FROM jsonb_each_text(expected_owners)))
            OR role_name IN (current_user, session_user, 'public', 'none')
@@ -2635,12 +3782,14 @@ BEGIN
     PERFORM pg_advisory_xact_lock(725025, 1);
     PERFORM set_config('search_path', 'pg_catalog', true);
     managed_names := external_names || effective_names;
-    login_names := external_names || effective_names[5:7];
+    login_names := external_names || ARRAY['sharing_public_read_role', 'sharing_admission_role', 'evidence_media_reader_role'];
+    boundary_names := managed_names || shared_context_targets;
     FOR pass IN 1..2 LOOP
         SELECT array_agg(oid) INTO managed_oids FROM pg_roles WHERE rolname = ANY(managed_names);
+        SELECT array_agg(oid) INTO boundary_oids FROM pg_roles WHERE rolname = ANY(boundary_names);
         SELECT array_agg(oid) INTO external_oids FROM pg_roles WHERE rolname = ANY(external_names);
         failure_category := 'PA25_PROVENANCE_REJECTED';
-        FOR slot_index IN 1..3 LOOP
+        FOR slot_index IN 1..4 LOOP
             SELECT oid, rolname INTO role_row FROM pg_roles WHERE rolname = external_names[slot_index];
             IF FOUND THEN
                 expected_marker := format('onecall:pa25:v1:db=%s:role=%s:slot=%s:name=%s',
@@ -2666,28 +3815,29 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 17 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 18 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
-        IF EXISTS (SELECT 1 FROM pg_db_role_setting WHERE setrole = ANY(managed_oids)
+        IF EXISTS (SELECT 1 FROM pg_db_role_setting WHERE setrole = ANY(boundary_oids)
             OR (setrole = 0 AND setdatabase IN (0, database_oid))) THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_ATTRIBUTES_REJECTED';
-        FOREACH role_name IN ARRAY managed_names LOOP
+        FOREACH role_name IN ARRAY boundary_names LOOP
             SELECT auth.rolcanlogin, auth.rolinherit, auth.rolsuper, auth.rolcreatedb, auth.rolcreaterole,
                 auth.rolreplication, auth.rolbypassrls, auth.rolconnlimit, auth.rolvaliduntil,
                 auth.rolpassword IS NULL AS password_is_null, roles.rolconfig INTO role_row FROM pg_authid auth
                 JOIN pg_roles roles ON roles.oid = auth.oid WHERE auth.rolname = role_name;
             IF NOT FOUND THEN
-                IF role_name = ANY(effective_names) OR requested_mode = 'check' OR pass = 2 THEN
+                IF role_name = ANY(effective_names) OR role_name = ANY(shared_context_targets) OR requested_mode = 'check' OR pass = 2 THEN
                     RAISE EXCEPTION 'rejected';
                 END IF;
                 CONTINUE;
             END IF;
             expected_login := role_name = ANY(login_names);
-            expected_inherit := role_name IN ('sharing_role', 'customer_iam_role', 'evidence_role');
+            expected_inherit := role_name IN ('sharing_role', 'customer_iam_role', 'evidence_role',
+                'operations_iam_role', 'ivr_role') OR role_name = ANY(shared_context_targets);
             IF role_row.rolcanlogin IS DISTINCT FROM expected_login
                OR role_row.rolinherit IS DISTINCT FROM expected_inherit
                OR role_row.rolsuper OR role_row.rolcreatedb OR role_row.rolcreaterole
@@ -2705,22 +3855,23 @@ BEGIN
             JOIN pg_roles target ON target.oid = membership.roleid
             JOIN pg_roles member_role ON member_role.oid = membership.member
             JOIN pg_roles grantor ON grantor.oid = membership.grantor
-            WHERE (membership.roleid = ANY(managed_oids) OR membership.member = ANY(managed_oids)
-                OR membership.grantor = ANY(managed_oids))
+            WHERE (membership.roleid = ANY(boundary_oids) OR membership.member = ANY(boundary_oids)
+                OR membership.grantor = ANY(boundary_oids))
               AND (NOT ((target.rolname = 'sharing_role' AND member_role.rolname = external_names[1])
                   OR (target.rolname = 'customer_iam_role' AND member_role.rolname = external_names[2])
-                  OR (target.rolname IN ('sharing_command_role', 'evidence_role') AND member_role.rolname = external_names[3]))
+                  OR (target.rolname IN ('sharing_command_role', 'evidence_role') AND member_role.rolname = external_names[3])
+                  OR (target.rolname = ANY(ARRAY['operations_iam_role', 'subject_number_role', 'activation_consent_role', 'entitlement_metering_role', 'evidence_role', 'catalog_order_role', 'ivr_role']) AND member_role.rolname = external_names[4]))
                   OR membership.admin_option OR membership.inherit_option OR NOT membership.set_option
-                  OR NOT grantor.rolsuper OR grantor.oid = ANY(managed_oids))
+                  OR NOT grantor.rolsuper OR grantor.oid = ANY(boundary_oids))
         ) OR EXISTS (
-            SELECT 1 FROM pg_auth_members WHERE roleid = ANY(managed_oids) OR member = ANY(managed_oids)
+            SELECT 1 FROM pg_auth_members WHERE roleid = ANY(boundary_oids) OR member = ANY(boundary_oids)
             GROUP BY roleid, member HAVING count(*) <> 1
         ) THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         SELECT count(*) INTO edge_count FROM pg_auth_members
-            WHERE roleid = ANY(managed_oids) OR member = ANY(managed_oids);
-        IF (requested_mode = 'check' OR pass = 2) AND edge_count <> 4 THEN
+            WHERE roleid = ANY(boundary_oids) OR member = ANY(boundary_oids);
+        IF (requested_mode = 'check' OR pass = 2) AND edge_count <> 11 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_OWNERSHIP_REJECTED';
@@ -2759,7 +3910,8 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 288 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 410
+            OR (SELECT count(DISTINCT value) FROM jsonb_array_elements(expected_resolved)) <> 410 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';
@@ -2788,8 +3940,8 @@ BEGIN
         )
         SELECT jsonb_agg(jsonb_build_array(coalesce(grantee::regrole::text, 'public'), kind, oid, subid,
             privilege_type, grantor, is_grantable)) INTO actual_acls
-        FROM expanded WHERE grantee = ANY(managed_oids) OR grantee = 0 OR grantor = ANY(managed_oids);
-        IF EXISTS (
+        FROM expanded WHERE grantee = ANY(managed_oids) OR grantee = 0 OR grantor = ANY(boundary_oids);
+        IF jsonb_array_length(coalesce(actual_acls, '[]'::jsonb)) <> 410 OR EXISTS (
             SELECT 1 FROM ((SELECT value FROM jsonb_array_elements(expected_resolved)
                     EXCEPT SELECT value FROM jsonb_array_elements(coalesce(actual_acls, '[]'::jsonb)))
                 UNION ALL (SELECT value FROM jsonb_array_elements(coalesce(actual_acls, '[]'::jsonb))
@@ -2874,7 +4026,7 @@ BEGIN
         failure_category := 'PA25_DATABASE_REJECTED';
         IF EXISTS (SELECT 1 FROM pg_database database_row CROSS JOIN LATERAL aclexplode(
                 coalesce(database_row.datacl, acldefault('d', database_row.datdba))) acl
-            WHERE acl.grantee = ANY(managed_oids) OR acl.grantor = ANY(managed_oids)
+            WHERE acl.grantee = ANY(boundary_oids) OR acl.grantor = ANY(boundary_oids)
                 OR (database_row.oid = database_oid AND acl.grantee = 0
                     AND (acl.privilege_type <> 'CONNECT' OR acl.is_grantable)))
            OR NOT EXISTS (SELECT 1 FROM pg_database database_row CROSS JOIN LATERAL aclexplode(
@@ -2892,24 +4044,25 @@ BEGIN
         END LOOP;
         failure_category := 'PA25_DEFAULT_ACL_REJECTED';
         IF EXISTS (SELECT 1 FROM pg_default_acl defaults
-            WHERE defaults.defaclrole = ANY(managed_oids))
+            WHERE defaults.defaclrole = ANY(boundary_oids))
             OR EXISTS (SELECT 1 FROM pg_default_acl defaults
                 CROSS JOIN LATERAL aclexplode(defaults.defaclacl) acl
-            WHERE acl.grantee = 0 OR acl.grantee = ANY(managed_oids)
-                OR acl.grantor = ANY(managed_oids)) THEN
+            WHERE acl.grantee = 0 OR acl.grantee = ANY(boundary_oids)
+                OR acl.grantor = ANY(boundary_oids)) THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_DEPENDENCY_REJECTED';
         IF EXISTS (
             SELECT 1 FROM pg_shdepend dependency
-            WHERE dependency.refclassid = 'pg_authid'::regclass AND dependency.refobjid = ANY(managed_oids)
+            WHERE dependency.refclassid = 'pg_authid'::regclass AND dependency.refobjid = ANY(boundary_oids)
                 AND NOT (dependency.dbid = database_oid AND dependency.deptype = 'a'
                     AND dependency.refobjid <> ALL(coalesce(external_oids, ARRAY[]::oid[]))
-                    AND EXISTS (SELECT 1 FROM jsonb_array_elements(expected_resolved) item
+                    AND (dependency.refobjid = ANY(ARRAY(SELECT oid FROM pg_roles WHERE rolname = ANY(shared_context_targets)))
+                    OR EXISTS (SELECT 1 FROM jsonb_array_elements(expected_resolved) item
                         WHERE to_regrole(item->>0)::oid = dependency.refobjid AND (item->>2)::oid = dependency.objid
                             AND (item->>3)::integer = dependency.objsubid AND dependency.classid = CASE item->>1
                                 WHEN 'schema' THEN 'pg_namespace'::regclass
-                                WHEN 'routine' THEN 'pg_proc'::regclass ELSE 'pg_class'::regclass END))
+                                WHEN 'routine' THEN 'pg_proc'::regclass ELSE 'pg_class'::regclass END)))
         ) THEN
             RAISE EXCEPTION 'rejected';
         END IF;
@@ -2923,7 +4076,7 @@ BEGIN
         END IF;
         IF pass = 1 AND requested_mode = 'apply' THEN
             failure_category := 'PA25_APPLY_REJECTED';
-            FOR slot_index IN 1..3 LOOP
+            FOR slot_index IN 1..4 LOOP
                 role_name := external_names[slot_index];
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
                     EXECUTE format('CREATE ROLE %I LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT -1 PASSWORD NULL', role_name);
@@ -2937,7 +4090,14 @@ BEGIN
             END LOOP;
             FOR object_row IN SELECT * FROM (VALUES
                 ('sharing_role', external_names[1]), ('customer_iam_role', external_names[2]),
-                ('sharing_command_role', external_names[3]), ('evidence_role', external_names[3])) edges(target_name, member_name) LOOP
+                ('sharing_command_role', external_names[3]), ('evidence_role', external_names[3]),
+                ('operations_iam_role', external_names[4]),
+                ('subject_number_role', external_names[4]),
+                ('activation_consent_role', external_names[4]),
+                ('entitlement_metering_role', external_names[4]),
+                ('evidence_role', external_names[4]),
+                ('catalog_order_role', external_names[4]),
+                ('ivr_role', external_names[4])) edges(target_name, member_name) LOOP
                 IF NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE roleid = to_regrole(object_row.target_name)
                     AND member = to_regrole(object_row.member_name)) THEN
                     EXECUTE format('GRANT %I TO %I WITH ADMIN FALSE, INHERIT FALSE, SET TRUE', object_row.target_name, object_row.member_name);
@@ -2953,7 +4113,7 @@ SELECT current_setting('pa25.mode') = 'apply' AS is_apply \gset
 COMMIT;
 \o
 \if :is_apply
-\echo PA25_APPLY_OK logins=6 effective_roles=7 memberships=4
+\echo PA25_APPLY_OK logins=7 effective_roles=9 memberships=11
 \else
-\echo PA25_CHECK_OK logins=6 effective_roles=7 memberships=4
+\echo PA25_CHECK_OK logins=7 effective_roles=9 memberships=11
 \endif

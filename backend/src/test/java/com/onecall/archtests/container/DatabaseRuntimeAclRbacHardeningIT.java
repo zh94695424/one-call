@@ -125,9 +125,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
             assertOracle();
             assertThat(identities().equals(privateBefore)).isTrue();
             var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(3);
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(4);
             current.validate();
-            assertThat(current.info().applied()).hasSize(17);
+            assertThat(current.info().applied()).hasSize(18);
             psql("apply"); psql("check");
         }
     }
@@ -324,9 +324,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
             }
             assertThat(latest.migrate().migrationsExecuted).isZero(); latest.validate();
             var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(3);
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(4);
             current.validate();
-            assertThat(current.info().applied()).hasSize(17);
+            assertThat(current.info().applied()).hasSize(18);
             psql("apply"); psql("check"); psql("apply"); psql("check");
         }
     }
@@ -519,9 +519,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
 
     private void psql(String mode) throws Exception {
         var result = postgres.execInContainer("psql", "-X", "-w", "-U", "fixture_admin", "-d", "pa26", "-v", "mode=" + mode,
-                "-v", "sharing_login=pa26_lq", "-v", "customer_login=pa26_lc", "-v", "command_login=pa26_lw", "-f", "/tmp/pa26-identities.sql");
+                "-v", "sharing_login=pa26_lq", "-v", "customer_login=pa26_lc", "-v", "command_login=pa26_lw", "-v", "operations_login=pa36_operations", "-f", "/tmp/pa26-identities.sql");
         assertThat(result.getExitCode()).isZero();
-        assertThat(result.getStdout().strip()).isEqualTo("PA25_" + mode.toUpperCase(java.util.Locale.ROOT) + "_OK logins=6 effective_roles=7 memberships=4");
+        assertThat(result.getStdout().strip()).isEqualTo("PA25_" + mode.toUpperCase(java.util.Locale.ROOT) + "_OK logins=7 effective_roles=9 memberships=11");
         assertThat(result.getStderr()).isEmpty();
     }
 
@@ -603,7 +603,7 @@ class DatabaseRuntimeAclRbacHardeningIT {
     private static void assertFrozen() throws Exception {
         try (var paths = Files.list(MIGRATIONS)) {
             var resources = paths.filter(path -> path.getFileName().toString().matches("V\\d{3}__.*\\.sql")).sorted().toList();
-            assertThat(resources).hasSize(17);
+            assertThat(resources).hasSize(18);
             for (Path path : resources) {
                 String version = path.getFileName().toString().substring(1, 4);
                 if (FROZEN.containsKey(version)) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readString(path, StandardCharsets.UTF_8)

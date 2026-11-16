@@ -94,7 +94,7 @@ class OperationsSubjectReadBoundaryTests {
         new OperationsLifecycleBoundaryTests().frozenOpenApiMigrationsAndPolicyBytesAreUnchanged();
         try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) {
             assertThat(paths.filter(path -> path.toString().endsWith(".sql")).map(path -> path.getFileName().toString().substring(0, 4)).collect(Collectors.toSet()))
-                    .containsExactlyInAnyOrderElementsOf(java.util.stream.IntStream.rangeClosed(1, 17).mapToObj(index -> "V%03d".formatted(index)).toList());
+                    .containsExactlyInAnyOrderElementsOf(java.util.stream.IntStream.rangeClosed(1, 18).mapToObj(index -> "V%03d".formatted(index)).toList());
         }
     }
 

@@ -53,7 +53,7 @@ class CustomerSubjectActivationBoundaryTests {
             assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(new String(raw, java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)))).isEqualTo(fields[2]);
         }
         assertThat(expected).hasSize(20);
-        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(paths.map(path -> "backend/" + path)).containsExactlyInAnyOrderElementsOf(expected.stream().filter(path -> path.contains("/migration/")).toList()); }
+        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(paths.map(path -> "backend/" + path)).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(expected.stream().filter(path -> path.contains("/migration/")), java.util.stream.Stream.of("backend/src/main/resources/db/migration/V018__evidence_role_ivr_association_read_privileges.sql")).toList()); }
     }
     @Test
     void commandSurfaceHasNoExtraEndpointPolicySourceOrStateTransition() throws Exception {
