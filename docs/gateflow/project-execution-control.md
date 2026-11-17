@@ -165,6 +165,14 @@
 - All accepted findings are closed and every residual is owner/destination classified: capacity/history; broad role/runtime SET; declared-only429; docs15/OpenAPI offer annotation; static-reader and defensive-layer test hardening; `PA37-RESIDUAL-BUDGET-SEMANTICS`; CI/Backend/Platform environment and hosted execution; production readiness. No blocking question or unclassified residual remains.
 - Current gate / next entry point: `accepted deepreview commit`. Stage exactly the final service/test/report changes, this Control checkpoint and six new aggregate/re-review artifacts; exclude all private helpers and generated output. Verify cached path set and whitespace, create commit `gateflow: accept deepreview for PA37 operations catalog product read foundation`, then proceed to ready-to-open-draft-PR.
 
+### PA37 accepted deepreview checkpoint and draft-PR readiness
+
+- Accepted deepreview commit `0b3bd3482057d7158be710b2a55f8a9ace991de0`, `gateflow: accept deepreview for PA37 operations catalog product read foundation`, contains exactly14 intended paths: the final service/test/report delta, Control and six aggregate/re-review artifacts. Cached path and whitespace checks passed. Private `.codex`/`.pa37-*` prompts remain untracked and excluded.
+- Final candidate and evidence remain unchanged from the accepted re-review:24 paths /441,648 canonical bytes / `045473e8781e8d6c99ba987e8dfe550ba0a2993ef7b57f71486001e7fff1038b`; production299 / `12e70c03...b8c1`; final ordinary848/848, predecessor full container592/592, final PA37 targeted36/36, all zero failures/errors/skips. Final A/B re-review artifacts are jointly PASS0 and all accepted findings are closed.
+- Residual risks remain owner-classified with no blocking question: capacity/history; broad role/runtime SET; declared-only429; docs15/OpenAPI offer annotation; defensive/static test hardening; `PA37-RESIDUAL-BUDGET-SEMANTICS`; CI/Backend/Platform environment and hosted execution; packaged-JAR/production readiness. External `/tmp` logs are ephemeral custody and are not product paths.
+- Ready-to-open-draft-PR criteria pass: branch `codex/pa37-next-work-unit` contains only PA37 intended commits after merged main `f719d5e`; all approved slices and aggregate review/fix/re-review cycles are complete; accepted deepreview commit exists; docs/tests/residuals are complete. No protected-trunk work, unrelated dirty product change, private helper, generated output or unclassified risk is present.
+- Current gate / next entry point: `ready-to-open-draft-PR`. Verify branch/log/remote, push to `origin/codex/pa37-next-work-unit`, create a Draft PR against `main`, then proceed immediately to independent PR review. Do not merge, approve, mark ready for review, request reviewers, close/delete anything or post external comments.
+
 ## Previous work unit - PA35
 
 ### PA35 operations IVR session read foundation - resumed from merged predecessor
