@@ -4,13 +4,33 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa35-operations-ivr-session-read-foundation`
+> Branch: `codex/pa37-next-work-unit`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
 > Dispatch providers: ONECALL planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent Reviewer A's primary is `ds` / DeepSeek; after repeated provider tool failure in the current PA34 round, the active A reserve is Qwen3.8 Max `qwen38max`. Reviewer B uses `mimo26flash` when available; after the user's current "MiMo quota exhausted" notice, the active B route is Qwen3.8 Flash `qwen38flash`. A/B use fresh isolated inputs, submit before the Controller reads either conclusion, and never mutate source or remote state. All artifacts and adjudications follow the current confirmed goal and accepted plan.
 
-## Active resume checkpoint - PA35
+## Active resume checkpoint - PA37
+
+### PA37 operations catalog product read foundation - goal confirmation accepted
+
+- Start state: PR #47 is MERGED at merge commit `f719d5eb07eade04072df773a3c5fc5b931f7f42`; its parents are merged baseline `9a4fbaddb0fb8f619559734cc4a5e048a44096c1` and reviewed/final PA35 head `8e540102c6373d89d49336b3334be42fad7fd905`. `origin/main` was fetched and resolves exactly `f719d5e`.
+- Managed worktree: `C:\Users\Administrator\.codex\worktrees\pa37-next-work-unit\codex-call`; branch `codex/pa37-next-work-unit`; created from exact merged main `f719d5e` and clean. The PA35 and every older worktree/private helper remain preserved and were not copied.
+- Active work unit: `PA37-operations-catalog-product-read-foundation`; type: architecture-sensitive authenticated Operations read feature over existing PostgreSQL catalog persistence.
+- Goal confirmed by the user on 2026-11-17: implement only the two frozen Operations read operations `listOperationsCatalogProducts` and `getOperationsCatalogProduct` at `GET /api/v1/operations/catalog/products` and `GET /api/v1/operations/catalog/products/{productId}`. This fresh confirmation is the binding scope contract for the PA37 plan and later gates.
+- Binding access: reuse the existing opaque `employeeSession` path and audience `onecall:employee-session:v1`; require a currently ACTIVE server-derived `ADMIN|OPS` employee. Extend Operations admission by exactly those two GET templates while preserving every existing Operations route and concealing all other method/path variants. Missing/ambiguous dependencies and unavailable required read capabilities fail closed with sanitized503.
+- Binding list contract: only the frozen optional `cursor|limit` filters; each at most once; `limit` default20/range1-100; stable `productCode asc, productId asc`; fetch `limit+1`; endpoint-bound opaque cursor; no offset/total/search/filter expansion. Return exactly `CatalogProductPage(items|nextCursor|hasMore)` with each `CatalogProductSummary(productId|productCode|productFamily|versions)` and each bounded `CatalogProductVersionSummary(catalogVersionId|versionNo|saleStatus|offerType|audience)`.
+- Binding detail contract: canonical UUID `productId`; return exactly `CatalogProductDetail(productId|productCode|productFamily|versions)` with each frozen `CatalogVersionSummary` including the approved price/currency/billing/installment/benefit/revision/published-at/status fields. Do not expose `catalog_version.snapshot`, `snapshot_sha256`, payment records, internal SQL, credentials or unapproved draft-only content.
+- Binding persistence/read semantics: reuse the existing shared Operations read datasource, transaction template, role context and key ring under one read-only `REPEATABLE_READ` transaction; read catalog facts only through a catalog_order owner-local adapter under `catalog_order_role`; assert and restore role/backend/read-only context. Add no write, row lock retained beyond the read, audit/Outbox fact, cursor table, cache or generic query framework.
+- Success signal: after `SET LOCAL ROLE catalog_order_role`, both exact GETs succeed for an ACTIVE ADMIN/OPS employee using the frozen DTOs, filters, order/cursor and safe projections; unauthorized/disabled employees are rejected by the existing sanitized precedence; owner-local SQL reads only approved columns; PostgreSQL catalog assertions prove the exact role/projection boundary; malformed/ambiguous dependencies fail closed; no catalog mutation/publication/off-sale/draft path is reachable. Existing Operations behavior and all relevant unit, boundary, web and PostgreSQL16 tests remain green. V001-V018 remain unchanged unless a separately confirmed prerequisite is proved necessary.
+- Binding non-goals: no OpenAPI edit, V019, table/column/index/function/trigger change, broad grant/role hierarchy, production credential, datasource/pool/key-ring fork, catalog draft create/replace, publication, off-sale, trial-policy, order, payment, audit, frontend, media, merge, approval, mark-ready, reviewer request or external comment.
+- Direct code evidence: frozen OpenAPI defines both paths and DTOs at `api/openapi/onecall-v1.openapi.yaml:1578` and `:1637`, but no catalog Operations controller/service/adapter exists under `backend/src/main/java`; V004 supplies the seven `catalog_order` tables and owner role, and `OperationsReadContext` already contains the non-inheriting `ORDER("catalog_order_role")` handoff. Docs12 identifies catalog/order as a separate owner module and requires clients to use governed APIs rather than SQL.
+- Overdesign judgment: this is one externally verifiable read behavior family over an existing schema and existing Operations security/runtime machinery. The plan must prefer the minimum number of behaviorally justified slices and must not add a new catalog subsystem, read model, cache, admin UI or mutation workflow absent a confirmed goal change.
+- Blocking open questions: none. A need for schema/public-contract changes, wider catalog capabilities or write semantics must stop the plan and return to goal confirmation.
+- Dispatch protocol: `sub-agents` one-shot runner processes. Current gate is `plan`, routed to GPT `gpt-6.1-sol` / high. Later independent plan/code/aggregate/PR reviews use A/B peer-isolated artifacts; reviewers submit before Controller reads either conclusion.
+- Current gate / next entry point: `plan`. Dispatch fresh GPT to create the code-generation-ready PA37 plan, including directly executable file/test/CI inventory, first-principles evidence, safe catalog projections, cursor/role/transaction decisions, minimal slices, validation commands and residual owners. No implementation or later gate is authorized until plan review and fixes pass.
+
+## Previous work unit - PA35
 
 ### PA35 operations IVR session read foundation - resumed from merged predecessor
 
