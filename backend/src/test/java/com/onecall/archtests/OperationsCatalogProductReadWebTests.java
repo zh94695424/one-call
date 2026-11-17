@@ -18,8 +18,12 @@ class OperationsCatalogProductReadWebTests {
     }
     private void problem(org.springframework.mock.web.MockHttpServletResponse response, int status, String code) throws Exception {
         assertThat(response.getStatus()).isEqualTo(status); var body = JsonMapper.builder().build().readTree(response.getContentAsString());
-        assertThat(body.get("code").asString()).isEqualTo(code); assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
-        assertThat(response.getContentAsString()).doesNotContain("PRIVATE", "jdbc:", "catalog_order_role", "SELECT ", EMPLOYEE.toString());
+        assertThat(response.getContentType()).startsWith("application/problem+json");
+        assertThat(body.propertyNames()).containsExactlyInAnyOrder("type", "title", "status", "code", "traceId");
+        assertThat(body.path("status").asInt()).isEqualTo(status); assertThat(body.path("code").asString()).isEqualTo(code);
+        UUID.fromString(body.path("traceId").asString()); assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(response.getContentAsString()).doesNotContain("PRIVATE", "jdbc:", "catalog_order_role", "SELECT ", EMPLOYEE.toString(), "Bearer");
+        if (status == 401) assertThat(response.getHeader("WWW-Authenticate")).isEqualTo("Bearer");
     }
     @Test void admitsExactListGet() throws Exception { var fixture = new OperationsCatalogProductReadTestProviders(); var response = fetch(fixture, BASE); assertThat(response.getStatus()).isEqualTo(200); assertThat(response.getHeader("Content-Length")).isEqualTo(Integer.toString(response.getContentAsByteArray().length)); verify(fixture.reader).roots(Optional.empty(), 21); }
     @Test void admitsExactDetailGet() throws Exception { var fixture = new OperationsCatalogProductReadTestProviders(); var response = fetch(fixture, BASE + "/" + PRODUCT); assertThat(response.getStatus()).isEqualTo(200); assertThat(response.getHeader("Content-Length")).isEqualTo(Integer.toString(response.getContentAsByteArray().length)); verify(fixture.reader).product(PRODUCT); }

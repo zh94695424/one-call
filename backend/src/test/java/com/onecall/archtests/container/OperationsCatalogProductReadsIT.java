@@ -20,7 +20,17 @@ class OperationsCatalogProductReadsIT {
     @BeforeEach void reset() throws Exception { fixture.reset(); }
     @AfterEach void clean() throws Exception { fixture.unchanged(); }
     private UUID seed() throws Exception { UUID product = fixture.product(1, "AB"); fixture.version(product, 1, "DRAFT", false); return product; }
-    @Test void readsAdminAndOps() throws Exception { seed(); for (String token : List.of("admin", "ops")) assertThat(fixture.shared.request("GET", BASE, token).statusCode()).isEqualTo(200); }
+    @Test void readsAdminAndOps() throws Exception {
+        UUID id = seed();
+        for (String path : List.of(BASE, BASE + "/" + id)) for (String token : List.of("admin", "ops")) assertThat(fixture.shared.request("GET", path, token).statusCode()).isEqualTo(200);
+        for (String path : List.of(BASE, BASE + "?limit=bad&cursor=!", BASE + "/" + id, BASE + "/bad?limit=bad")) {
+            for (String token : Arrays.asList(null, "wrong", "missing")) {
+                var response = fixture.shared.request("GET", path, token, "text/html");
+                problem(response, 401, "UNAUTHENTICATED"); assertThat(response.headers().firstValue("WWW-Authenticate")).contains("Bearer");
+            }
+            problem(fixture.shared.request("GET", path, "disabled", "text/html"), 403, "FORBIDDEN");
+        }
+    }
     @Test void returnsAllVersionStates() throws Exception { UUID id = seed(); fixture.version(id, 2, "ACTIVE", false); fixture.version(id, 3, "OFFSALE", false); assertThat(fixture.get(BASE).get("items").get(0).get("versions").valueStream().map(row -> row.get("saleStatus").asString()).toList()).containsExactly("DRAFT", "ACTIVE", "OFFSALE"); }
     @Test void retainsOfferlessDraft() throws Exception { UUID id = seed(); assertThat(fixture.get(BASE).get("items").get(0).get("versions")).hasSize(1); assertThat(fixture.get(BASE + "/" + id).get("versions")).hasSize(1); }
     @Test void ignoresMultiChannelOffersForMembership() throws Exception {

@@ -3,7 +3,9 @@
 Task: `pa37-operations-catalog-product-read-implementation-s1-gpt-20261117-01`
 Date: 2026-11-17 (Asia/Shanghai)
 
-Bounded fix follow-ups: `pa37-operations-catalog-product-read-code-review-fix1-gpt-20261117-01` and `pa37-operations-catalog-product-read-code-review-fix2-gpt-20261117-01`, 2026-11-17. Section 8 retains the two accepted Low fixes and their historical stale-guard failure; section 9 records the separately authorized digest/evidence lockstep correction. Sections 1–7 retain implementation-stage history except for the current source hashes/digest below. No full-repository green validation or later-gate acceptance is claimed.
+Latest bounded fix: `pa37-operations-catalog-product-read-aggregate-fix2-gpt-20261118-01`, 2026-11-18. Section 11 records the accepted Set-membership optimization, derived production digest and fresh 68/68 result. Sections 1–10 are historical runner evidence; section 11 distinguishes Controller's superseding pre-fix runtime evidence from the post-fix checks actually run here. No later-gate transition is claimed.
+
+Bounded fix follow-ups: `pa37-operations-catalog-product-read-code-review-fix1-gpt-20261117-01` and `pa37-operations-catalog-product-read-code-review-fix2-gpt-20261117-01`, 2026-11-17. Section 8 retains the two accepted Low fixes and their historical stale-guard failure; section 9 records the separately authorized digest/evidence lockstep correction. Section 10 records `pa37-operations-catalog-product-read-aggregate-fix1-gpt-20261117-01`, the canonical-LF assertion and existing-identity test hardening, including the current runner's Docker blocker. Sections 1–9 retain their historical results except for the current source hashes/digest below. No full-repository green validation or later-gate acceptance is claimed.
 
 ## 1. Result and stop status
 
@@ -44,7 +46,7 @@ Exactly 24 allowlisted paths: five existing files, eight production Java files, 
 | `backend/pom.xml` | `3e843c4104af4ccba76a6f1a2cfa39fcb1ebe9953a4c8e7067edf2e76e250661` |
 | `backend/src/main/java/com/onecall/core/catalog_order/internal/operationsread/JooqOperationsCatalogProductReader.java` | `629276bf5cfd312ca230d0803d8e4f83936610a829a6218b07b8712f22e46699` |
 | `backend/src/main/java/com/onecall/core/customer_iam/internal/web/CustomerBoundaryFilter.java` | `470016fda10ae46a8fe2d04e84c57611d7438fa8166c4c3932cb861f3e37ad81` |
-| `backend/src/main/java/com/onecall/core/operations_iam/internal/catalogread/DefaultOperationsCatalogProductReadService.java` | `53641a7d90284f4a8ee5160f93852576b140101f8f85fcd69174b92210661602` |
+| `backend/src/main/java/com/onecall/core/operations_iam/internal/catalogread/DefaultOperationsCatalogProductReadService.java` | `f7702095e835cbf0ba77754066f2804a7d45d9fbe804c4942eeb68118a0c1895` |
 | `backend/src/main/java/com/onecall/core/operations_iam/internal/catalogread/OperationsCatalogProductCursorCodec.java` | `5603beef7008632541e40ea243b1703db1ec8785f20454d5082e2fa8b6cf1746` |
 | `backend/src/main/java/com/onecall/core/operations_iam/internal/catalogread/OperationsCatalogProductReadConfiguration.java` | `8d9884abb85058a64d430a793b3243c3f1e2a5579028d787ffb5a3334beb451d` |
 | `backend/src/main/java/com/onecall/core/operations_iam/internal/catalogread/OperationsCatalogProductReadRequest.java` | `ecc196a8a24e93eb51cc5a93cc8ae1baf38a610ff28910e03d09b8f88c593abb` |
@@ -52,13 +54,13 @@ Exactly 24 allowlisted paths: five existing files, eight production Java files, 
 | `backend/src/main/java/com/onecall/core/operations_iam/internal/web/OperationsCatalogProductReadController.java` | `dbe57748fad19dfc2b04d5d7add9f7ad613333020bdfe75d84fd3a9a8b388e9f` |
 | `backend/src/main/java/com/onecall/core/operations_iam/subjectread/OperationsCatalogProductReadPorts.java` | `ed8da079f7c9e06ba7132fa85bbabc966a69110572a26a6500017cc627348cc7` |
 | `backend/src/main/java/com/onecall/core/operations_iam/subjectread/OperationsCatalogProductReadService.java` | `86c5b73e86ae930fe622782caa8d4d55672329a305dc89415e28bbd93cb7bccb` |
-| `backend/src/test/java/com/onecall/archtests/OperationsCatalogProductReadConfigurationTests.java` | `0bd3d8327020896846ec89573ea04ef292ff3e9c94c12ed028645087e5c5624f` |
-| `backend/src/test/java/com/onecall/archtests/OperationsCatalogProductReadWebTests.java` | `de43e3374813c6661e1354ff0695730e95632f910af7b570432f6f8f9af4eb65` |
-| `backend/src/test/java/com/onecall/archtests/architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java` | `3166b527d255848a908789b1b9412f26293bb1a03c0cb42b3fe7b594d0ba4e5a` |
+| `backend/src/test/java/com/onecall/archtests/OperationsCatalogProductReadConfigurationTests.java` | `d84e5bf5a4af8585522f0d27eced2b0f833fc498cce662034eb62c25873cc4a0` |
+| `backend/src/test/java/com/onecall/archtests/OperationsCatalogProductReadWebTests.java` | `804d450c6e45c689dce1271d966391f8ca96401e7453526f41644bed90ced1d9` |
+| `backend/src/test/java/com/onecall/archtests/architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java` | `5bce4981478df1a07cda971dcd3ee6cd5807b3ffcd16a18b0d5d10e90cc265d8` |
 | `backend/src/test/java/com/onecall/archtests/architecture/OperationsCatalogProductReadBoundaryTests.java` | `cabb60e414aabc8915843e9b9353915277abe87b5735ba8e570cb560034a8123` |
 | `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadFixture.java` | `3f128bdcc9546c7fa0a6176a3c0568e68c082a7c3c433a34e3c3729da54d51a2` |
-| `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadRoleLeastPrivilegeIT.java` | `baad802ddb6cacc75d086528149d85766ae5323843ec1582e8fb9605fc770bb1` |
-| `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadsIT.java` | `8b1a9f808e4b86309a05fffe447872544929b126039d3549ca1b4f5a56cf2546` |
+| `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadRoleLeastPrivilegeIT.java` | `39912f6b39a6d0fc695b41c685ea7685b2ec0eb2423224515f66537e4d360971` |
+| `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadsIT.java` | `2f15ac06a329d3ab3f963a6efed243b6c814f66bc837fa389414169df966a152` |
 | `backend/src/test/java/com/onecall/archtests/operations/OperationsCatalogProductReadTestProviders.java` | `a9ede2aa8cfcb07b05b04cb8f41f142e50719b4703ed8c735d60aae0e5c3af98` |
 | `backend/src/test/java/com/onecall/core/operations_iam/internal/catalogread/OperationsCatalogProductCursorCodecTests.java` | `6e2c8d040d64788c360cbf2de999e768910f40b88914536c50d1e7f6730c0c76` |
 | `backend/src/test/java/com/onecall/core/operations_iam/internal/catalogread/OperationsCatalogProductReadRequestTests.java` | `116652e06b69635b6f895e1fb6a4e21a4d686bc1ef41f79adf812ea2b1b56e0f` |
@@ -81,7 +83,7 @@ The only existing architecture-test changes are manifest count/digest and the th
 
 Baseline manifest digest: `95c4eef4059fcc92d2408a493bbd89420a7fa5d5a5a3e5cdbd4dc164cc1623e0`.
 Implementation-stage manifest digest: `2b042c0b3356ec7f5c5ef1c94b9675473ac40fc16eebba5734d07c407230f349`.
-Current post-fix manifest digest: `6d7fa118cbf2580fd492b2446f57f86e5ea808cfe4626ebf015d5c10f334b39e` (299 guarded files, unchanged count). The guard now pins this current digest; the implementation-stage digest above is historical only. Section 8 preserves the fix1 failure evidence; section 9 records its bounded lockstep closure.
+Current post-fix manifest digest: `12e70c031e42bcbca806cc1983335408d2c52fe830bd7a2ea77ddb2f1435b8c1` (299 guarded files, unchanged count). The guard now pins this current digest; prior digests are historical only. Section 8 preserves the fix1 failure evidence; section 9 records its bounded lockstep closure; section 11 records the aggregate-fix2 production change and independently derived lockstep digest.
 Algorithm is unchanged: every regular file under `src/main/java` and `src/main/resources`, retaining only the existing V018 exception separately guarded by its checksum; each row is relative path, one space, SHA256 of CRLF-to-LF-normalized bytes; sort all rows, join with LF and append final LF, then SHA256. The unchanged context and all eight PA37 production files are included.
 
 ### Ten exact test/helper identities
@@ -422,3 +424,115 @@ Tracked `git diff --check`: **exit 0**; `/tmp/pa37-fix2-diff-check.log`. The sup
 ### Residuals and stop boundary
 
 No PostgreSQL, Docker or Failsafe command ran in fix2. Controller still owns the post-fix rerun of both PA37 Failsafe classes and resulting 36/36 XML custody. Historical implementation-stage environment failures and the CRLF-sensitive PA35 failure are not relabeled as passes; no full-suite, hosted-CI, runtime-readiness or re-review acceptance is claimed. Existing owner-routed residuals remain unchanged. No staging, commit, push, branch/PR mutation, merge, approval, mark-ready, reviewer request, external comment or issue action occurred. Stop after this bounded lockstep correction.
+
+## 10. Bounded aggregate fix1 — canonical LF and existing-identity boundary evidence
+
+Task: `pa37-operations-catalog-product-read-aggregate-fix1-gpt-20261117-01`, 2026-11-17 (Asia/Shanghai). Scope is only `PA37-AGG-REV-01` and the test portion of `PA37-AGG-REV-03`. The latest Control aggregate intake, aggregate A/B artifacts (`code-review-20261117-231919.md` and `code-review-20261117-232741.md`), accepted plan/review lineage, implementation report and current/sibling tests were inspected. **The portability correction is validated in both materializations; real-container additions compile but remain unexecuted because this runner cannot access Docker. No fresh PostgreSQL16.15 36/36 result is claimed.**
+
+### Bounded changes and unchanged bytes
+
+Exactly the following four test paths and this report change; section 3 records the four current raw SHA256 values. No new repository path or test identity is introduced.
+
+- `backend/src/test/java/com/onecall/archtests/OperationsCatalogProductReadConfigurationTests.java`: only the hash assertion inside `reusesOrderRoleContext` changes. Read UTF-8, normalize CRLF to LF, hash UTF-8 bytes and pin `734e82e2bfc1f33a1d0c2e3f1cce4cf634bf15796503f82338253e99aff4289d`. The qualifier and `Role.ORDER` assertions remain intact. `OperationsReadContext.java` remains byte-identical: raw mixed-worktree SHA256 `75c2e3b4b3cc251e8fe43223512be89e510c711059bf280ffbd466a9848adcdf`, with 92 CRLF pairs; canonical-LF SHA256 is the new pin.
+- `backend/src/test/java/com/onecall/archtests/OperationsCatalogProductReadWebTests.java`: widen the existing `problem` helper to mirror the shipped sibling: `application/problem+json`, exactly `type|title|status|code|traceId`, matching HTTP/body status and code, UUID trace ID, `Cache-Control: no-store`, existing leak checks plus absence of bearer text in the body, and exact `WWW-Authenticate: Bearer` for 401. Existing identities exercise the helper; none is added or renamed.
+- `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadsIT.java`: widen `readsAdminAndOps` to assert ADMIN/OPS 200 on list and detail; absent (`null`), wrong-audience (`wrong`) and missing-employee (`missing`) tokens yield 401 plus the Bearer challenge, and disabled yields 403. Both list and detail shapes are exercised with malformed query/cursor or identifier and invalid Accept so authentication/authority wins before malformed-request validation. The shared, unchanged container problem helper checks the exact safe envelope.
+- `backend/src/test/java/com/onecall/archtests/container/OperationsCatalogProductReadRoleLeastPrivilegeIT.java`: widen `restoresRoleAfterFailure` with POST and semicolon noncanonical GET variants for list and detail, without credentials, all expecting concealed 404. The original role-restoration, cursor-error and cleanup assertions remain.
+
+Independent before/after byte snapshots cover 2,251 repository/private files, every test identity and the index bytes. All 300 production files remain byte-identical. The unchanged production guard still covers exactly 299 files, retaining the existing V018 exception and LF-normalized digest `6d7fa118cbf2580fd492b2446f57f86e5ea808cfe4626ebf015d5c10f334b39e`. Control, accepted plan/reviews, both helpers, CI/POM, OpenAPI and migrations remain untouched. `PA37-AGG-REV-02` bookkeeping and `PA37-AGG-REV-04` full-sweep custody remain Controller-owned.
+
+### Actual commands and results
+
+Linux toolchain: `/opt/jdk21` Temurin21.0.13+9 and `/opt/maven-3.9.9/bin/mvn`, with the existing Mockito startup agent from section 6. Replayable commands below use variables for the exact literal selectors expanded in the executed invocations; no test skips, dependency changes, offline flag or helper/fixture changes are used.
+
+```sh
+export JAVA_HOME=/opt/jdk21
+export PATH="$JAVA_HOME/bin:/opt/maven-3.9.9/bin:$PATH"
+export JAVA_TOOL_OPTIONS=-javaagent:/root/.m2/repository/org/mockito/mockito-core/5.23.0/mockito-core-5.23.0.jar
+focused=com.onecall.core.operations_iam.internal.catalogread.OperationsCatalogProductReadRequestTests,com.onecall.core.operations_iam.internal.catalogread.OperationsCatalogProductCursorCodecTests,com.onecall.core.operations_iam.internal.catalogread.OperationsCatalogProductReadServiceTests,com.onecall.archtests.OperationsCatalogProductReadWebTests,com.onecall.archtests.OperationsCatalogProductReadConfigurationTests,com.onecall.archtests.architecture.OperationsCatalogProductReadBoundaryTests,com.onecall.archtests.architecture.EvidenceRoleIvrAssociationAclBoundaryTests
+containers=com.onecall.archtests.container.OperationsCatalogProductReadsIT,com.onecall.archtests.container.OperationsCatalogProductReadRoleLeastPrivilegeIT
+(cd backend && mvn -B -ntp -DfailIfNoTests=true "-Dtest=$focused" test)
+python3 /tmp/pa37-agg-fix1-project.py
+(cd /tmp/pa37-agg-fix1-lf-repo/backend && mvn -B -ntp -DfailIfNoTests=true -Dtest=com.onecall.archtests.OperationsCatalogProductReadConfigurationTests test)
+(cd backend && mvn -B -ntp -Pcontainer-smoke -DfailIfNoTests=true -Dfailsafe.failIfNoSpecifiedTests=true "-Dtest=$focused" "-Dit.test=$containers" verify)
+```
+
+| Run | Actual result | Log / custody |
+|---|---|---|
+| Mixed-worktree focused six PA37 classes plus guard | Exit 0 / BUILD SUCCESS; **68/68**, zero failures/errors/skips; 46.633 s; finished `2026-11-17T23:37:26+08:00` | `/tmp/pa37-agg-fix1-focused.log`; exact seven-class XML set preserved under `/tmp/pa37-agg-fix1-focused-xml/` |
+| Whole-tree LF configuration class | Exit 0 / BUILD SUCCESS; **8/8**, zero failures/errors/skips; 17.396 s; finished `2026-11-17T23:38:04+08:00` | `/tmp/pa37-agg-fix1-lf-configuration.log`; XML raw SHA256 `88173a0a1a90a7783c40e569d798aa1b18678b3d85f2e8b5e271de601d34b071` |
+| Current-worktree targeted container verify | Exit 1 / BUILD FAILURE; prerequisite units **68/68** and executable-JAR packaging pass; both selected ITs fail in `BeforeAll`; Failsafe reports **2 lifecycle errors, 0 executed test methods**, not 36 passing methods; 32.695 s; finished `2026-11-17T23:38:54+08:00` | `/tmp/pa37-agg-fix1-failsafe.log`; no PostgreSQL engine starts |
+
+The LF proof is a Git-less **whole-repository/candidate** projection, not a one-file substitution: all 2,251 snapshotted paths copied to `/tmp/pa37-agg-fix1-lf-repo`, 1,948 UTF-8 nonbinary files checked, 1,892 source files containing 426,659 CRLF pairs normalized, zero projected text CRLF pairs. Binary bytes are retained. No existing `target` classes/reports are copied; Maven freshly compiles all production/test sources there. `OperationsReadContext.java` has zero CRLF pairs and its raw projected SHA256 equals `734e82e2...4289d`, so the new assertion actually exercises canonical LF. Projection provenance is `/tmp/pa37-agg-fix1-projection.log`.
+
+Docker diagnostics: `docker version` exits 1 with `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`; `/var/run/docker.sock` points to `/var/run/dify.sock`. Testcontainers reports `Could not find a valid Docker environment`, then the cached initialization failure in the second IT. The unchanged `postgres:16` fixture therefore cannot start or freshly verify the Controller's PostgreSQL16.15 image. No permission, daemon, toolchain, fixture, POM or environment-security workaround is attempted.
+
+Current **failed lifecycle** XML hashes, not runtime-pass evidence:
+
+| Failsafe XML filename | Current raw SHA256 |
+|---|---|
+| `TEST-com.onecall.archtests.container.OperationsCatalogProductReadRoleLeastPrivilegeIT.xml` | `e625f427e6ab8b4964ad4b52ec0143e796a4a472b2ced2267615b83bf7edca88` |
+| `TEST-com.onecall.archtests.container.OperationsCatalogProductReadsIT.xml` | `f2c8d2e208d80ecfbe41e2a319359fcab92207a03b6c1962b7244ec8581778bf` |
+
+Before the attempt, Controller's historical passing 16/20-method XMLs were preserved at `/tmp/pa37-agg-fix1-prior-failsafe/`, with their original hashes `bd5dfe3203086ffcd0c31fded3593db71ef72ceac5d51a23da637edc45f79d4c` and `a9ef9f64d3b84fcc7776f14f0c1e9bcf7a269e64845e3254545644535742c917`. They predate these test additions and are **not** substituted for fresh runtime evidence. `/tmp/pa37-agg-fix1-xml.py` checks focused/LF XML identities against the intake snapshot and distinguishes these historical reports from the new lifecycle errors; output `/tmp/pa37-agg-fix1-xml.log`.
+
+### Inventories, whitespace and stop
+
+```sh
+python3 /tmp/pa37-agg-fix1-scope.py after
+(cd backend && python3 /tmp/pa37-ci-source-inventory.py)
+git --no-optional-locks --git-dir=/mnt/d/codex-call/.git/worktrees/codex-call24 --work-tree="$PWD" diff --check
+```
+
+Scope/identity checks pass: exactly the five authorized modified paths, no new/deleted/renamed repository path, all test names unchanged, PA37 **six unit classes/60 methods, two container classes/36 methods, two zero-test helpers**. Global **89/848 + 36/592 = 125/1440**, annotation scan **1441**, accepted candidate path set **24**, all production bytes/digest and index bytes unchanged. Existing CI source/history/token/POM checker exits 0: `PASS source/history/token/POM checks [848, 592] 1441 89 36 36` (`/tmp/pa37-agg-fix1-ci-source-inventory.log`). The supplemental complete-report inventory checker exits 1 for absent `target/failsafe-reports/TEST-*PostgresContainerIT.xml`; it requires the full container sweep, so no full XML-inventory pass is claimed (`/tmp/pa37-agg-fix1-ci-inventory.log`). Tracked `git diff --check` exits 0 with no whitespace-error diagnostics (`/tmp/pa37-agg-fix1-diff-check.log`); existing autocrlf warnings are informational. All 23 non-report manifest hashes in section 3 are independently checked against current bytes; the report has no circular self-hash.
+
+The required fresh PA37 PostgreSQL16.15 **36/36 rerun remains blocked**, including execution of the new 401/403 and concealment assertions. Controller's separate required **full 36-class container sweep is not run or claimed**, nor is hosted CI, production readiness, acceptance or aggregate re-review. Existing residual owners remain unchanged. No staging, commit, push, PR, merge, approval, mark-ready, reviewer request, external comment, issue mutation or later-gate transition occurs. Stop after this bounded fix/report, with runtime validation explicitly incomplete.
+
+## 11. Bounded aggregate fix2 — immutable version membership
+
+Task: `pa37-operations-catalog-product-read-aggregate-fix2-gpt-20261118-01`; date: 2026-11-18 (Asia/Shanghai); gate: `fix`.
+
+### Accepted input and exact delta
+
+Read the latest Control aggregate re-review intake and both artifacts, `docs/reviews/code-review-20261118-002202.md` (A: PASS, zero findings) and `docs/reviews/code-review-20261118-003426.md` (B: Medium custody finding and Low membership finding). Implement only Controller-accepted Low `PA37-AGG-RR2-01`:
+
+- `DefaultOperationsCatalogProductReadService.detail` hoists `var knownVersionIds = Set.copyOf(versionIds);` immediately before the benefit loop and uses that immutable Set for benefit-version membership. The original ordered List and `reader.benefits(versionIds)` call remain unchanged. Validation, ordering, exception mapping, SQL, DTOs and test identities are unchanged; membership work no longer repeatedly scans the version List.
+- The existing tree guard changes only its production digest literal. `hasSize(299)`, the V018 exception, LF normalization, sorted path rows and all other assertions remain unchanged.
+- This implementation report updates the two current raw source hashes in section 3, the current digest in section 4 and this bounded evidence. Older fix hashes/results remain historical.
+
+Current service raw and canonical-LF SHA256: `f7702095e835cbf0ba77754066f2804a7d45d9fbe804c4942eeb68118a0c1895`. Current guard raw SHA256: `5bce4981478df1a07cda971dcd3ee6cd5807b3ffcd16a18b0d5d10e90cc265d8`.
+
+### Derived production manifest and candidate custody
+
+`/tmp/pa37-agg-fix2-scope.py` independently walks both `backend/src/main/java` and `backend/src/main/resources`, retaining the guard's existing filename exception for V018: **300 raw production files, exactly 299 guarded files**, unchanged path sets. For each included file it decodes UTF-8, replaces CRLF with LF and hashes re-encoded UTF-8 bytes. Rows are `src/main/.../path<single-space><lowercase-SHA256>` (backend-relative, forward slashes), ordinal-sorted, joined with LF and **one final LF**, then SHA-256 hashed. The derived digest, now pinned by the unchanged guard algorithm, is **`12e70c031e42bcbca806cc1983335408d2c52fe830bd7a2ea77ddb2f1435b8c1`**. It is recomputed from actual production bytes, not assumed or copied from a review suggestion.
+
+Candidate custody uses the same canonical row algorithm with repository-relative paths for the established **24-path** section 3 set:
+
+- Intake independently reproduces **433,334 canonical bytes / 436,643 raw bytes**, SHA256 `519d0f3af899ea31b472a9fce709bae92bceeea792dfb77c8192b0937882f21a`.
+- After the service and guard changes, before updating this report, the 24-path checkpoint is **433,397 canonical bytes / 436,706 raw bytes**, SHA256 `5446a3336433b62d038a0fbf97510316db2c179f04db71cef7ca694bd00aaaef`. This is explicitly a pre-report checkpoint, not the final candidate identity.
+- The final **23 non-report paths** contain **374,559 canonical bytes**, SHA256 **`95270e83627f4a26d39058089b83f2d53465a694734f2429cc4fc706b47ba43d`**. This stable payload identity is recorded here without a circular report self-hash.
+- After finalizing this report, the scope checker writes the complete **24-path final canonical candidate identity**, final canonical/raw byte totals and this report's raw hash to `/tmp/pa37-agg-fix2-candidate-identity.json`; exact canonical path/hash rows are `/tmp/pa37-agg-fix2-candidate-manifest.txt`, and `/tmp/pa37-agg-fix2-scope.log` records them with the scope verdict. The final 24-path digest is also delivered in the runner response; it is not embedded into the report it hashes. Controller can re-attest those same final bytes without changing Control here.
+
+### Actual focused validation
+
+Established Linux toolchain: `/opt/jdk21` Temurin21.0.13+9, Maven3.9.9 and the existing Mockito startup agent; no skips, POM/CI change or dependency override:
+
+```sh
+export JAVA_HOME=/opt/jdk21
+export PATH="$JAVA_HOME/bin:/opt/maven-3.9.9/bin:$PATH"
+export JAVA_TOOL_OPTIONS=-javaagent:/root/.m2/repository/org/mockito/mockito-core/5.23.0/mockito-core-5.23.0.jar
+focused=com.onecall.core.operations_iam.internal.catalogread.OperationsCatalogProductReadRequestTests,com.onecall.core.operations_iam.internal.catalogread.OperationsCatalogProductCursorCodecTests,com.onecall.core.operations_iam.internal.catalogread.OperationsCatalogProductReadServiceTests,com.onecall.archtests.OperationsCatalogProductReadWebTests,com.onecall.archtests.OperationsCatalogProductReadConfigurationTests,com.onecall.archtests.architecture.OperationsCatalogProductReadBoundaryTests,com.onecall.archtests.architecture.EvidenceRoleIvrAssociationAclBoundaryTests
+(cd backend && mvn -B -ntp -DfailIfNoTests=true "-Dtest=$focused" test)
+python3 /tmp/pa37-agg-fix2-xml.py
+python3 /tmp/pa37-agg-fix2-scope.py after
+git --no-optional-locks --git-dir=/mnt/d/codex-call/.git/worktrees/codex-call24 --work-tree="$PWD" diff --check
+```
+
+Maven exits **0 / BUILD SUCCESS**, **7 classes / 68 methods**, zero failures/errors/skips; total time **01:05 min**, finished **2026-11-18T01:12:07+08:00**. Per-class totals are request8, codec8, service18, web10, configuration8, PA37 boundary8 and tree guard8. Log: `/tmp/pa37-agg-fix2-focused.log`. XML verification compares every executed method name against the intake snapshot, including the service's existing negative-benefit assertions. Exact seven-class XML custody: `/tmp/pa37-agg-fix2-focused-xml/`; ordinal filename/raw-hash manifest SHA256 **`7a44de214712f9df2a6a2ff4efe7d2ce11bb7edeebaabeb63b6b08d82cc5a952`**; checker output `/tmp/pa37-agg-fix2-xml.log`.
+
+Scope verification compares a before-edit snapshot of **2,256 repository/private paths and all 1,440 method identities** against final bytes: exactly the three authorized paths changed, no added/deleted/renamed path and no index-byte change. Reverse-delta hashing additionally proves the service changed only by the Set hoist/receiver substitution and the guard only by the digest literal. All other production/test/Control/plan/review/OpenAPI/migration/CI/POM/helper bytes remain unchanged from aggregate-fix intake. All 23 non-report raw hashes in section 3 match current bytes. Preserved identities: PA37 **six unit classes/60 methods, two container classes/36 methods, two zero-test helpers**; global **89/848 + 36/592**, annotation scan **1441**. Final scope output: `/tmp/pa37-agg-fix2-scope.log`. `git diff --check` exits **0**, no whitespace errors; `/tmp/pa37-agg-fix2-diff-check.log` (existing autocrlf warnings are informational).
+
+### Superseding Controller evidence and stop
+
+Section 10's blocked Docker result belongs to the earlier fix runner, not Controller's later execution. The latest Control intake records that the genuine zero-CRLF whole-tree projection `/tmp/pa37-agg-fix1-lf-repo` passed `clean -Pcontainer-smoke verify`: Surefire **89/848**, Failsafe **36/592**, zero failures/errors/skips, BUILD SUCCESS in **28:51**, finished **2026-11-18T01:07:04+08:00**. This supersedes the previously mislabeled CRLF sweep and resolves the reviewers' materialization-custody question; it is **pre-fix Controller evidence**, not a post-Set-hoist run by this agent.
+
+Only the fresh focused **68/68**, XML identity checks, production-manifest derivation, scope check and whitespace check are claimed for this bounded fix. No full container sweep, PA37 PostgreSQL36 rerun or ordinary848-method rerun is performed here; Controller owns the latter two post-fix validations. No staging, commit, push, PR, merge, approval, mark-ready, reviewer request, external comment, issue mutation or re-review entry occurs. Stop after this bounded fix/report; existing residual ownership is unchanged.

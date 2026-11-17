@@ -98,8 +98,9 @@ public final class DefaultOperationsCatalogProductReadService implements Operati
             var grouped = new HashMap<UUID, List<CatalogBenefitLine>>();
             var previousIds = new HashMap<UUID, UUID>();
             var entitlementTypes = new HashSet<String>();
+            var knownVersionIds = Set.copyOf(versionIds);
             for (var benefit : benefits) {
-                require(benefit != null && benefit.benefitId() != null && versionIds.contains(benefit.catalogVersionId())
+                require(benefit != null && benefit.benefitId() != null && knownVersionIds.contains(benefit.catalogVersionId())
                         && benefit.entitlementType() != null && Set.of("RECORDING_SECONDS", "AI_SECONDS", "EVIDENCE_COUNT", "STORAGE_BYTES").contains(benefit.entitlementType())
                         && benefit.quantity() != null && benefit.quantity() >= 1 && benefit.validityDays() != null && benefit.validityDays() >= 1
                         && benefit.grantIntervalMonths() != null && benefit.grantIntervalMonths() >= 0);

@@ -94,7 +94,12 @@ class OperationsCatalogProductReadRoleLeastPrivilegeIT {
     }
     @Test void restoresRoleAfterFailure() throws Exception {
         fixture.shared.transaction.execute(status -> { fixture.shared.scope.enter(); try { assertThatThrownBy(() -> fixture.shared.scope.scoped(Role.ORDER, () -> { throw new IllegalStateException("PRIVATE"); })).isInstanceOf(IllegalStateException.class); assertThat(fixture.shared.dsl.fetchSingle("SELECT current_user").get(0, String.class)).isEqualTo("operations_iam_role"); } finally { fixture.shared.scope.exit(); } return null; });
-        problem(fixture.shared.request("GET", BASE + "?cursor=!", "admin"), 400, "CURSOR_INVALID"); fixture.shared.clean();
+        problem(fixture.shared.request("GET", BASE + "?cursor=!", "admin"), 400, "CURSOR_INVALID");
+        for (String path : List.of(BASE, BASE + "/" + new UUID(0, 1))) {
+            problem(fixture.shared.request("POST", path, null), 404, "NOT_FOUND");
+            problem(fixture.shared.request("GET", path + ";x", null), 404, "NOT_FOUND");
+        }
+        fixture.shared.clean();
     }
     @Test void assertsReadOnlyState() throws Exception {
         fixture.shared.transaction.execute(status -> { fixture.shared.scope.enter(); try { fixture.shared.scope.scoped(Role.ORDER, () -> { assertThat(fixture.shared.dsl.fetchSingle("SHOW transaction_read_only").get(0, String.class)).isEqualTo("on"); assertThat(fixture.shared.dsl.fetchSingle("SHOW transaction_isolation").get(0, String.class)).isEqualTo("repeatable read"); return null; }); } finally { fixture.shared.scope.exit(); } return null; });
