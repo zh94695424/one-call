@@ -173,6 +173,13 @@
 - Ready-to-open-draft-PR criteria pass: branch `codex/pa37-next-work-unit` contains only PA37 intended commits after merged main `f719d5e`; all approved slices and aggregate review/fix/re-review cycles are complete; accepted deepreview commit exists; docs/tests/residuals are complete. No protected-trunk work, unrelated dirty product change, private helper, generated output or unclassified risk is present.
 - Current gate / next entry point: `ready-to-open-draft-PR`. Verify branch/log/remote, push to `origin/codex/pa37-next-work-unit`, create a Draft PR against `main`, then proceed immediately to independent PR review. Do not merge, approve, mark ready for review, request reviewers, close/delete anything or post external comments.
 
+### PA37 Draft PR creation and PR-review entry
+
+- Pushed `codex/pa37-next-work-unit` to `origin`; remote branch initially matched local `9937b47e1c6570e3719b7e45ceaefa5661583375`.
+- Created Draft PR #48: `https://github.com/zh94695424/one-call/pull/48`, title `PA37: Operations catalog product read foundation`, base `main`, head `codex/pa37-next-work-unit`. GitHub metadata at creation verified state `OPEN`, `isDraft=true`, `mergeable=MERGEABLE`, base/head names exact and initial head OID `9937b47...`. No merge, approval, mark-ready, reviewer request, external comment, close/delete or issue mutation occurred.
+- The PR body records the two routes, authority/transaction/read boundaries, final validation totals, candidate/production manifest identities and owner-classified residuals. It explicitly states this is a Draft PR and does not claim production readiness.
+- Current gate / next entry point: `PR review`. After this Controller bookkeeping push, freeze the resulting PR head and dispatch fresh isolated A (Claude Code / DeepSeek) and B (Codex / Qwen3.8 Flash) deepreview PR mode against PR #48 relative to `main`. Both must write separate new `docs/reviews/pr-48-review-YYYYMMDD-HHMMSS.md` artifacts and submit before Controller reads either. They inspect the complete PR diff, CI/check facts available through GitHub CLI, accepted artifacts, final code/tests and residuals. No source mutation, merge, approval, mark-ready, reviewer request, external comment, close/delete or issue action is authorized.
+
 ## Previous work unit - PA35
 
 ### PA35 operations IVR session read foundation - resumed from merged predecessor
