@@ -1,9 +1,20 @@
-# PA35 Operations IVR Session Read Foundation — Bounded Plan Fix 7
+# PA35 Operations IVR Session Read Foundation — Bounded Plan Fix 8
 
-Task label: `pa35-operations-ivr-session-read-plan-fix7-gpt-20261117-01`
+Task label: `pa35-operations-ivr-session-read-plan-fix8-gpt-20261117-01`
 Work unit: `PA35-operations-ivr-session-read-foundation`
 Date: 2026-11-17 (Asia/Shanghai)
-Gate: bounded `plan fix7`; author corrections, not independent acceptance.
+Gate: bounded `plan fix8`; author correction, not independent acceptance.
+
+The sole Controller-accepted finding for fix8 is Low PA35-PR-F7-01
+(deduplicated PA35-PR-F7-A-01 / PA35-PR-F7-B-01), now author-closed by the
+qualified row30 unit-count mirror in §7. Controller adjudication input is
+`84de8cb0fee2551c6a7c6e8bfae70225c7459e22`; bookkeeping child is `f6bb522`.
+Fix7 and its independent pass-with-risks reviews A
+`docs/reviews/plan-review-20261117-093602.md` and B
+`docs/reviews/plan-review-20261117-094553.md` remain immutable history.
+Fix8 supersedes their unit-count mirror non-vacuity statement, not any prior
+closure, invariant or residual owner. No fix8 Git HEAD or independent acceptance
+is claimed; stop for Controller intake and fresh independent A/B Planreview.
 
 Fix6 intake HEAD is `6dd58f57ee91d581fa77ddd0964e8f9085306562`, as recorded
 by Control; `8b9b04fcede3d46bce229e092aa4947599eb9b16` is the prior fix5
@@ -11,7 +22,7 @@ intake HEAD, not fix6. Fix6 reviews A
 `docs/reviews/plan-review-20261117-084858.md` and B
 `docs/reviews/plan-review-20261117-091117.md` both conclude pass-with-risks.
 Control closes PA35-PR-F5-A-01 and PA35-PR-F5-B-01..03; fix7 author-corrects
-only accepted Low findings PA35-PR-F6-B-01..03 below. Fix7 supersedes the
+only the then-accepted Low findings PA35-PR-F6-B-01..03 below. Fix7 supersedes the
 inaccurate production-count/provenance metadata in the immutable fix6 artifact;
 it does not rewrite that history or claim independent acceptance. The reviewed fix5 plan measured
 93,260 bytes, 1,206 total lines and 1,085 nonblank lines (not 1,085 total).
@@ -715,9 +726,17 @@ Exact lockstep changes, all inside existing test identities:
   Its current-total `contains(...)` forms must change exactly as follows:
   `contains("[712, 520]")`→`contains("[788, 556]")`,
   `contains("== 1233")`→`contains("== 1345")`,
-  `contains("== 77")`→`contains("== 83")`, and the ambiguous old count
+  `contains("== 77")`→`contains("len(unit_expected) == 83")`, and the ambiguous old count
   argument must become `contains("len(container_expected) == 34")`.
   Also require the separate scoped `contains("len(includes) == 34")`.
+  `contains("len(unit_expected) == 83")` must be the row30 test-side mirror;
+  `assert len(unit_expected) == 83` in the workflow remains load-bearing.
+  The bare unit-count substring mirror is invalid: preserved historical
+  `sum(pa31_start_totals) == 838` and `pa31_start_line_scan_total == 839`
+  already satisfy its unqualified prefix without proving the final unit count.
+  Keep both historical workflow literals untouched; they cannot satisfy the
+  qualified, complete unit-count mirror. PA35-PR-F7-01 is Closed by this
+  author correction; implementation must still prove both final literals.
   Do not retain a bare two-digit count substring: historical320 would satisfy
   the old32 prefix without proving either current scoped count.
   Retain `contains("pa36_unit_additions")` and
@@ -1317,7 +1336,7 @@ branches. If implementation discovers a true frozen schema/contract mismatch
 or needs any new privilege/migration, stop for new authorization rather than
 fabricating a mapping or expanding this slice.
 
-Current stop: write only this cumulative plan and new fix-7 evidence, then stop
+Current stop: write only this cumulative plan and new fix-8 evidence, then stop
 for Controller intake and fresh independent A/B Planreview. No Control, source,
 test, migration, OpenAPI/docs12/14/15/17, CI, POM, existing artifact or private
 helper edit; no build/container, stage/commit/push, PR action, merge, approval,
