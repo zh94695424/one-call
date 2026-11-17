@@ -197,6 +197,8 @@
                 <include>**/EvidenceRoleIvrAssociationAclIT.java</include>
                 <include>**/OperationsIvrSessionReadsIT.java</include>
                 <include>**/OperationsIvrSessionReadRoleLeastPrivilegeIT.java</include>
+                <include>**/OperationsCatalogProductReadsIT.java</include>
+                <include>**/OperationsCatalogProductReadRoleLeastPrivilegeIT.java</include>
                 <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
                 <include>**/CustomerBusinessNumbersIT.java</include>
                 <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>
