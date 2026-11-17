@@ -1,9 +1,17 @@
-# PA35 Operations IVR Session Read Foundation — Bounded Plan Fix 5
+# PA35 Operations IVR Session Read Foundation — Bounded Plan Fix 6
 
-Task label: `pa35-operations-ivr-session-read-plan-fix5-gpt-20261117-01`
+Task label: `pa35-operations-ivr-session-read-plan-fix6-gpt-20261117-01`
 Work unit: `PA35-operations-ivr-session-read-foundation`
-Date: 2026-11-17 (America/Los_Angeles)
-Gate: bounded `plan fix5`; author corrections, not independent acceptance.
+Date: 2026-11-17 (Asia/Shanghai)
+Gate: bounded `plan fix6`; author corrections, not independent acceptance.
+
+Fix6 intake HEAD is `8b9b04fcede3d46bce229e092aa4947599eb9b16` on the
+same branch. Reviews A `docs/reviews/plan-review-20261117-080038.md` and B
+`docs/reviews/plan-review-20261117-081536.md` supply accepted findings
+PA35-PR-F5-A-01 and PA35-PR-F5-B-01..03, author-corrected below; fresh
+independent acceptance remains pending. The reviewed fix5 plan measured
+93,260 bytes, 1,206 total lines and 1,085 nonblank lines (not 1,085 total).
+All previously accepted closures and owner-routed residuals remain binding.
 
 **Status:** complete, non-conditional, directly implementable single-slice plan;
 no blocking open question. FIX-01 and the accepted decisions of FIX-02 remain;
@@ -107,8 +115,8 @@ Direct evidence in merged main:
 - `EvidenceRoleIvrAssociationAclBoundaryTests` (8 ordinary methods) and
   `EvidenceRoleIvrAssociationAclIT` (16) prove the new prerequisite and current
   provisioning boundary. Their historical V017 denial and predecessor checks
-  remain intact. Only the former's current CI-total assertion needs a PA35
-  lockstep (§7 row30); PA36's existing real shared-pool test already covers all
+  remain intact. Only the former's row30 current CI-total and production-tree
+  manifest assertions receive the PA35 lockstep in §7; PA36's existing real shared-pool test already covers all
   Role.values() and explicitly IVR, with exactly seven SET targets.
 
 No goal drift or overdesign: only the confirmed routes/filters/fields are
@@ -232,7 +240,14 @@ properties provider. Both small query adapters use those same conditions,
 no duplicate @Bean registration. Put contracts in the existing public
 `subjectread` package's existing `operations-subject-read` named interface.
 The service injects only distinct narrow IvrSessionReader/IvrEvidenceReader
-ports (providers qualified by the above bean names), never owner classes.
+ports by type through `ObjectProvider<IvrSessionReader>` and
+`ObjectProvider<IvrEvidenceReader>`, never owner classes. Reuse the existing
+`one(ObjectProvider)` behavior: stream at most two candidates, require exactly
+one, and map zero/multiple/uncreatable providers or resolution exceptions to
+sanitized503. Do not use owner bean-name qualifiers, string lookups or named
+@Resource injection as a runtime cross-module contract. The @Component names
+above may remain diagnostic only; qualifiers on shared DSL/context and other
+reused infrastructure resources remain required and unchanged.
 Place the two adapters in IVR/Evidence internals exactly as §7 specifies.
 Each adapter queries only its own schema; no foreign-schema SQL resides in
 Operations. IVR's existing package-info gains precisely
@@ -609,12 +624,12 @@ or forwarding wrappers. No new module or named interface is introduced.
 | 03 | existing | `backend/src/main/java/com/onecall/core/operations_iam/subjectread/OperationsReadContext.java` | Only add nested enum IVR("ivr_role"); retain EVIDENCE("evidence_role") and all context logic. | T |
 | 04 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/web/OperationsIvrSessionReadController.java` | Two mappings, raw request capture, exact DTO serialization and sanitized problems. | R/D |
 | 05 | new | `backend/src/main/java/com/onecall/core/operations_iam/subjectread/OperationsIvrSessionReadService.java` | Only list/detail; immutable raw requests and exact frozen DTO records. | R/D |
-| 06 | new | `backend/src/main/java/com/onecall/core/operations_iam/subjectread/OperationsIvrSessionReadPorts.java` | Narrow IvrSessionReader/IvrEvidenceReader and immutable facts/filters/anchor; no generic query port. | D/T |
+| 06 | new | `backend/src/main/java/com/onecall/core/operations_iam/subjectread/OperationsIvrSessionReadPorts.java` | Distinct narrow IvrSessionReader/IvrEvidenceReader types and immutable facts/filters/anchor; no bean-name contract or generic query port. | D/T |
 | 07 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/ivrread/OperationsIvrSessionReadRequest.java` | Strict parsing and presence-aware filter digest. | R/C |
 | 08 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/ivrread/OperationsIvrSessionCursorCodec.java` | One endpoint-specific AES-GCM envelope using shared ring. | C |
-| 09 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/ivrread/DefaultOperationsIvrSessionReadService.java` | Single authority check, transaction, mapping/consistency and failure classification. | R/D/T |
-| 10 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/ivrread/OperationsIvrSessionReadConfiguration.java` | Compose service only over existing qualified resources; no datasource/key bean. | T |
-| 11 | new | `backend/src/main/java/com/onecall/core/ivr/internal/operationsread/JooqOperationsIvrSessionReader.java` | IVR-owned safe SQL/EXISTS task filter and detail chain inside Role.IVR; no cross-owner join. | D/T |
+| 09 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/ivrread/DefaultOperationsIvrSessionReadService.java` | Single authority check, transaction, mapping/consistency and failure classification; type-based ObjectProvider ports with existing one(ObjectProvider) fail-closed semantics. | R/D/T |
+| 10 | new | `backend/src/main/java/com/onecall/core/operations_iam/internal/ivrread/OperationsIvrSessionReadConfiguration.java` | Compose service over existing qualified infrastructure and type-based owner ports only; no owner-name qualifier or datasource/key bean. | T |
+| 11 | new | `backend/src/main/java/com/onecall/core/ivr/internal/operationsread/JooqOperationsIvrSessionReader.java` | IVR-owned safe SQL/EXISTS task filter and detail chain inside Role.IVR; distinct typed IvrSessionReader port, component name diagnostic only; no cross-owner join. | D/T |
 | 12 | new | `backend/src/main/java/com/onecall/core/evidence/internal/operationsread/JooqOperationsIvrEvidenceReader.java` | Evidence-owned safe SQL inside Role.EVIDENCE; exact call/session correlation, no foreign join or media read. | D/T |
 | 13 | new | `backend/src/test/java/com/onecall/core/operations_iam/internal/ivrread/OperationsIvrSessionReadRequestTests.java` | Exact ordinary test identities A below. | R/C |
 | 14 | new | `backend/src/test/java/com/onecall/core/operations_iam/internal/ivrread/OperationsIvrSessionCursorCodecTests.java` | Exact ordinary test identities B below. | C |
@@ -633,7 +648,7 @@ or forwarding wrappers. No new module or named interface is introduced.
 | 27 | existing | `backend/src/test/java/com/onecall/archtests/architecture/ModuleBoundaryTests.java` | Add exact IVR allowed edge and change discovered target multiset12→13/five→six Operations targets; no identity delta. | F/V |
 | 28 | existing | `backend/src/test/java/com/onecall/core/operations_iam/internal/subjectread/OperationsSubjectReadServiceTests.java` | Include IVR after ORDER in existing exact nested Role.values assertion; no identity delta. | T/V |
 | 29 | existing | `backend/src/test/java/com/onecall/archtests/container/OperationsSubjectReadRoleLeastPrivilegeIT.java` | Replace generic Role.values loop with PA33 fixture's exact five-role list, excluding IVR; no identity delta. | T/V |
-| 30 | existing | `backend/src/test/java/com/onecall/archtests/architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java` | In ciPomAndOrdinaryMethodInventoryMatchExactly update only current CI total literals to [788, 556]/1345/83/34; preserve PA36-start/history/ACL/topology/method checks. | F/V |
+| 30 | existing | `backend/src/test/java/com/onecall/archtests/architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java` | In ciPomAndOrdinaryMethodInventoryMatchExactly reconcile every current CI total location enumerated below; in v001ThroughV017AndPublicContractsRemainByteFrozen change only current manifest count282→291 and current aggregate pin after authorized production bytes exist. Preserve full-tree guard, historical V001–V018/public-contract/ACL/topology/method assertions. | F/V |
 
 Counts: **30 S1 paths =20 new +10 existing**. Production:13=9 new+4
 existing (including the one existing module descriptor). Tests/helpers:14=
@@ -665,12 +680,55 @@ Exact lockstep changes, all inside existing test identities:
   Existing nine test identities remain unchanged; no new module or reverse
   Operations→IVR/Evidence edge is permitted.
 - Row30's `ciPomAndOrdinaryMethodInventoryMatchExactly` retains all eight
-  PA36 method identities and all16 container identities. Replace only current
-  `[712, 520]`, `== 1233`, `== 77`, `== 32` literals with `[788, 556]`,
-  `== 1345`, `== 83`, `== 34`; retain `pa36_start_totals == [704, 504]` and
-  `pa36_start_line_scan_total == 1209`. Preserve every other assertion in this
-  class: frozen predecessor/public-contract pairs, current docs17 canonical
-  pin, V018 checksum, history18,410 ACL,11 edges, dependency hash, no expansion.
+  PA36 method identities and all16 container identities. Its CI lockstep must
+  cover **every current-total-bearing location** in the merged workflow, not
+  a four-string replacement. Enumerate and assert the following final forms:
+  - Early Surefire XML aggregate argument/count712→788 and its failure
+    diagnostic `expected exactly 712 Surefire unit/module tests`→788; current
+    unit/container arguments/counts712/520→788/556 wherever current-bearing.
+  - `method_totals == [712, 520]`→`method_totals == [788, 556]` and
+    `sum(method_totals) == 1232`→`sum(method_totals) == 1344`.
+  - `line_scan_total == 1233`→`line_scan_total == 1345` and the current tuple
+    tail1233→1345; keep tuple's historical prefix291,321,361,401,446,481.
+  - `len(unit_expected) == 77`→83, `len(container_expected) == 32`→34,
+    scoped Failsafe `len(includes) == 32`→34, and global POM include count34→36
+    (the latter measured separately; do not alter unrelated historical32/34).
+  - Both `exact_inventory` expected totals: Surefire712→788 and
+    Failsafe520→556, keeping exact class→method maps and XML set equality.
+  - Every current failure/success diagnostic containing109/1232 or
+    `77/712 + 32/520` must become117/1344 or `83/788 + 34/556`; success-report
+    current tail712+520=1232→788+556=1344, current token tail1233→1345 and
+    current `POM 32 includes`→`POM 34 includes`. Retain the prior current
+    values as explicitly historical PA35-start entries, not stale finals.
+  - Add explicit `pa35_start_totals == [712, 520]` with sum1232 and
+    `pa35_start_line_scan_total == 1233`, after subtracting PA35 identities
+    from every historical scan. Final inventory is788/556/1344/1345/83/34;
+    final scoped/global POM counts34/36. No identity is added to this class.
+  Preserve historical literals and subtraction chains, including520/404,
+  `pa36_start_totals == [704, 504]`, sums1208 and token1209, and every prior
+  per-phase total in §9. Never globally replace matching numeric strings.
+- Row30's existing `v001ThroughV017AndPublicContractsRemainByteFrozen` keeps
+  the full current production-tree no-drift guard: walk every regular file
+  under `src/main/java` and `src/main/resources`, retaining only the existing
+  V018 exclusion; add no PA35 or other exclusions. After all authorized PA35
+  production bytes exist, change count282 to the exact final291 and replace
+  only current aggregate `df6ff3b9140a365ecac1cd376a2abc8bc3a15e8fab6562fbe6673994d82af5ea`
+  with the freshly recomputed SHA-256. Basis:282 existing guarded files plus9
+  new production files. The PA35 production delta remains exactly9 new plus2
+  content-modified existing files; those two existing files do not change the
+  file count, and all carried existing production inputs remain in the full-tree
+  walk. Do not add exclusions or interpret the two content modifications as
+  only11 total guarded files.
+  Preserve existing serialization exactly: sorted normalized slash path,
+  one space, lowercase SHA-256 hex of canonical-LF file bytes per line,
+  LF between lines and one final LF; hash that UTF-8 manifest. Record the
+  resulting aggregate and exact291-path/hash basis in the implementation
+  report. Do not invent the future digest at this plan-only gate.
+  All historical V001–V018, frozen predecessor/public-contract pairs,
+  current docs17 canonical pin, V018 checksum, history18,410 ACL,11 edges,
+  dependency hash, method identities and every other assertion stay unchanged.
+  Focused and eventual full verification must execute this exact method and
+  prove its name in zero-skip XML, not merely include its class nominally.
 Gate bookkeeping artifacts are separate from these S1 rows; the active
 Controller dispatch alone determines the author document allowlist. Prior fix
 artifacts remain immutable history. Control and independent review artifacts
@@ -863,7 +921,19 @@ and never duplicate roots. Keep all variants in the existing G9/G11/G12
 identities, not new methods. F3 asserts the twelve-column list projection and
 permitted owner-local semijoin; F5 forbids Operations-owned foreign SQL; F7
 asserts the one new named owner edge and no reverse compile dependency. E8
-proves both owner adapters implement only their distinct qualified ports.
+proves both owner adapters implement only their distinct narrow port types,
+are injected by type through ObjectProvider and resolved with the existing
+one(ObjectProvider) exactly-one fail-closed semantics. E6/E8 must prove zero,
+two (including an @Primary candidate) and uncreatable providers fail503,
+while renaming either diagnostic component name leaves resolution unchanged;
+infrastructure DSL/context qualifiers remain unchanged. No bean-name runtime
+contract, owner-class injection or reverse edge is permitted.
+H4/H5 retain their existing missing-IVR/missing-Evidence membership denials
+without repair; within the same identities additionally remove the respective
+typed owner provider and require sanitized503 without partial success or
+role/grant repair. Focused deletion accounting covers each of the two typed
+ports independently (zero/ambiguous/uncreatable in E6/E8; removed IVR in H4,
+removed Evidence in H5); these are variants, not added/removed test identities.
 H proves existing role grants accurately:
 foreign tables are denied under operations_iam_role; read-only rejects DML
 under owner roles. IVR's broad reads require static SQL and wire/log canaries
@@ -913,6 +983,9 @@ These are fixed verification expectations, not claims of executed tests; XML mus
 the exact names, not just totals. Duplicate/missing/unexpected/skipped suite
 or method fails the inventory gate. The focused method set must equal the
 full run's subset for exactly those twelve selected classes.
+Both focused and eventual full runs explicitly include row30's
+`v001ThroughV017AndPublicContractsRemainByteFrozen`; its exact method name
+must appear once with zero skips, preserving the291-file guard described in §7.
 
 CI named additions: add `pa35_unit_additions` dictionary keyed by each full A–F
 class with exactly its §8 method-name set, and `pa35_container_additions` for
@@ -978,11 +1051,12 @@ customer53/original-seven290/evidence18/expanded-nine410, topology7/9/11.
 | `container/EvidenceMediaReadIT.java`, `container/EvidenceMediaReadRoleLeastPrivilegeIT.java` | Latest execution/applied history18, no new media behavior |
 | `container/OperationsActivationReadRoleLeastPrivilegeIT.java`, `container/OperationsSubjectReadRoleLeastPrivilegeIT.java`, `container/OperationsSubjectReadsIT.java` | Current history18; existing fixtures/memberships unchanged; only row29's role loop changes for appended IVR |
 | `container/PublicShareAdmissionIT.java`, `container/SharingAdmissionRoleLeastPrivilegeIT.java`, `container/SharingQueryServiceIT.java`, `container/SharingRoleLeastPrivilegeIT.java`, `container/SubjectClaimRoleLeastPrivilegeIT.java` | Latest execution/applied history18; historical privilege boundaries unchanged |
-| `architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java`, `container/EvidenceRoleIvrAssociationAclIT.java` | 8+16 ordinary methods; V01742501 denial, evidence16→18, full408→410, V018 checksum/history18, seven-role LO/shared-pool handoffs,11-edge topology and provenance; only row30's current CI numbers update |
+| `architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java`, `container/EvidenceRoleIvrAssociationAclIT.java` | 8+16 ordinary methods; V01742501 denial, evidence16→18, full408→410, V018 checksum/history18, seven-role LO/shared-pool handoffs,11-edge topology and provenance unchanged; row30 reconciles every current CI total and repins only the current production manifest count282→291/aggregate per §7, preserving full-tree coverage |
 
 This ledger covers all36 test/helper Java paths changed by the PA36 merge.
-Only row30 newly pins current CI totals; no other merged test needs a new PA35
-current-state rewrite. Current docs17 canonical hash, V018 and PA25 pins in §10
+Row30 alone updates its current CI assertions and current full-tree manifest
+count/aggregate per §7; no other merged test needs that PA35 current-state
+rewrite. Its historical/frozen assertions remain unchanged. Current docs17 canonical hash, V018 and PA25 pins in §10
 replace old assumptions; historical artifacts and test prefixes are untouched.
 Preserve CI's V018 packaged-entry check exactly once and PA25 probes/markers.
 Current XML expectations are77/712 +32/520, with32 scoped Failsafe includes;
@@ -1027,8 +1101,13 @@ No frozen file is rewritten for verification or to manufacture a passing hash.
 | `docs/operations/pa25-production-database-identity-provisioning-runbook.md` | `44ced2245fc1c89175eeb386bc6cc6fa036302e368829cdd163f3da022425423` | `792a32f72d6657b59a220a42ec7c11f94361078c8c0d491ff52d777fe22f08ab` |
 | `backend/README.md` | `fdcf813e4886d0fa68f7170207944457d331a51b79a0ae664485240f37ee5d64` | `bf152e7284aeeb5bc3cd9457c433607a8b91be848e9946d8549051cff1507177` |
 
-Pair-map digest: `ed03b90fe748039ca7d1d674c32cf0e0c56b828901116294a1ea5dd011954409` over path-sorted UTF-8 path,NUL,raw digest bytes,
-canonical digest bytes per row (no row terminator). It locks all26 pairs.
+Pair-map digest: `ed03b90fe748039ca7d1d674c32cf0e0c56b828901116294a1ea5dd011954409`.
+Sort the26 paths by their path UTF-8 bytes. For each path append its UTF-8
+bytes, exactly one `0x00`, exactly32 binary bytes decoded from the raw SHA-256
+hex, then exactly32 binary bytes decoded from the canonical-LF SHA-256 hex.
+There is no delimiter between the two digest values and no row terminator.
+SHA-256 the concatenated rows. This is binary digest serialization, NOT
+64-byte UTF-8 hex-text digest serialization. It locks all26 pairs.
 
 F8/G1 retain the inherited plan-file mechanism. From backend cwd read
 `../docs/gateflow/pa35-operations-ivr-session-read-foundation-plan.md` as UTF-8
@@ -1036,7 +1115,12 @@ and match `(?m)^([0-9a-f]{64})  (.+)$`; exactly26 unique bare entries below.
 In BOTH identities independently hard-code the26-path raw/LF map above.
 Require table-path, bare-path and independent-map exact set equality; require
 table pair equality and bare hash == map RAW member. A changed plan line cannot
-redefine the independent oracle. Recompute the pair-map digest independently.
+redefine the independent oracle. F8/G1 must independently recompute the exact
+binary pair-map formula above and require the resulting
+`ed03b90fe748039ca7d1d674c32cf0e0c56b828901116294a1ea5dd011954409`.
+Within each existing identity, use UTF-8 hex-text instead of decoded binary
+digest bytes as a negative interpretation and require rejection; additional
+delimiter or row-terminator interpretations must also fail. No extra methods.
 
 For each on-disk file accept its raw digest in {pinned RAW,pinned LF} OR its
 CRLF→LF digest == pinned LF; independently ALWAYS require canonical digest ==
@@ -1189,7 +1273,11 @@ Implementation report must give exact changed paths and counts; route/filter/
 authority evidence; column/projection/ordering/omission checks; cursor AAD/digest
 and shared-ring proof; transaction/role restore evidence; source=CI=POM=XML
 names and totals; focused/full commands and zero-skips outputs; raw/LF frozen
-hashes; JAR/firewall/A1–A5 results; and owner-routed residuals. No live,
+hashes; row30's recomputed current production aggregate SHA-256 with the
+exact291-path/canonical-LF-hash manifest basis (including every authorized
+production change) and focused/full execution of
+`v001ThroughV017AndPublicContractsRemainByteFrozen`; JAR/firewall/A1–A5 results;
+and owner-routed residuals. No live,
 production-readiness or hosted-CI claim follows from local validation.
 
 No blocking schema/contract/ACL question remains. The owner-routed external
@@ -1198,7 +1286,7 @@ branches. If implementation discovers a true frozen schema/contract mismatch
 or needs any new privilege/migration, stop for new authorization rather than
 fabricating a mapping or expanding this slice.
 
-Current stop: write only this cumulative plan and fix-5 evidence, then stop
+Current stop: write only this cumulative plan and new fix-6 evidence, then stop
 for Controller intake and fresh independent A/B Planreview. No Control, source,
 test, migration, OpenAPI/docs12/14/15/17, CI, POM, existing artifact or private
 helper edit; no build/container, stage/commit/push, PR action, merge, approval,
