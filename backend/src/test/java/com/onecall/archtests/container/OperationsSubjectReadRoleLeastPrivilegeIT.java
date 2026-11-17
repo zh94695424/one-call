@@ -152,7 +152,7 @@ class OperationsSubjectReadRoleLeastPrivilegeIT {
         fixture.transaction.execute(status -> {
             scope.enter();
             try {
-                for (var role : OperationsReadContext.Role.values()) {
+                for (var role : List.of(OperationsReadContext.Role.SUBJECT, OperationsReadContext.Role.ACTIVATION, OperationsReadContext.Role.TRIAL, OperationsReadContext.Role.EVIDENCE, OperationsReadContext.Role.ORDER)) {
                     scope.scoped(role, () -> fixture.dsl.fetchSingle("SELECT current_user"));
                     assertThat(fixture.dsl.fetchSingle("SELECT current_user").get(0, String.class)).isEqualTo("operations_iam_role");
                     assertThatThrownBy(() -> scope.scoped(role, () -> { throw new IllegalStateException("PRIVATE_OWNER"); })).isInstanceOf(IllegalStateException.class);

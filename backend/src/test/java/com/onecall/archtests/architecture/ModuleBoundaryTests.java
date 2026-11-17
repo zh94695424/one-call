@@ -44,7 +44,7 @@ class ModuleBoundaryTests {
             Map.entry("subject_number", Set.of("operations_iam::operations-subject-read")),
             Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial", "operations_iam::subject-lifecycle-command", "operations_iam::employee-administrator-lock", "operations_iam::operations-subject-read")),
             Map.entry("ivr", Set.of("subject_number", "activation_consent",
-                    "entitlement_metering", "evidence")),
+                    "entitlement_metering", "evidence", "operations_iam::operations-subject-read")),
             Map.entry("catalog_order", Set.of("customer_iam", "subject_number", "operations_iam::operations-subject-read")),
             Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number", "operations_iam::operations-subject-read")),
             Map.entry("evidence", Set.of("entitlement_metering", "operations_iam::operations-subject-read")),
@@ -110,8 +110,8 @@ class ModuleBoundaryTests {
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("exactly twelve production edges exist: retained eight plus subject_number, entitlement_metering, evidence and catalog_order -> operations_iam")
-                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam");
+                .as("exactly thirteen production edges exist: retained twelve plus ivr -> operations_iam")
+                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam");
     }
 
     @Test

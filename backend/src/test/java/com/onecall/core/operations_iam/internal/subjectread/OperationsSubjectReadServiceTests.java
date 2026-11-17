@@ -164,7 +164,7 @@ class OperationsSubjectReadServiceTests {
         ordered.verify(fixture.context).exit();
         assertThat(OperationsReadContext.Role.values()).containsExactly(OperationsReadContext.Role.SUBJECT,
                 OperationsReadContext.Role.ACTIVATION, OperationsReadContext.Role.TRIAL,
-                OperationsReadContext.Role.EVIDENCE, OperationsReadContext.Role.ORDER);
+                OperationsReadContext.Role.EVIDENCE, OperationsReadContext.Role.ORDER, OperationsReadContext.Role.IVR);
     }
 
     @Test
