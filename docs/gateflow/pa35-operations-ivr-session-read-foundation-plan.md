@@ -1,15 +1,19 @@
-# PA35 Operations IVR Session Read Foundation — Bounded Plan Fix 6
+# PA35 Operations IVR Session Read Foundation — Bounded Plan Fix 7
 
-Task label: `pa35-operations-ivr-session-read-plan-fix6-gpt-20261117-01`
+Task label: `pa35-operations-ivr-session-read-plan-fix7-gpt-20261117-01`
 Work unit: `PA35-operations-ivr-session-read-foundation`
 Date: 2026-11-17 (Asia/Shanghai)
-Gate: bounded `plan fix6`; author corrections, not independent acceptance.
+Gate: bounded `plan fix7`; author corrections, not independent acceptance.
 
-Fix6 intake HEAD is `8b9b04fcede3d46bce229e092aa4947599eb9b16` on the
-same branch. Reviews A `docs/reviews/plan-review-20261117-080038.md` and B
-`docs/reviews/plan-review-20261117-081536.md` supply accepted findings
-PA35-PR-F5-A-01 and PA35-PR-F5-B-01..03, author-corrected below; fresh
-independent acceptance remains pending. The reviewed fix5 plan measured
+Fix6 intake HEAD is `6dd58f57ee91d581fa77ddd0964e8f9085306562`, as recorded
+by Control; `8b9b04fcede3d46bce229e092aa4947599eb9b16` is the prior fix5
+intake HEAD, not fix6. Fix6 reviews A
+`docs/reviews/plan-review-20261117-084858.md` and B
+`docs/reviews/plan-review-20261117-091117.md` both conclude pass-with-risks.
+Control closes PA35-PR-F5-A-01 and PA35-PR-F5-B-01..03; fix7 author-corrects
+only accepted Low findings PA35-PR-F6-B-01..03 below. Fix7 supersedes the
+inaccurate production-count/provenance metadata in the immutable fix6 artifact;
+it does not rewrite that history or claim independent acceptance. The reviewed fix5 plan measured
 93,260 bytes, 1,206 total lines and 1,085 nonblank lines (not 1,085 total).
 All previously accepted closures and owner-routed residuals remain binding.
 
@@ -707,6 +711,28 @@ Exact lockstep changes, all inside existing test identities:
   Preserve historical literals and subtraction chains, including520/404,
   `pa36_start_totals == [704, 504]`, sums1208 and token1209, and every prior
   per-phase total in §9. Never globally replace matching numeric strings.
+  Separately update row30's own test-managed CI mirror, not just the workflow.
+  Its current-total `contains(...)` forms must change exactly as follows:
+  `contains("[712, 520]")`→`contains("[788, 556]")`,
+  `contains("== 1233")`→`contains("== 1345")`,
+  `contains("== 77")`→`contains("== 83")`, and the ambiguous old count
+  argument must become `contains("len(container_expected) == 34")`.
+  Also require the separate scoped `contains("len(includes) == 34")`.
+  Do not retain a bare two-digit count substring: historical320 would satisfy
+  the old32 prefix without proving either current scoped count.
+  Retain `contains("pa36_unit_additions")` and
+  `contains("pa36_container_additions")`, and keep the historical forms
+  `contains("pa36_start_totals == [704, 504]")` and
+  `contains("pa36_start_line_scan_total == 1209")` unchanged. Add distinct
+  historical `contains("pa35_start_totals == [712, 520]")` and
+  `contains("pa35_start_line_scan_total == 1233")`; these never substitute
+  for current-total mirrors. Global all-POM include count36 is measured
+  separately from scoped `len(includes) == 34`; it is not a workflow literal.
+  The unrelated `baseline_jars == 34` assertion remains immutable. Keep all
+  workflow final forms, failure/success diagnostics and historical chains
+  above distinct. The implementation report must show both workflow and
+  test-side final literals; execute `ciPomAndOrdinaryMethodInventoryMatchExactly`
+  in focused/full zero-skip XML as well as the frozen-tree method below.
 - Row30's existing `v001ThroughV017AndPublicContractsRemainByteFrozen` keeps
   the full current production-tree no-drift guard: walk every regular file
   under `src/main/java` and `src/main/resources`, retaining only the existing
@@ -714,11 +740,14 @@ Exact lockstep changes, all inside existing test identities:
   production bytes exist, change count282 to the exact final291 and replace
   only current aggregate `df6ff3b9140a365ecac1cd376a2abc8bc3a15e8fab6562fbe6673994d82af5ea`
   with the freshly recomputed SHA-256. Basis:282 existing guarded files plus9
-  new production files. The PA35 production delta remains exactly9 new plus2
-  content-modified existing files; those two existing files do not change the
-  file count, and all carried existing production inputs remain in the full-tree
-  walk. Do not add exclusions or interpret the two content modifications as
-  only11 total guarded files.
+  new production files. The PA35 production delta is exactly9 new plus4
+  content-modified existing =13 production paths. The four existing paths are
+  rows01/02/03/26: OperationsBoundaryFilter.java, CustomerBoundaryFilter.java,
+  OperationsReadContext.java and ivr/package-info.java. All13 production paths
+  are protected; content changes do not change file count, so the full-tree
+  total remains291 guarded production files =282+9, not merely the13-path
+  PA35 production delta. All carried existing production inputs remain in the
+  full-tree walk; add no exclusions.
   Preserve existing serialization exactly: sorted normalized slash path,
   one space, lowercase SHA-256 hex of canonical-LF file bytes per line,
   LF between lines and one final LF; hash that UTF-8 manifest. Record the
@@ -926,6 +955,8 @@ are injected by type through ObjectProvider and resolved with the existing
 one(ObjectProvider) exactly-one fail-closed semantics. E6/E8 must prove zero,
 two (including an @Primary candidate) and uncreatable providers fail503,
 while renaming either diagnostic component name leaves resolution unchanged;
+E8 registers the same port implementation under another diagnostic bean name
+only in a test-managed ApplicationContext, never by mutating production source.
 infrastructure DSL/context qualifiers remain unchanged. No bean-name runtime
 contract, owner-class injection or reverse edge is permitted.
 H4/H5 retain their existing missing-IVR/missing-Evidence membership denials
@@ -1286,7 +1317,7 @@ branches. If implementation discovers a true frozen schema/contract mismatch
 or needs any new privilege/migration, stop for new authorization rather than
 fabricating a mapping or expanding this slice.
 
-Current stop: write only this cumulative plan and new fix-6 evidence, then stop
+Current stop: write only this cumulative plan and new fix-7 evidence, then stop
 for Controller intake and fresh independent A/B Planreview. No Control, source,
 test, migration, OpenAPI/docs12/14/15/17, CI, POM, existing artifact or private
 helper edit; no build/container, stage/commit/push, PR action, merge, approval,
