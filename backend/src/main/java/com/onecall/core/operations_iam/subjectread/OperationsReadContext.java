@@ -12,7 +12,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public final class OperationsReadContext {
     public enum Role {
         SUBJECT("subject_number_role"), ACTIVATION("activation_consent_role"), TRIAL("entitlement_metering_role"),
-        EVIDENCE("evidence_role"), ORDER("catalog_order_role");
+        EVIDENCE("evidence_role"), ORDER("catalog_order_role"), IVR("ivr_role");
 
         private final String databaseRole;
 

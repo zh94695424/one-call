@@ -195,6 +195,8 @@
                 <include>**/MediaGatewayTransportIT.java</include>
                 <include>**/ProductionDatabaseIdentityProvisioningIT.java</include>
                 <include>**/EvidenceRoleIvrAssociationAclIT.java</include>
+                <include>**/OperationsIvrSessionReadsIT.java</include>
+                <include>**/OperationsIvrSessionReadRoleLeastPrivilegeIT.java</include>
                 <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
                 <include>**/CustomerBusinessNumbersIT.java</include>
                 <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>

@@ -38,6 +38,8 @@ public final class OperationsBoundaryFilter implements Filter {
         String path = request.getServletPath();
         boolean read = "GET".equals(request.getMethod()) && path != null
                 && ("/api/v1/operations/subjects".equals(path) || "/api/v1/operations/activations".equals(path)
+                || "/api/v1/operations/ivr-sessions".equals(path)
+                || path.matches("/api/v1/operations/ivr-sessions/[^/;%]+")
                 || path.matches("/api/v1/operations/subjects/[^/;%]+"));
         if (!(read || "POST".equals(request.getMethod()) && path != null && path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)"))
                 || !(request.getContextPath() + path).equals(request.getRequestURI())) {
