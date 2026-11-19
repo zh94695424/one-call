@@ -17,8 +17,10 @@ not be used to infer present state.
 - Accepted aggregate-deepreview tree:
   `195e4a3e6aed4ee4cfe6049b41842049133d6d99`
 - Draft PR: #49, `https://github.com/zh94695424/one-call/pull/49`
-- Original candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
+- Historical RR18-review candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
+- Current PR-review candidate: 32 paths / 572,735 raw bytes / ordinal aggregate
+  `db38b4375c29addd13bfbb8cacde90a172bc32469a736b6b70d7190768500555`
 - Production manifest: 310 /
   `1e0a68c8d766bbac953579975c75787c4801b45540c92e4d9c21ddae4662b045`
 - Java source/test: 290/180

@@ -1,9 +1,11 @@
 name: ci
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
+      - '.gitattributes'
       - 'backend/**'
       - '.github/workflows/ci.yml'
       - 'api/openapi/**'
@@ -14,6 +16,7 @@ on:
       - 'docs/*.md'
   pull_request:
     paths:
+      - '.gitattributes'
       - 'backend/**'
       - '.github/workflows/ci.yml'
       - 'api/openapi/**'

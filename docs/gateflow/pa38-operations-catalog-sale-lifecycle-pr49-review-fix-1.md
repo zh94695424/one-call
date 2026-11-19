@@ -70,8 +70,13 @@ No accepted finding requires a product implementation change.
 - Updated Control/current status with the PR review findings, EOL remediation,
   exact-head CI requirement and residual owners.
 
-The original 32-path candidate remains byte-identical: 572,661 raw bytes /
-`8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`.
+The original 31 non-CI product/configuration paths and implementation report
+remain byte-identical. To make the EOL fix trigger Linux CI reliably while
+keeping the workflow self-recheckable, the same 32-path candidate now changes
+only `.github/workflows/ci.yml` (+74 bytes, `11dfd54c...` to
+`a26acaa965130209f50a57b08b9b7fde513fa3e0c85851ac30623391ea989787`):
+32 paths / 572,735 raw bytes /
+`db38b4375c29addd13bfbb8cacde90a172bc32469a736b6b70d7190768500555`.
 
 ## Validation
 
