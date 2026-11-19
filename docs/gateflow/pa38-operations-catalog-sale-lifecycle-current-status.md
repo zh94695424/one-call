@@ -24,6 +24,9 @@ not be used to infer present state.
 - Previous exact-head run `44570384137` also passed at `186b108…`; the two
   heads differ only by Controller documentation. Later PR review/closeout
   documentation commits likewise do not change the source/config candidate.
+- Accepted PR-review commit:
+  `07c7b056e3433ec7b0dbe93340a8311672a8c008`; exact-head CI run
+  `44595668761` passed `contract-regressions` and `java-runtime`.
 - Historical RR18-review candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
 - Current PR-review candidate: 32 paths / 572,735 raw bytes / ordinal aggregate
@@ -141,7 +144,6 @@ predecessor sizes and correction-round labels, assign every residual owner and
 record RR13–RR18 provenance. RR18 A and B both returned `pass` with zero
 findings. Product code remains frozen. The accepted aggregate-deepreview
 checkpoint is complete and Draft PR #49 is open against `main`. The current
-gate is the accepted PR-review local checkpoint. After that commit and push,
-require a final green exact-head CI run, enter `draft-PR-pass`, and perform
-final closeout. The `java-runtime` timeout concern remains deferred to
-Platform/CI.
+gate is final closeout. The accepted PR-review checkpoint and exact-head CI
+are green; final closeout records all findings, residuals and the next-entry
+condition. The `java-runtime` timeout concern remains deferred to Platform/CI.
