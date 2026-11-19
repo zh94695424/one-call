@@ -199,6 +199,8 @@
                 <include>**/OperationsIvrSessionReadRoleLeastPrivilegeIT.java</include>
                 <include>**/OperationsCatalogProductReadsIT.java</include>
                 <include>**/OperationsCatalogProductReadRoleLeastPrivilegeIT.java</include>
+                <include>**/OperationsCatalogVersionLifecycleIT.java</include>
+                <include>**/OperationsCatalogVersionRoleLeastPrivilegeIT.java</include>
                 <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
                 <include>**/CustomerBusinessNumbersIT.java</include>
                 <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>

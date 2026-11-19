@@ -99,7 +99,7 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
         for (String line : FROZEN.strip().split("\n")) { String[] fields = line.split(" "); byte[] bytes = Files.readAllBytes(Path.of("..").resolve(fields[0])); assertThat(hash(bytes)).as(fields[0]).isIn(fields[1], fields[2]); assertThat(hash(lf(bytes))).isEqualTo(fields[2]); }
         List<Path> files = new ArrayList<>(); for (String root : List.of("src/main/java", "src/main/resources")) try (var paths = Files.walk(Path.of(root))) { files.addAll(paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V018)).toList()); }
         List<String> manifest = new ArrayList<>(); for (Path file : files) manifest.add(file.toString().replace('\\', '/') + " " + hash(lf(Files.readAllBytes(file)))); Collections.sort(manifest);
-        assertThat(manifest).hasSize(299); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("12e70c031e42bcbca806cc1983335408d2c52fe830bd7a2ea77ddb2f1435b8c1");
+        assertThat(manifest).hasSize(310); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("3fb47bccfb82a9c4a36e4fe5f1abd778f0cb46e04d797955521e6660d03cf2d0");
     }
     @Test
     void pa25UsesExactEighteenHistoryAndIndependent410TupleOracle() throws Exception {
@@ -137,7 +137,7 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
     @Test
     void ciPomAndOrdinaryMethodInventoryMatchExactly() throws Exception {
         String ci = Files.readString(Path.of("../.github/workflows/ci.yml")); String pom = Files.readString(Path.of("pom.xml"));
-        assertThat(ci).contains("pa36_unit_additions", "pa36_container_additions", "[788, 556]", "pa36_start_totals == [704, 504]", "pa36_start_line_scan_total == 1209", "pa35_start_totals == [712, 520]", "pa35_start_line_scan_total == 1233", "== 1345", "len(unit_expected) == 89", "len(container_expected) == 36", "len(includes) == 36");
+        assertThat(ci).contains("pa36_unit_additions", "pa36_container_additions", "[788, 556]", "pa36_start_totals == [704, 504]", "pa36_start_line_scan_total == 1209", "pa35_start_totals == [712, 520]", "pa35_start_line_scan_total == 1233", "== 1345", "len(unit_expected) == 97", "len(container_expected) == 38", "len(includes) == 38", "pa38_unit_additions", "pa38_container_additions", "pa38_start_totals == [848, 592]", "pa38_start_line_scan_total == 1441", "method_totals == [934, 630]", "line_scan_total == 1565");
         String include = "<include>**/EvidenceRoleIvrAssociationAclIT.java</include>"; assertThat(pom.indexOf(include)).isGreaterThan(0); assertThat(pom.indexOf(include, pom.indexOf(include) + 1)).isEqualTo(-1);
         for (var entry : Map.of("architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java", UNIT, "container/EvidenceRoleIvrAssociationAclIT.java", CONTAINER).entrySet()) {
             String source = Files.readString(Path.of("src/test/java/com/onecall/archtests").resolve(entry.getKey())); assertThat(methods(source)).hasSize(entry.getValue().size()).containsExactlyInAnyOrderElementsOf(entry.getValue()); assertThat(source).doesNotContain("@" + "ParameterizedTest", "@" + "TestFactory", "@" + "Disabled", "Assumptions" + ".", "@" + "RepeatedTest"); for (String name : entry.getValue()) assertThat(ci).contains("'" + name + "'");

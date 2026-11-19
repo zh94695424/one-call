@@ -113,6 +113,35 @@ public class OperationsSubjectReadPersistenceConfiguration {
 
     @Bean
     @Lazy
+    DataSourceTransactionManager operationsSubjectReadCatalogSaleTransactionManager(
+            @Qualifier("operationsSubjectReadDataSource") DataSource datasource) {
+        var manager = new DataSourceTransactionManager(datasource);
+        manager.setRollbackOnCommitFailure(true);
+        manager.setEnforceReadOnly(false);
+        return manager;
+    }
+
+    @Bean
+    @Lazy
+    TransactionTemplate operationsSubjectReadCatalogSaleTransactionTemplate(
+            @Qualifier("operationsSubjectReadCatalogSaleTransactionManager") DataSourceTransactionManager manager) {
+        var template = new TransactionTemplate(manager) {
+            @Override public <Result> Result execute(org.springframework.transaction.support.TransactionCallback<Result> action) {
+                try { return super.execute(action); }
+                finally {
+                    if (manager.getDataSource() instanceof GuardedReadDataSource guarded) guarded.assertClean();
+                }
+            }
+        };
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        template.setReadOnly(false);
+        template.setTimeout(5);
+        return template;
+    }
+
+    @Bean
+    @Lazy
     DSLContext operationsSubjectReadDsl(@Qualifier("operationsSubjectReadDataSource") DataSource datasource) {
         var configuration = new DefaultConfiguration();
         configuration.set(SQLDialect.POSTGRES);

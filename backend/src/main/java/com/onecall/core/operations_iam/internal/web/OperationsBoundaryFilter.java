@@ -43,16 +43,22 @@ public final class OperationsBoundaryFilter implements Filter {
                 || path.matches("/api/v1/operations/catalog/products/[^/;%]+")
                 || path.matches("/api/v1/operations/ivr-sessions/[^/;%]+")
                 || path.matches("/api/v1/operations/subjects/[^/;%]+"));
-        if (!(read || "POST".equals(request.getMethod()) && path != null && path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)"))
+        boolean catalog = "POST".equals(request.getMethod()) && path != null
+                && path.matches("/api/v1/operations/catalog/versions/[^/;%]+/(publications|offsales)")
+                && (request.getContextPath() + path).equals(request.getRequestURI());
+        boolean subject = "POST".equals(request.getMethod()) && path != null && path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)");
+        if (!(read || subject || catalog)
                 || !(request.getContextPath() + path).equals(request.getRequestURI())) {
             problems.write(response, Code.NOT_FOUND, trace); return;
         }
         try {
             var principal = new OperationsRequestPrincipal(authenticator.authenticate(request.getHeaders("Authorization")));
-            if (!read) {
+            if (subject) {
             var keys = Collections.list(request.getHeaders("Idempotency-Key"));
             if (keys.size() != 1 || !OperationsSubjectLifecycleJsonBinder.validText(keys.getFirst(), 128)) throw new Failure(Code.VALIDATION_FAILED);
             request.setAttribute(ACTION, keys.getFirst());
+            }
+            if (!read) {
             try {
                 var types = Collections.list(request.getHeaders("Content-Type"));
                 if (types.size() != 1) throw new IllegalArgumentException();
