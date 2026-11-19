@@ -16,7 +16,6 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
@@ -35,17 +34,21 @@ public final class OperationsCatalogVersionController {
     public OperationsCatalogVersionController(ObjectProvider<OperationsCatalogSaleCommand> commands, OperationsProblemWriter problems) { this.commands = commands; this.problems = problems; }
 
     @PostMapping("/api/v1/operations/catalog/versions/{versionId}/publications")
-    public void publishOperationsCatalogVersion(@PathVariable String versionId, @RequestBody byte[] body, HttpServletRequest request, HttpServletResponse response) throws IOException {
-        var caller = caller(request); var parsed = parse(versionId, body, true);
+    public void publishOperationsCatalogVersion(@PathVariable String versionId, HttpServletRequest request, HttpServletResponse response) throws IOException {
+        var caller = caller(request); var parsed = parse(versionId, body(request), true);
         success(command().publish(new OperationsCatalogSaleCommand.PublishCommand(parsed.versionId, parsed.active, parsed.revision, caller)), response);
     }
 
     @PostMapping("/api/v1/operations/catalog/versions/{versionId}/offsales")
-    public void offsaleOperationsCatalogVersion(@PathVariable String versionId, @RequestBody byte[] body, HttpServletRequest request, HttpServletResponse response) throws IOException {
-        var caller = caller(request); var parsed = parse(versionId, body, false);
+    public void offsaleOperationsCatalogVersion(@PathVariable String versionId, HttpServletRequest request, HttpServletResponse response) throws IOException {
+        var caller = caller(request); var parsed = parse(versionId, body(request), false);
         success(command().offsale(new OperationsCatalogSaleCommand.OffsaleCommand(parsed.versionId, parsed.revision, caller)), response);
     }
 
+    private byte[] body(HttpServletRequest request) {
+        try { return request.getInputStream().readNBytes(8193); }
+        catch (IOException invalid) { throw new OperationsCatalogSaleCommand.Failure(OperationsCatalogSaleCommand.Code.VALIDATION_FAILED); }
+    }
     private OperationsCatalogSaleCommand.Caller caller(HttpServletRequest request) {
         if (!(request.getUserPrincipal() instanceof OperationsRequestPrincipal principal) || principal.caller() == null) throw new OperationsCatalogSaleCommand.Failure(OperationsCatalogSaleCommand.Code.UNAUTHENTICATED);
         return new OperationsCatalogSaleCommand.Caller(principal.caller().employeeId(), OperationsBoundaryFilter.trace(request));

@@ -99,7 +99,7 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
         for (String line : FROZEN.strip().split("\n")) { String[] fields = line.split(" "); byte[] bytes = Files.readAllBytes(Path.of("..").resolve(fields[0])); assertThat(hash(bytes)).as(fields[0]).isIn(fields[1], fields[2]); assertThat(hash(lf(bytes))).isEqualTo(fields[2]); }
         List<Path> files = new ArrayList<>(); for (String root : List.of("src/main/java", "src/main/resources")) try (var paths = Files.walk(Path.of(root))) { files.addAll(paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V018)).toList()); }
         List<String> manifest = new ArrayList<>(); for (Path file : files) manifest.add(file.toString().replace('\\', '/') + " " + hash(lf(Files.readAllBytes(file)))); Collections.sort(manifest);
-        assertThat(manifest).hasSize(310); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("3fb47bccfb82a9c4a36e4fe5f1abd778f0cb46e04d797955521e6660d03cf2d0");
+        assertThat(manifest).hasSize(310); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("1e0a68c8d766bbac953579975c75787c4801b45540c92e4d9c21ddae4662b045");
     }
     @Test
     void pa25UsesExactEighteenHistoryAndIndependent410TupleOracle() throws Exception {

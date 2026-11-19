@@ -11,6 +11,12 @@ import com.onecall.core.operations_iam.internal.security.*;
 import com.onecall.core.operations_iam.internal.web.*;
 import com.onecall.core.operations_iam.operationscommand.OperationsCatalogSaleCommand;
 import com.onecall.core.operations_iam.operationscommand.OperationsCatalogSaleCommand.*;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,6 +38,8 @@ public final class OperationsCatalogVersionWebTests {
     final JsonMapper mapper = JsonMapper.builder().build();
     final CatalogVersionState state = new CatalogVersionState(VERSION, PRODUCT, 1, "ACTIVE", 2, Instant.parse("2026-11-18T00:00:00Z"), VERSION);
     MockMvc mvc;
+    ServletInputStream bodyStream;
+    final AtomicInteger bodyReads = new AtomicInteger(), bodyBytes = new AtomicInteger();
     @BeforeEach void setup() {
         sessions.sessions.put("valid", new VerifiedEmployeeSession(EMPLOYEE, EmployeeBearerAuthenticator.AUDIENCE));
         sessions.sessions.put("wrong", new VerifiedEmployeeSession(EMPLOYEE, "customer"));
@@ -42,11 +50,40 @@ public final class OperationsCatalogVersionWebTests {
     MockMvc mvc() {
         var problems = new OperationsProblemWriter();
         return MockMvcBuilders.standaloneSetup(new OperationsCatalogVersionController(beans.getBeanProvider(OperationsCatalogSaleCommand.class), problems))
-                .addFilters(new OperationsBoundaryFilter(new EmployeeBearerAuthenticator(beans.getBeanProvider(EmployeeSessionVerifier.class)), problems),
+                .addFilters((request, response, chain) -> chain.doFilter(bodyStream == null ? request : new HttpServletRequestWrapper((HttpServletRequest) request) {
+                    @Override public ServletInputStream getInputStream() { bodyReads.incrementAndGet(); return bodyStream; }
+                }, response), new OperationsBoundaryFilter(new EmployeeBearerAuthenticator(beans.getBeanProvider(EmployeeSessionVerifier.class)), problems),
                         new CustomerBoundaryFilter(new CustomerBearerAuthenticator(beans.getBeanProvider(CustomerSessionVerifier.class)), new CustomerProblemWriter())).build();
     }
     String body(String suffix) { return suffix.equals("publications") ? "{\"expectedActiveVersionId\":null,\"expectedRevision\":1}" : "{\"expectedRevision\":1}"; }
     MockHttpServletRequestBuilder request(String suffix) { return post(BASE + "/" + suffix).servletPath(BASE + "/" + suffix).header("Authorization", "Bearer valid").contentType("application/json").accept("application/json").content(body(suffix)); }
+    MockHttpServletRequestBuilder streamed(String suffix, byte[] content, int failureAfter) {
+        bodyReads.set(0); bodyBytes.set(0);
+        bodyStream = new ServletInputStream() {
+            @Override public int read() throws IOException {
+                if (failureAfter == 0) throw new AssertionError("body read before authentication");
+                if (failureAfter > 0 && bodyBytes.get() >= failureAfter) throw new IOException("PRIVATE truncated jdbc: password");
+                if (bodyBytes.get() == content.length) return -1;
+                return Byte.toUnsignedInt(content[bodyBytes.getAndIncrement()]);
+            }
+            @Override public int read(byte[] target, int offset, int length) throws IOException {
+                if (length == 0) return 0;
+                int first = read();
+                if (first < 0) return -1;
+                target[offset] = (byte) first;
+                int available = Math.min(length - 1, content.length - bodyBytes.get());
+                if (failureAfter > 0) available = Math.min(available, failureAfter - bodyBytes.get());
+                System.arraycopy(content, bodyBytes.get(), target, offset + 1, available);
+                bodyBytes.addAndGet(available);
+                return available + 1;
+            }
+            @Override public boolean isFinished() { return bodyBytes.get() == content.length; }
+            @Override public boolean isReady() { return true; }
+            @Override public void setReadListener(ReadListener listener) { throw new UnsupportedOperationException(); }
+        };
+        return request(suffix).content(content);
+    }
+    byte[] padded(String suffix, int size) { return (body(suffix) + " ".repeat(size - body(suffix).length())).getBytes(StandardCharsets.UTF_8); }
     void headers(MockHttpServletResponse response) {
         assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store"); assertThat(response.getHeader("Pragma")).isEqualTo("no-cache"); assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff"); assertThat(response.getContentLength()).isEqualTo(response.getContentAsByteArray().length);
     }
@@ -69,6 +106,13 @@ public final class OperationsCatalogVersionWebTests {
             }
         }
         assertThat(customerCalls.get()).isZero();
+        for (boolean declaredLength : List.of(true, false)) {
+            var request = streamed(suffix, padded(suffix, 8192), -1);
+            if (!declaredLength) request.with(value -> { value.setContent(null); return value; });
+            var result = mvc.perform(request).andReturn();
+            assertThat(result.getResponse().getStatus()).isEqualTo(200); headers(result.getResponse());
+            assertThat(bodyReads.get()).isEqualTo(1); assertThat(bodyBytes.get()).isEqualTo(8192);
+        }
     }
     UUID trace(MvcResult result) throws Exception {
         var method = OperationsBoundaryFilter.class.getDeclaredMethod("trace", jakarta.servlet.http.HttpServletRequest.class); method.setAccessible(true); return (UUID) method.invoke(null, result.getRequest());
@@ -90,9 +134,19 @@ public final class OperationsCatalogVersionWebTests {
     }
     @Test void authenticationPrecedesStructuralParsing() throws Exception {
         for (String suffix : List.of("publications", "offsales")) for (String token : List.of("", "invalid", "wrong")) {
-            var request = post(BASE + "/" + suffix).servletPath(BASE + "/" + suffix).contentType("application/json").content("bad"); if (!token.isEmpty()) request.header("Authorization", "Bearer " + token); problem(mvc.perform(request).andReturn(), 401, "UNAUTHENTICATED");
+            bodyStream = null;
+            var malformed = post(BASE + "/" + suffix).servletPath(BASE + "/" + suffix).contentType("application/json").content("bad");
+            if (!token.isEmpty()) malformed.header("Authorization", "Bearer " + token);
+            problem(mvc.perform(malformed).andReturn(), 401, "UNAUTHENTICATED");
+            var request = streamed(suffix, new byte[0], 0).with(value -> { value.removeHeader("Authorization"); return value; }); if (!token.isEmpty()) request.header("Authorization", "Bearer " + token); problem(mvc.perform(request).andReturn(), 401, "UNAUTHENTICATED");
+            assertThat(bodyReads.get()).isZero(); assertThat(bodyBytes.get()).isZero();
         }
-        sessions.failure = new IllegalStateException("PRIVATE"); for (String suffix : List.of("publications", "offsales")) problem(mvc.perform(request(suffix).content("bad")).andReturn(), 503, "SERVICE_UNAVAILABLE"); verifyNoInteractions(command);
+        sessions.failure = new IllegalStateException("PRIVATE"); for (String suffix : List.of("publications", "offsales")) {
+            bodyStream = null; problem(mvc.perform(request(suffix).content("bad")).andReturn(), 503, "SERVICE_UNAVAILABLE");
+            problem(mvc.perform(streamed(suffix, new byte[0], 0)).andReturn(), 503, "SERVICE_UNAVAILABLE");
+            assertThat(bodyReads.get()).isZero(); assertThat(bodyBytes.get()).isZero();
+        }
+        verifyNoInteractions(command);
     }
     @Test void structuralValidationPrecedesAuthorityWitness() throws Exception {
         beans.destroySingleton("command");
@@ -101,8 +155,28 @@ public final class OperationsCatalogVersionWebTests {
         for (String suffix : List.of("publications", "offsales")) problem(mvc.perform(request(suffix)).andReturn(), 503, "SERVICE_UNAVAILABLE"); verifyNoInteractions(command);
         beans.destroySingleton("one"); beans.destroySingleton("two");
         var unavailable = new org.springframework.beans.factory.support.RootBeanDefinition(OperationsCatalogSaleCommand.class);
-        unavailable.setLazyInit(true); unavailable.setInstanceSupplier(() -> { throw new IllegalStateException("PRIVATE SQL catalog_order_role password"); }); beans.registerBeanDefinition("unavailable", unavailable);
-        for (String suffix : List.of("publications", "offsales")) problem(mvc.perform(request(suffix)).andReturn(), 503, "SERVICE_UNAVAILABLE");
+        var providerCalls = new AtomicInteger();
+        unavailable.setLazyInit(true); unavailable.setInstanceSupplier(() -> { providerCalls.incrementAndGet(); throw new IllegalStateException("PRIVATE SQL catalog_order_role password"); }); beans.registerBeanDefinition("unavailable", unavailable);
+        for (String suffix : List.of("publications", "offsales")) {
+            for (int size : List.of(8193, 2 * 1024 * 1024)) for (boolean declaredLength : List.of(true, false)) {
+                var request = streamed(suffix, padded(suffix, size), -1);
+                if (!declaredLength) request.with(value -> { value.setContent(null); return value; });
+                problem(mvc.perform(request).andReturn(), 422, "VALIDATION_FAILED");
+                assertThat(bodyReads.get()).isEqualTo(1); assertThat(bodyBytes.get()).isEqualTo(8193);
+            }
+            bodyStream = null;
+            problem(mvc.perform(post(BASE + "/" + suffix).servletPath(BASE + "/" + suffix).header("Authorization", "Bearer valid").contentType("application/json").accept("application/json")).andReturn(), 422, "VALIDATION_FAILED");
+            problem(mvc.perform(streamed(suffix, new byte[0], -1)).andReturn(), 422, "VALIDATION_FAILED");
+            assertThat(bodyReads.get()).isEqualTo(1); assertThat(bodyBytes.get()).isZero();
+            problem(mvc.perform(streamed(suffix, body(suffix).getBytes(StandardCharsets.UTF_8), 7)).andReturn(), 422, "VALIDATION_FAILED");
+            assertThat(bodyReads.get()).isEqualTo(1); assertThat(bodyBytes.get()).isEqualTo(7);
+        }
+        assertThat(providerCalls.get()).isZero(); verifyNoInteractions(command);
+        for (String suffix : List.of("publications", "offsales")) {
+            problem(mvc.perform(streamed(suffix, padded(suffix, 8192), -1)).andReturn(), 503, "SERVICE_UNAVAILABLE");
+            assertThat(bodyReads.get()).isEqualTo(1); assertThat(bodyBytes.get()).isEqualTo(8192);
+        }
+        assertThat(providerCalls.get()).isEqualTo(2); verifyNoInteractions(command); bodyStream = null;
         beans.removeBeanDefinition("unavailable"); beans.registerSingleton("command", command);
         when(command.publish(any())).thenThrow(new IllegalStateException("PRIVATE processing")); when(command.offsale(any())).thenThrow(new IllegalStateException("PRIVATE processing"));
         for (String suffix : List.of("publications", "offsales")) problem(mvc.perform(request(suffix)).andReturn(), 500, "INTERNAL");
