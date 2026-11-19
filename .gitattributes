@@ -1,0 +1,6 @@
+backend/mvnw text eol=lf
+backend/.java-version text eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+backend/ops/postgresql/pa25-runtime-identities.sql text eol=crlf

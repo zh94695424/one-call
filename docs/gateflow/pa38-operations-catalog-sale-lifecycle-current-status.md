@@ -45,6 +45,10 @@ chain section rather than infer completeness from historical prose.
 - Aggregate reviews and re-reviews through RR18 were executed by independent
   peers under the Gateflow sequence. All material product findings are closed.
 - Latest durable reviews:
+  - `docs/reviews/pr-49-review-20261120-001534.md`, 16,651 bytes /
+    `b0b19bf97a8379700282f1e359181bb050ab9fd63bf4a99ec303e7e8fead815d`
+  - `docs/reviews/pr-49-review-20261120-003856.md`, 39,095 bytes /
+    `e8e4fad85d164e0845962be0c6c1d487efb79f04bb7d64a28487580ccd7017be`
   - `docs/reviews/code-review-20261119-233813.md`, 17,252 bytes /
     `3c02ffd5227601da7ae27b967f9be04f231e30de970932a47aa2132f95f0943f`
   - `docs/reviews/code-review-20261119-235421.md`, 27,431 bytes /
@@ -99,4 +103,5 @@ predecessor sizes and correction-round labels, assign every residual owner and
 record RR13–RR18 provenance. RR18 A and B both returned `pass` with zero
 findings. Product code remains frozen. The accepted aggregate-deepreview
 checkpoint is complete and Draft PR #49 is open against `main`. The current
-gate / next entry point is `PR review` against the final pushed PR head.
+gate is the first PR-review fix: deterministic checkout EOL, push, and a green
+exact-head GitHub Actions run before fresh PR re-review.
