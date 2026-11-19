@@ -17,10 +17,13 @@ not be used to infer present state.
 - Accepted aggregate-deepreview tree:
   `195e4a3e6aed4ee4cfe6049b41842049133d6d99`
 - Draft PR: #49, `https://github.com/zh94695424/one-call/pull/49`
-- Exact-head CI: run `44570384137`, `contract-regressions` pass and
-  `java-runtime` pass at
-  `186b108eae88a61aaff4104f49255074a7890e55`; tree
-  `3c6d61561f3aaba6e7cd208dd53e2e8b1f0b20bc`
+- Source/config CI evidence: run `44577373056`,
+  `contract-regressions` pass and `java-runtime` pass at
+  `3a0a3ea9c777dd16ba40dde970ac39d667b832bf`; tree
+  `ddb5722f88d7cf6e433cd42b6fe8d3cd59318956`.
+- Previous exact-head run `44570384137` also passed at `186b108…`; the two
+  heads differ only by Controller documentation. Later PR review/closeout
+  documentation commits likewise do not change the source/config candidate.
 - Historical RR18-review candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
 - Current PR-review candidate: 32 paths / 572,735 raw bytes / ordinal aggregate
