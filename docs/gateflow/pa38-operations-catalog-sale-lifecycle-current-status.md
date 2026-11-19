@@ -17,6 +17,10 @@ not be used to infer present state.
 - Accepted aggregate-deepreview tree:
   `195e4a3e6aed4ee4cfe6049b41842049133d6d99`
 - Draft PR: #49, `https://github.com/zh94695424/one-call/pull/49`
+- Exact-head CI: run `44570384137`, `contract-regressions` pass and
+  `java-runtime` pass at
+  `186b108eae88a61aaff4104f49255074a7890e55`; tree
+  `3c6d61561f3aaba6e7cd208dd53e2e8b1f0b20bc`
 - Historical RR18-review candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
 - Current PR-review candidate: 32 paths / 572,735 raw bytes / ordinal aggregate
@@ -105,5 +109,5 @@ predecessor sizes and correction-round labels, assign every residual owner and
 record RR13–RR18 provenance. RR18 A and B both returned `pass` with zero
 findings. Product code remains frozen. The accepted aggregate-deepreview
 checkpoint is complete and Draft PR #49 is open against `main`. The current
-gate is the first PR-review fix: deterministic checkout EOL, push, and a green
-exact-head GitHub Actions run before fresh PR re-review.
+gate is fresh peer-isolated `PR re-review` over the EOL-repaired content and
+green exact-head CI evidence.
