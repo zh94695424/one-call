@@ -57,6 +57,10 @@ chain section rather than infer completeness from historical prose.
 - Aggregate reviews and re-reviews through RR18 were executed by independent
   peers under the Gateflow sequence. All material product findings are closed.
 - Latest durable reviews:
+  - `docs/reviews/pr-49-review-20261120-024321.md`, 14,681 bytes /
+    `a8751117f3deef343fc7892cb012472159e86283003853d8512675e351395dd1`
+  - `docs/reviews/pr-49-review-20261120-030147.md`, 34,783 bytes /
+    `65028d42816d8e751e6080026e9c906237259110303099281d4634e8d21f82ee`
   - `docs/reviews/pr-49-review-20261120-021717.md`, 18,189 bytes /
     `4a53165dfd82f255d5397f33c6797d5399ceb9e6020ddf58bb8eedcf2044b9b4`
   - `docs/reviews/pr-49-review-20261120-023454.md`, 33,725 bytes /
@@ -107,6 +111,10 @@ chain section rather than infer completeness from historical prose.
   `e5eceadf7d117a07044a7b4134eba98e20a51027eca21f25d86418fe8b1e4ad6`;
   PR-review fix1 5,000 bytes /
   `14203706cc1111557dba0342ce1e618f4494da492baae1f0aa081e263676dc4a`.
+- PR re-review3 freeze: 2,349 files / 71,237,678 bytes /
+  `47f9ac8f5d6801223824b8d95fac0db5a9c5fdad4289adbdea7a306717b0d0aa`;
+  PR diff 2,642,787 bytes /
+  `258335db62611305cee66086d1d80ef1bfd02aa4ff745cd91ada53f6819598eb`.
 
 ## Residuals
 
@@ -120,6 +128,11 @@ broad frozen ACLs (Database/Security + Catalog-order), recovery-shape
 validation and service test hardening (Backend), and later API/business slices
 (API governance + Catalog-order).
 
+`PA38-PRR49-B3-01` (aggregate-custody derivation wording) is deferred to
+Controller evidence maintenance. `PA38-PRR49-B3-02` (`java-runtime` timeout
+headroom) is deferred to Platform/CI and must be delivered as a source/config
+change with its own exact-head green run, not as documentation-only work.
+
 ## Current gate
 
 RR14–RR18 found only Controller-ledger inconsistencies and no product defect.
@@ -128,6 +141,7 @@ predecessor sizes and correction-round labels, assign every residual owner and
 record RR13–RR18 provenance. RR18 A and B both returned `pass` with zero
 findings. Product code remains frozen. The accepted aggregate-deepreview
 checkpoint is complete and Draft PR #49 is open against `main`. The current
-gate is the second PR-review documentation fix: record dual candidate identity
-and accepted blocker-fix custody, then run targeted PR re-review3. The
-`java-runtime` 42m/45m budget concern remains owned by Platform/CI.
+gate is the accepted PR-review local checkpoint. After that commit and push,
+require a final green exact-head CI run, enter `draft-PR-pass`, and perform
+final closeout. The `java-runtime` timeout concern remains deferred to
+Platform/CI.
