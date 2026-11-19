@@ -28,6 +28,9 @@ not be used to infer present state.
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
 - Current PR-review candidate: 32 paths / 572,735 raw bytes / ordinal aggregate
   `db38b4375c29addd13bfbb8cacde90a172bc32469a736b6b70d7190768500555`
+- Committed LF blob projection of the same 32 paths: 568,803 bytes /
+  `53fccb695d05d796214fd8e15e8dfc3a915a614b4cd4a245979f8fdc17aebe79`.
+  The raw shipped-snapshot and committed-blob identities intentionally differ.
 - Production manifest: 310 /
   `1e0a68c8d766bbac953579975c75787c4801b45540c92e4d9c21ddae4662b045`
 - Java source/test: 290/180
@@ -54,6 +57,10 @@ chain section rather than infer completeness from historical prose.
 - Aggregate reviews and re-reviews through RR18 were executed by independent
   peers under the Gateflow sequence. All material product findings are closed.
 - Latest durable reviews:
+  - `docs/reviews/pr-49-review-20261120-021717.md`, 18,189 bytes /
+    `4a53165dfd82f255d5397f33c6797d5399ceb9e6020ddf58bb8eedcf2044b9b4`
+  - `docs/reviews/pr-49-review-20261120-023454.md`, 33,725 bytes /
+    `221bbb5baf1a9d89b90746dece52ec30cdab2ff09930dcb0a301127d62ae05a5`
   - `docs/reviews/pr-49-review-20261120-001534.md`, 16,651 bytes /
     `b0b19bf97a8379700282f1e359181bb050ab9fd63bf4a99ec303e7e8fead815d`
   - `docs/reviews/pr-49-review-20261120-003856.md`, 39,095 bytes /
@@ -91,6 +98,15 @@ chain section rather than infer completeness from historical prose.
   hashes are authoritative for continuity.
 - No merge, approval, ready-for-review action, reviewer request, external
   comment, issue mutation, push or commit has been performed in this gate.
+- PR re-review freeze: 2,347 files / 71,183,242 bytes /
+  `b107b2fb83711cef033f0117f38c755da918d185e7e32d89bc2fa4e9e6a95a82`;
+  PR diff 2,587,463 bytes /
+  `31b95fda177b53eb5f8c22bb2d2fcbbc349569f1d3fc53f12916a3be7c85673b`.
+- Accepted blocker-fix carriers:
+  `.gitattributes` 231 bytes /
+  `e5eceadf7d117a07044a7b4134eba98e20a51027eca21f25d86418fe8b1e4ad6`;
+  PR-review fix1 5,000 bytes /
+  `14203706cc1111557dba0342ce1e618f4494da492baae1f0aa081e263676dc4a`.
 
 ## Residuals
 
@@ -112,5 +128,6 @@ predecessor sizes and correction-round labels, assign every residual owner and
 record RR13–RR18 provenance. RR18 A and B both returned `pass` with zero
 findings. Product code remains frozen. The accepted aggregate-deepreview
 checkpoint is complete and Draft PR #49 is open against `main`. The current
-gate is fresh peer-isolated `PR re-review` over the EOL-repaired content and
-green exact-head CI evidence.
+gate is the second PR-review documentation fix: record dual candidate identity
+and accepted blocker-fix custody, then run targeted PR re-review3. The
+`java-runtime` 42m/45m budget concern remains owned by Platform/CI.
