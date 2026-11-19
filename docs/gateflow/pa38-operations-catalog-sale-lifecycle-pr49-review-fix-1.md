@@ -62,7 +62,10 @@ No accepted finding requires a product implementation change.
   - Windows command shims are CRLF;
   - `backend/ops/postgresql/pa25-runtime-identities.sql` is explicitly CRLF so
     its frozen `b5e4bbdea2830effbbd244f15f00d2f69a950e625cae1a4cf51559bb29eddcc9`
-    guard remains reproducible on Linux.
+    guard remains reproducible on Linux;
+  - `api/openapi/onecall-v1.openapi.yaml` is explicitly CRLF because the same
+    guard reads its raw bytes and requires
+    `0ef64251846ce6f23e136bdcaa39e45a6cc9d54d5f86470b8589d8d14fc94c68`.
 - Added the two durable PR review artifacts.
 - Updated Control/current status with the PR review findings, EOL remediation,
   exact-head CI requirement and residual owners.
@@ -74,6 +77,10 @@ The original 32-path candidate remains byte-identical: 572,661 raw bytes /
 
 - Local Windows focused boundary test:
   `OperationsCatalogVersionBoundaryTests` `8/8`, 0 failures/errors/skips.
+- GitHub Actions run `44562401251` exposed the PA25 raw-hash mismatch; the
+  first `.gitattributes` retry advanced past PA25 but run `44569633243` then
+  exposed the OpenAPI raw-hash mismatch at `ce8de66d…`. The same deterministic
+  CRLF policy now covers both raw-hashed inputs.
 - `git ls-files --eol` confirms `mvnw`, `.java-version` and the PA25 SQL have
   LF index content; `.gitattributes` now supplies deterministic checkout
   policy, including CRLF for the PA25 guard input.

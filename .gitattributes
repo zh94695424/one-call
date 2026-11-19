@@ -4,3 +4,4 @@ backend/.java-version text eol=lf
 *.cmd text eol=crlf
 *.bat text eol=crlf
 backend/ops/postgresql/pa25-runtime-identities.sql text eol=crlf
+api/openapi/onecall-v1.openapi.yaml text eol=crlf
