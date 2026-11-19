@@ -16,6 +16,7 @@ not be used to infer present state.
   `b791846e3ddc8d2e3292a7f1d517e9c207e5f088`
 - Accepted aggregate-deepreview tree:
   `195e4a3e6aed4ee4cfe6049b41842049133d6d99`
+- Draft PR: #49, `https://github.com/zh94695424/one-call/pull/49`
 - Original candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
 - Production manifest: 310 /
@@ -97,5 +98,5 @@ The accepted fixes append the missing predecessor/freeze rows, correct
 predecessor sizes and correction-round labels, assign every residual owner and
 record RR13–RR18 provenance. RR18 A and B both returned `pass` with zero
 findings. Product code remains frozen. The accepted aggregate-deepreview
-checkpoint is complete; the current gate / next entry point is
-`ready-to-open-draft-PR`, followed by the authorized draft-PR chain.
+checkpoint is complete and Draft PR #49 is open against `main`. The current
+gate / next entry point is `PR review` against the final pushed PR head.
