@@ -11,11 +11,11 @@ not be used to infer present state.
 ## Source and candidate
 
 - Branch: `codex/pa38-next-work-unit`
-- HEAD: `b791846e3ddc8d2e3292a7f1d517e9c207e5f088`
-- Tree: `195e4a3e6aed4ee4cfe6049b41842049133d6d99`
 - Accepted slice commit: `f612c99589ca59124e341f984fc17f2209598167`
 - Accepted aggregate-deepreview commit:
   `b791846e3ddc8d2e3292a7f1d517e9c207e5f088`
+- Accepted aggregate-deepreview tree:
+  `195e4a3e6aed4ee4cfe6049b41842049133d6d99`
 - Original candidate: 32 paths / 572,661 raw bytes / ordinal aggregate
   `8b6ac652ecfab06f85d5166d71a8a275f824527057352fb4931c3bd31624e5f2`
 - Production manifest: 310 /
