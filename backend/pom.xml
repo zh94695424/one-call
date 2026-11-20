@@ -201,6 +201,8 @@
                 <include>**/OperationsCatalogProductReadRoleLeastPrivilegeIT.java</include>
                 <include>**/OperationsCatalogVersionLifecycleIT.java</include>
                 <include>**/OperationsCatalogVersionRoleLeastPrivilegeIT.java</include>
+                <include>**/OperationsCatalogDraftLifecycleIT.java</include>
+                <include>**/OperationsCatalogDraftRoleLeastPrivilegeIT.java</include>
                 <include>**/DatabaseRuntimeAclRbacHardeningIT.java</include>
                 <include>**/CustomerBusinessNumbersIT.java</include>
                 <include>**/CustomerBusinessNumberReadPrivilegeIT.java</include>

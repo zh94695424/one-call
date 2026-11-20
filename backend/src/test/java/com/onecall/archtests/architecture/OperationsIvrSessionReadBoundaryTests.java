@@ -46,7 +46,7 @@ class OperationsIvrSessionReadBoundaryTests {
             backend/src/main/resources/db/migration/V018__evidence_role_ivr_association_read_privileges.sql ea2911ea92fa4b3d043f7fe63777d8cf35fb0733202784952886ac7978a4b37c 892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817
             backend/ops/postgresql/pa25-runtime-identities.sql b5e4bbdea2830effbbd244f15f00d2f69a950e625cae1a4cf51559bb29eddcc9 8f02d4d4842e734f10eac0c15b431afa16eb062790773b8696ae0de67d63b451
             docs/operations/pa25-production-database-identity-provisioning-runbook.md 44ced2245fc1c89175eeb386bc6cc6fa036302e368829cdd163f3da022425423 792a32f72d6657b59a220a42ec7c11f94361078c8c0d491ff52d777fe22f08ab
-            backend/README.md fdcf813e4886d0fa68f7170207944457d331a51b79a0ae664485240f37ee5d64 bf152e7284aeeb5bc3cd9457c433607a8b91be848e9946d8549051cff1507177
+            backend/README.md ca9d8aa4a92066f6e9a3f44fb9ad5c66f156a569fcc5ab478d05410f987627b5 0816cc1c1ef622eaec9d4d7545e1ee8c6dc0f35813d4748b41d44dc9d4cec20b
             """;
     @Test
     void publishesOnlyTwoReadMethodsAndExactFrozenRecords() throws Exception {
@@ -100,7 +100,7 @@ class OperationsIvrSessionReadBoundaryTests {
         String frozen = FROZEN;
         var charset = java.nio.charset.StandardCharsets.UTF_8;
         String planPath = "docs/gateflow/pa35-operations-ivr-session-read-foundation-plan.md";
-        String expectedDigest = "ed03b90fe748039ca7d1d674c32cf0e0c56b828901116294a1ea5dd011954409";
+        String expectedDigest = "afda283795031bd226b3d48db7b9384ffacc5592798cd410769c9ec7ff8bc761";
         java.util.function.Function<byte[], String> sha256 = bytes -> {
             try { return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)); }
             catch (java.security.NoSuchAlgorithmException failure) { throw new IllegalStateException(failure); }
@@ -114,6 +114,8 @@ class OperationsIvrSessionReadBoundaryTests {
                     assertThat(map.put(fields[0], List.of(fields[1], fields[2]))).isNull();
                 }
                 assertThat(map).hasSize(26);
+                var historical = new TreeMap<>(map);
+                historical.put("backend/README.md", List.of("fdcf813e4886d0fa68f7170207944457d331a51b79a0ae664485240f37ee5d64", "bf152e7284aeeb5bc3cd9457c433607a8b91be848e9946d8549051cff1507177"));
                 String plan = java.nio.file.Files.readString(root.resolve(planPath), charset);
                 var table = new TreeMap<String, List<String>>();
                 var tableRows = java.util.regex.Pattern.compile("(?m)^\\| `([^`]+)` \\| `([0-9a-f]{64})` \\| `([0-9a-f]{64})` \\|$").matcher(plan);
@@ -133,7 +135,15 @@ class OperationsIvrSessionReadBoundaryTests {
                 assertThat(bareCount).isEqualTo(26);
                 assertThat(table.keySet()).isEqualTo(map.keySet());
                 assertThat(bare.keySet()).isEqualTo(map.keySet());
-                assertThat(table).isEqualTo(map);
+                assertThat(table).isEqualTo(historical);
+                var historicalBinary = new java.io.ByteArrayOutputStream();
+                for (var entry : historical.entrySet()) {
+                    assertThat(bare.get(entry.getKey())).isEqualTo(entry.getValue().get(0));
+                    historicalBinary.writeBytes(entry.getKey().getBytes(charset)); historicalBinary.write(0);
+                    historicalBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(0)));
+                    historicalBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(1)));
+                }
+                assertThat(sha256.apply(historicalBinary.toByteArray())).isEqualTo("ed03b90fe748039ca7d1d674c32cf0e0c56b828901116294a1ea5dd011954409");
                 var binary = new java.io.ByteArrayOutputStream();
                 var hexText = new java.io.ByteArrayOutputStream();
                 var extraDelimiter = new java.io.ByteArrayOutputStream();
@@ -141,7 +151,6 @@ class OperationsIvrSessionReadBoundaryTests {
                 for (var entry : map.entrySet()) {
                     String path = entry.getKey();
                     String raw = entry.getValue().get(0), canonical = entry.getValue().get(1);
-                    assertThat(bare.get(path)).isEqualTo(raw);
                     byte[] bytes = java.nio.file.Files.readAllBytes(root.resolve(path));
                     String actualRaw = sha256.apply(bytes);
                     String actualLf = sha256.apply(new String(bytes, charset).replace("\r\n", "\n").getBytes(charset));
@@ -191,6 +200,21 @@ class OperationsIvrSessionReadBoundaryTests {
             assertThatThrownBy(() -> verifyFrozen.accept(temporary, frozen)).isInstanceOf(AssertionError.class);
             java.nio.file.Files.write(input, original);
             String changedHash = "0".repeat(64);
+            String[] readme = frozen.strip().lines().filter(row -> row.startsWith("backend/README.md ")).findFirst().orElseThrow().split(" ");
+            for (int pin : List.of(1, 2)) {
+                assertThatThrownBy(() -> verifyFrozen.accept(temporary, frozen.replace(readme[pin], changedHash))).isInstanceOf(AssertionError.class);
+            }
+            String historicalReadmeRaw = "fdcf813e4886d0fa68f7170207944457d331a51b79a0ae664485240f37ee5d64";
+            String historicalReadmeLf = "bf152e7284aeeb5bc3cd9457c433607a8b91be848e9946d8549051cff1507177";
+            String readmeTable = "| `backend/README.md` | `" + historicalReadmeRaw + "` | `" + historicalReadmeLf + "` |";
+            for (String drift : List.of(
+                    originalPlan.replace(readmeTable, readmeTable.replace(historicalReadmeRaw, changedHash)),
+                    originalPlan.replace(readmeTable, readmeTable.replace(historicalReadmeLf, changedHash)),
+                    originalPlan.replace(historicalReadmeRaw + "  backend/README.md", changedHash + "  backend/README.md"))) {
+                java.nio.file.Files.writeString(planCopy, drift, charset);
+                assertThatThrownBy(() -> verifyFrozen.accept(temporary, frozen)).isInstanceOf(AssertionError.class);
+            }
+            java.nio.file.Files.writeString(planCopy, originalPlan, charset);
             assertThatThrownBy(() -> verifyFrozen.accept(temporary, frozen.replace(first[1], changedHash))).isInstanceOf(AssertionError.class);
             String tableLine = "| `" + first[0] + "` | `" + first[1] + "` | `" + first[2] + "` |";
             String bareLine = first[1] + "  " + first[0];
