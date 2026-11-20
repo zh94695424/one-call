@@ -23,6 +23,7 @@ import org.springframework.modulith.core.Violations;
 class ModuleBoundaryTests {
 
     private static final String OPEN_TOKEN = "\u00af\\_(\u30c4)_/\u00af";
+    private static final String PA38_COMMAND_INTERFACE = "operations-catalog-sale-command";
 
     /**
      * Modulith 2.1.2's {@code ApplicationModules.of(Class)} applies ArchUnit's {@code DoNotIncludeTests},
@@ -45,7 +46,7 @@ class ModuleBoundaryTests {
             Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial", "operations_iam::subject-lifecycle-command", "operations_iam::employee-administrator-lock", "operations_iam::operations-subject-read")),
             Map.entry("ivr", Set.of("subject_number", "activation_consent",
                     "entitlement_metering", "evidence", "operations_iam::operations-subject-read")),
-            Map.entry("catalog_order", Set.of("customer_iam", "subject_number", "operations_iam::operations-subject-read")),
+            Map.entry("catalog_order", Set.of("customer_iam", "subject_number", "operations_iam::operations-subject-read", "operations_iam::operations-catalog-sale-command", "operations_iam::employee-authority-read")),
             Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number", "operations_iam::operations-subject-read")),
             Map.entry("evidence", Set.of("entitlement_metering", "operations_iam::operations-subject-read")),
             Map.entry("sharing", Set.of("evidence::share-projection", "evidence::media-read")),
@@ -118,6 +119,13 @@ class ModuleBoundaryTests {
     void verifiesNoCyclesOrBoundaryViolations() {
         ApplicationModules modules = ApplicationModules.of(OneCallApplication.class);
         modules.verify();
+        var catalog = modules.getModuleByName("catalog_order").orElseThrow().getAllowedDependencies(modules);
+        assertThat(catalog).hasSize(5);
+        assertThat(catalog.stream().filter(dependency -> dependency.getTargetModule().getIdentifier().toString().equals("operations_iam")))
+                .extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(), dependency -> dependency.getTargetNamedInterface().getName())
+                .containsExactlyInAnyOrder(org.assertj.core.api.Assertions.tuple("operations_iam", "operations-subject-read"), org.assertj.core.api.Assertions.tuple("operations_iam", "operations-catalog-sale-command"), org.assertj.core.api.Assertions.tuple("operations_iam", "employee-authority-read"));
+        var iam = modules.getModuleByName("operations_iam").orElseThrow().getNamedInterfaces();
+        for (String name : java.util.List.of(PA38_COMMAND_INTERFACE, "employee-authority-read")) assertThat(iam.getByName(name)).isPresent();
         var allowed = modules.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(modules);
         assertThat(allowed).hasSize(12);
