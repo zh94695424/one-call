@@ -47,7 +47,10 @@ public final class OperationsBoundaryFilter implements Filter {
                 && path.matches("/api/v1/operations/catalog/versions/[^/;%]+/(publications|offsales)")
                 && (request.getContextPath() + path).equals(request.getRequestURI());
         boolean subject = "POST".equals(request.getMethod()) && path != null && path.matches("/api/v1/operations/subjects/[^/;%]+/(suspensions|resumptions)");
-        if (!(read || subject || catalog)
+        boolean draft = path != null && ("POST".equals(request.getMethod()) && "/api/v1/operations/catalog/versions".equals(path)
+                || "PUT".equals(request.getMethod()) && path.matches("/api/v1/operations/catalog/versions/[^/;%]+/draft"))
+                && (request.getContextPath() + path).equals(request.getRequestURI());
+        if (!(read || subject || catalog || draft)
                 || !(request.getContextPath() + path).equals(request.getRequestURI())) {
             problems.write(response, Code.NOT_FOUND, trace); return;
         }

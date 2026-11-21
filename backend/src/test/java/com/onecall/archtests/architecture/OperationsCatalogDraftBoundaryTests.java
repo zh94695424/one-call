@@ -1,0 +1,32 @@
+package com.onecall.archtests.architecture;
+
+import static org.assertj.core.api.Assertions.*;
+
+import com.onecall.core.operations_iam.operationscommand.OperationsCatalogDraftCommand;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.Test;
+
+class OperationsCatalogDraftBoundaryTests {
+    String source(String name) throws Exception { return Files.readString(Path.of("src/main/java/com/onecall/core/" + name)); }
+    String owner(String name) throws Exception { return source("catalog_order/internal/operationsdraft/" + name + ".java"); }
+    @Test void scansExactPlannedProductionAndTestFiles() throws Exception { try (var production = Files.walk(Path.of("src/main/java")); var tests = Files.walk(Path.of("src/test/java")); var owner = Files.list(Path.of("src/main/java/com/onecall/core/catalog_order/internal/operationsdraft"))) { assertThat(production.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(298); assertThat(tests.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(190); assertThat(owner.map(path -> path.getFileName().toString()).toList()).containsExactlyInAnyOrder("CatalogDraftConfiguration.java", "DefaultOperationsCatalogDraftCommand.java", "CatalogDraftRepository.java", "JooqCatalogDraftRepository.java", "CatalogDraftSemantics.java"); } }
+    @Test void reusesExistingOperationsOwnedNamedInterfaceWithoutNewEdge() throws Exception {
+        assertThat(source("operations_iam/operationscommand/package-info.java")).contains("operations-catalog-sale-command");
+        assertThat(source("operations_iam/internal/web/OperationsCatalogDraftController.java")).doesNotContain("com.onecall.core.catalog_order");
+        assertThat(source("operations_iam/internal/web/CatalogDraftRequestBinder.java")).doesNotContain("catalog_order", "SUBSCRIPTION\" ->", "validateCommercial");
+        assertThat(source("operations_iam/operationscommand/OperationsCatalogDraftCommand.java")).doesNotContain("org.springframework", "org.jooq", "java.sql", "validateCommercial");
+        assertThat(Set.of(OperationsCatalogDraftCommand.class.getDeclaredMethods()).stream().map(java.lang.reflect.Method::getName).collect(Collectors.toSet())).containsExactlyInAnyOrder("create", "replace");
+        assertThat(OperationsCatalogDraftCommand.CatalogVersionDraft.class.getRecordComponents()).hasSize(17);
+        assertThat(source("catalog_order/package-info.java")).contains("operations_iam::operations-catalog-sale-command"); assertThat(source("operations_iam/package-info.java")).doesNotContain("catalog_order");
+    }
+    @Test void catalogOwnerNeverReadsEmployeeAccountOrForeignTables() throws Exception { for (String name : List.of("CatalogDraftConfiguration", "DefaultOperationsCatalogDraftCommand", "CatalogDraftRepository", "JooqCatalogDraftRepository", "CatalogDraftSemantics")) assertThat(owner(name)).doesNotContain("operations_iam.employee_account", "customer_iam.", "organization_access.", "SELECT *"); assertThat(owner("DefaultOperationsCatalogDraftCommand")).contains("authority.read(caller.employeeId(), witness)"); }
+    @Test void requiresExactSharedTransactionRolesAndConnectionAssertions() throws Exception { assertThat(owner("JooqCatalogDraftRepository")).contains("SET LOCAL ROLE catalog_order_role", "SET LOCAL ROLE NONE", "assertIdentity(witness, \"operations_iam_role\")", "ConnectionHolder", "connection() != connections.get()", "statement_timeout = '2000ms'", "lock_timeout = '250ms'", "idle_in_transaction_session_timeout = '5000ms'", "afterCompletion", "connections.remove()"); assertThat(owner("CatalogDraftConfiguration")).contains("operationsSubjectReadCatalogSaleTransactionTemplate", "PROPAGATION_REQUIRES_NEW", "ISOLATION_READ_COMMITTED", "getTimeout() != 5"); }
+    @Test void sqlWritesOnlyFrozenDraftAndTokenColumns() throws Exception { String repository = owner("JooqCatalogDraftRepository"); assertThat(repository).contains("ON CONFLICT ON CONSTRAINT uq_catalog_version_no DO NOTHING RETURNING id", "SET offer_type=?, audience=?, price_cents=?, currency=?, billing_cycle=?, installments=?, grant_interval_months=?, snapshot=?::jsonb, snapshot_sha256=?, revision=revision+1", "SET version_token=?, revision=revision+1", "AND published_at IS NULL AND revision=?", "catalog_order.publication:"); assertThat(repository).doesNotContain("SET product_id", "SET version_no", "SET created_at", "SET offer_status", "SET channel"); }
+    @Test void forbidsChildMutationIdempotencyOutboxAndNewResources() throws Exception { assertThat(owner("JooqCatalogDraftRepository")).doesNotContain("DELETE FROM", "UPDATE catalog_order.catalog_benefit_line", "UPDATE catalog_order.catalog_product", "outbox", "idempotency", "CREATE TABLE", "GRANT ").contains("audit.append_fact", "CATALOG_DRAFT_CREATE", "CATALOG_DRAFT_REPLACE"); assertThat(source("operations_iam/internal/web/OperationsCatalogDraftController.java")).doesNotContain("Idempotency-Key", "getQueryString", "RATE_LIMITED"); }
+    @Test void admissionAndCustomerPassThroughHaveOnlyTwoNewTemplates() throws Exception { String controller = source("operations_iam/internal/web/OperationsCatalogDraftController.java"); assertThat(controller).contains("@PostMapping(\"/api/v1/operations/catalog/versions\")", "@PutMapping(\"/api/v1/operations/catalog/versions/{versionId}/draft\")").doesNotContain("@GetMapping", "@DeleteMapping", "@PatchMapping"); for (String filter : List.of("operations_iam/internal/web/OperationsBoundaryFilter.java", "customer_iam/internal/web/CustomerBoundaryFilter.java")) assertThat(source(filter)).contains("/api/v1/operations/catalog/versions/[^/;%]+/draft", "\"POST\"", "\"PUT\""); }
+    @Test void preservesFrozenContractsEighteenMigrationsAndProvisioning() throws Exception { try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(migrations.toList()).hasSize(18).noneMatch(path -> path.getFileName().toString().startsWith("V019")); } var pins = java.util.Map.of("../api/openapi/onecall-v1.openapi.yaml", "0ef64251846ce6f23e136bdcaa39e45a6cc9d54d5f86470b8589d8d14fc94c68", "ops/postgresql/pa25-runtime-identities.sql", "b5e4bbdea2830effbbd244f15f00d2f69a950e625cae1a4cf51559bb29eddcc9"); for (var pin : pins.entrySet()) assertThat(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(Path.of(pin.getKey()))))).isEqualTo(pin.getValue()); }
+}
