@@ -108,10 +108,10 @@ class OperationsCatalogProductReadRoleLeastPrivilegeIT {
         fixture.shared.transaction.execute(status -> { fixture.shared.scope.enter(); try { for (var setting : Map.of("statement_timeout", "2s", "lock_timeout", "250ms", "idle_in_transaction_session_timeout", "5s").entrySet()) assertThat(fixture.shared.dsl.fetchSingle("SHOW " + setting.getKey()).get(0, String.class)).isEqualTo(setting.getValue()); } finally { fixture.shared.scope.exit(); } return null; }); fixture.shared.clean();
     }
     @Test void assertsNoNewGrant() throws Exception {
-        String before = matrix().toString(); fixture.get(BASE); assertThat(matrix().toString()).isEqualTo(before);
+        assertThat(matrix()).hasSize(42); String before = matrix().toString(); fixture.get(BASE); assertThat(matrix().toString()).isEqualTo(before);
         var field = EvidenceRoleIvrAssociationAclIT.class.getDeclaredField("ACL"); field.setAccessible(true);
         try (var connection = fixture.admin(); var statement = connection.createStatement(); var rows = statement.executeQuery((String) field.get(null))) {
-            var actual = new TreeSet<String>(); while (rows.next()) actual.add(rows.getString(1)); assertThat(actual).hasSize(410).isEqualTo(EvidenceRoleIvrAssociationAclIT.currentOracle());
+            var actual = new TreeSet<String>(); while (rows.next()) actual.add(rows.getString(1)); assertThat(actual).hasSize(432).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle());
         }
     }
     @Test void assertsNoNewRole() throws Exception { String before = fixture.catalog(); fixture.get(BASE); assertThat(fixture.catalog()).isEqualTo(before); }

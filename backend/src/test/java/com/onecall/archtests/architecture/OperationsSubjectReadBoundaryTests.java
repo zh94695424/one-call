@@ -93,9 +93,17 @@ class OperationsSubjectReadBoundaryTests {
     void v001ThroughV017AndFrozenOpenApiAndDesignDocsRemainUnchanged() throws Exception {
         new OperationsLifecycleBoundaryTests().frozenOpenApiMigrationsAndPolicyBytesAreUnchanged();
         try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) {
-            assertThat(paths.filter(path -> path.toString().endsWith(".sql")).map(path -> path.getFileName().toString().substring(0, 4)).collect(Collectors.toSet()))
-                    .containsExactlyInAnyOrderElementsOf(java.util.stream.IntStream.rangeClosed(1, 18).mapToObj(index -> "V%03d".formatted(index)).toList());
+            assertCurrentMigrationNames(paths.map(path -> path.getFileName().toString()).toList());
         }
+        var expected = new java.util.ArrayList<>(CustomerCatalogOfferReadAclBoundaryTests.MIGRATIONS);
+        for (String name : java.util.List.of("V020__unexpected.sql", "V019__unexpected.sql")) {
+            var extra = new java.util.ArrayList<>(expected); extra.add(name);
+            assertThatThrownBy(() -> assertCurrentMigrationNames(extra)).isInstanceOf(AssertionError.class);
+        }
+        expected.remove("V019__customer_catalog_offer_read_privileges.sql");
+        assertThatThrownBy(() -> assertCurrentMigrationNames(expected)).isInstanceOf(AssertionError.class);
+        expected.add("V019__unexpected.sql");
+        assertThatThrownBy(() -> assertCurrentMigrationNames(expected)).isInstanceOf(AssertionError.class);
     }
 
     @Test
@@ -113,5 +121,8 @@ class OperationsSubjectReadBoundaryTests {
                     assertThat(dependency.getTargetModule().getIdentifier().toString()).isEqualTo("operations_iam");
                     assertThat(dependency.getTargetNamedInterface().getName()).isEqualTo("operations-subject-read");
                 });
+    }
+    private static void assertCurrentMigrationNames(java.util.Collection<String> names) {
+        CustomerCatalogOfferReadAclBoundaryTests.assertCurrentMigrationNames(names);
     }
 }

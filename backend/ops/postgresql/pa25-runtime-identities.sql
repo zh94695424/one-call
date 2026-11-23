@@ -3345,6 +3345,204 @@ DECLARE
     "accepted_at",
     "SELECT",
     "activation_consent_owner"
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_benefit_line",
+    "catalog_version_id",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_benefit_line",
+    "entitlement_type",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_benefit_line",
+    "grant_interval_months",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_benefit_line",
+    "quantity",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_benefit_line",
+    "validity_days",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_offer",
+    "catalog_version_id",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_offer",
+    "channel",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_offer",
+    "id",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_offer",
+    "offer_status",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_offer",
+    "version_token",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_product",
+    "id",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_product",
+    "product_code",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "audience",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "billing_cycle",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "currency",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "id",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "installments",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "offer_type",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "price_cents",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "product_id",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "sale_status",
+    "SELECT",
+    "catalog_order_owner",
+    false
+  ],
+  [
+    "customer_iam_role",
+    "column",
+    "catalog_order.catalog_version",
+    "version_no",
+    "SELECT",
+    "catalog_order_owner",
+    false
   ]
 ]$frozen$::jsonb;
     expected_owners jsonb := $owners${
@@ -3469,6 +3667,12 @@ DECLARE
     "V018__evidence_role_ivr_association_read_privileges.sql",
     1606293398,
     "evidence role ivr association read privileges"
+  ],
+  [
+    "019",
+    "V019__customer_catalog_offer_read_privileges.sql",
+    -1794072022,
+    "customer catalog offer read privileges"
   ]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
@@ -3815,7 +4019,7 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 18 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 19 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
@@ -3910,8 +4114,8 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 410
-            OR (SELECT count(DISTINCT value) FROM jsonb_array_elements(expected_resolved)) <> 410 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 432
+            OR (SELECT count(DISTINCT value) FROM jsonb_array_elements(expected_resolved)) <> 432 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';
@@ -3941,7 +4145,7 @@ BEGIN
         SELECT jsonb_agg(jsonb_build_array(coalesce(grantee::regrole::text, 'public'), kind, oid, subid,
             privilege_type, grantor, is_grantable)) INTO actual_acls
         FROM expanded WHERE grantee = ANY(managed_oids) OR grantee = 0 OR grantor = ANY(boundary_oids);
-        IF jsonb_array_length(coalesce(actual_acls, '[]'::jsonb)) <> 410 OR EXISTS (
+        IF jsonb_array_length(coalesce(actual_acls, '[]'::jsonb)) <> 432 OR EXISTS (
             SELECT 1 FROM ((SELECT value FROM jsonb_array_elements(expected_resolved)
                     EXCEPT SELECT value FROM jsonb_array_elements(coalesce(actual_acls, '[]'::jsonb)))
                 UNION ALL (SELECT value FROM jsonb_array_elements(coalesce(actual_acls, '[]'::jsonb))

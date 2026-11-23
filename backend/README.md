@@ -68,6 +68,38 @@ Focused validation: `mvn -B -ntp -Dtest=CatalogDraftRequestBinderTests,CatalogDr
 
 Current test inventory: Surefire104/1018 + Failsafe40/666 =144 classes/1684 ordinary methods; annotation lines1685 with one historical comment. PA25 remains20 methods; PA36 historically adds8+16; PA39 adds84+36. POM includes40. XML requires failures0/errors0/skipped0 and exact source=CI=POM=XML. V001–V018, OpenAPI and docs12/14/15/17 remain frozen; no V019. Executed evidence belongs in the PA39 implementation artifact; production readiness NOT CLAIMED.
 
+## PA40A Current Provisioning Boundary — 2026-11-23
+
+PA40A is the latest numeric provisioning boundary: exactly **19** successful
+migrations through V019, **432** effective ACL tuples, including customer **75**
+(six schema USAGE and 69 column SELECT), and the unchanged seven-login,
+eleven-membership-edge, nine-monitored-role graph. The PA36 prefix above is an
+older 18/410 boundary retained as historical evidence, not the current deploy target.
+
+Apply migrations through `V019__customer_catalog_offer_read_privileges.sql`
+**before** current PA25 apply/check. Supply all four external-name inputs:
+`sharing_login`, `customer_login`, `command_login`, and `operations_login`.
+The success markers remain `PA25_APPLY_OK logins=7 effective_roles=9 memberships=11`
+and `PA25_CHECK_OK logins=7 effective_roles=9 memberships=11`.
+PA25 never repairs missing catalog privileges; V018-only targets fail closed.
+
+The existing customer identity still SETs only customer_iam_role; Operations
+retains its separate login and seven SET targets. V019 grants only 22
+owner-issued, non-grantable scalar column SELECT privileges across catalog
+product/version/offer/benefit tables (2/10/5/5), with all 12 adjacent columns denied.
+These role-wide reads include DRAFT/OFFSALE and other-channel rows: column ACLs
+are not RLS, row visibility or endpoint authority. No HTTP endpoint, cursor,
+new pool, identity, membership, write privilege or production secret is added.
+Application ACTIVE/channel/customer predicates remain future PA40 work.
+
+Production acceptance is **NOT EXECUTED**. Controller must validate fresh,
+provisioned upgrade, raw replay, rejection atomicity, all-business-table no-write
+proofs and real customer/Operations pool restoration on PostgreSQL16 before use.
+Existing TLS, pg_hba, protected credential custody, pool-drain and rollback
+ownership prerequisites remain unchanged. Rollback means transaction abort or
+Controller/Database-owned backup restore, not a privilege REVOKE migration.
+
+
 <!-- PA36 HISTORICAL BODY -->
 
 # onecall-runtime（PA0–PA9 foundations / PA10-S1 query / PA11-S1 and PA12 customer API）

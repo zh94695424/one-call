@@ -95,10 +95,10 @@ class ActivationCommandRoleLeastPrivilegeIT {
     void fixtureCleanupAndFrozenAclInventoryRemainExact() throws Exception {
         var oracleType = CustomerEvidenceReadPrivilegeIT.class; var aclField = oracleType.getDeclaredField("ACL"); aclField.setAccessible(true); var oracleMethod = oracleType.getDeclaredMethod("currentOracle"); oracleMethod.setAccessible(true);
         Set<String> actual = new TreeSet<>(); try (var connection = fixture.admin(); var statement = connection.createStatement(); var rows = statement.executeQuery((String) aclField.get(null))) { while (rows.next()) actual.add(rows.getString(1)); }
-        Set<String> expected = new TreeSet<>((Set<String>) oracleMethod.invoke(new CustomerEvidenceReadPrivilegeIT())); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta());
-        assertThat(actual).hasSize(290).isEqualTo(expected);
+        Set<String> expected = new TreeSet<>((Set<String>) oracleMethod.invoke(new CustomerEvidenceReadPrivilegeIT())); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); assertThat(expected).hasSize(290); Set<String> historical = new TreeSet<>(expected); expected = new TreeSet<>(CustomerCatalogOfferReadPrivilegesIT.current432Oracle()); expected.removeIf(value -> value.startsWith("operations_iam_role|") || value.startsWith("ivr_role|")); Set<String> recovered = new TreeSet<>(expected); recovered.removeAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); assertThat(recovered).isEqualTo(historical);
+        assertThat(actual).hasSize(312).isEqualTo(expected);
         var delta = oracleType.getDeclaredMethod("expectedDelta"); delta.setAccessible(true); assertThat((Set<?>) delta.invoke(new CustomerEvidenceReadPrivilegeIT())).hasSize(19);
-        assertThat(fixture.scalar("SELECT count(*) FROM public.flyway_schema_history WHERE success")).isEqualTo("18");
+        assertThat(fixture.scalar("SELECT count(*) FROM public.flyway_schema_history WHERE success")).isEqualTo("19");
         fixture.accept("event"); fixture.reset(); assertThat(fixture.counts()).containsOnly(0L); clean();
     }
 }

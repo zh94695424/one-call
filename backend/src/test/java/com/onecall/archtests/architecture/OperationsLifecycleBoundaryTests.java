@@ -80,7 +80,7 @@ class OperationsLifecycleBoundaryTests {
             Map.entry("../backend/src/main/resources/db/migration/V016__customer_subject_detail_read_privileges.sql", new String[] {"a9913a9fad57fdba5a07b8be20cee5e4c81c4d113120d1c19851c276145eea5c", "988a9876943ae07a32210bc0380128294fc823817f5b6c3d4a44a28dfdd4696f"}),
             Map.entry("../backend/src/main/resources/db/migration/V017__customer_evidence_read_privileges.sql", new String[] {"74f0b860c6da0d2ebc4d03b9baa94010f2ece5c1e4a1a4512a34ffe64044dcc3", "57f1cac30dabdaee3e08fd43baaf6e696b453473ee8753f4c5da44cb0ecafbad"}));
         for (var entry : hashes.entrySet()) { byte[] bytes = historicalBytes(entry.getKey(), Files.readAllBytes(Path.of(entry.getKey()))); String actual = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); assertThat(actual).as(entry.getKey()).isIn((Object[]) entry.getValue()); }
-        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(paths.filter(path -> path.toString().endsWith(".sql")).count()).isEqualTo(18); }
+        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(paths.filter(path -> path.toString().endsWith(".sql")).count()).isEqualTo(19); }
     }
     @Test
     void auditOutboxFingerprintAndResponseFieldSetsAreExact() throws Exception {

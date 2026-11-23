@@ -12,13 +12,17 @@ import org.junit.jupiter.api.*;
 class CustomerBusinessNumberReadPrivilegeIT {
     private CustomerBusinessNumbersFixture fixture;
     private static final Path SCRIPT = Path.of("src/main/resources/db/migration/V015__customer_business_number_read_privileges.sql");
-    private static final Map<String, List<String>> APPROVED = Map.of(
-            "customer_iam.customer_account", List.of("id", "display_name", "status"),
-            "organization_access.organization", List.of("id", "display_name", "status"),
-            "organization_access.organization_membership", List.of("account_id", "organization_id", "role", "status"),
-            "subject_number.business_subject", List.of("id", "owner_account_id", "owner_organization_id", "real_name_status", "created_at"),
-            "subject_number.caller_number_binding", List.of("id", "subject_id", "number_masked", "number_type", "status"),
-            "activation_consent.service_activation", List.of("subject_id", "status"));
+    private static final Map<String, List<String>> APPROVED = Map.ofEntries(
+            Map.entry("customer_iam.customer_account", List.of("id", "display_name", "status")),
+            Map.entry("organization_access.organization", List.of("id", "display_name", "status")),
+            Map.entry("organization_access.organization_membership", List.of("account_id", "organization_id", "role", "status")),
+            Map.entry("subject_number.business_subject", List.of("id", "owner_account_id", "owner_organization_id", "real_name_status", "created_at")),
+            Map.entry("subject_number.caller_number_binding", List.of("id", "subject_id", "number_masked", "number_type", "status")),
+            Map.entry("activation_consent.service_activation", List.of("subject_id", "status")),
+            Map.entry("catalog_order.catalog_product", List.of("id", "product_code")),
+            Map.entry("catalog_order.catalog_version", List.of("id", "product_id", "version_no", "sale_status", "offer_type", "audience", "price_cents", "currency", "billing_cycle", "installments")),
+            Map.entry("catalog_order.catalog_offer", List.of("id", "catalog_version_id", "channel", "offer_status", "version_token")),
+            Map.entry("catalog_order.catalog_benefit_line", List.of("catalog_version_id", "entitlement_type", "quantity", "validity_days", "grant_interval_months")));
     private static final String ACL = """
             WITH objects AS (
                 SELECT 'schema' AS kind,n.oid,0 AS subid,n.nspname AS identity,'' AS column_name,n.nspacl AS acl FROM pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema'
@@ -40,7 +44,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private void latest() {
         var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(3); latest.validate(); assertThat(latest.info().applied()).hasSize(18);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(4); latest.validate(); assertThat(latest.info().applied()).hasSize(19);
     }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -103,7 +107,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
     @Test
     void v015FreshAndUpgradeHaveExactFifteenHistoryEntriesAndFrozenBytes() throws Exception {
         Map<String, byte[]> frozen = new TreeMap<>();
-        try (var files = Files.list(SCRIPT.getParent())) { for (var file : files.filter(path -> !path.equals(SCRIPT) && !path.getFileName().toString().startsWith("V016__") && !path.getFileName().toString().startsWith("V017__") && !path.getFileName().toString().startsWith("V018__")).toList()) frozen.put(file.toString(), Files.readAllBytes(file)); }
+        try (var files = Files.list(SCRIPT.getParent())) { for (var file : files.filter(path -> !path.equals(SCRIPT) && !path.getFileName().toString().startsWith("V016__") && !path.getFileName().toString().startsWith("V017__") && !path.getFileName().toString().startsWith("V018__") && !path.getFileName().toString().equals("V019__customer_catalog_offer_read_privileges.sql")).toList()) frozen.put(file.toString(), Files.readAllBytes(file)); }
         upgrade(); assertThat(current().info().applied()).hasSize(15); assertThat(current().info().pending()).isEmpty();
         for (var entry : frozen.entrySet()) assertThat(Files.readAllBytes(Path.of(entry.getKey()))).isEqualTo(entry.getValue());
         try (var connection = fixture.admin()) {
@@ -142,22 +146,43 @@ class CustomerBusinessNumberReadPrivilegeIT {
 
     @Test
     void customerRoleReadsOnlyApprovedColumnsAndDeniesEveryOtherCapabilityWith42501() throws Exception {
+        Set<String> catalogColumns=new TreeSet<>();
+        for(var entry:APPROVED.entrySet()) if(Set.of("catalog_order.catalog_product","catalog_order.catalog_version","catalog_order.catalog_offer","catalog_order.catalog_benefit_line").contains(entry.getKey())) for(String column:entry.getValue()) catalogColumns.add(entry.getKey()+"|"+column);
+        assertThat(catalogColumns).hasSize(22).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle().stream().map(tuple -> { String[] fields=tuple.split("\\|",-1); return fields[2]+"|"+fields[3]; }).collect(java.util.stream.Collectors.toSet()));
+
         upgrade(); frozenGraph();
+        for (boolean currentPhase : List.of(false, true)) {
+            Map<String, List<String>> approved = new TreeMap<>(APPROVED);
+            if (!currentPhase) approved.keySet().removeAll(Set.of("catalog_order.catalog_product", "catalog_order.catalog_version", "catalog_order.catalog_offer", "catalog_order.catalog_benefit_line"));
+            else {
+                latest(); fixture.provision();
+                for (String tuple : EvidenceRoleIvrAssociationAclIT.currentOracle()) {
+                    String[] fields = tuple.split("\\|", -1);
+                    if (fields[0].equals("customer_iam_role") && fields[1].equals("column")) {
+                        var projected = new ArrayList<>(approved.getOrDefault(fields[2], List.of()));
+                        if (!projected.contains(fields[3])) projected.add(fields[3]);
+                        approved.put(fields[2], List.copyOf(projected));
+                    }
+                }
+                assertThat(approved.values().stream().mapToInt(List::size).sum()).isEqualTo(69);
+            }
+
+
         Set<String> before = acls();
         try (var admin = fixture.admin(); var connection = fixture.runtime()) {
             connection.setAutoCommit(false); execute(connection, "SET LOCAL ROLE customer_iam_role");
             assertThat(one(connection, "SHOW transaction_read_only")).isEqualTo("off");
             for (String table : strings(admin, "SELECT n.nspname||'.'||c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname !~ '^pg_' AND n.nspname NOT IN ('public','information_schema') ORDER BY 1")) {
                 for (String column : strings(admin, "SELECT attname FROM pg_attribute WHERE attrelid='" + table + "'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")) {
-                    if (APPROVED.getOrDefault(table, List.of()).contains(column)) execute(connection, "SELECT " + column + " FROM " + table);
+                    if (approved.getOrDefault(table, List.of()).contains(column)) execute(connection, "SELECT " + column + " FROM " + table);
                     else denied(connection, "SELECT " + column + " FROM " + table);
                     denied(connection, "UPDATE " + table + " SET " + column + "=" + column + " WHERE false");
                     denied(connection, "INSERT INTO " + table + " (" + column + ") SELECT " + column + " FROM " + table + " WHERE false");
                 }
                 for (String sql : List.of("SELECT * FROM " + table, "DELETE FROM " + table + " WHERE false", "TRUNCATE " + table,
                         "CREATE TRIGGER pa27_probe BEFORE UPDATE ON " + table + " FOR EACH ROW EXECUTE FUNCTION customer_iam.guard_customer_account()")) denied(connection, sql);
-                if (APPROVED.containsKey(table)) {
-                    for (String lock : List.of("UPDATE", "SHARE")) denied(connection, "SELECT " + APPROVED.get(table).getFirst() + " FROM " + table + " FOR " + lock);
+                if (approved.containsKey(table)) {
+                    for (String lock : List.of("UPDATE", "SHARE")) denied(connection, "SELECT " + approved.get(table).getFirst() + " FROM " + table + " FOR " + lock);
                 }
             }
             execute(admin, "CREATE TABLE customer_iam.pa27_reference_probe(id uuid)");
@@ -176,6 +201,8 @@ class CustomerBusinessNumberReadPrivilegeIT {
             connection.rollback();
         }
         assertThat(acls()).containsExactlyInAnyOrderElementsOf(before);
+
+        }
     }
 
     @Test
@@ -235,7 +262,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
                 execute(connection, "GRANT SELECT (number_hmac) ON subject_number.caller_number_binding TO customer_iam_role");
             }
             Set<String> widenedAcls = acls();
-            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(291);
+            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(313);
             assertThat(widenedAcls).contains("customer_iam_role|column|subject_number.caller_number_binding|number_hmac|SELECT|subject_number_owner|false");
             String widenedCatalog; try (var connection = fixture.admin()) { widenedCatalog = catalog(connection); }
             for (String mode : List.of("apply", "check")) {
@@ -254,12 +281,12 @@ class CustomerBusinessNumberReadPrivilegeIT {
         assertThat(fixture.psql("check").getExitCode()).isZero();
         assertThat(acls()).containsExactlyInAnyOrderElementsOf(cleanAcls);
         try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(cleanCatalog); }
-        for (String assignment : List.of("checksum=0", "script='wrong.sql'", "description='wrong'", "type='BASELINE'", "success=false", "version='15'", "installed_rank=19")) {
+        for (String assignment : List.of("checksum=0", "script='wrong.sql'", "description='wrong'", "type='BASELINE'", "success=false", "version='15'", "installed_rank=1019")) {
             String history; try (var connection = fixture.admin()) { history = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=15"); execute(connection, "UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=15"); }
             try { for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE version IN ('015','15')"); execute(connection, "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,?::jsonb)", history); } }
         }
-        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(290);
+        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(312);
     }
 
     @Test
