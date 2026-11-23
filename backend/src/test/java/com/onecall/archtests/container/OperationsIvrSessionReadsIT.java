@@ -237,10 +237,10 @@ class OperationsIvrSessionReadsIT {
         }
 
         var currentPins = new TreeMap<String, List<String>>((left,right) -> Arrays.compareUnsigned(left.getBytes(charset),right.getBytes(charset)));
-        for (String row : frozen.strip().lines().toList()) { String[] fields = row.split(" "); assertThat(currentPins.put(fields[0],List.of(fields[1],fields[2]))).isNull(); }
-        currentPins.put("backend/ops/postgresql/pa25-runtime-identities.sql", List.of("6881473933551ff8b4918efcb24351d97827674b4bd193f66d4542e70cd948aa", "ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47"));
-        currentPins.put("docs/operations/pa25-production-database-identity-provisioning-runbook.md", List.of("7af15cb3cdf02acecceb58d1ad6cbf59c4089cc533107809d75fda6ec318f7b2", "a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430"));
-        currentPins.put("backend/README.md", List.of("45aad485c39e39a80f66472d55381e399440eb67a311a017d62d9a175d514f80", "9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b"));
+        for (String row : frozen.strip().lines().toList()) { String[] fields = row.split(" "); assertThat(currentPins.put(fields[0],List.of(fields[2],fields[2]))).isNull(); }
+        currentPins.put("backend/ops/postgresql/pa25-runtime-identities.sql", List.of("ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47", "ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47"));
+        currentPins.put("docs/operations/pa25-production-database-identity-provisioning-runbook.md", List.of("a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430", "a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430"));
+        currentPins.put("backend/README.md", List.of("9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b", "9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b"));
         currentPins.put("backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql", List.of("32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e", "32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e"));
         assertThat(currentPins).hasSize(27);
         StringBuilder currentTable = new StringBuilder(), currentBare = new StringBuilder();
@@ -264,13 +264,13 @@ class OperationsIvrSessionReadsIT {
         for(String text:List.of(currentBare+currentBare.toString().lines().findFirst().orElseThrow()+"\n", currentBare.toString().substring(currentBare.indexOf("\n")+1), currentBare+"0".repeat(64)+"  fake-path\n", currentBare.toString().replaceFirst("[0-9a-f]{64}","0".repeat(64)))) assertThatThrownBy(() -> verifyCurrentRepresentations.accept(currentTable.toString(),text)).isInstanceOf(AssertionError.class);
         var currentBinary = new java.io.ByteArrayOutputStream();
         for(var entry:currentPins.entrySet()) { currentBinary.writeBytes(entry.getKey().getBytes(charset)); currentBinary.write(0); currentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(0))); currentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(1))); }
-        assertThat(sha256.apply(currentBinary.toByteArray())).isEqualTo("fea4453e24c987221253f659e65a7ed7e270a74a2b81fe087b2b2c895e0c0712");
+        assertThat(sha256.apply(currentBinary.toByteArray())).isEqualTo("58161cad19014b05911bb068d8cd120a7f4a3630c9f6c2c98b7a3883132cef98");
         java.util.function.Consumer<java.nio.file.Path> verifyCurrentBytes = root -> {
             try {
                 for(var entry:currentPins.entrySet()) {
                     byte[] bytes=java.nio.file.Files.readAllBytes(root.resolve(entry.getKey()));
-                    String actualRaw=sha256.apply(bytes), actualLf=sha256.apply(new String(bytes,charset).replace("\r\n","\n").getBytes(charset));
-                    if(root.equals(java.nio.file.Path.of(".."))) assertThat(actualRaw).isEqualTo(entry.getValue().get(0)); assertThat(actualLf).isEqualTo(entry.getValue().get(1));
+                    String actualLf=sha256.apply(new String(bytes,charset).replace("\r\n","\n").getBytes(charset));
+                    assertThat(actualLf).as(entry.getKey()).isEqualTo(entry.getValue().get(0)).isEqualTo(entry.getValue().get(1));
                 }
                 var expectedNames=currentPins.keySet().stream().filter(name -> name.startsWith("backend/src/main/resources/db/migration/")).map(name -> java.nio.file.Path.of(name).getFileName().toString()).sorted().toList();
                 assertThat(expectedNames).hasSize(19);
@@ -278,13 +278,13 @@ class OperationsIvrSessionReadsIT {
             } catch(java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
         };
         verifyCurrentBytes.accept(java.nio.file.Path.of(".."));
-        var currentProjection=java.nio.file.Files.createTempDirectory("pa40a-current27-");
+        var currentProjection=java.nio.file.Files.createTempDirectory("pa40a-clean-checkout27-");
         try {
             for(boolean crlf:List.of(false,true)) {
                 for(var entry:currentPins.entrySet()) { var destination=currentProjection.resolve(entry.getKey()); java.nio.file.Files.createDirectories(destination.getParent()); String text=java.nio.file.Files.readString(java.nio.file.Path.of("..").resolve(entry.getKey()),charset).replace("\r\n","\n"); java.nio.file.Files.writeString(destination,crlf?text.replace("\n","\r\n"):text,charset); }
                 verifyCurrentBytes.accept(currentProjection);
             }
-            for(String changed:List.of("backend/README.md","backend/ops/postgresql/pa25-runtime-identities.sql","docs/operations/pa25-production-database-identity-provisioning-runbook.md","backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql")) {
+            for(String changed:currentPins.keySet()) {
                 var destination=currentProjection.resolve(changed); byte[] original=java.nio.file.Files.readAllBytes(destination); byte[] corruption=original.clone(); corruption[0]^=1; java.nio.file.Files.write(destination,corruption); assertThatThrownBy(() -> verifyCurrentBytes.accept(currentProjection)).isInstanceOf(AssertionError.class); java.nio.file.Files.write(destination,original);
             }
             var migration=currentProjection.resolve("backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql"); byte[] original=java.nio.file.Files.readAllBytes(migration);

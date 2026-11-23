@@ -140,62 +140,64 @@ The three existing exhaustive customer capability methods retain complete table/
 
 ## 3. Frozen And Current Byte Projections
 
+Aggregate fix 1 supersedes only the current pin representation; earlier runtime totals and split-run limitations remain historical evidence, not a new full-suite rerun.
+
 - F26: preserved26 literal pairs, aggregate `afda283795031bd226b3d48db7b9384ffacc5592798cd410769c9ec7ff8bc761`.
 - H26: F26 with **only** the historical README substitution; aggregate `ed03b90fe748039ca7d1d674c32cf0e0c56b828901116294a1ea5dd011954409`.
 - H26 README raw/LF: `fdcf813e4886d0fa68f7170207944457d331a51b79a0ae664485240f37ee5d64` / `bf152e7284aeeb5bc3cd9457c433607a8b91be848e9946d8549051cff1507177`.
-- C27: F26 minus three current PA25/runbook/README pairs plus their measured replacements, plus V019; **27 paths, 19 migrations, the same eight non-migration paths; 23 old pairs unchanged**.
-- C27 aggregate: `fea4453e24c987221253f659e65a7ed7e270a74a2b81fe087b2b2c895e0c0712`.
+- C27: canonical-LF identities for every F26 path, replacing the current PA25/runbook/README content and adding V019; **27 paths, 19 migrations, the same eight non-migration paths**. Each current pair repeats its canonical LF digest in both slots; historical F26/H26 raw+LF pairs remain unchanged.
+- C27 aggregate: `58161cad19014b05911bb068d8cd120a7f4a3630c9f6c2c98b7a3883132cef98`.
 
-All three aggregate formulas are exactly: sort paths by unsigned UTF-8 bytes; append UTF8(path), one NUL, 32 decoded raw-hash bytes, 32 decoded LF-hash bytes; SHA256 the concatenation. No hex-text serialization, inter-hash delimiter or row terminator.
+All three aggregates sort paths by unsigned UTF-8 bytes and append UTF8(path), one NUL and two decoded 32-byte digests, then SHA256 the concatenation. F26/H26 retain historical raw then LF digests. Current C27 uses canonical LF then canonical LF; neither slot describes host-materialized raw bytes. No hex-text serialization, inter-hash delimiter or row terminator.
 
 Both existing IVR verifier methods retain their original26 literals, historical tableCount/bareCount26, PA35 parser and F26/H26 aggregate constants. H26 expected values come only from those preserved literals and its one README substitution, never live bytes or reconstructed PA25. Historical byte fixtures recover the old PA25 via the independently hash-pinned prefix and remove only the new addendum for prior README/runbook byte probes; they do not supply H26 expected pins. Only test-local PA35 text copies are LF-normalized so existing newline-removal mutation probes actually remove rows in this CRLF checkout; the primary PA35 artifact and parser/counters are unchanged.
 
-C27 has separately named current table/bare representations, exact27 unique-key/pair/raw equality, a separately pinned aggregate, live-byte checks, LF/CRLF temporary positive projections, and independent missing/duplicate/fake-entry/hash/byte/BOM/wrong-name/future migration rejection probes. The original historical negative probes still execute and reject. Both PA38/39 guards independently prove historical18/no019 and live exact19 full basenames, old reconstructed and new shipped PA25 pins, and hostile missing/020/extra-wrong019/same-count-wrong019 sets.
+C27 has separately named current table/bare representations, exact27 unique-key/canonical-pair/bare equality, a separately pinned aggregate, the same canonical content check for the live root and clean-checkout fixtures, LF/CRLF temporary positive projections, and independent missing/duplicate/fake-entry/hash/byte/BOM/wrong-name/future migration rejection probes. The original historical negative probes still execute and reject. Both PA38/39 guards independently prove historical18/no019 and live exact19 full basenames, old reconstructed and new shipped PA25 pins, and hostile missing/020/extra-wrong019/same-count-wrong019 sets.
 
-### Measured Final Changed-File Pairs
+### Current Canonical Changed-File Pairs
 
-Raw pins describe these actual authored primary-worktree bytes; the unchanged preexisting CRLF spans and added LF spans are not rewritten merely to normalize representation. LF pins describe canonical LF bytes. Controller must preserve primary bytes, and separately record any authorized representation/projection rather than silently changing pins.
+Current pins describe committed canonical-LF content, not the pre-commit mixed/CRLF worktree representation. Any materialized bytes are accepted only if replacing CRLF with LF produces the pinned canonical digest. The same rule applies to every current path and fixture, without a live-root exception. Historical raw+LF pairs and reconstruction assertions are preserved exactly. See `docs/gateflow/pa40a-customer-catalog-offer-read-acl-aggregate-fix-1.md` for independent committed-blob and clean-projection validation; earlier fix artifacts remain historical evidence, not current pin semantics.
 
-| Path | Actual raw SHA256 | Canonical LF SHA256 |
+| Path | Canonical LF SHA256 (slot 1) | Canonical LF SHA256 (slot 2) |
 | --- | --- | --- |
-| `backend/ops/postgresql/pa25-runtime-identities.sql` | `6881473933551ff8b4918efcb24351d97827674b4bd193f66d4542e70cd948aa` | `ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47` |
-| `docs/operations/pa25-production-database-identity-provisioning-runbook.md` | `7af15cb3cdf02acecceb58d1ad6cbf59c4089cc533107809d75fda6ec318f7b2` | `a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430` |
-| `backend/README.md` | `45aad485c39e39a80f66472d55381e399440eb67a311a017d62d9a175d514f80` | `9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b` |
+| `backend/ops/postgresql/pa25-runtime-identities.sql` | `ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47` | `ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47` |
+| `docs/operations/pa25-production-database-identity-provisioning-runbook.md` | `a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430` | `a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430` |
+| `backend/README.md` | `9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b` | `9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b` |
 | `backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql` | `32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e` | `32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e` |
 
 The historical PA25 reconstruction separately verifies canonical LF `8f02d4d4842e734f10eac0c15b431afa16eb062790773b8696ae0de67d63b451` and CRLF raw `b5e4bbdea2830effbbd244f15f00d2f69a950e625cae1a4cf51559bb29eddcc9`. It removes only the exact appended22 rows and exact row019 after tagged-array assertions, restoring the four exact guard literals; there is no broad version-sensitive operational fallback.
 
 ### Complete C27 Pinned Map
 
-| Path | Raw SHA256 | LF SHA256 |
+| Path | Canonical LF SHA256 (slot 1) | Canonical LF SHA256 (slot 2) |
 | --- | --- | --- |
-| `api/openapi/onecall-v1.openapi.yaml` | `0ef64251846ce6f23e136bdcaa39e45a6cc9d54d5f86470b8589d8d14fc94c68` | `ce8de66d9bbc3c3e2fbbc6469f146e6d7e9b58223d3fd7c2187e95c26a6e7e30` |
-| `backend/README.md` | `45aad485c39e39a80f66472d55381e399440eb67a311a017d62d9a175d514f80` | `9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b` |
-| `backend/ops/postgresql/pa25-runtime-identities.sql` | `6881473933551ff8b4918efcb24351d97827674b4bd193f66d4542e70cd948aa` | `ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47` |
-| `backend/src/main/resources/db/migration/V001__platform_schemas_roles_idempotency_outbox_audit.sql` | `96e72bdacb32610dd03975e3e4fd6b828579b574a375e4241482f19c96b4e1c6` | `946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045` |
-| `backend/src/main/resources/db/migration/V002__identity_organization_and_employee.sql` | `4cf2b66d5ad7870272102c90868a0d9ecbcf9e620ec1bd7ea26dec9541f66505` | `534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5` |
-| `backend/src/main/resources/db/migration/V003__subject_number_and_claim.sql` | `4148f4acdeb9e56b57fe2d5d0a4fde616087f87bf16a836569edddbb0c8ae1d7` | `1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1` |
-| `backend/src/main/resources/db/migration/V004__catalog_order_and_payment.sql` | `8d03b32814baf9a9a812e89d3f56f666a5fb025fc518ab92d454fdcf6f5ea030` | `a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc` |
-| `backend/src/main/resources/db/migration/V005__ivr_task_session_call.sql` | `6feb3cbc87014fc83362e6faa33cc8d4107348c31540bf382df320657dc8d065` | `2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310` |
-| `backend/src/main/resources/db/migration/V006__trial_entitlement_issuance_reservation_usage.sql` | `7a30ab8a97ad4062918a58dbcfcab97580fdca5752b939dd56c484c425a0a09d` | `830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475` |
-| `backend/src/main/resources/db/migration/V007__activation_and_consent.sql` | `bf3fc710b76eb7b95b317458089f1f796f9aa42fde50444762db54152a350d81` | `bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659` |
-| `backend/src/main/resources/db/migration/V008__evidence_media.sql` | `32aab5baf90ca09774241f5b9a4dd819e03352c5fbeb7e62d53cde8c3292ddde` | `2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e` |
-| `backend/src/main/resources/db/migration/V009__sharing.sql` | `3226255afdf44a2dcc06b55d8059511b6cec5795a38083471f310c1c89bcd1b1` | `ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae` |
-| `backend/src/main/resources/db/migration/V010__sharing_role_least_privilege.sql` | `d48c624d5f5c6d9ec47f0152a61fc48355f1025ac7b8b84cf9343170bfa94559` | `fadd30a3c058c8847d734f83b22af3a93b2c79ab92cba1b0d1a8a547e5f4a343` |
-| `backend/src/main/resources/db/migration/V011__sharing_public_read_least_privilege.sql` | `ba7d485dce97d6cfd81a9f1c5a2e384b68a82fe865d73af7ee9edc92defde48e` | `f5fddaf46a4a24bec427e5978364aa585f695b4ee9d03d5deb759eef0930e17b` |
-| `backend/src/main/resources/db/migration/V012__sharing_admission_least_privilege.sql` | `ff5e65fe808c8c98b1a71a5abadaab513516206e173fc6a7dada5f599fde39c6` | `13e6ae056134cd48b2fa8d840119a3268efe8bfc178d4fee24e7e3feac46f828` |
-| `backend/src/main/resources/db/migration/V013__evidence_media_reader_role.sql` | `1143f4a5a87b6727edc1878cb86b3eadb034d485add81e3a33558150f0a5db8e` | `691f9a773e1a4c2d5f8c46b1be18515e1dccdbeadacfd15c5d113fcf1878e9f6` |
-| `backend/src/main/resources/db/migration/V014__database_runtime_acl_rbac_hardening.sql` | `bc9f9240f25820a78510aa6512009053bd066689abd13fdcd9fe101de941aea8` | `e0e97abcc86a9e9db354e44f33925f336b3266b267cf7107e821e2420668b85a` |
-| `backend/src/main/resources/db/migration/V015__customer_business_number_read_privileges.sql` | `c069ea5393138d208c885b3fff852882412d3e9fd418ad0626ffff90717544fc` | `1697a69fd39a61a9f8f7e0c1d2d699deda965840b58f7ff9937308f5670191c3` |
-| `backend/src/main/resources/db/migration/V016__customer_subject_detail_read_privileges.sql` | `a9913a9fad57fdba5a07b8be20cee5e4c81c4d113120d1c19851c276145eea5c` | `988a9876943ae07a32210bc0380128294fc823817f5b6c3d4a44a28dfdd4696f` |
-| `backend/src/main/resources/db/migration/V017__customer_evidence_read_privileges.sql` | `74f0b860c6da0d2ebc4d03b9baa94010f2ece5c1e4a1a4512a34ffe64044dcc3` | `57f1cac30dabdaee3e08fd43baaf6e696b453473ee8753f4c5da44cb0ecafbad` |
-| `backend/src/main/resources/db/migration/V018__evidence_role_ivr_association_read_privileges.sql` | `ea2911ea92fa4b3d043f7fe63777d8cf35fb0733202784952886ac7978a4b37c` | `892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817` |
+| `api/openapi/onecall-v1.openapi.yaml` | `ce8de66d9bbc3c3e2fbbc6469f146e6d7e9b58223d3fd7c2187e95c26a6e7e30` | `ce8de66d9bbc3c3e2fbbc6469f146e6d7e9b58223d3fd7c2187e95c26a6e7e30` |
+| `backend/README.md` | `9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b` | `9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b` |
+| `backend/ops/postgresql/pa25-runtime-identities.sql` | `ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47` | `ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47` |
+| `backend/src/main/resources/db/migration/V001__platform_schemas_roles_idempotency_outbox_audit.sql` | `946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045` | `946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045` |
+| `backend/src/main/resources/db/migration/V002__identity_organization_and_employee.sql` | `534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5` | `534a0a06c9520856ef555275100e8b8a194de80556b336f6ed4c984c3d9795d5` |
+| `backend/src/main/resources/db/migration/V003__subject_number_and_claim.sql` | `1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1` | `1d3ffb5ffd60d1be5f85b93b87f52c727e7b43dad5929280123cc567ab873fb1` |
+| `backend/src/main/resources/db/migration/V004__catalog_order_and_payment.sql` | `a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc` | `a7ba7a8cbaf5eecaf04f117b53c1b4bfd31c31b04e9432984d6c108b6e496edc` |
+| `backend/src/main/resources/db/migration/V005__ivr_task_session_call.sql` | `2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310` | `2f4cdef48fd5b1cec9b5f4479e99df3359073c94bf2c45cbc5b2cf8e87ba9310` |
+| `backend/src/main/resources/db/migration/V006__trial_entitlement_issuance_reservation_usage.sql` | `830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475` | `830ed14c0acab61bb2ce74fd2f3a314239fc133ef59b76d53b08e1f95f36c475` |
+| `backend/src/main/resources/db/migration/V007__activation_and_consent.sql` | `bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659` | `bd919cf367f6713d26c7e6f1f7148e81d275c838e5e307cde13ebd014e17d659` |
+| `backend/src/main/resources/db/migration/V008__evidence_media.sql` | `2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e` | `2ea0c6fd2be335fddb566ce4c02fae29a0f76656538cef3592b75ca880468e7e` |
+| `backend/src/main/resources/db/migration/V009__sharing.sql` | `ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae` | `ac150576208a8ee3a44fdc111f00cc63ff03f6da8105fe01bade64e30c77b3ae` |
+| `backend/src/main/resources/db/migration/V010__sharing_role_least_privilege.sql` | `fadd30a3c058c8847d734f83b22af3a93b2c79ab92cba1b0d1a8a547e5f4a343` | `fadd30a3c058c8847d734f83b22af3a93b2c79ab92cba1b0d1a8a547e5f4a343` |
+| `backend/src/main/resources/db/migration/V011__sharing_public_read_least_privilege.sql` | `f5fddaf46a4a24bec427e5978364aa585f695b4ee9d03d5deb759eef0930e17b` | `f5fddaf46a4a24bec427e5978364aa585f695b4ee9d03d5deb759eef0930e17b` |
+| `backend/src/main/resources/db/migration/V012__sharing_admission_least_privilege.sql` | `13e6ae056134cd48b2fa8d840119a3268efe8bfc178d4fee24e7e3feac46f828` | `13e6ae056134cd48b2fa8d840119a3268efe8bfc178d4fee24e7e3feac46f828` |
+| `backend/src/main/resources/db/migration/V013__evidence_media_reader_role.sql` | `691f9a773e1a4c2d5f8c46b1be18515e1dccdbeadacfd15c5d113fcf1878e9f6` | `691f9a773e1a4c2d5f8c46b1be18515e1dccdbeadacfd15c5d113fcf1878e9f6` |
+| `backend/src/main/resources/db/migration/V014__database_runtime_acl_rbac_hardening.sql` | `e0e97abcc86a9e9db354e44f33925f336b3266b267cf7107e821e2420668b85a` | `e0e97abcc86a9e9db354e44f33925f336b3266b267cf7107e821e2420668b85a` |
+| `backend/src/main/resources/db/migration/V015__customer_business_number_read_privileges.sql` | `1697a69fd39a61a9f8f7e0c1d2d699deda965840b58f7ff9937308f5670191c3` | `1697a69fd39a61a9f8f7e0c1d2d699deda965840b58f7ff9937308f5670191c3` |
+| `backend/src/main/resources/db/migration/V016__customer_subject_detail_read_privileges.sql` | `988a9876943ae07a32210bc0380128294fc823817f5b6c3d4a44a28dfdd4696f` | `988a9876943ae07a32210bc0380128294fc823817f5b6c3d4a44a28dfdd4696f` |
+| `backend/src/main/resources/db/migration/V017__customer_evidence_read_privileges.sql` | `57f1cac30dabdaee3e08fd43baaf6e696b453473ee8753f4c5da44cb0ecafbad` | `57f1cac30dabdaee3e08fd43baaf6e696b453473ee8753f4c5da44cb0ecafbad` |
+| `backend/src/main/resources/db/migration/V018__evidence_role_ivr_association_read_privileges.sql` | `892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817` | `892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817` |
 | `backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql` | `32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e` | `32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e` |
-| `docs/12-technology-stack-and-system-architecture.md` | `9faadb2fed8dfac33fe52349074852a967ef31ea6f4c1609fc0c4320d8bc40db` | `772ccaee7b188f68fcc694f3e8c00983ad9de028547f8e0b0c8638a8d8cae435` |
-| `docs/14-production-data-model-and-flyway-schema-spec.md` | `0a65833d202e566e56f8c11bcd27734812a62a27e8c9c5342b42301720a17b31` | `bd898f2978c186cf1ccc41c83807f226c6b5aeb7121bc07486748e16453c8c58` |
-| `docs/15-production-openapi-surface-spec.md` | `db2f9b5a548288b71be4566ce1b820b9a9ffd0118978c24f92bdcc69d6aab5a0` | `0b3b996e3e4a4acc3cb38211290be5ae874d66e7c63d670958b8bc23f67b9b02` |
-| `docs/17-production-security-design-spec.md` | `b531046014f80889bba6e83992814c77fd5a51f564d511ad6bfe4fd6b8122205` | `4e7df589380f70ba7e9e1a5b7e9c1542ca6ed89313a775dacfc91e109852ceb6` |
-| `docs/operations/pa25-production-database-identity-provisioning-runbook.md` | `7af15cb3cdf02acecceb58d1ad6cbf59c4089cc533107809d75fda6ec318f7b2` | `a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430` |
+| `docs/12-technology-stack-and-system-architecture.md` | `772ccaee7b188f68fcc694f3e8c00983ad9de028547f8e0b0c8638a8d8cae435` | `772ccaee7b188f68fcc694f3e8c00983ad9de028547f8e0b0c8638a8d8cae435` |
+| `docs/14-production-data-model-and-flyway-schema-spec.md` | `bd898f2978c186cf1ccc41c83807f226c6b5aeb7121bc07486748e16453c8c58` | `bd898f2978c186cf1ccc41c83807f226c6b5aeb7121bc07486748e16453c8c58` |
+| `docs/15-production-openapi-surface-spec.md` | `0b3b996e3e4a4acc3cb38211290be5ae874d66e7c63d670958b8bc23f67b9b02` | `0b3b996e3e4a4acc3cb38211290be5ae874d66e7c63d670958b8bc23f67b9b02` |
+| `docs/17-production-security-design-spec.md` | `4e7df589380f70ba7e9e1a5b7e9c1542ca6ed89313a775dacfc91e109852ceb6` | `4e7df589380f70ba7e9e1a5b7e9c1542ca6ed89313a775dacfc91e109852ceb6` |
+| `docs/operations/pa25-production-database-identity-provisioning-runbook.md` | `a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430` | `a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430` |
 
 ## 4. Final Source Inventories — Not Runtime Acceptance
 

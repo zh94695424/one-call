@@ -23,7 +23,6 @@ public final class OperationsCatalogVersionBoundaryTests {
         for (var pin : pins.entrySet()) assertThat(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest((pin.getKey().equals("ops/postgresql/pa25-runtime-identities.sql") ? CustomerCatalogOfferReadAclBoundaryTests.historicalPa25().getBytes(java.nio.charset.StandardCharsets.UTF_8) : Files.readAllBytes(Path.of(pin.getKey())))))).isEqualTo(pin.getValue());
         CustomerCatalogOfferReadAclBoundaryTests.currentMigrationProof();
         byte[] current = Files.readAllBytes(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(current))).isEqualTo("6881473933551ff8b4918efcb24351d97827674b4bd193f66d4542e70cd948aa");
         assertThat(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(new String(current,java.nio.charset.StandardCharsets.UTF_8).replace("\r\n","\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)))).isEqualTo("ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47");
     }
 }
