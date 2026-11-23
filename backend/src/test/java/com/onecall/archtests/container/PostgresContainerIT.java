@@ -1393,7 +1393,7 @@ class PostgresContainerIT {
 
         flyway.validate();
         assertThat(flyway.info().pending()).isEmpty();
-        assertThat(flyway.info().all()).hasSize(18);
+        assertThat(flyway.info().all()).hasSize(19);
         assertThat(flyway.info().applied()).hasSize(13);
         var aboveTarget = java.util.Arrays.stream(flyway.info().all())
                 .filter(info -> info.getVersion().getVersion().equals("014")).toList();
@@ -10814,7 +10814,7 @@ class PostgresContainerIT {
                         "V015__customer_business_number_read_privileges.sql",
                 "V016__customer_subject_detail_read_privileges.sql",
                 "V017__customer_evidence_read_privileges.sql",
-                "V018__evidence_role_ivr_association_read_privileges.sql");
+                "V018__evidence_role_ivr_association_read_privileges.sql", "V019__customer_catalog_offer_read_privileges.sql");
     }
 
     /**

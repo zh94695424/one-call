@@ -90,7 +90,7 @@ class OperationsActivationReadRoleLeastPrivilegeIT {
     @Test
     void frozenAclRolesFunctionsAndAllFactsHaveZeroDelta() throws Exception {
         fixture.transition(1); String catalog; try (var connection = fixture.admin()) { catalog = catalog(connection); } var facts = fixture.fingerprints(); fixture.get(BASE); problem(fixture.request("GET", BASE + "?cursor=bad", "admin"), 400, "CURSOR_INVALID");
-        try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(catalog); assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("18"); }
+        try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(catalog); assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("19"); }
         assertThat(fixture.fingerprints()).isEqualTo(facts);
         try (var baseline = new CustomerBusinessNumbersFixture()) {
             baseline.start(null);

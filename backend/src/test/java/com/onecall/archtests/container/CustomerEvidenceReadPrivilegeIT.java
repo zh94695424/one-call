@@ -24,7 +24,11 @@ class CustomerEvidenceReadPrivilegeIT {
             Map.entry("catalog_order.customer_order", List.of("subject_id", "account_id", "owner_organization_id")),
             Map.entry("evidence.evidence_artifact", List.of("evidence_id", "media_object_id", "artifact_role")),
             Map.entry("evidence.media_object", List.of("id", "sha256", "size_bytes", "mime_type")),
-            Map.entry("evidence.recording", List.of("id", "media_object_id", "status", "validated_duration")));
+            Map.entry("evidence.recording", List.of("id", "media_object_id", "status", "validated_duration")),
+            Map.entry("catalog_order.catalog_product", List.of("id", "product_code")),
+            Map.entry("catalog_order.catalog_version", List.of("id", "product_id", "version_no", "sale_status", "offer_type", "audience", "price_cents", "currency", "billing_cycle", "installments")),
+            Map.entry("catalog_order.catalog_offer", List.of("id", "catalog_version_id", "channel", "offer_status", "version_token")),
+            Map.entry("catalog_order.catalog_benefit_line", List.of("catalog_version_id", "entitlement_type", "quantity", "validity_days", "grant_interval_months")));
     private static final String ACL = """
             WITH objects AS (
                 SELECT 'schema' AS kind,n.oid,0 AS subid,n.nspname::text AS identity,'' AS column_name,n.nspacl AS acl FROM pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema'
@@ -43,7 +47,7 @@ class CustomerEvidenceReadPrivilegeIT {
     @BeforeEach void start() throws Exception { fixture = new CustomerBusinessNumbersFixture(); fixture.start("016"); }
     @AfterEach void stop() { if (fixture != null) fixture.close(); }
     private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("017").load(); }
-    private void latest() { var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("018").load(); assertThat(latest.migrate().migrationsExecuted).isEqualTo(1); latest.validate(); }
+    private void latest() { var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load(); assertThat(latest.migrate().migrationsExecuted).isEqualTo(2); latest.validate(); }
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -411,7 +415,7 @@ class CustomerEvidenceReadPrivilegeIT {
         Set<String> result = new TreeSet<>(oracle()); result.addAll(expectedDelta());
         assertThat(result).hasSize(288); return result;
     }
-    private Set<String> latestOracle() { Set<String> expected = new TreeSet<>(currentOracle()); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); return expected; }
+    private Set<String> latestOracle() { Set<String> expected = new TreeSet<>(currentOracle()); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); expected.addAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); return expected; }
     private void history() throws Exception {
         current().validate(); assertThat(current().info().applied()).hasSize(17); assertThat(current().info().pending()).isEmpty();
         try (var connection = fixture.admin()) {
@@ -506,24 +510,37 @@ class CustomerEvidenceReadPrivilegeIT {
     }
     @Test
     void customerRoleReadsOnlyApprovedFactsAndDeniesAllSensitiveCapabilitiesWith42501() throws Exception {
+        Set<String> catalogColumns=new TreeSet<>();
+        for(var entry:APPROVED.entrySet()) if(Set.of("catalog_order.catalog_product","catalog_order.catalog_version","catalog_order.catalog_offer","catalog_order.catalog_benefit_line").contains(entry.getKey())) for(String column:entry.getValue()) catalogColumns.add(entry.getKey()+"|"+column);
+        assertThat(catalogColumns).hasSize(22).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle().stream().map(tuple -> { String[] fields=tuple.split("\\|",-1); return fields[2]+"|"+fields[3]; }).collect(java.util.stream.Collectors.toSet()));
+
         upgrade(); frozenGraph(); fixture.seed(); seedEvidence();
+        for (boolean currentPhase : List.of(false, true)) {
+            Map<String, List<String>> approved = new TreeMap<>(APPROVED);
+            if (!currentPhase) approved.keySet().removeAll(Set.of("catalog_order.catalog_product", "catalog_order.catalog_version", "catalog_order.catalog_offer", "catalog_order.catalog_benefit_line"));
+            else {
+                latest(); fixture.provision();
+                assertThat(approved.values().stream().mapToInt(List::size).sum()).isEqualTo(69);
+            }
+
+
         Set<String> before = acls();
-        assertThat(before).isEqualTo(currentOracle());
+        assertThat(before).isEqualTo(currentPhase ? latestOracle() : currentOracle());
         try (var admin = fixture.admin(); var connection = fixture.runtime()) {
             connection.setAutoCommit(false); execute(connection, "SET LOCAL ROLE customer_iam_role");
             assertThat(one(connection, "SHOW transaction_read_only")).isEqualTo("off");
             assertThat(one(connection, "SELECT identity_at_capture->>'identity' FROM evidence.evidence_record")).isEqualTo("IDENTITY_CANARY");
             for (String table : strings(admin, "SELECT n.nspname||'.'||c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname !~ '^pg_' AND n.nspname NOT IN ('public','information_schema') ORDER BY 1")) {
                 for (String column : strings(admin, "SELECT attname FROM pg_attribute WHERE attrelid='" + table + "'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")) {
-                    if (APPROVED.getOrDefault(table, List.of()).contains(column)) execute(connection, "SELECT " + column + " FROM " + table);
+                    if (approved.getOrDefault(table, List.of()).contains(column)) execute(connection, "SELECT " + column + " FROM " + table);
                     else denied(connection, "SELECT " + column + " FROM " + table);
                     denied(connection, "UPDATE " + table + " SET " + column + "=" + column + " WHERE false");
                     denied(connection, "INSERT INTO " + table + " (" + column + ") SELECT " + column + " FROM " + table + " WHERE false");
                 }
                 for (String sql : List.of("SELECT * FROM " + table, "DELETE FROM " + table + " WHERE false", "TRUNCATE " + table,
                         "CREATE TRIGGER pa27_probe BEFORE UPDATE ON " + table + " FOR EACH ROW EXECUTE FUNCTION customer_iam.guard_customer_account()")) denied(connection, sql);
-                if (APPROVED.containsKey(table)) {
-                    for (String lock : List.of("UPDATE", "SHARE")) denied(connection, "SELECT " + APPROVED.get(table).getFirst() + " FROM " + table + " FOR " + lock);
+                if (approved.containsKey(table)) {
+                    for (String lock : List.of("UPDATE", "SHARE")) denied(connection, "SELECT " + approved.get(table).getFirst() + " FROM " + table + " FOR " + lock);
                 }
             }
             execute(admin, "CREATE TABLE customer_iam.pa27_reference_probe(id uuid)");
@@ -542,6 +559,8 @@ class CustomerEvidenceReadPrivilegeIT {
             connection.rollback();
         }
         assertThat(acls()).containsExactlyInAnyOrderElementsOf(before);
+
+        }
     }
 
 
@@ -644,8 +663,8 @@ class CustomerEvidenceReadPrivilegeIT {
             try { pa25RejectedWithoutRepair(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "SET ROLE evidence_owner; GRANT " + capability(addition) + " TO customer_iam_role"); } }
         }
-        for (int rank : List.of(16, 17, 18)) {
-            for (String mutation : List.of("checksum=0", "version='" + rank + "'", "installed_rank=19", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'", "DELETE")) {
+        for (int rank : List.of(16, 17, 18, 19)) {
+            for (String mutation : List.of("checksum=0", "version='" + rank + "'", "installed_rank=1019", "type='BASELINE'", "success=false", "description='wrong'", "script='wrong.sql'", "DELETE")) {
                 String row;
                 try (var connection = fixture.admin()) {
                     row = one(connection, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=" + rank);
@@ -658,7 +677,7 @@ class CustomerEvidenceReadPrivilegeIT {
                 } }
             }
         }
-        for (String version : List.of("018", "019")) {
+        for (String version : List.of("018", "019", "020")) {
             try (var connection = fixture.admin()) { execute(connection, "INSERT INTO public.flyway_schema_history SELECT 1018,?,description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=18", version); }
             try { pa25RejectedWithoutRepair(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE installed_rank=1018"); } }
@@ -669,7 +688,7 @@ class CustomerEvidenceReadPrivilegeIT {
             try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(before); }
             assertThat(acls()).isEqualTo(latestOracle());
         }
-        assertThat(current().info().applied()).hasSize(18);
+        assertThat(current().info().applied()).hasSize(19);
     }
 
     @Test

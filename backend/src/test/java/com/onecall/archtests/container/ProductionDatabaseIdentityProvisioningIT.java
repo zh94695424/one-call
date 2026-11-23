@@ -121,7 +121,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa25";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", adminPassword).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(18);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(19);
         try (Connection admin = admin()) {
             assertThat(one(admin, "SELECT current_setting('server_version_num')::integer BETWEEN 160000 AND 169999")).isEqualTo("t");
             assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname !~ '^pg_' AND rolname NOT IN ('postgres','fixture_admin')")).isEqualTo("31");
@@ -622,11 +622,11 @@ class ProductionDatabaseIdentityProvisioningIT {
         contaminate("DELETE FROM public.flyway_schema_history WHERE installed_rank=18",
                 "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
         try (Connection admin = admin()) { assertThat(one(admin, "SELECT count(*) FROM pg_roles WHERE rolname IN ('pa25_query','pa25_customer','pa25_command','pa36_operations')")).isEqualTo("0"); }
-        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=19", "type='BASELINE'", "success=false", "version='18'")) {
+        for (String assignment : List.of("checksum=0", "description='wrong'", "script='wrong.sql'", "installed_rank=1018", "type='BASELINE'", "success=false", "version='18'")) {
             contaminate("UPDATE public.flyway_schema_history SET " + assignment + " WHERE installed_rank=18",
                     "DELETE FROM public.flyway_schema_history WHERE version IN ('018','18'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(finalHistory) + "::jsonb)", "PA25_HISTORY_REJECTED");
         }
-        for (String extraVersion : List.of("018", "019")) {
+        for (String extraVersion : List.of("018", "019", "020")) {
             contaminate("INSERT INTO public.flyway_schema_history SELECT installed_rank+1000," + literal(extraVersion) + ",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=18",
                     "DELETE FROM public.flyway_schema_history WHERE installed_rank=1018", "PA25_HISTORY_REJECTED");
         }
@@ -642,6 +642,9 @@ class ProductionDatabaseIdentityProvisioningIT {
         try (Connection admin = admin()) { v017Predecessor = one(admin, "SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=17"); }
         contaminate("UPDATE public.flyway_schema_history SET checksum=0 WHERE installed_rank=17",
                 "DELETE FROM public.flyway_schema_history WHERE installed_rank=17; INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history," + literal(v017Predecessor) + "::jsonb)", "PA25_HISTORY_REJECTED");
+        String currentRow; try(Connection admin=admin()) { currentRow=one(admin,"SELECT to_jsonb(value)::text FROM public.flyway_schema_history value WHERE installed_rank=19"); }
+        for(String assignment:List.of("checksum=0","description='wrong'","script='wrong.sql'","installed_rank=1019","type='BASELINE'","success=false","version='19'")) contaminate("UPDATE public.flyway_schema_history SET "+assignment+" WHERE installed_rank=19", "DELETE FROM public.flyway_schema_history WHERE version IN ('019','19'); INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,"+literal(currentRow)+"::jsonb)","PA25_HISTORY_REJECTED");
+        for(String extra:List.of("019","020")) contaminate("INSERT INTO public.flyway_schema_history SELECT 1019,"+literal(extra)+",description,type,script,checksum,installed_by,installed_on,execution_time,success FROM public.flyway_schema_history WHERE installed_rank=19", "DELETE FROM public.flyway_schema_history WHERE installed_rank=1019", "PA25_HISTORY_REJECTED");
         provision();
         for (String role : EXTERNAL) {
             String marker;
@@ -705,7 +708,7 @@ class ProductionDatabaseIdentityProvisioningIT {
         assertThat(migrationHashes().equals(entryHashes)).isTrue();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         flyway.validate();
-        assertThat(flyway.info().applied()).hasSize(18);
+        assertThat(flyway.info().applied()).hasSize(19);
         assertExactFrozenAcls();
         assertMarkers();
         try (Connection admin = admin()) {
@@ -1373,7 +1376,7 @@ class ProductionDatabaseIdentityProvisioningIT {
                     """);
             expected = new java.util.HashSet<>(expected); expected.addAll(EvidenceRoleIvrAssociationAclIT.additionalOracle());
             assertThat(expected.size()).isEqualTo(410);
-            assertThat(actual.size()).isEqualTo(410);
+            Set<String> recovered = new java.util.TreeSet<>(CustomerCatalogOfferReadPrivilegesIT.current432Oracle()); recovered.removeAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); assertThat(recovered).isEqualTo(expected); expected = CustomerCatalogOfferReadPrivilegesIT.current432Oracle(); assertThat(actual.size()).isEqualTo(432);
             assertThat(Set.copyOf(actual).equals(expected)).as("independent frozen-source ACL equality").isTrue();
         }
     }

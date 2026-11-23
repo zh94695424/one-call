@@ -188,14 +188,14 @@ class CustomerEvidenceBoundaryTests {
         for (String line : migration.replace("\uFEFF", "").lines().toList()) checksum.update(line.getBytes(StandardCharsets.UTF_8));
         assertThat((int) checksum.getValue()).isEqualTo(V017_CHECKSUM);
         String pa25 = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(pa25).contains("expected_resolved) <> 410", "history) <> 18");
+        assertThat(pa25).contains("expected_resolved) <> 432", "history) <> 19");
         Set<String> provisioned = tuples(pa25, "frozen");
-        assertThat(provisioned).hasSize(410).containsAll(expected);
-        assertThat(provisioned.stream().filter(value -> value.startsWith("customer_iam_role|"))).hasSize(53);
+        assertThat(provisioned).hasSize(432).containsAll(expected);
+        assertThat(provisioned.stream().filter(value -> value.startsWith("customer_iam_role|"))).hasSize(75);
         assertThat(provisioned.stream().filter(value -> value.startsWith("evidence_role|"))).hasSize(18);
         assertThat(provisioned.stream().filter(value -> !value.startsWith("customer_iam_role|") && !value.startsWith("evidence_role|") && !value.startsWith("operations_iam_role|") && !value.startsWith("ivr_role|"))).hasSize(219);
         JsonNode history = tagged(pa25, "history");
-        assertThat(history.size()).isEqualTo(18);
+        assertThat(history.size()).isEqualTo(19);
         assertThat(history.get(17).get(0).asString()).isEqualTo("018");
         assertThat(history.get(17).get(2).asInt()).isEqualTo(1606293398);
         assertThat(history.get(15).get(2).asInt()).isEqualTo(1669606497);

@@ -69,8 +69,8 @@ class CustomerSubjectClaimBoundaryTests {
         }
         assertThat(paths).hasSize(20); assertThat(paths.stream().filter(path -> path.contains("/migration/"))).hasSize(17);
         try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
-            assertThat(migrations.filter(Files::isRegularFile).map(path -> "backend/" + path.toString()))
-                    .containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(paths.stream().filter(path -> path.contains("/migration/")), java.util.stream.Stream.of("backend/src/main/resources/db/migration/V018__evidence_role_ivr_association_read_privileges.sql")).toList());
+            assertThat(migrations.filter(Files::isRegularFile).map(path -> "backend/" + path.toString().replace('\\','/')))
+                    .containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(paths.stream().filter(path -> path.contains("/migration/")), java.util.stream.Stream.of("backend/src/main/resources/db/migration/V018__evidence_role_ivr_association_read_privileges.sql", "backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql")).toList());
         }
         try (var files = Files.walk(OWNER.resolve("internal/claim"))) {
             for (var path : files.filter(Files::isRegularFile).toList()) assertThat(source(path)).doesNotContain("javax.crypto", "KmsClient", "SmsClient", "HttpClient", "@Profile(\"test\")");

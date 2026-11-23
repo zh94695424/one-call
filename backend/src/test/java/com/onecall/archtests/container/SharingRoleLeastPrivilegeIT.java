@@ -59,7 +59,7 @@ class SharingRoleLeastPrivilegeIT {
         POSTGRES.start();
         url = "jdbc:postgresql://" + POSTGRES.getHost() + ":" + POSTGRES.getMappedPort(5432) + "/sharing_least_privilege";
         flyway = Flyway.configure().dataSource(url, "fixture_admin", PASSWORD).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(18);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(19);
         try (Connection admin = admin(); Statement statement = admin.createStatement()) {
             try (var rows = statement.executeQuery("SELECT rolpassword IS NULL FROM pg_authid WHERE rolname='sharing_public_read_role'")) {
                 assertThat(rows.next()).isTrue();
@@ -566,7 +566,7 @@ class SharingRoleLeastPrivilegeIT {
             System.out.println("PA13 PostgreSQL 16 evidence: " + rows.getString(2) + "; image=" + POSTGRES.getDockerImageName()
                     + "; imageId=" + POSTGRES.getContainerInfo().getImageId());
         }
-        assertThat(flyway.info().applied()).hasSize(18);
+        assertThat(flyway.info().applied()).hasSize(19);
         assertThat(flyway.info().applied()[10].getVersion().getVersion()).isEqualTo("011");
         assertThat(flyway.info().applied()[11].getVersion().getVersion()).isEqualTo("012");
         assertThat(flyway.info().applied()[11].getScript()).isEqualTo("V012__sharing_admission_least_privilege.sql");
