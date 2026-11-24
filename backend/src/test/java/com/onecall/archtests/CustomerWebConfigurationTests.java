@@ -217,7 +217,10 @@ class CustomerWebConfigurationTests {
                                     "customerBusinessNumberAccessRepository", "customerSubjectAccessReader", "customerEvidenceReader")),
                             Map.entry("customerEvidenceCursorCodec", List.of()),
                             Map.entry("customerSubjectDetailTransactionTemplate", List.of("customerQueryTransactionManager")),
-                            Map.entry("customerSubjectDetailQueryService", List.of("customerSubjectDetailTransactionTemplate", "customerQueryDsl", "customerBusinessNumberAccessRepository", "customerSubjectAccessReader", "customerActivationStatusReader", "customerSubjectEvidenceCountReader", "customerSubjectOrderCountReader")))
+                            Map.entry("customerSubjectDetailQueryService", List.of("customerSubjectDetailTransactionTemplate", "customerQueryDsl", "customerBusinessNumberAccessRepository", "customerSubjectAccessReader", "customerActivationStatusReader", "customerSubjectEvidenceCountReader", "customerSubjectOrderCountReader")),
+                            Map.entry("customerCatalogOfferTransactionTemplate", List.of("customerQueryTransactionManager")),
+                            Map.entry("customerCatalogOfferQueryService", List.of("customerCatalogOfferTransactionTemplate", "customerQueryDsl", "customerBusinessNumberAccessRepository", "customerCatalogOfferReader")),
+                            Map.entry("customerCatalogOfferCursorCodec", List.of()))
                     : configuration == SharingPersistenceConfiguration.class
                     ? Map.of("sharingQueryDataSource", List.of(), "sharingQueryTransactionManager", List.of("sharingQueryDataSource"),
                             "sharingQueryTransactionTemplate", List.of("sharingQueryTransactionManager"),

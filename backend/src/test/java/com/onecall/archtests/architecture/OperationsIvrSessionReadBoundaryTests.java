@@ -268,7 +268,7 @@ class OperationsIvrSessionReadBoundaryTests {
         for (String row : frozen.strip().lines().toList()) { String[] fields = row.split(" "); assertThat(currentPins.put(fields[0],List.of(fields[2],fields[2]))).isNull(); }
         currentPins.put("backend/ops/postgresql/pa25-runtime-identities.sql", List.of("ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47", "ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47"));
         currentPins.put("docs/operations/pa25-production-database-identity-provisioning-runbook.md", List.of("a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430", "a74827f87821353365cf48b0f5ebb794a902ca0ee4710229f057078a0f2d7430"));
-        currentPins.put("backend/README.md", List.of("9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b", "9c094a00f691fd8849363355a12c174cc289ce57841a63d0f25d04f8a30faf7b"));
+        currentPins.put("backend/README.md", List.of("95e6e5e042792ddd5878817f4536b5901fc74749a0bd49095ec2161c49a2f70d", "95e6e5e042792ddd5878817f4536b5901fc74749a0bd49095ec2161c49a2f70d"));
         currentPins.put("backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql", List.of("32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e", "32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e"));
         assertThat(currentPins).hasSize(27);
         StringBuilder currentTable = new StringBuilder(), currentBare = new StringBuilder();
@@ -292,7 +292,7 @@ class OperationsIvrSessionReadBoundaryTests {
         for(String text:List.of(currentBare+currentBare.toString().lines().findFirst().orElseThrow()+"\n", currentBare.toString().substring(currentBare.indexOf("\n")+1), currentBare+"0".repeat(64)+"  fake-path\n", currentBare.toString().replaceFirst("[0-9a-f]{64}","0".repeat(64)))) assertThatThrownBy(() -> verifyCurrentRepresentations.accept(currentTable.toString(),text)).isInstanceOf(AssertionError.class);
         var currentBinary = new java.io.ByteArrayOutputStream();
         for(var entry:currentPins.entrySet()) { currentBinary.writeBytes(entry.getKey().getBytes(charset)); currentBinary.write(0); currentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(0))); currentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(1))); }
-        assertThat(sha256.apply(currentBinary.toByteArray())).isEqualTo("58161cad19014b05911bb068d8cd120a7f4a3630c9f6c2c98b7a3883132cef98");
+        assertThat(sha256.apply(currentBinary.toByteArray())).isEqualTo("738652e487145167e32c07fc315ed0bb2dbdf4f4f4e2295712eb11a4b57cb75e");
         java.util.function.Consumer<java.nio.file.Path> verifyCurrentBytes = root -> {
             try {
                 for(var entry:currentPins.entrySet()) {

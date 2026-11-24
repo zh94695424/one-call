@@ -51,7 +51,7 @@ class CustomerEvidenceBoundaryTests {
                 .containsExactlyInAnyOrder("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission",
                         "subject_number::customer-business-number-query", "activation_consent::customer-activation-query",
                         "subject_number::customer-subject-query", "evidence::customer-subject-count-query",
-                        "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command");
+                        "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query");
         assertThat(CustomerSubjectAccessReader.class.getDeclaredMethods()).hasSize(4);
         signature(CustomerSubjectAccessReader.class, "findOwnedSubject", "java.util.Optional<java.util.UUID>", "java.util.UUID", "java.util.UUID", "java.util.UUID");
         signature(CustomerSubjectAccessReader.class, "hasOpenRisk", "boolean", "java.util.UUID");

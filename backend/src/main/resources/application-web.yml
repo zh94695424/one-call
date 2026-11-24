@@ -7,6 +7,8 @@ onecall:
   customer:
     business-numbers:
       cursor-hmac-key: ${ONECALL_CUSTOMER_BUSINESS_NUMBER_CURSOR_HMAC_KEY:}
+    catalog-offers:
+      cursor-hmac-key: ${ONECALL_CUSTOMER_CATALOG_OFFER_CURSOR_HMAC_KEY:}
     persistence:
       url: ${ONECALL_CUSTOMER_DB_URL:}
       username: ${ONECALL_CUSTOMER_DB_USERNAME:}
