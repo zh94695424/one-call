@@ -168,3 +168,11 @@ The first full `-Pcontainer-smoke verify` completed Surefire **1071/1071** and F
 - Extracted unmodified CI ledger fails on current reports (`wrong aggregate test inventory`) after that setup failure. A separately labelled `/tmp/pa40b-fix1-02/ledger-evidence` projection uses current source/POM/Surefire and preserved pre-attempt Failsafe reports; it passes 110/1071 + 42/701 = 152/1772, scan 1773, POM 42 and the complete historical ladder. Repository reports were not restored or falsified. This is inventory/historical evidence, not a successful post-fix PostgreSQL rerun.
 - `git diff --check` passes. Only the six authorized fix paths are changed relative to this task's dirty starting candidate; pre-existing implementation paths, Control, review artifacts and excluded private helpers remain untouched. Deferred TRACE and plan-manifest findings and rejected trusted-derivation consolidation were not implemented.
 - Full fix scope, evidence and environment blocker: `docs/gateflow/pa40b-customer-catalog-offer-read-code-review-fix-1.md`. Stop here; no re-review or remote/repository mutation actions.
+
+## 10. Post-fix exact-head validation
+
+- The earlier Docker blocker in §9 was resolved by running the candidate outside the restricted Codex sandbox in WSL2/JDK21/Maven 3.9.9/PostgreSQL16.
+- Exact accepted PR candidate before final documentation bookkeeping: `6f77d66c971d8424df237d1e09d238d71d3384bf`.
+- Final uninterrupted `mvn -B -ntp -o -Pcontainer-smoke verify`: `BUILD SUCCESS`, total time 01:08 h, `EXIT=0`; Surefire 110 classes / 1071 methods and Failsafe 42 classes / 701 methods, all zero failures/errors/skips. Log: `/tmp/pa40b-pr52-final-verify.log`, 1,702,560 bytes / SHA256 `bab7a465b9a909e9a462e4cc6374e4ac2952c1d45f434d350248e531fa656df0`.
+- The unchanged CI inventory ledger run against those final reports ended `EXIT=0`: 110/1071 + 42/701 = 152/1772, annotation scan 1773, POM 42, complete historical ladder intact. Log: `/tmp/pa40b-pr52-final-ledger.log`, 950 bytes / SHA256 `e001b7801fcb0cb6094f20bfbe9af59473a700b33ac2843af8f910fff20166eb`.
+- This supersedes only the point-in-time sandbox limitation recorded in §9; the earlier failed/preserved-report logs remain honest historical evidence. Hosted exact-head CI remains unavailable and is not claimed as passing.
