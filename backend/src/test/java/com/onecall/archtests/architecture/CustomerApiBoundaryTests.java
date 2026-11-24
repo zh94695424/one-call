@@ -87,7 +87,7 @@ class CustomerApiBoundaryTests {
         Path root = Path.of("src/main/java/com/onecall/core/customer_iam/internal");
         try (var files = Files.walk(root)) {
             var paths = files.filter(Files::isRegularFile).toList();
-            assertThat(paths).hasSize(47);
+            assertThat(paths).hasSize(52);
             for (Path path : paths) {
                 String source = Files.readString(path);
                 assertThat(source).doesNotContain("com.onecall.core.organization_access",

@@ -217,7 +217,7 @@ class CustomerBusinessNumberQueryServiceTests {
             assertThat(template.isReadOnly()).isTrue(); assertThat(template.getPropagationBehavior()).isEqualTo(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
             assertThat(template.getIsolationLevel()).isEqualTo(name.startsWith("customerBusiness") ? org.springframework.transaction.TransactionDefinition.ISOLATION_REPEATABLE_READ : org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
         }
-        assertThat(configuration.getDeclaredMethods()).hasSize(15);
+        assertThat(configuration.getDeclaredMethods()).hasSize(18);
         for (var method : configuration.getDeclaredMethods()) {
             assertThat(method.isAnnotationPresent(org.springframework.context.annotation.Lazy.class)).isTrue();
             assertThat(method.isAnnotationPresent(org.springframework.context.annotation.Bean.class)).isTrue();

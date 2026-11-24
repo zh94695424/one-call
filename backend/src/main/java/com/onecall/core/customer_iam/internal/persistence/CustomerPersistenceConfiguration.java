@@ -2,6 +2,10 @@ package com.onecall.core.customer_iam.internal.persistence;
 
 import com.onecall.core.customer_iam.internal.application.CustomerContextService;
 import com.onecall.core.customer_iam.internal.application.CustomerEvidenceQueryService;
+import com.onecall.core.customer_iam.internal.application.CustomerCatalogOfferQueryService;
+import com.onecall.core.catalog_order.customercatalogquery.CustomerCatalogOfferReader;
+import com.onecall.core.customer_iam.internal.web.CustomerCatalogOfferCursorCodec;
+import com.onecall.core.customer_iam.internal.web.CustomerCatalogOfferCursorProperties;
 import com.onecall.core.customer_iam.internal.web.CustomerEvidenceCursorCodec;
 import com.onecall.core.customer_iam.internal.web.CustomerEvidenceCursorProperties;
 import com.onecall.core.evidence.customerevidencequery.CustomerEvidenceReader;
@@ -38,8 +42,35 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("web")
-@EnableConfigurationProperties({CustomerPersistenceProperties.class, CustomerBusinessNumberCursorProperties.class, CustomerEvidenceCursorProperties.class})
+@EnableConfigurationProperties({CustomerPersistenceProperties.class, CustomerBusinessNumberCursorProperties.class, CustomerEvidenceCursorProperties.class, CustomerCatalogOfferCursorProperties.class})
 public class CustomerPersistenceConfiguration {
+    @Bean
+    @Lazy
+    TransactionTemplate customerCatalogOfferTransactionTemplate(
+            @Qualifier("customerQueryTransactionManager") DataSourceTransactionManager manager) {
+        TransactionTemplate template = new TransactionTemplate(manager);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template;
+    }
+
+    @Bean
+    @Lazy
+    CustomerCatalogOfferQueryService customerCatalogOfferQueryService(
+            @Qualifier("customerCatalogOfferTransactionTemplate") TransactionTemplate template,
+            @Qualifier("customerQueryDsl") DSLContext context,
+            @Qualifier("customerBusinessNumberAccessRepository") JooqCustomerBusinessNumberAccessRepository repository,
+            @Qualifier("customerCatalogOfferReader") CustomerCatalogOfferReader reader) {
+        return new CustomerCatalogOfferQueryService(template, context, repository, reader);
+    }
+
+    @Bean
+    @Lazy
+    CustomerCatalogOfferCursorCodec customerCatalogOfferCursorCodec(CustomerCatalogOfferCursorProperties properties) {
+        return new CustomerCatalogOfferCursorCodec(properties);
+    }
+
     @Bean
     @Lazy
     TransactionTemplate customerEvidenceTransactionTemplate(

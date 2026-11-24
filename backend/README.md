@@ -99,6 +99,15 @@ Existing TLS, pg_hba, protected credential custody, pool-drain and rollback
 ownership prerequisites remain unchanged. Rollback means transaction abort or
 Controller/Database-owned backup restore, not a privilege REVOKE migration.
 
+## PA40B Current Customer Catalog Offer Read Boundary — 2026-11-24
+
+PA40B adds exactly one read endpoint, `GET /api/v1/customer/catalog/offers`, through the existing customer pool and `customer_iam_role`. It implements the already-frozen OpenAPI operation; no migration, OpenAPI, docs12/14/15/17, pool, identity, membership, grant or write privilege changes. V001–V019 bytes and the PA25 seven-login, eleven-membership-edge, nine-monitored-role graph remain frozen.
+
+The owner reader CustomerCatalogOfferReader (implemented by JooqCustomerCatalogOfferReader) reads only the 22 V019-granted columns across catalog product/version/offer/benefit on the qualified customer DSL. CustomerCatalogOfferQueryService verifies the trusted customer caller and selected workspace, then reads under a read-only REPEATABLE_READ/REQUIRES_NEW transaction on the existing customer query pool. Visibility is ACTIVE version + ACTIVE offer + caller channel + derived audience (PERSONAL or ENTERPRISE), with an optional offerType narrowing; QUOTE rows project a null price. The projection is the exact 13-field offer item and 4-field benefit line with canonical benefit ordering. No write, count, OFFSET, SELECT * or adjacent column is touched.
+
+Pagination is a mixed keyset (productCode ASC, versionNo DESC, catalogOfferId ASC) with an endpoint-isolated HMAC cursor. The cursor key is supplied only by `ONECALL_CUSTOMER_CATALOG_OFFER_CURSOR_HMAC_KEY` (canonical base64 of 32 bytes, no default); a missing or invalid key fails closed. A malformed or tampered cursor, or account/workspace/scope/endpoint/sort replay, is CURSOR_INVALID (400); only a normalized channel/audience/offerType change after valid scope and MAC verification is CURSOR_FILTER_MISMATCH (400). The endpoint emits no 429 and adds no limiter.
+
+CustomerCatalogOffersController is admitted by the existing customer boundary filter for GET only; default and web-only runtime remain fail-closed without a verified session. Production acceptance is **NOT EXECUTED**: TLS/pg_hba, credential custody/rotation for the new cursor key, pool drain and rollback ownership remain Platform/Security/Operations prerequisites. Column ACLs are not RLS; the ACTIVE/channel/audience predicates are the application row control.
 
 <!-- PA36 HISTORICAL BODY -->
 

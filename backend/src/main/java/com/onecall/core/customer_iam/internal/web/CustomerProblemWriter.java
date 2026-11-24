@@ -105,7 +105,7 @@ public final class CustomerProblemWriter {
             case "FORBIDDEN" -> 403;
             case "NOT_FOUND", "SHARE_TOKEN_INVALID" -> 404;
             case "VALIDATION_FAILED" -> 422;
-            case "CURSOR_INVALID" -> 400;
+            case "CURSOR_INVALID", "CURSOR_FILTER_MISMATCH" -> 400;
             case "CONSENT_REQUIRED", "ACTIVATION_CONSENT_DECLINED" -> 409;
             case "RATE_LIMITED" -> 429;
             case "SERVICE_UNAVAILABLE" -> 503;
@@ -123,6 +123,7 @@ public final class CustomerProblemWriter {
             case "SHARE_EXPIRED" -> "Share expired";
             case "VALIDATION_FAILED" -> "Request validation failed";
             case "CURSOR_INVALID" -> "Invalid cursor";
+            case "CURSOR_FILTER_MISMATCH" -> "Cursor filter mismatch";
             case "CONSENT_REQUIRED" -> "Current consent required";
             case "ACTIVATION_CONSENT_DECLINED" -> "Activation consent declined";
             case "RATE_LIMITED" -> "Too many requests";

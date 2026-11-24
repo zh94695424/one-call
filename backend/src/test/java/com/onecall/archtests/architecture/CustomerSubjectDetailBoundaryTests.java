@@ -54,7 +54,7 @@ class CustomerSubjectDetailBoundaryTests {
         assertThat(CustomerSubjectOrderCountReader.class.getMethod("countForWorkspace", UUID.class, UUID.class, UUID.class).getReturnType()).isEqualTo(long.class);
         for (var entry : Map.of("subject_number", "customer-subject-query", "evidence", "customer-subject-count-query", "catalog_order", "customer-subject-count-query").entrySet())
             assertThat(modules.getModuleByName(entry.getKey()).orElseThrow().getNamedInterfaces().getByName(entry.getValue())).isPresent();
-        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(12);
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(13);
     }
 
     @Test
