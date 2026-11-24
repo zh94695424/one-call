@@ -49,7 +49,7 @@ class CustomerCatalogOfferBoundaryTests {
             }
         }
         var modules = ApplicationModules.of(OneCallApplication.class);
-        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(13);
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(14);
         modules.verify();
     }
 

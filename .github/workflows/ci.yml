@@ -162,8 +162,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 1071:
-              sys.exit("expected exactly 1071 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 1127:
+              sys.exit("expected exactly 1127 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -2438,11 +2438,130 @@ jobs:
               for class_name, names in additions.items():
                   assert not (target.get(class_name, set()) & names)
                   target.setdefault(class_name, set()).update(names)
+          pa41_unit_additions = {
+              'com.onecall.archtests.CustomerOrdersWebTests': {
+                  'personalOrderReturns201AndFrozenProjection',
+                  'identicalReplayReturns200AndSameBody',
+                  'authenticationPrecedesBodyAndHeaderValidation',
+                  'trustedChannelWorkspaceAndAccountCannotBeOverridden',
+                  'strictBodyRejectsDuplicatesUnknownFieldsAndCoercion',
+                  'acceptOnlyAndPolicyFieldBoundsAreExact',
+                  'idempotencyHeaderIsSingleExactAndBounded475',
+                  'typedProblemsHaveFrozenStatusTitlesAndTrace',
+                  'ordersRouteDoesNotAdmitReadOrAliasEndpoints',
+                  'unavailableOwnersAndUnexpectedFailuresAreSanitized',
+              },
+              'com.onecall.archtests.CustomerOrderConfigurationTests': {
+                  'reusesOnlyExistingLoPoolManagerAndDsl',
+                  'requiresWritableReadCommittedRequiresNewTemplate',
+                  'ownerHandoffIsMandatoryOnSameResource',
+                  'missingPersistenceDependenciesFailClosedLazily',
+                  'currentPurchasePolicyHasNoDemoOrTrialFallback',
+                  'customerAdapterUsesOnlyTrustedPrincipalValues',
+                  'duplicateOrAmbiguousOwnerBeansFailClosed',
+                  'legacyCustomerConfigurationsRemainUnchanged',
+              },
+              'com.onecall.core.catalog_order.internal.customerorder.CustomerOrderSemanticsTests': {
+                  'consentEventIdentityMatchesCanonical81CharacterVectors',
+                  'unicodeAndCaseKeysRemainDistinctWithoutNormalization',
+                  'platformPurchaseKeyMatches512CharacterBoundary',
+                  'orderFingerprintUsesOnlyFrozenTenSemanticFields',
+                  'consentFingerprintUsesOnlyFrozenElevenSemanticFields',
+                  'snapshotCopiesAllApprovedCommerceAndScheduleFields',
+                  'snapshotHashUsesCanonicalFullSnapshotNotProjection',
+                  'personalPayableMatrixAndIntegerAmountAreExact',
+                  'enterpriseQuoteAndNonPersonalCatalogFactsFailClosed',
+                  'approvedSchedulesMustMatchEveryLineAndInstallment',
+                  'versionTokenAndOptionalExpectationAreComparedExactly',
+                  'responseProjectionAndOrderNumberAreDeterministic',
+              },
+              'com.onecall.core.catalog_order.internal.customerorder.CustomerOrderCreationServiceTests': {
+                  'newPersonalOrderRunsOneOwnerBoundTransaction',
+                  'authorityRealNameAndActivationPrecedeReplay',
+                  'nonpayableCatalogPrecedesUnknownAndConsent',
+                  'replayValidatesOriginalConsentAndReturnsImmutableResult',
+                  'changedInputConflictsBeforeNewConsent',
+                  'unknownOrderBlocksOnlyNewCheckout',
+                  'consentDenialRollsBackNewIdempotency',
+                  'completeOutboxAndAuditHaveExactOwnerOrder',
+                  'failureAndRestorationPreservePrimaryException',
+                  'noPaymentIssuanceOrRemoteCollaboratorIsInvoked',
+              },
+              'com.onecall.core.activation_consent.internal.purchase.PurchaseConsentServiceTests': {
+                  'lockOnlyReturnsExistingActivationWithoutCreatingHead',
+                  'appendRequiresPriorLockWitnessAndMandatoryTransaction',
+                  'currentApprovedPolicyAndContentAreRequired',
+                  'consentSnapshotAndFingerprintMatchFrozenInputs',
+                  'sameEventReturnsFirstConsentAndChangedSemanticsConflict',
+                  'declinedMismatchedAndConsumedConsentFailClosed',
+                  'factPhasesEmitOnlyOwnedPurchaseOutboxAndAudit',
+                  'roleRestoresOnSuccessFailureAndAbortedSql',
+              },
+              'com.onecall.archtests.architecture.CustomerOrderCreationBoundaryTests': {
+                  'newNamedInterfacesAndExactDependencyDeltasAreBounded',
+                  'customerOrderAdapterHasNoSqlOrTransactionAuthority',
+                  'checkoutUsesOnlyExistingLoResourcesAndLiteralRoles',
+                  'ownerSqlUsesOnlyFrozenGrantedColumnsAndWrites',
+                  'frozenContractsMigrationsAndPa25RemainByteIdentical',
+                  'commandGraphHasNoPaymentEntitlementOrRemoteSideEffects',
+                  'productionAndTestAllowlistIsExact',
+                  'sourceCiPomAndXmlInventoryIsExact',
+              },
+          }
+          pa41_container_additions = {
+              'com.onecall.archtests.container.CustomerOrdersIT': {
+                  'personalSubscriptionCheckoutCreatesExactUnpaidOrder',
+                  'personalOneTimeAndAddOnCheckoutUseServerPrices',
+                  'miniappAndWebUseVerifierAttestedChannels',
+                  'identicalRetryReturnsFirstImmutableOrderWith200',
+                  'changedPurchaseSemanticsConflictWithZeroDelta',
+                  'changedConsentPolicyPromptOrContentConflictsWithZeroDelta',
+                  'concurrentSameKeyHasOneCreateAndOneReplay',
+                  'concurrentChangedKeyPayloadHasOneWinnerAndConflict',
+                  'unknownOrderBlocksNewCheckoutButNotCreationReplay',
+                  'purchaseConsentIdentityAndLongKeysMatchCanonicalBytes',
+                  'invalidKeysAndForgedBodiesNeverWrite',
+                  'ordinaryClientRequiresCurrentVerifiedRealName',
+                  'inactiveMissingOrSuspendedActivationDeniesBeforeReplay',
+                  'currentAccountWorkspaceMembershipAndOwnershipAreReread',
+                  'enterpriseQuoteCheckoutFailsClosedWithZeroDelta',
+                  'inactiveAndWrongChannelCatalogOffersFailClosed',
+                  'staleVersionAndNullOrNonpayableFactsCannotCheckout',
+                  'completeApprovedScheduleIsFrozenAndNeverComputed',
+                  'missingStaleDeclinedOrMismatchedConsentRollsBack',
+                  'publicationAndOffsaleSerializeWithCheckout',
+                  'activationAndLifecycleMutationsSerializeWithCheckout',
+                  'personalAccountDisableSerializesWithCheckout',
+                  'injectedFailureAtEveryWriteStageLeavesZeroPartialRows',
+                  'replayAfterCatalogOrPolicyChangeFollowsExactPrecedence',
+                  'allPathsAvoidPaymentIssuanceAndProviderCalls',
+              },
+              'com.onecall.archtests.container.CustomerOrderRoleLeastPrivilegeIT': {
+                  'postgres16Flyway19AndExactPa25TopologyAreUsed',
+                  'loHasNoRightsUntilLiteralOwnerRoleSwitch',
+                  'customerAndActivationPoolsCannotSubstituteForLoTransaction',
+                  'orderAndConsentShareConnectionTransactionAndLogin',
+                  'activationRowLockIsTakenOnlyByOwnerBeforeIdempotency',
+                  'catalogReadsOnlyPermittedForeignColumnsWithoutLocks',
+                  'roleHandoffsRestoreOnSuccessReplayAndTypedDenial',
+                  'sqlAbortAndRestorationFaultRollbackAndCleanPool',
+                  'missingMembershipOrRoleFailsClosedWithoutAclRepair',
+                  'lockOrderAndTimeoutsMatchExistingLifecycleAndCatalogKeys',
+                  'platformAuditAndOutboxTablesAreFunctionOnly',
+                  'noNewDatabaseObjectPrivilegeOrMigrationAppears',
+              },
+          }
+          for target, additions in ((unit_expected, pa41_unit_additions), (container_expected, pa41_container_additions)):
+              for class_name, names in additions.items():
+                  assert not (target.get(class_name, set()) & names)
+                  target.setdefault(class_name, set()).update(names)
           if source_classes != set(unit_expected) | set(container_expected):
               sys.exit("unexpected/missing source test class")
           method_pattern = re.compile(r"@Test\s+(?:public\s+)?void\s+(\w+)\s*\(")
           pa40a_start_totals = [0, 0]
           pa40a_start_line_scan_total = 0
+          pa41_start_totals = [0, 0]
+          pa41_start_line_scan_total = 0
           pa40b_start_totals = [0, 0]
           pa40b_start_line_scan_total = 0
           pa39_start_totals = [0, 0]
@@ -2514,88 +2633,93 @@ jobs:
               pa39_names = pa39_unit_additions.get(class_name, set()) | pa39_container_additions.get(class_name, set())
               pa40a_names = pa40a_unit_additions.get(class_name, set()) | pa40a_container_additions.get(class_name, set())
               pa40b_names = pa40b_unit_additions.get(class_name, set()) | pa40b_container_additions.get(class_name, set())
-              additions = pa18_names | pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names
+              pa41_names = pa41_unit_additions.get(class_name, set()) | pa41_container_additions.get(class_name, set())
+              additions = pa18_names | pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names
               assert additions <= set(names), f"missing PA18/PA19/PA20/PA21/PA22/PA23 additions: {class_name}"
               if names:
                   suite_index = 0 if class_name in unit_expected else 1
                   method_totals[suite_index] += len(names)
-                  pa40b_start_totals[suite_index] += len(names) - len(pa40b_names)
-                  pa40a_start_totals[suite_index] += len(names) - len(pa40a_names | pa40b_names)
-                  pa39_start_totals[suite_index] += len(names) - len(pa39_names | pa40a_names | pa40b_names)
-                  pa38_start_totals[suite_index] += len(names) - len(pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa37_start_totals[suite_index] += len(names) - len(pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa35_start_totals[suite_index] += len(names) - len(pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa36_start_totals[suite_index] += len(names) - len(pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa34_start_totals[suite_index] += len(names) - len(pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa33_start_totals[suite_index] += len(names) - len(pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa32_start_totals[suite_index] += len(names) - len(pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa31_start_totals[suite_index] += len(names) - len(pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa30_start_totals[suite_index] += len(names) - len(pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa29_start_totals[suite_index] += len(names) - len(pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa28_start_totals[suite_index] += len(names) - len(pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa27_start_totals[suite_index] += len(names) - len(pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
+                  pa41_start_totals[suite_index] += len(names) - len(pa41_names)
+                  pa40b_start_totals[suite_index] += len(names) - len(pa40b_names | pa41_names)
+                  pa40a_start_totals[suite_index] += len(names) - len(pa40a_names | pa40b_names | pa41_names)
+                  pa39_start_totals[suite_index] += len(names) - len(pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa38_start_totals[suite_index] += len(names) - len(pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa37_start_totals[suite_index] += len(names) - len(pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa35_start_totals[suite_index] += len(names) - len(pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa36_start_totals[suite_index] += len(names) - len(pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa34_start_totals[suite_index] += len(names) - len(pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa33_start_totals[suite_index] += len(names) - len(pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa32_start_totals[suite_index] += len(names) - len(pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa31_start_totals[suite_index] += len(names) - len(pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa30_start_totals[suite_index] += len(names) - len(pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa29_start_totals[suite_index] += len(names) - len(pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa28_start_totals[suite_index] += len(names) - len(pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa27_start_totals[suite_index] += len(names) - len(pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
                   baseline_totals[suite_index] += len(names) - len(additions)
-                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa20_start_totals[suite_index] += len(names) - len(pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa21_start_totals[suite_index] += len(names) - len(pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa22_start_totals[suite_index] += len(names) - len(pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa23_start_totals[suite_index] += len(names) - len(pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
-                  pa25_start_totals[suite_index] += len(names) - len(pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names)
+                  pa19_start_totals[suite_index] += len(names) - len(pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa20_start_totals[suite_index] += len(names) - len(pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa21_start_totals[suite_index] += len(names) - len(pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa22_start_totals[suite_index] += len(names) - len(pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa23_start_totals[suite_index] += len(names) - len(pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+                  pa25_start_totals[suite_index] += len(names) - len(pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names)
+              pa41_start_source = method_pattern.sub(
+                  lambda match: match.group().replace("@Test", "", 1) if match.group(1) in pa41_names else match.group(), source)
+              pa41_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa41_start_source.splitlines())
               pa40b_start_source = method_pattern.sub(
-                  lambda match: match.group().replace("@Test", "", 1) if match.group(1) in pa40b_names else match.group(), source)
+                  lambda match: match.group().replace("@Test", "", 1) if match.group(1) in pa40b_names | pa41_names else match.group(), source)
               pa40b_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa40b_start_source.splitlines())
               pa40a_start_source = method_pattern.sub(
-                  lambda match: match.group().replace("@Test", "", 1) if match.group(1) in pa40a_names | pa40b_names else match.group(), source)
+                  lambda match: match.group().replace("@Test", "", 1) if match.group(1) in pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa40a_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa40a_start_source.splitlines())
               pa39_start_source = method_pattern.sub(
-                  lambda match: "" if match.group(1) in pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  lambda match: "" if match.group(1) in pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa39_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa39_start_source.splitlines())
               pa38_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa38_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa38_start_source.splitlines())
               pa37_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "")
-                  if match.group(1) in pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa37_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa37_start_source.splitlines())
               pa35_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa35_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa35_start_source.splitlines())
               pa36_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa36_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa36_start_source.splitlines())
               pa34_start_source = method_pattern.sub(
-                  lambda match: "" if match.group(1) in pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  lambda match: "" if match.group(1) in pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa34_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa34_start_source.splitlines())
               pa33_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa33_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa33_start_source.splitlines())
               pa32_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa32_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa32_start_source.splitlines())
               pa31_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa31_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa31_start_source.splitlines())
               pa30_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa30_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa30_start_source.splitlines())
               pa29_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa29_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa29_start_source.splitlines())
               pa28_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa28_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa28_start_source.splitlines())
               pa27_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa27_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa27_start_source.splitlines())
               baseline_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
@@ -2604,27 +2728,27 @@ jobs:
               baseline_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in baseline_source.splitlines())
               pa19_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa19_names | pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa19_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa19_start_source.splitlines())
               pa20_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa20_names | pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa20_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa20_start_source.splitlines())
               pa21_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa21_names | pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa21_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa21_start_source.splitlines())
               pa22_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa22_names | pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa22_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa22_start_source.splitlines())
               pa23_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa23_names | pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa23_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa23_start_source.splitlines())
               pa25_start_source = method_pattern.sub(
                   lambda match: match.group().replace("@Test", "", 1)
-                  if match.group(1) in pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names else match.group(), source)
+                  if match.group(1) in pa25_names | pa26_names | pa27_names | pa28_names | pa29_names | pa30_names | pa31_names | pa32_names | pa33_names | pa34_names | pa36_names | pa35_names | pa37_names | pa38_names | pa39_names | pa40a_names | pa40b_names | pa41_names else match.group(), source)
               pa25_start_line_scan_total += sum(bool(re.search(r"@Test\b", line)) for line in pa25_start_source.splitlines())
               comment_hits.extend((path.name, line.strip()) for line in source.splitlines()
                                   if re.search(r"@Test\b", line) and line.lstrip().startswith("//"))
@@ -2705,16 +2829,20 @@ jobs:
           assert [len(names) for names in pa40b_container_additions.values()] == [19]
           assert pa40b_start_totals == [1026, 682]
           assert pa40b_start_line_scan_total == 1709
-          assert line_scan_total == 1773
-          assert method_totals == [1071, 701] and sum(method_totals) == 1772
-          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, pa21_start_line_scan_total, pa22_start_line_scan_total, pa23_start_line_scan_total, pa38_start_line_scan_total, line_scan_total) == (291, 321, 361, 401, 446, 481, 1441, 1773)
+          assert [len(names) for names in pa41_unit_additions.values()] == [10, 8, 12, 10, 8, 8]
+          assert [len(names) for names in pa41_container_additions.values()] == [25, 12]
+          assert pa41_start_totals == [1071, 701]
+          assert pa41_start_line_scan_total == 1773
+          assert line_scan_total == 1866
+          assert method_totals == [1127, 738] and sum(method_totals) == 1865
+          assert (baseline_line_scan_total, pa19_start_line_scan_total, pa20_start_line_scan_total, pa21_start_line_scan_total, pa22_start_line_scan_total, pa23_start_line_scan_total, pa38_start_line_scan_total, line_scan_total) == (291, 321, 361, 401, 446, 481, 1441, 1866)
           assert comment_hits == [("PostgresContainerIT.java", "// evidence inside this existing method; no new @Test and no catalog weakening.")]
-          assert len(unit_expected) == 110
-          assert len(container_expected) == 42
+          assert len(unit_expected) == 116
+          assert len(container_expected) == 44
           pom = ET.parse("pom.xml").getroot()
           ns = {"m": "http://maven.apache.org/POM/4.0.0"}
           includes = pom.findall(".//m:plugin[m:artifactId='maven-failsafe-plugin']/m:configuration/m:includes/m:include", ns)
-          assert len(includes) == 42
+          assert len(includes) == 44
           assert {include.text for include in includes} == {"**/" + name.rsplit(".", 1)[1] + ".java" for name in container_expected}
           assert len(container_expected["com.onecall.archtests.container.PublicShareAdmissionIT"]) == 42
           assert len(container_expected["com.onecall.archtests.container.MediaPlaybackIT"]) == 9
@@ -2723,9 +2851,9 @@ jobs:
           assert len(unit_expected["com.onecall.archtests.architecture.SharingQueryBoundaryTests"]) == 8
           assert len(unit_expected["com.onecall.archtests.sharing.MediaPlaybackCredentialAuthorityTests"]) == 24
           assert len(container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"]) == 9
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 1071)
-          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 701)
-          print("PA40B exact source=CI=POM=XML inventory passed: 110/1071 + 42/701 = 152/1772; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> PA25-start 309+214=523 -> PA26-start 309+234=543 -> PA27-start 309+246=555 -> PA28-start 341+272=613 -> PA29-start 375+302=677 -> PA30-start 417+336=753 -> PA31-start 468+370=838 -> PA32-start 520+404=924 -> PA33-start 574+440=1014 -> PA34-start 644+476=1120 -> PA36-start 704+504=1208 -> PA35-start 712+520=1232 -> PA37-start 788+556=1344 -> PA38-start 848+592=1440 -> PA39-start 934+630=1564 -> PA40A-start 1018+666=1684 -> PA40B-start 1026+682=1708 -> current 1071+701=1772; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524 -> 544 -> 556 -> 614 -> 678 -> 754 -> 839 -> 925 -> 1015 -> 1121 -> 1209 -> 1233 -> 1345 -> 1441 -> 1565 -> 1685 -> 1709 -> 1773; POM 42 includes; zero skips/errors/failures")
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 1127)
+          exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 738)
+          print("PA41 exact source=CI=POM=XML inventory passed: 116/1127 + 44/738 = 160/1865; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> PA25-start 309+214=523 -> PA26-start 309+234=543 -> PA27-start 309+246=555 -> PA28-start 341+272=613 -> PA29-start 375+302=677 -> PA30-start 417+336=753 -> PA31-start 468+370=838 -> PA32-start 520+404=924 -> PA33-start 574+440=1014 -> PA34-start 644+476=1120 -> PA36-start 704+504=1208 -> PA35-start 712+520=1232 -> PA37-start 788+556=1344 -> PA38-start 848+592=1440 -> PA39-start 934+630=1564 -> PA40A-start 1018+666=1684 -> PA40B-start 1026+682=1708 -> PA41-start 1071+701=1772 -> current 1127+738=1865; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524 -> 544 -> 556 -> 614 -> 678 -> 754 -> 839 -> 925 -> 1015 -> 1121 -> 1209 -> 1233 -> 1345 -> 1441 -> 1565 -> 1685 -> 1709 -> 1773 -> 1866; POM 44 includes; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes
         run: |
