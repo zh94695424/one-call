@@ -4,11 +4,29 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa40a-customer-catalog-offer-read-acl`
+> Branch: `codex/pa40b-customer-catalog-offer-read`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
 > Dispatch providers: ONECALL planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent Reviewer A's primary is `ds` / DeepSeek; after repeated provider tool failure in the current PA34 round, the active A reserve is Qwen3.8 Max `qwen38max`. Reviewer B uses `mimo26flash` when available; after the user's current "MiMo quota exhausted" notice, the active B route is Qwen3.8 Flash `qwen38flash`. A/B use fresh isolated inputs, submit before the Controller reads either conclusion, and never mutate source or remote state. All artifacts and adjudications follow the current confirmed goal and accepted plan.
+
+## Active resume checkpoint - PA40B
+
+### PA40B customer catalog offer read - goal confirmation accepted
+
+- Start state: PA40A PR #51 is MERGED at `32cf930a16803deb6381615e197c02e73ac5c22e`; `origin/main` resolves exactly that merge. Managed worktree `C:\Users\Administrator\.codex\worktrees\pa40b-customer-catalog-offer-read\codex-call`; branch `codex/pa40b-customer-catalog-offer-read`; created from the exact merge and initially clean. The PA40A worktree and private helpers remain preserved and were not copied.
+- Active work unit: `PA40B-customer-catalog-offer-read`; type: customer-facing read-only API feature. Goal confirmed by the user on 2026-11-24.
+- Binding capability: implement only frozen operation `GET /api/v1/customer/catalog/offers`, operationId `listCustomerCatalogOffers`, through the existing customer datasource/pool and `customer_iam_role`. It returns the currently authorized in-sale catalog offers using merged V019 column privileges.
+- Binding runtime authority: account, workspace and session channel are trusted facts. Query parameters may only narrow within that authority and may never select another account, workspace, channel or audience. Use one existing customer-pool read-only transaction, explicitly enter and verify `customer_iam_role`, preserve pool state, and add no pool, login, credential, role, membership, schema grant or migration.
+- Binding projection: only `sale_status=ACTIVE` versions and `offer_status=ACTIVE` offers matching the trusted channel/audience are visible. Return exactly `CatalogOfferPage {items,nextCursor,hasMore}`; each required `CatalogOffer` field and each benefit field follows the frozen OpenAPI schema exactly, including explicit null `priceCents` for QUOTE, stored `versionToken`, canonical benefit ordering and omission of internal/sensitive facts.
+- Binding pagination: order `productCode asc, versionNo desc, catalogOfferId asc`; default limit20, inclusive1-100; fetch limit+1 offers before benefit fanout; cursor binds the endpoint, account, workspace, effective channel/audience/offerType digest and sort semantics; invalid and filter-mismatch cursors fail closed; no offset or count.
+- Success signal: real customer HTTP requests with a real customer login return only authorized ACTIVE offers; adjacent columns, wrong contexts, hidden fields and cursor widening are denied; DRAFT/OFFSALE/withdrawn/wrong-channel/wrong-audience facts never appear; success, denial and dependency failure paths cause zero business/audit/outbox/idempotency writes; PostgreSQL16 and web tests prove exact bytes, headers, error precedence, role restoration and existing customer routes remain unchanged.
+- Binding direct evidence: OpenAPI lines 614-690 define the operation, sort/filter/error contract, and lines 5291-5376 define the exact schemas; `CustomerPersistenceConfiguration` owns `customerQueryDataSource`, `customerQueryDsl`, and read-only transaction wiring; existing customer query services use `SET LOCAL ROLE customer_iam_role`; `customer_iam` currently has no catalog-offer controller/service; `catalog_order` currently exposes an Operations-specific reader but no customer query port; merged V019 grants exactly the 22 approved catalog columns to the customer role.
+- Binding non-goals: no Flyway migration or changes to V001-V019/PA25/SQL ACLs; no OpenAPI or docs12/14/15/17 semantic changes; no application writes, purchase/order/payment/consent/entitlement/catalog-management behavior; no RLS/row-security redesign, cache/search/read-model, generic role router, cross-pool framework, new credential family, Operations pool reuse, frontend or production-readiness claim.
+- Slice principle: one end-to-end behavioral slice covering authentication/scope, customer-owned query orchestration, catalog-owned customer query port/reader, cursor, exact response, PostgreSQL proof and regression guards. Splitting controller/service/repository/DB layers would create artificial gates around one atomic read capability.
+- Plan constraints: settle exact filter narrowing and error precedence, endpoint-domain-separated cursor format/reuse of the existing configured secret mechanism, `CURSOR_FILTER_MISMATCH` customer problem mapping, exact owner interfaces, stable query/batch behavior, immutable representative ordering, new/modified path allowlist, full test identities and CI/POM/inventory deltas. If source proves the read requires a migration, new pool/credential/topology, or public-contract change, stop rather than widening scope.
+- Blocking open questions: none at goal level. Implementation detail choices belong to the plan and independent plan review.
+- Current gate / next entry point: `plan`, routed through `sub-agents` to GPT `gpt-6.1-sol` / high. The author may inspect the complete source and write only `docs/gateflow/pa40b-customer-catalog-offer-read-plan.md`; no production/test/migration/OpenAPI/README/CI/POM/Control edit, commit, push, PR, merge, approval, mark-ready, reviewer request, external comment or issue mutation. After Controller intake, freeze the plan and perform independent A/DeepSeek and B/Qwen3.8 Flash `planreview`.
 
 ## Active resume checkpoint - PA40A
 
