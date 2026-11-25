@@ -10,7 +10,7 @@ import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class CustomerOrderSemanticsTests {
-    static final UUID ACCOUNT = UUID.fromString("10000000-0000-0000-0000-000000000001"), SUBJECT = UUID.randomUUID(), VERSION = UUID.randomUUID(), OFFER = UUID.randomUUID(), PRODUCT = UUID.randomUUID(), LINE = UUID.randomUUID();
+    static final UUID ACCOUNT = UUID.fromString("10000000-0000-0000-0000-000000000001"), SUBJECT = UUID.randomUUID(), VERSION = UUID.randomUUID(), OFFER = UUID.randomUUID(), PRODUCT = UUID.randomUUID(), LINE = UUID.randomUUID(), SECOND_LINE = UUID.randomUUID();
     static Caller caller() { return new Caller(ACCOUNT, "WEB", "PERSONAL", null); }
     static Command command(String key, String token) { return new Command(SUBJECT, OFFER, "WEB", "ACCEPT", "SYNTHETIC", "1", "1", "a".repeat(64), token, key, UUID.randomUUID()); }
     static String source(String terms) {
@@ -20,6 +20,7 @@ class CustomerOrderSemanticsTests {
         return new CustomerOrderRepository.Catalog(OFFER, VERSION, PRODUCT, "SYNTHETIC", 1, "WEB", "ACTIVE", "ACTIVE", "Exact", "ONE_TIME", "PERSONAL", 123L, "CNY", "ONCE", 1, 0, source, CustomerOrderSemantics.sha(CustomerOrderSemantics.canonical(CustomerOrderSemantics.parse(source))));
     }
     static List<CustomerOrderRepository.BenefitRow> benefits() { return List.of(new CustomerOrderRepository.BenefitRow(LINE, "AI_SECONDS", 100, 30, 0)); }
+    static List<CustomerOrderRepository.BenefitRow> multiBenefits() { return List.of(new CustomerOrderRepository.BenefitRow(LINE, "AI_SECONDS", 100, 30, 0), new CustomerOrderRepository.BenefitRow(SECOND_LINE, "STORAGE_BYTES", 50, 60, 0)); }
     static void code(Runnable action, Code code) { assertThatThrownBy(action::run).isInstanceOfSatisfying(OrderCreationException.class, failure -> assertThat(failure.code()).isEqualTo(code)); }
     @Test void consentEventIdentityMatchesCanonical81CharacterVectors() throws Exception {
         String bytes = "{\"accountId\":\"10000000-0000-0000-0000-000000000001\",\"clientIdempotencyKey\":\"key\"}";
@@ -92,6 +93,21 @@ class CustomerOrderSemanticsTests {
         vectors.forEach((bytes, hash) -> assertThat(CustomerOrderSemantics.sha(CustomerOrderSemantics.canonical(CustomerOrderSemantics.parse(bytes)))).isEqualTo(hash));
         String full = CustomerOrderSemantics.snapshot(catalog(source("{}")), benefits()), hash = CustomerOrderSemantics.sha(full);
         assertThat(CustomerOrderSemantics.sha(CustomerOrderSemantics.canonical(CustomerOrderSemantics.projection(full, hash)))).isNotEqualTo(hash);
+        var multi = (tools.jackson.databind.node.ObjectNode) CustomerOrderSemantics.parse(source("{}"));
+        var lines = (tools.jackson.databind.node.ArrayNode) multi.get("benefitLines");
+        var second = CustomerOrderSemantics.JSON.createObjectNode().put("lineKey", SECOND_LINE.toString()).put("entitlementType", "STORAGE_BYTES").put("quantity", 50).put("validityDays", 60).put("grantIntervalMonths", 0);
+        second.set("schedule", CustomerOrderSemantics.parse("[{\"installmentNo\":1,\"entitlementType\":\"STORAGE_BYTES\",\"units\":50,\"validFrom\":\"2027-01-01T00:00:00Z\",\"expiresAt\":\"2027-03-01T00:00:00Z\"}]"));
+        lines.insert(0, second); String multiSnapshot = CustomerOrderSemantics.snapshot(catalog(CustomerOrderSemantics.canonical(multi)), multiBenefits());
+        var stored = CustomerOrderSemantics.parse(multiSnapshot).get("benefitLines");
+        assertThat(stored).hasSize(2); assertThat(stored.get(0).get("entitlementType").asString()).isEqualTo("AI_SECONDS"); assertThat(stored.get(1).get("lineKey").asString()).isEqualTo(SECOND_LINE.toString());
+        var duplicate = (tools.jackson.databind.node.ObjectNode) CustomerOrderSemantics.parse(CustomerOrderSemantics.canonical(multi)); ((tools.jackson.databind.node.ObjectNode) duplicate.withArray("benefitLines").get(1)).put("lineKey", SECOND_LINE.toString());
+        code(() -> CustomerOrderSemantics.snapshot(catalog(CustomerOrderSemantics.canonical(duplicate)), multiBenefits()), Code.VALIDATION_FAILED);
+        var missing = (tools.jackson.databind.node.ObjectNode) CustomerOrderSemantics.parse(CustomerOrderSemantics.canonical(multi)); missing.withArray("benefitLines").remove(1);
+        code(() -> CustomerOrderSemantics.snapshot(catalog(CustomerOrderSemantics.canonical(missing)), multiBenefits()), Code.VALIDATION_FAILED);
+        var extra = (tools.jackson.databind.node.ObjectNode) CustomerOrderSemantics.parse(CustomerOrderSemantics.canonical(multi)); ((tools.jackson.databind.node.ObjectNode) extra.withArray("benefitLines").get(1)).put("lineKey", UUID.randomUUID().toString());
+        code(() -> CustomerOrderSemantics.snapshot(catalog(CustomerOrderSemantics.canonical(extra)), multiBenefits()), Code.INTERNAL);
+        var mismatched = (tools.jackson.databind.node.ObjectNode) CustomerOrderSemantics.parse(CustomerOrderSemantics.canonical(multi)); ((tools.jackson.databind.node.ObjectNode) mismatched.withArray("benefitLines").get(1)).put("quantity", 51);
+        code(() -> CustomerOrderSemantics.snapshot(catalog(CustomerOrderSemantics.canonical(mismatched)), multiBenefits()), Code.INTERNAL);
     }
     @Test void personalPayableMatrixAndIntegerAmountAreExact() {
         CustomerOrderSemantics.payable(catalog(source("{}")), command("key", null), caller());

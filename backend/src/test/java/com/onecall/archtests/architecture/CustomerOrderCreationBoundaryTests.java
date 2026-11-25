@@ -13,6 +13,13 @@ import org.springframework.modulith.core.ApplicationModules;
 class CustomerOrderCreationBoundaryTests {
     static final Path MAIN = Path.of("src/main/java/com/onecall/core");
     static final List<String> PRODUCTION = List.of("customer_iam/internal/application/CustomerOrderCommandService.java", "customer_iam/internal/web/CustomerOrdersController.java", "customer_iam/internal/web/CustomerOrderJsonBinder.java", "customer_iam/internal/web/CustomerOrderDtos.java", "catalog_order/customerorder/package-info.java", "catalog_order/customerorder/CustomerOrderCreationService.java", "catalog_order/customerorder/OrderCreationException.java", "catalog_order/internal/customerorder/CustomerOrderConfiguration.java", "catalog_order/internal/customerorder/DefaultCustomerOrderCreationService.java", "catalog_order/internal/customerorder/CustomerOrderRepository.java", "catalog_order/internal/customerorder/JooqCustomerOrderRepository.java", "catalog_order/internal/customerorder/CustomerOrderSemantics.java", "activation_consent/purchaseconsent/package-info.java", "activation_consent/purchaseconsent/PurchaseConsentService.java", "activation_consent/internal/purchase/PurchaseConsentConfiguration.java", "activation_consent/internal/purchase/DefaultPurchaseConsentService.java", "activation_consent/internal/purchase/JooqPurchaseConsentRepository.java", "activation_consent/internal/purchase/PurchaseConsentSemantics.java");
+    static final Map<String, Set<String>> CUSTOMER_ADAPTER_FOREIGN_EXCEPTIONS = Map.of(
+            "customer_iam/internal/web/CustomerBoundaryFilter.java", Set.of(),
+            "customer_iam/internal/web/CustomerProblemWriter.java", Set.of(
+                    "com.onecall.core.sharing.internal.command.ShareCommandException",
+                    "com.onecall.core.sharing.internal.publicquery.PublicShareQueryException",
+                    "com.onecall.core.sharing.internal.publicadmission.ShareAdmissionException"),
+            "customer_iam/internal/web/CustomerWebConfiguration.java", Set.of());
     String owner(String relative) throws Exception { return Files.readString(MAIN.resolve(relative)); }
     String graph() throws Exception { StringBuilder source = new StringBuilder(); for (String path : PRODUCTION) source.append(owner(path)).append('\n'); return source.toString(); }
     @Test void newNamedInterfacesAndExactDependencyDeltasAreBounded() throws Exception {
@@ -27,10 +34,36 @@ class CustomerOrderCreationBoundaryTests {
         for (String path : PRODUCTION) if (path.contains("purchase")) assertThat(owner(path)).doesNotContain("activationtrial", "activation-trial", "issue_first_trial");
     }
     @Test void customerOrderAdapterHasNoSqlOrTransactionAuthority() throws Exception {
-        for (String path : PRODUCTION) if (path.startsWith("customer_iam/")) {
-            String source = owner(path); assertThat(source).doesNotContain("org.jooq", "java.sql", "javax.sql", "TransactionTemplate", "@Transactional", "DataSource", "SET LOCAL ROLE");
-            assertThat(Pattern.compile("import com\\.onecall\\.core\\.(?!customer_iam)[^;]*\\.internal\\.").matcher(source).find()).isFalse();
+        for (String path : List.copyOf(PRODUCTION)) if (path.startsWith("customer_iam/")) assertAdapterHasNoAuthority(path, Set.of());
+        for (var adapter : CUSTOMER_ADAPTER_FOREIGN_EXCEPTIONS.entrySet()) assertAdapterHasNoAuthority(adapter.getKey(), adapter.getValue());
+        try (var files = Files.list(MAIN.resolve("customer_iam/internal/web"))) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".java")).sorted().toList()) {
+                String path = MAIN.relativize(file).toString().replace('\\', '/');
+                assertNoAuthorityTokens(path, owner(path));
+            }
         }
+    }
+    void assertAdapterHasNoAuthority(String path, Set<String> allowedForeignImports) throws Exception {
+        String source = owner(path); assertNoAuthorityTokens(path, source);
+        assertThat(foreignInternalReferences(source)).as(path).containsExactlyInAnyOrderElementsOf(allowedForeignImports);
+        assertThat(sharingInternalReferences(source)).as(path).containsExactlyInAnyOrderElementsOf(allowedForeignImports);
+        assertThat(Pattern.compile("(?m)^\\s*import\\s+static\\s+com\\.onecall\\.core\\.sharing\\.internal\\.").matcher(source).find()).as(path).isFalse();
+    }
+    void assertNoAuthorityTokens(String path, String source) {
+        assertThat(source).as(path).doesNotContain("org.jooq", "java.sql", "javax.sql", "TransactionTemplate", "@Transactional", "DataSource", "JdbcTemplate", "NamedParameterJdbcTemplate", "JdbcClient", "JdbcOperations", "DataSourceUtils", "SimpleJdbc", "org.springframework.jdbc", "SET LOCAL ROLE", "SET ROLE ", "RESET ROLE");
+        assertThat(Pattern.compile("(?i)\\b(?:SET\\s+(?:LOCAL\\s+|SESSION\\s+)?ROLE|RESET\\s+ROLE|COMMIT|ROLLBACK|SAVEPOINT|RELEASE\\s+SAVEPOINT|START\\s+TRANSACTION|BEGIN\\s+(?:TRANSACTION|WORK)|END\\s+(?:TRANSACTION|WORK)|ABORT)\\b|\\b(?:commit|rollback|setSavepoint|releaseSavepoint|rollbackToSavepoint)\\s*\\(").matcher(source).find()).as(path + " manual transaction/role authority").isFalse();
+    }
+    Set<String> foreignInternalReferences(String source) {
+        Set<String> references = new LinkedHashSet<>();
+        var matcher = Pattern.compile("com\\.onecall\\.core\\.(?!customer_iam)[A-Za-z0-9_]+\\.internal\\.[A-Za-z0-9_$.]+").matcher(source);
+        while (matcher.find()) references.add(matcher.group());
+        return references;
+    }
+    Set<String> sharingInternalReferences(String source) {
+        Set<String> references = new LinkedHashSet<>();
+        var matcher = Pattern.compile("com\\.onecall\\.core\\.sharing\\.internal\\.[A-Za-z0-9_$.]+").matcher(source);
+        while (matcher.find()) references.add(matcher.group());
+        return references;
     }
     @Test void checkoutUsesOnlyExistingLoResourcesAndLiteralRoles() throws Exception {
         String source = graph(); assertThat(source).contains("operationsSubjectReadCatalogSaleTransactionTemplate", "operationsSubjectReadCatalogSaleTransactionManager", "operationsSubjectReadDataSource", "operationsSubjectReadDsl", "Propagation.MANDATORY");

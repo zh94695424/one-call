@@ -149,11 +149,29 @@ class CustomerOrderRoleLeastPrivilegeIT {
         assertThat(fixture.entries).extracting(CustomerOrdersFixture.Entry::sql).contains("SET LOCAL statement_timeout = '2000ms'", "SET LOCAL lock_timeout = '250ms'", "SET LOCAL idle_in_transaction_session_timeout = '5000ms'");
     }
     @Test void platformAuditAndOutboxTablesAreFunctionOnly() throws Exception {
-        for (String role : List.of("catalog_order_role", "activation_consent_role")) for (String table : List.of("platform.outbox_event", "platform.idempotency_record", "audit.audit_fact")) denied(role, "DELETE FROM " + table);
+        for (String role : List.of("catalog_order_role", "activation_consent_role")) for (String table : List.of("platform.outbox_event", "platform.idempotency_record", "audit.audit_fact")) {
+            denied(role, "INSERT INTO " + table + " DEFAULT VALUES");
+            denied(role, "UPDATE " + table + " SET id=id WHERE false");
+            denied(role, "DELETE FROM " + table);
+            denied(role, "TRUNCATE " + table);
+        }
         var before = fixture.rows(); fixture.success(fixture.post("facts"), 201); fixture.bundle(before);
     }
     @Test void noNewDatabaseObjectPrivilegeOrMigrationAppears() throws Exception {
-        String sql = "SELECT md5(string_agg(oid::text||':'||coalesce(relacl::text,''),',' ORDER BY oid)) FROM pg_class WHERE relnamespace IN (SELECT oid FROM pg_namespace WHERE nspname IN ('catalog_order','activation_consent','platform','audit','customer_iam','organization_access','subject_number'))";
-        String before = fixture.value(sql); fixture.success(fixture.post("no-ddl"), 201); assertThat(fixture.value(sql)).isEqualTo(before); assertThat(fixture.base.psql("check").getExitCode()).isZero();
+        Map<String, String> before = fixture.databaseInventory();
+        String probeIndex = "pa41_inventory_probe_" + UUID.randomUUID().toString().replace('-', '_');
+        try {
+            fixture.sql("CREATE INDEX " + probeIndex + " ON catalog_order.customer_order (id)");
+            Map<String, String> changed = fixture.databaseInventory();
+            assertThat(changed).as("inventory sensitivity").isNotEqualTo(before);
+            assertThat(changed.get("indexes")).as("indexes sensitivity").isNotEqualTo(before.get("indexes"));
+        } finally {
+            fixture.sql("DROP INDEX IF EXISTS catalog_order." + probeIndex);
+        }
+        assertThat(fixture.databaseInventory()).as("inventory restoration").isEqualTo(before);
+        fixture.success(fixture.post("no-ddl"), 201);
+        assertThat(fixture.databaseInventory()).as("inventory after request").isEqualTo(before);
+        assertThat(fixture.base.psql("check").getExitCode()).isZero();
+        assertThat(fixture.value("SELECT count(*) FROM flyway_schema_history WHERE success")).isEqualTo("19");
     }
 }

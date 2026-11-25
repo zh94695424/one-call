@@ -193,10 +193,15 @@ class CustomerOrdersIT {
         List<String> ends = List.of("2027-02-12T04:05:06Z", "2027-08-03T08:09:10Z", "2028-03-11T12:13:14Z");
         for (int index = 0; index < 3; index++) schedule.add(fixture.mapper.createObjectNode().put("installmentNo", index + 1).put("entitlementType", "AI_SECONDS").put("units", 100).put("validFrom", starts.get(index)).put("expiresAt", ends.get(index)));
         customLine.set("schedule", schedule);
+        UUID secondLineId = UUID.randomUUID();
+        var secondLine = fixture.mapper.createObjectNode().put("lineKey", secondLineId.toString()).put("entitlementType", "STORAGE_BYTES").put("quantity", 50).put("validityDays", 60).put("grantIntervalMonths", 2);
+        var secondSchedule = fixture.mapper.createArrayNode();
+        for (int index = 0; index < 3; index++) secondSchedule.add(fixture.mapper.createObjectNode().put("installmentNo", index + 1).put("entitlementType", "STORAGE_BYTES").put("units", 50).put("validFrom", starts.get(index)).put("expiresAt", ends.get(index)));
+        secondLine.set("schedule", secondSchedule); custom.withArray("benefitLines").insert(0, secondLine);
         fixture.seedCatalog("SUBSCRIPTION", "PERSONAL", 9900L, "WEB", "ACTIVE", "ACTIVE", "{}", CustomerOrdersFixture.canonical(custom));
         var customBefore = fixture.rows(); fixture.success(fixture.post("custom-schedule"), 201); fixture.bundle(customBefore);
         var frozen = fixture.mapper.readTree(fixture.value("SELECT snapshot::text FROM catalog_order.customer_order"));
-        assertThat(frozen.get("installments").asInt()).isEqualTo(3); assertThat(frozen.get("benefitLines").get(0)).isEqualTo(customLine);
+        assertThat(frozen.get("installments").asInt()).isEqualTo(3); assertThat(frozen.get("benefitLines").get(0)).isEqualTo(customLine); assertThat(frozen.get("benefitLines").get(1)).isEqualTo(secondLine);
         List<String> unsupported = new ArrayList<>(List.of("null", "[]", "{\"text\":\"" + "PRIVATE_VALUE".repeat(100) + "\"}", "{\"decimal\":1.5}", "{\"unsafe\":9007199254740992}", "{\"a\":".repeat(8) + "true" + "}".repeat(8), "{\"nodes\":[" + String.join(",", Collections.nCopies(255, "true")) + "]}"));
         var bytes = fixture.mapper.createObjectNode(); for (int index = 0; index < 8; index++) bytes.put(Character.toString('a' + index), "x".repeat(index < 7 ? 1024 : 968)); unsupported.add(CustomerOrdersFixture.canonical(bytes));
         var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger("com.onecall.core.catalog_order.internal.customerorder.CustomerOrderSemantics");

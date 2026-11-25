@@ -2,7 +2,7 @@
 
 ## Authority and outcome
 
-- **Current code-review-fix status (November25,2026):** task `pa41-customer-order-creation-foundation-code-review-fix-gpt-20261125-031219` applies the four accepted Low findings in eight authorized Java paths plus this report. The earlier green runs below are historical, not validation of these changed bytes. Current acceptance is blocked by three production-manifest pins in two files outside this task's explicit allowlist; they cause four existing test identities to fail. No pin, guard, test identity or frozen source is bypassed or edited. Current-run evidence and exact hashes are recorded in the final section.
+- **Current author status (November 25, 2026):** aggregate fix-3 task `pa41-aggregate-fix3-gpt-20261125-085206` addresses the five Controller-accepted test-oracle/evidence findings in exactly three test files and this report. No production defect was found. Earlier sections are historical; the final fix-3 section records current evidence. The earlier production-manifest pin blockage was resolved by the separately authorized pin correction below, not bypassed. Stop at author-complete for a fresh independent re-review; no later-gate acceptance or production readiness is claimed.
 
 - Initial task: `pa41-customer-order-creation-foundation-implementation-gpt-danger-20261124-223225`; execution dates November24–25,2026 (Asia/Shanghai); initial validation completes November25 at00:58. Bounded correction: `pa41-customer-order-creation-foundation-implementation-fix-gpt-20261125-010139`, November25,2026, at the same implementation gate.
 - Accepted HEAD: `e04ce85f80d3fde10f99982c79ca9168d4b608a0`, independently resolved without repairing the Windows Git pointer. Accepted plan: `docs/gateflow/pa41-customer-order-creation-foundation-plan.md`, 553 lines, raw SHA256 `1f59bf109ad7e8206ada3300238dd35975bf8345d36759a7480921a7c0b14f2d`. Its implementation authorization and current Control checkpoint were read.
@@ -229,7 +229,7 @@ The accepted Low-fix implementation bytes changed the three live LF-normalized p
 | `CustomerCatalogOfferReadAclBoundaryTests#frozenContractsAndV001ThroughV018RemainByteIdentical` | 346 / V019 | `5c24e8a1751d15594a429910caaa51067ed3e94e213d1d3fa9bb948525d969fe` |
 | `EvidenceRoleIvrAssociationAclBoundaryTests#v001ThroughV017AndPublicContractsRemainByteFrozen` | 345 / V018,V019 | `9e780264acf2fba2d98760f967de83727e1c708f4a76b17f9f4d4ac0b16a9c29` |
 
-Actual production inventory is 325 Java +22 resources =347 entries. Every manifest uses sorted `path + space + LF-normalized SHA256` lines and one final LF. The identity digest remains `fe2162716b64a413ed8d118f64299d4fd49b1f8d60051f7c93d67b1b7aefc8dd`; source inventory is 208 test Java files, 1,865 methods and 1,866 annotation lines. All 25 frozen raw-byte baselines match the accepted plan.
+Actual production inventory is 325 Java +22 resources =347 entries. The three production-source manifests in the preceding table use sorted `path + space + LF-normalized SHA256` lines and one final LF; that recipe does not describe the separate 47-path aggregate raw-byte manifest, whose exact recipe appears in the fix-3 section. The identity digest remains `fe2162716b64a413ed8d118f64299d4fd49b1f8d60051f7c93d67b1b7aefc8dd`; source inventory is 208 test Java files, 1,865 methods and 1,866 annotation lines. All 25 frozen raw-byte baselines match the accepted plan.
 
 Final evidence is under `/tmp/pa41-pin-fix-041943`:
 
@@ -246,3 +246,123 @@ Final evidence is under `/tmp/pa41-pin-fix-041943`:
 | Exact raw-checkout A2s3 / A5s1 / A5s2 | 1/2/2; byte-identical failures reproduce at accepted HEAD; disposable LF-only diagnostic copies pass, but raw commands remain documented limitations |
 
 Final changed paths are exactly `backend/src/test/java/com/onecall/archtests/architecture/CustomerCatalogOfferReadAclBoundaryTests.java`, `backend/src/test/java/com/onecall/archtests/architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java`, and this report. The two guard raw SHA256 values are `41ab1a0d5652f3f9950625d87459f70ade74b1ee3166817ef5908a626d7bbd2c` and `f2cc07294f8cfefbd0cc363eabb1cfb141393359437b75f6f7e6aaca8f17d4fd`; the final report hash was recomputed after this evidence update. No commit, stage, push, PR, merge, approval, later gate or external mutation was performed.
+
+## Aggregate deepreview fix 1 — `pa41-aggregate-fix1-gpt-20261125-065336`
+
+- Controller adjudication accepted only Reviewer A F-02/F-03/F-04/F-05 as Low test/evidence findings. Reviewer A F-01 is rejected-with-reason and was not addressed; Reviewer B reported zero new material findings. This bounded correction changes exactly five authorized test paths plus this cumulative report:
+  - `backend/src/test/java/com/onecall/archtests/container/CustomerOrderRoleLeastPrivilegeIT.java`
+  - `backend/src/test/java/com/onecall/core/catalog_order/internal/customerorder/CustomerOrderSemanticsTests.java`
+  - `backend/src/test/java/com/onecall/archtests/container/CustomerOrdersIT.java`
+  - `backend/src/test/java/com/onecall/archtests/container/CustomerOrdersFixture.java`
+  - `backend/src/test/java/com/onecall/archtests/architecture/CustomerOrderCreationBoundaryTests.java`
+  - `docs/gateflow/pa41-customer-order-creation-foundation-implementation.md`
+- F-02 now snapshots a deterministic digest over schemas/owners/ACLs, relations/owners/ACLs, columns, functions/procedures/owners/ACLs, roles, membership edges/options and the complete Flyway history state before and after checkout. The existing PA25 check and exact 19-successful-migration assertion remain present.
+- F-03 now checks `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` denial with SQLSTATE `42501` for both runtime owner roles on `platform.outbox_event`, `platform.idempotency_record` and `audit.audit_fact`; the existing successful checkout bundle/facts oracle remains unchanged.
+- F-04 extends existing identities only: semantics covers two durable benefit lines, line-key matching, deterministic entitlement-type/line-key sorting, duplicate/missing/extra/mismatched negatives; the existing custom-schedule IT covers two durable lines across three installments and retains the prior frozen schedule assertions. No `@Test` method or class was added, removed, renamed, disabled or skipped.
+- F-05 extends the existing adapter guard to `CustomerBoundaryFilter.java`, `CustomerProblemWriter.java` and `CustomerWebConfiguration.java` through a separate modified-files list. The same SQL/JDBC/transaction authority prohibitions apply; foreign internal imports are rejected except the three pre-existing web exception mappings in `CustomerProblemWriter`, while the exact `PRODUCTION` 18-file allowlist and count semantics remain untouched.
+
+### Identity, bytes and validation
+
+- Test identity arithmetic is preserved by construction: the existing selector reports 113 Surefire methods plus 37 Failsafe methods; the cumulative PA41 arithmetic remains 1,127 Surefire + 738 Failsafe = 1,865 ordinary methods and 1,866 annotation lines. No new test identity was introduced.
+- Final LF/raw SHA-256 values for the five changed Java paths are: `CustomerOrderRoleLeastPrivilegeIT.java` `b92a237b5aeee66e8abd739046398552552d7764bd14e49a82bcc13b342089c0`; `CustomerOrderSemanticsTests.java` `2147975ca741afac0dbd355d6b3bb50f3040b4ea140da6ca761772a0002ce9fc`; `CustomerOrdersIT.java` `0615195c66e679f3c1372c7a408df5fca02a5d8ecc15d5edba31a98e42513ace`; `CustomerOrdersFixture.java` `d9bf3ac6a24e83b05bbb688147ee6169fef4ca82e1b83145b418a9f66deea927`; `CustomerOrderCreationBoundaryTests.java` `fabb7e60ae5971eae9223011e929ff3ad2125efc0379e0784ac03f98037fb94a`. Raw and LF hashes are equal in this checkout for each changed Java path.
+- Required focused selector, exact command `"$MVN" -f backend/pom.xml -Pcontainer-smoke "-Dtest=CustomerOrderSemanticsTests,CustomerOrderCreationBoundaryTests" "-Dit.test=CustomerOrdersIT,CustomerOrderRoleLeastPrivilegeIT" verify`: exit `0`, 20 Surefire + 37 Failsafe, zero failures/errors/skips, elapsed `228` seconds; final evidence `/tmp/pa41-aggregate-fix1-gpt-20261125-065336/focused-final3.log` and `.result`.
+- Complete focused selector from the prior report §7.1 (`UNIT` 15 existing unit/architecture classes and `IT=CustomerOrdersIT,CustomerOrderRoleLeastPrivilegeIT`): exit `0`, 113 Surefire + 37 Failsafe, zero failures/errors/skips, elapsed `258` seconds; final evidence `/tmp/pa41-aggregate-fix1-gpt-20261125-065336/complete-focused-final2.log` and `.result`.
+- `test-compile` completed with exit `0`. A full `container-smoke clean verify` was not rerun to completion in this bounded correction, so no current clean/full-build green claim is made; prior full-regression evidence remains historical and is not re-attested by this fix.
+
+### Scope and handoff
+
+- No production Java, frozen contract, schema, migration, OpenAPI, docs12/14/15/17, PA25, POM, CI or build artifact source was changed. No production behavior, database schema, migration count, OpenAPI contract, PA25 contract, build/CI count or test identity arithmetic was changed.
+- Residual risks remain the accepted PA41 catalog publisher/full-snapshot limitation, raw-checkout CRLF parser limitation, bounded terms/capacity assumptions and the absence of current full clean verification. Independent aggregate re-review is mandatory; this author stops here awaiting that re-review.
+- No stage, commit, push, PR, merge, approval, reviewer request, external comment or other gate action was performed.
+
+## Aggregate deepreview fix 2 — `pa41-aggregate-fix2-gpt-20261125-074714`
+
+- Controller adjudication accepted Reviewer B F-01 and F-02 as new Low test-oracle/static-guard findings. This bounded correction changes exactly the two authorized test paths below plus this cumulative report; no production behavior, migration, schema, grant, frozen contract, PA25, POM or CI source is changed:
+  - `backend/src/test/java/com/onecall/archtests/container/CustomerOrdersFixture.java`
+  - `backend/src/test/java/com/onecall/archtests/architecture/CustomerOrderCreationBoundaryTests.java`
+  - `docs/gateflow/pa41-customer-order-creation-foundation-implementation.md`
+- B F-01 is closed in `databaseInventory()`: the existing schema, relation, column, routine, role, membership and Flyway snapshots remain, with deterministic count-bearing JSON aggregates added for indexes, constraints, triggers, rules, RLS state, policies, default ACLs, database ACLs and database-role settings. Relation/column snapshots include non-table relkinds and column ACLs; routine snapshots include definition, configuration, security and volatility attributes. Temporary/system catalog namespaces are excluded, every aggregate is ordered and coalesced, and every result is required to be non-blank before hashing.
+- B F-02 is closed in `customerOrderAdapterHasNoSqlOrTransactionAuthority`: the three modified customer web files are checked separately; `CustomerBoundaryFilter` and `CustomerWebConfiguration` allow no foreign internal references, while `CustomerProblemWriter` allows exactly the three pre-existing sharing exception references. The guard scans imports, static imports and fully-qualified references and rejects SQL/JDBC handles, transaction APIs, `SET ROLE ` and `RESET ROLE`. The `PRODUCTION` allowlist remains exactly 18 entries.
+
+### Fix-2 identity, bytes and validation
+
+- No `@Test` method or test class was added, removed, renamed, disabled or skipped. The complete focused selector remains 113 Surefire +37 Failsafe, and the cumulative suite identity remains 1,127 Surefire +738 Failsafe with 1,866 annotation lines as previously pinned.
+- Final raw/LF SHA-256 values for the two changed Java paths are: `CustomerOrdersFixture.java` `f1612e5a406628c5fadae3dfdb260d89d4f542454cb70b8755f80fda436085a9`; `CustomerOrderCreationBoundaryTests.java` `54b833c06b6ba7534caa3d97237b7fe4267cc639efa29613c21fb77fda6a87c5` (complete 64-character value; the earlier report omitted the final `5`). The final report hash is computed from the completed bytes and handed off with the author result.
+- The first target-selector attempt was **not green**: `/tmp/pa41-aggregate-fix2-gpt-20261125-074714/target-selector.log` and `.result` record exit `1`, 8 passing Surefire methods and 12 Failsafe methods with one SQL syntax error in `noNewDatabaseObjectPrivilegeOrMigrationAppears` (`syntax error at or near "FROM"`). Fixture inventory SQL was corrected before the green target rerun and complete focused run cited next. Those reruns, not the first attempt, supply fix-2 acceptance evidence.
+- Required target selector `"$MVN" -f backend/pom.xml -Pcontainer-smoke "-Dtest=CustomerOrderCreationBoundaryTests" "-Dit.test=CustomerOrderRoleLeastPrivilegeIT" verify`: final rerun exit `0`, 8 Surefire +12 Failsafe, zero failures/errors/skips; evidence `/tmp/pa41-aggregate-fix2-gpt-20261125-074714/target-selector-rerun.log` and `.result`.
+- Complete focused selector from §7.1 (`UNIT` 15 existing unit/architecture classes and `IT=CustomerOrdersIT,CustomerOrderRoleLeastPrivilegeIT`): exit `0`, 113 Surefire +37 Failsafe, zero failures/errors/skips, elapsed `229` seconds; evidence `/tmp/pa41-aggregate-fix2-gpt-20261125-074714/complete-focused-final3.log`, `.result` and `.seconds`.
+- Corrected prior evidence attribution is retained explicitly: the two-class target evidence is `focused-final3.log`, 20+37 methods, 228 seconds; the complete focused evidence is `complete-focused-final2.log`, 113+37 methods, 258 seconds. Those are the fix-1 report artifacts; the fix-2 rerun artifacts above are the current validation evidence. No full `container-smoke clean verify` was run for fix 2, so no current full-build green claim is made.
+
+### Fix-2 scope and handoff
+
+- No production Java, frozen contract, schema, migration, OpenAPI, docs12/14/15/17, PA25, POM, CI or build-input source was changed. The accepted 47-path candidate scope and test identity/hash arithmetic are preserved apart from the three authorized files listed above.
+- Residual risks remain the accepted catalog publisher/full-snapshot limitation, raw-checkout CRLF parser limitation, bounded terms/capacity assumptions, shared LO capacity, post-commit ambiguity, and the absence of current full clean verification. Fresh independent aggregate re-review is required; this author stops here awaiting that re-review.
+- No stage, commit, push, PR, merge, approval, reviewer request, external comment or other gate action was performed.
+
+## Aggregate deepreview fix 3 — `pa41-aggregate-fix3-gpt-20261125-085206`
+
+### Binding scope and finding closure
+
+- Read the current PA41 Control adjudication, accepted PERSONAL-only plan, cumulative report, aggregate re-review-1 artifacts `code-review-20261125-073254.md` / `073257.md`, and aggregate re-review-2 artifacts `code-review-20261125-080935.md` / `080937.md`. All five distinct findings are accepted test-oracle/evidence corrections; no production defect was found.
+- Changed exactly `backend/src/test/java/com/onecall/archtests/container/CustomerOrdersFixture.java`, `backend/src/test/java/com/onecall/archtests/architecture/CustomerOrderCreationBoundaryTests.java`, `backend/src/test/java/com/onecall/archtests/container/CustomerOrderRoleLeastPrivilegeIT.java`, and this report. All pre-existing edits outside these four paths are preserved. No production Java, V001–V019, schema/grant, OpenAPI, docs12/14/15/17, PA25, POM, CI or other build-input change is authorized or made.
+- **Writer authority scan:** `CustomerProblemWriter` now runs through the same complete token helper as every guarded customer adapter. Its sharing exemption affects foreign-reference assertions only, never SQL/JDBC/transaction/role authority checks.
+- **Role/transaction aliases:** the literal forbidden list again includes `SET LOCAL ROLE`, `SET ROLE ` and `RESET ROLE`. A case-insensitive, whitespace-tolerant regex also bans local/session role switches, SQL commit/rollback/savepoint/release/start/begin/end/abort variants and manual Java commit/rollback/savepoint calls, including calls with arguments. SQL/JDBC handle and transaction API bans remain intact.
+- **Stable exception/file set:** a path-to-exact-reference-set map names all three modified web adapters. Only `CustomerProblemWriter` receives its three existing sharing exception mappings; filter/configuration and the new-production customer adapters receive none. Imports, static imports and fully-qualified references remain checked. Every Java file discovered dynamically in `customer_iam/internal/web` is independently token-scanned, so adding/reordering files cannot inherit a positional exemption or avoid authority scanning. Pre-existing foreign-internal dependencies outside the PA41 three-file scope remain outside the expanded foreign-reference check. The new-production allowlist remains exactly 18 entries and its existing file/count assertions are unchanged.
+- **Inventory self-proof/diagnosis:** `databaseInventory()` returns an insertion-ordered, unmodifiable `Map<String,String>` retaining all 16 category names and deterministic count-bearing JSON snapshots, rather than one opaque digest. Each snapshot must be a two-element array with its count equal to the row-array size. Counts must be positive for schemas, relations, columns, routines, indexes, constraints, triggers, RLS state, database ACLs, roles, memberships and Flyway history. Rules, policies, default ACLs and database-role settings may legitimately be empty and are still structurally/count checked and compared. Routine definitions use `CASE WHEN p.prokind IN ('a','w') THEN '' ELSE pg_get_functiondef(p.oid) END`, avoiding decompiler errors on future aggregate/window functions.
+- **Positive sensitivity control:** inside the existing `noNewDatabaseObjectPrivilegeOrMigrationAppears` identity, create one uniquely named disposable index on `catalog_order.customer_order(id)`, require both the inventory map and its `indexes` category to differ, drop the index in `finally`, and require the complete labeled inventory to equal its original value again. Then perform the real 201 checkout and require the same original inventory, PA25 check and 19 successful migrations. No new test method/class is introduced.
+- **Evidence correction:** the fix-2 boundary hash is restored to all 64 characters, its first target SQL failure and correction are disclosed before its green reruns, and the fix-1 selector citations now correctly distinguish `focused-final3.log` (20+37, 228 seconds) from `complete-focused-final2.log` (113+37, 258 seconds).
+
+### Fix-3 execution and identity evidence
+
+- Native environment for both Maven commands: `JAVA_HOME=/opt/jdk21`, `PATH=/opt/jdk21/bin:/opt/maven-3.9.9/bin:/usr/local/bin:/usr/bin:/bin`, `MAVEN_SKIP_RC=1`, `MVN=/opt/maven-3.9.9/bin/mvn`. Evidence directory: `/tmp/pa41-aggregate-fix3-gpt-20261125-085206`.
+- Required target command `"$MVN" -f backend/pom.xml -Pcontainer-smoke "-Dtest=CustomerOrderCreationBoundaryTests" "-Dit.test=CustomerOrderRoleLeastPrivilegeIT" verify`: exit `0`, 8 Surefire +12 Failsafe, zero failures/errors/skips, elapsed `133` seconds. Exact evidence: `target-selector.log`, `target-selector.result` (`0`), `target-selector.seconds` (`133`); the two generated XML reports are preserved under `target-xml/`. The existing inventory identity, including create-index/change/drop/restoration, passed on real PostgreSQL 16.16 with Flyway V001–V019.
+- Complete report §7.1 focused selector: `UNIT=CustomerOrdersWebTests,CustomerOrderConfigurationTests,CustomerOrderSemanticsTests,CustomerOrderCreationServiceTests,PurchaseConsentServiceTests,CustomerOrderCreationBoundaryTests,ModuleBoundaryTests,CustomerApiBoundaryTests,CustomerCatalogOfferBoundaryTests,CustomerBusinessNumberBoundaryTests,CustomerSubjectDetailBoundaryTests,OperationsCatalogVersionBoundaryTests,OperationsCatalogDraftBoundaryTests,EvidenceRoleIvrAssociationAclBoundaryTests,CustomerCatalogOfferReadAclBoundaryTests`; `IT=CustomerOrdersIT,CustomerOrderRoleLeastPrivilegeIT`; command `"$MVN" -f backend/pom.xml -Pcontainer-smoke "-Dtest=$UNIT" "-Dit.test=$IT" verify`: exit `0`, **113 Surefire +37 Failsafe**, zero failures/errors/skips, elapsed `236` seconds. Evidence: `complete-focused.log`, `complete-focused.result` (`0`), `complete-focused.seconds` (`236`). All 17 selected class XML reports are preserved under `focused-xml/`; independent XML parsing confirms 113+37 actual testcases and no failure/error/skipped elements. The existing positive inventory control passed again in this run. Both fix-3 Maven commands passed on their first invocation; the disclosed SQL failure belongs to fix 2.
+- In-memory negative token probe invokes the actual compiled `assertNoAuthorityTokens` helper using JShell 21 and the target XML's exact test classpath. All 24 SQL/JDBC/transaction/role/savepoint payloads are rejected for both the writer path and a hypothetical future web adapter: `TOKEN_PROBE_OK rejected=48`. Evidence: `authority-token-probe.log` and `.result` (`0`). No source mutation or new test identity is involved. The first auxiliary JShell launch lacked the Modulith dependency in its manually assembled classpath and failed before probing; that tool failure is retained as `authority-token-probe-first.log` / `.result` (`1`), then corrected by using the full test classpath without changing any source.
+- Exact CI-map/source/POM comparison passed: 116 unit classes /1,127 methods +44 integration classes /738 methods, 44 Failsafe includes. Evidence: `identity-map.log` / `.result` (`0`). An accepted-slice archive comparison also proves every existing test method name/order and disabled-marker set unchanged: 1,865 methods and 1,866 `@Test\b` annotation lines (`scope-identity-final.log` / `.result` = `0`). A preliminary auxiliary substring count also counted `@TestInstance`/`@TestConfiguration`; the final check uses the unchanged CI word-boundary rule instead. No test class/method was added, removed, renamed, disabled or skipped; the 18-entry production allowlist and all source/CI/POM count semantics remain intact.
+- `final-validation.log` / `.result` (`0`) independently reconcile both Maven summaries with their exact result/duration files, parse the 17 focused XMLs, verify 2,497 nonallowed tracked-file hashes unchanged since the fix-3 safety snapshot, and compare all 47 candidate paths against the preserved pre-fix-3 snapshot: exactly the four authorized paths differ. The inherited `CustomerOrdersIT.java`, `CustomerOrderSemanticsTests.java` and Control edits are not fix-3 changes and are not altered. Standard ignored Maven outputs and `/tmp` evidence are not source deliverables.
+
+### Exact aggregate manifest recipe
+
+This aggregate manifest is distinct from the LF-normalized production-source guard manifests. Its path set is exactly `git diff --name-only e04ce85f80d3fde10f99982c79ca9168d4b608a0...c7eb45c80e48e78a25ac0ab6e4755ff9b36a5dc9`, excluding the four `docs/reviews/code-review-*` paths in that diff and `docs/gateflow/project-execution-control.md`: 52 minus 5 =47 files. Hash each raw checked-out file without line-ending normalization; emit `path<TAB>lowercase SHA256`; case-insensitively sort the records with Python `casefold` (equivalent here to `sort -f`); join with LF and exactly one trailing LF; SHA-256 the UTF-8 bytes. No native-platform newline translation is allowed.
+
+Portable command, run from the checkout root after the last report edit:
+
+```sh
+EVIDENCE_DIR=/tmp/pa41-aggregate-fix3-gpt-20261125-085206
+export EVIDENCE_DIR
+python3 - <<'PY' | tee "$EVIDENCE_DIR/final-manifest.log"
+from pathlib import Path
+import hashlib, os, subprocess
+
+base = 'e04ce85f80d3fde10f99982c79ca9168d4b608a0'
+tip = 'c7eb45c80e48e78a25ac0ab6e4755ff9b36a5dc9'
+changed = subprocess.check_output(
+    ['git', 'diff', '--name-only', base + '...' + tip], text=True).splitlines()
+excluded = {path for path in changed if path.startswith('docs/reviews/code-review-')}
+assert len(excluded) == 4
+excluded.add('docs/gateflow/project-execution-control.md')
+paths = set(changed) - excluded
+assert len(paths) == 47
+records = [path + '\t' + hashlib.sha256(Path(path).read_bytes()).hexdigest()
+           for path in paths]
+manifest = ('\n'.join(sorted(records, key=str.casefold)) + '\n').encode('utf-8')
+destination = Path(os.environ['EVIDENCE_DIR'])
+destination.mkdir(parents=True, exist_ok=True)
+(destination / 'final-manifest.tsv').write_bytes(manifest)
+print('paths=' + str(len(paths)))
+print('manifest_sha256=' + hashlib.sha256(manifest).hexdigest())
+PY
+```
+
+For this Linux checkout only, the pre-existing Windows `.git` pointer is left unchanged; execute the portable command with `GIT_DIR=/mnt/d/codex-call/.git/worktrees/codex-call19` and `GIT_WORK_TREE="$PWD"` exported. A normally resolvable checkout needs neither override.
+
+- Controller-verified **pre-fix-3** manifest: `0fa762658ea750d94bc329ab0adcd46b9c9891a4e932b6982cfd756b0e65726e`. This author independently executed the same recipe against the preserved raw pre-fix-3 snapshot `/mnt/d/codex-temp/pa41-aggregate-rereview2-20261125-080917-B`, obtaining exactly `paths=47` and that SHA-256. Evidence: `pre-fix3-manifest.log` and the emitted `pre-fix3-manifest.tsv`. It is reproducible under this recipe, not under the unrelated space-separated/LF-normalized production-manifest recipe.
+- Final changed Java raw-byte SHA-256: `CustomerOrdersFixture.java` `618c29cdd1d3fcd515beb27a0bfe139e22113aa7738d2e134db88e59d44981b0`; `CustomerOrderCreationBoundaryTests.java` `88ac8ef653a0e858df95177017b451b0204aeca1f73991346aef4d73f30a4997`; `CustomerOrderRoleLeastPrivilegeIT.java` `9c617315a10bc8d0a8e2eb4d8ae8df6897809ad4341b61353aa49c79bebe6330`.
+- The final manifest includes this report. To avoid a self-referential hash, the completed report's raw hash and final 47-path manifest hash are emitted **after** its last edit to `final-file-hashes.log` and `final-manifest.log` respectively, and stated verbatim in the author handoff; neither is embedded in the bytes being hashed. `final-manifest.tsv` supplies the complete portable per-path output.
+
+### Fix-3 limitations and author stop
+
+- No current full `container-smoke clean verify` is claimed: the current proof is the exact target selector, complete 113+37 focused selector, negative token probes, positive inventory control and static identity/scope checks. Historical 1,127+738 full-run evidence remains historical, while those exact identity sets are preserved by current source/CI/POM comparison.
+- Authority scanning remains a conservative source-text guard, not a Java/SQL semantic analyzer; deliberately constructed/reflected authority or dynamically concatenated SQL can evade literal/regex checks. Existing sharing-internal coupling outside the narrowed PA41 checks remains unchanged. The inventory covers the specified 16 catalog categories, not every PostgreSQL property (for example comments, relation options or sequence parameters); guarded definition formatting is PostgreSQL-version dependent.
+- Previously accepted product/runtime residuals remain: catalog publisher/full-snapshot and bounded terms/capacity limitations, shared LO capacity, post-commit ambiguity and raw-checkout CRLF parser limitations. No production fix, contract/schema change, readiness or aggregate approval is implied.
+- Author-complete only; stop for fresh independent aggregate re-review. No stage, commit, branch creation, push, PR, merge, approval, mark-ready, reviewer request, external comment or other gate entry is performed.
