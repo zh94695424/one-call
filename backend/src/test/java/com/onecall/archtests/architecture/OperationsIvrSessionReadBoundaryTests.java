@@ -93,7 +93,7 @@ class OperationsIvrSessionReadBoundaryTests {
         assertThat(exercised).containsExactlyInAnyOrder(OperationsReadContext.Role.values());
         var modules = org.springframework.modulith.core.ApplicationModules.of(com.onecall.core.OneCallApplication.class); modules.verify();
         assertThat(source("ivr/package-info.java")).contains("operations_iam::operations-subject-read"); assertThat(source("operations_iam/package-info.java")).doesNotContain("ivr", "evidence");
-        int count = modules.stream().mapToInt(module -> (int) module.getDirectDependencies(modules).uniqueModules().count()).sum(); assertThat(count).isEqualTo(13);
+        int count = modules.stream().mapToInt(module -> (int) module.getDirectDependencies(modules).uniqueModules().count()).sum(); assertThat(count).isEqualTo(14);
     }
     @Test
     void frozenInputsEighteenMigrationsAndIndependentVerifierRemainExact() throws Exception {

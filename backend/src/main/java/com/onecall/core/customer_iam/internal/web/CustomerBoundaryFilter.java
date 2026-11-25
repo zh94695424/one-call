@@ -86,6 +86,7 @@ public final class CustomerBoundaryFilter implements Filter {
                 || "/api/v1/customer/shares".equals(servletPath)
                 || "/api/v1/customer/business-numbers".equals(servletPath)
                 || "/api/v1/customer/catalog/offers".equals(servletPath);
+        boolean order = "POST".equals(request.getMethod()) && "/api/v1/customer/orders".equals(servletPath);
         boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
         boolean activation = "POST".equals(request.getMethod()) && servletPath != null
                 && servletPath.matches("/api/v1/customer/subjects/[^/;%]+/activations");
@@ -100,7 +101,7 @@ public final class CustomerBoundaryFilter implements Filter {
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions");
         boolean publicMediaAuthorization = "POST".equals(request.getMethod())
                 && servletPath.matches("/api/v1/public/shares/[^/;%]+/admissions/[^/;%]+/media-authorizations");
-        if (!("GET".equals(request.getMethod()) && admittedPath || create || claim || activation || revoke || rotate || publicRead || publicAdmission || publicMediaAuthorization)
+        if (!("GET".equals(request.getMethod()) && admittedPath || order || create || claim || activation || revoke || rotate || publicRead || publicAdmission || publicMediaAuthorization)
                 || !(request.getContextPath() + servletPath).equals(request.getRequestURI())) {
             problems.notFound(response, traceId);
             return;
@@ -109,7 +110,7 @@ public final class CustomerBoundaryFilter implements Filter {
             var authorization = request.getHeaders("Authorization");
             var principal = (publicRead || publicAdmission || publicMediaAuthorization) && (authorization == null || !authorization.hasMoreElements()) ? null
                     : new CustomerRequestPrincipal(authenticator.authenticate(authorization));
-            if (activation) {
+            if (activation || order) {
                 var caller = principal.caller();
                 if (caller == null || caller.accountId() == null || caller.channel() == null || caller.selectedWorkspace() == null
                         || caller.selectedWorkspace().workspaceType() == null
@@ -117,16 +118,16 @@ public final class CustomerBoundaryFilter implements Filter {
                         != (caller.selectedWorkspace().organizationId() == null))
                     throw new CustomerContextException(CustomerContextException.Code.SERVICE_UNAVAILABLE);
             }
-            if (claim || revoke || rotate) {
+            if (claim || revoke || rotate || order) {
                 var keys = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
                 if (keys.size() != 1) throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 String key = keys.getFirst();
-                if (key.isBlank() || key.codePointCount(0, key.length()) > 128 || key.indexOf('\0') >= 0
+                if (key.isBlank() || key.codePointCount(0, key.length()) > (order ? 475 : 128) || key.indexOf('\0') >= 0
                         || !StandardCharsets.UTF_8.newEncoder().canEncode(key))
                     throw new CustomerContextException(CustomerContextException.Code.VALIDATION_FAILED);
                 request.setAttribute(CustomerBoundaryFilter.class.getName() + ".idempotencyKey", key);
             }
-            if (activation || claim || create || revoke || rotate || publicAdmission || publicMediaAuthorization) {
+            if (order || activation || claim || create || revoke || rotate || publicAdmission || publicMediaAuthorization) {
                 try {
                     var types = java.util.Collections.list(request.getHeaders("Content-Type"));
                     if (types.size() != 1) throw new IllegalArgumentException();

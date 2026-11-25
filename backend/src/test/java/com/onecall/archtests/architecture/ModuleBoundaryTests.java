@@ -39,14 +39,14 @@ class ModuleBoundaryTests {
             "operations_audit", "platform_reliability");
 
     private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
-            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission", "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query")),
+            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission", "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query", "catalog_order::customer-order-command")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of("operations_iam::operations-subject-read")),
             Map.entry("activation_consent", Set.of("subject_number", "entitlement_metering::activation-trial", "operations_iam::subject-lifecycle-command", "operations_iam::employee-administrator-lock", "operations_iam::operations-subject-read")),
             Map.entry("ivr", Set.of("subject_number", "activation_consent",
                     "entitlement_metering", "evidence", "operations_iam::operations-subject-read")),
-            Map.entry("catalog_order", Set.of("customer_iam", "subject_number", "operations_iam::operations-subject-read", "operations_iam::operations-catalog-sale-command", "operations_iam::employee-authority-read")),
+            Map.entry("catalog_order", Set.of("customer_iam", "subject_number", "operations_iam::operations-subject-read", "operations_iam::operations-catalog-sale-command", "operations_iam::employee-authority-read", "activation_consent::purchase-consent")),
             Map.entry("entitlement_metering", Set.of("catalog_order", "subject_number", "operations_iam::operations-subject-read")),
             Map.entry("evidence", Set.of("entitlement_metering", "operations_iam::operations-subject-read")),
             Map.entry("sharing", Set.of("evidence::share-projection", "evidence::media-read")),
@@ -111,8 +111,8 @@ class ModuleBoundaryTests {
                 .as(name + " discovered edges must stay within allowedDependencies")
                 .containsAll(targets));
         assertThat(discovered.values().stream().flatMap(Set::stream))
-                .as("exactly thirteen production edges exist: retained twelve plus ivr -> operations_iam")
-                .containsExactlyInAnyOrder("sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam");
+                .as("exactly fourteen production edges exist: retained thirteen plus catalog_order -> activation_consent")
+                .containsExactlyInAnyOrder("activation_consent", "sharing", "evidence", "subject_number", "activation_consent", "evidence", "catalog_order", "entitlement_metering", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam", "operations_iam");
     }
 
     @Test
@@ -120,7 +120,7 @@ class ModuleBoundaryTests {
         ApplicationModules modules = ApplicationModules.of(OneCallApplication.class);
         modules.verify();
         var catalog = modules.getModuleByName("catalog_order").orElseThrow().getAllowedDependencies(modules);
-        assertThat(catalog).hasSize(5);
+        assertThat(catalog).hasSize(6);
         assertThat(catalog.stream().filter(dependency -> dependency.getTargetModule().getIdentifier().toString().equals("operations_iam")))
                 .extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(), dependency -> dependency.getTargetNamedInterface().getName())
                 .containsExactlyInAnyOrder(org.assertj.core.api.Assertions.tuple("operations_iam", "operations-subject-read"), org.assertj.core.api.Assertions.tuple("operations_iam", "operations-catalog-sale-command"), org.assertj.core.api.Assertions.tuple("operations_iam", "employee-authority-read"));
@@ -128,7 +128,7 @@ class ModuleBoundaryTests {
         for (String name : java.util.List.of(PA38_COMMAND_INTERFACE, "employee-authority-read")) assertThat(iam.getByName(name)).isPresent();
         var allowed = modules.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(modules);
-        assertThat(allowed).hasSize(13);
+        assertThat(allowed).hasSize(14);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
@@ -139,7 +139,7 @@ class ModuleBoundaryTests {
                         org.assertj.core.api.Assertions.tuple("activation_consent", "customer-activation-query"),
                         org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-query"),
                         org.assertj.core.api.Assertions.tuple("evidence", "customer-subject-count-query"),
-                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"));
+                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-command"));
         var sharing = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
                 .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
@@ -229,7 +229,7 @@ class ModuleBoundaryTests {
                 .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
         var allowed = production.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(production);
-        assertThat(allowed).hasSize(13);
+        assertThat(allowed).hasSize(14);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
@@ -240,6 +240,6 @@ class ModuleBoundaryTests {
                         org.assertj.core.api.Assertions.tuple("activation_consent", "customer-activation-query"),
                         org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-query"),
                         org.assertj.core.api.Assertions.tuple("evidence", "customer-subject-count-query"),
-                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"));
+                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-command"));
     }
 }

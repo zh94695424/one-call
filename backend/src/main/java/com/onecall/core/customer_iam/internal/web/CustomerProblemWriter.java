@@ -98,6 +98,10 @@ public final class CustomerProblemWriter {
         write(response, code.name(), traceId);
     }
 
+    public void write(HttpServletResponse response, com.onecall.core.catalog_order.customerorder.OrderCreationException.Code code, UUID traceId) throws IOException {
+        write(response, code.name(), traceId);
+    }
+
     private void write(HttpServletResponse response, String code, UUID traceId) throws IOException {
         if (response.isCommitted()) { return; }
         int status = switch (code) {
@@ -105,6 +109,9 @@ public final class CustomerProblemWriter {
             case "FORBIDDEN" -> 403;
             case "NOT_FOUND", "SHARE_TOKEN_INVALID" -> 404;
             case "VALIDATION_FAILED" -> 422;
+            case "REAL_NAME_REQUIRED" -> 422;
+            case "ACTIVATION_NOT_ACTIVE" -> 403;
+            case "IDEMPOTENCY_CONFLICT", "ORDER_UNKNOWN_PAYMENT_PENDING", "PURCHASE_CONSENT_REQUIRED", "PURCHASE_CONSENT_STALE", "PURCHASE_CONSENT_DECLINED" -> 409;
             case "CURSOR_INVALID", "CURSOR_FILTER_MISMATCH" -> 400;
             case "CONSENT_REQUIRED", "ACTIVATION_CONSENT_DECLINED" -> 409;
             case "RATE_LIMITED" -> 429;
@@ -122,6 +129,13 @@ public final class CustomerProblemWriter {
             case "SHARE_TOKEN_INVALID" -> "Invalid share token";
             case "SHARE_EXPIRED" -> "Share expired";
             case "VALIDATION_FAILED" -> "Request validation failed";
+            case "REAL_NAME_REQUIRED" -> "Real-name verification required";
+            case "ACTIVATION_NOT_ACTIVE" -> "Service activation not active";
+            case "IDEMPOTENCY_CONFLICT" -> "Idempotency conflict";
+            case "ORDER_UNKNOWN_PAYMENT_PENDING" -> "Unknown payment pending";
+            case "PURCHASE_CONSENT_REQUIRED" -> "Purchase consent required";
+            case "PURCHASE_CONSENT_STALE" -> "Purchase consent stale";
+            case "PURCHASE_CONSENT_DECLINED" -> "Purchase consent declined";
             case "CURSOR_INVALID" -> "Invalid cursor";
             case "CURSOR_FILTER_MISMATCH" -> "Cursor filter mismatch";
             case "CONSENT_REQUIRED" -> "Current consent required";
