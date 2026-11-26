@@ -337,3 +337,177 @@ Authorized change set across the retained retry and continuation: `CustomerOrder
 **Blockers: none.** Final raw report line count, byte count and SHA256 are computed **after the last report edit** in `/tmp/pa42-code-review-fix3-continuation-report-integrity.log` and the final handoff response; the full-file checksum is deliberately external to avoid a self-referential checksum claim. This final section supersedes earlier artifact evidence without erasing any failed attempt.
 
 **No staging, commit, push, PR, merge, approval, ready marking, reviewer request, external comment, gate advancement or other remote action occurred.** Production deployment acceptance remains NOT EXECUTED.
+
+## 13. Aggregate review fix 1
+
+Task: `pa42-aggregate-fix1-qwen38flash-20261126-114255`, 2026-11-26 (Asia/Shanghai). Accepted slice `7cd6fd2cb9ba04d548d92d5be5aaacd17febe2a6`; accepted-slice checkpoint HEAD `57ab763a005f1050904c15e44b5582f1dc7ac15c`; Control `docs/gateflow/project-execution-control.md` remains the authoritative **be097e7fa64b02094c9096c559e6c8ae378f581f014059c8ce0b98e693d3bd4d** and was not edited by this task.
+
+### Provider and reviewer history
+
+The routed GPT provider exhausted its prepaid quota immediately after completing §12, so this aggregate fix was executed by the Qwen3.8 Flash fallback implementation agent. An initial fallback pass applied the five authorized edits, recompiled the module and produced the focused **13 / 0 / 0 / 0** result plus an aborted full-surefire run; a second fallback pass continued the same task, found and corrected a defective §13 IT anchor (the positive control inherited a deliberately corrupted `repeat('b',64)` snapshot hash and therefore returned 404 instead of 200), and completed every remaining validation in required order. Both passes are recorded here; the intermediate failing anchor is not erased.
+
+Aggregate review evidence, both re-hashed on disk before use:
+
+| Review | Bytes | SHA256 | Acceptance status |
+| --- | ---: | --- | --- |
+| A `docs/reviews/code-review-20261126-105905.md` | 17,193 | `b256623cd8bb33d9a5fc75bcab88f7ef81d0518c56201cc2b64cfb98ffc94026` | authoritative for AGG-01/AGG-02 acceptance |
+| B `docs/reviews/code-review-20261126-113238.md` | 29,564 | `d4f018571b17beb53bc12da0962de0022b84730699b6b34d21f0ee2af881e49b` | quarantined from independent acceptance because its glob printed peer lines; used only as corroborating technical evidence |
+
+### Accepted finding mapping
+
+| Finding | Accepted fix | Exact edits | Anchors |
+| --- | --- | --- | --- |
+| AGG-02 (review A F-01, Low) | fail-closed historical contract validation inside the stored-snapshot seam | `DefaultCustomerOrderSnapshotReader.java` only: frozen `Set.of("RECORDING_SECONDS","AI_SECONDS","EVIDENCE_COUNT","STORAGE_BYTES")` and `PRODUCT_CODE = "[A-Z][A-Z0-9_-]{1,63}"`; after semantic parse/hash validation and `CustomerOrderSemantics.projection`, every projected benefit `entitlementType` must be in the set and `productCode` must match the pattern, else the existing `InvalidSnapshotException` | `CustomerOrderSnapshotReaderTests.missingExtraMalformedAndMismatchedFactsAreRejected` (existing identity) |
+| AGG-01 (review A F-02, Low) | direct test coverage for the row↔snapshot comparison chain and for plan §10 scenario 3/6 PostgreSQL anchors | `CustomerOrderQueryServiceTests.corruptSnapshotAndRowFactsMapDetail404`, `CustomerOrdersReadIT.stablePostgresUuidOrderAndPagingBoundariesAreExact`, `CustomerOrdersReadIT.corruptSummaryIs500AndCorruptDetailIs404WithNoWrites` (all existing identities) | four in-memory mutants below |
+
+No test method was added, removed or renamed; no assertion was weakened and no skip was introduced. `CustomerOrderSemantics`, V004, V020, OpenAPI, CI/POM and every frozen input are unmodified: **33 / 33** frozen files remain raw-byte identical and **81 / 85** product-scope manifest members are LF-byte-identical.
+
+### AGG-02 exact validation
+
+The seam now rejects, with the pre-existing `InvalidSnapshotException` (no new exception type, no public-contract change), any projected historical snapshot that carries an `entitlementType` outside the frozen OpenAPI enum (`api/openapi/onecall-v1.openapi.yaml:5281,6038`) or a `productCode` outside the frozen 2..64-character `^[A-Z][A-Z0-9_-]{1,63}$` contract (the same regex V004 enforces in `ck_catalog_product_code`, and the same 2..64 length OpenAPI declares). Because the service maps `InvalidSnapshotException` to `Optional.empty()`, both rejections surface as customer-visible 404 rather than leaking an out-of-contract projection.
+
+In `missingExtraMalformedAndMismatchedFactsAreRejected` the added cases recompute each snapshot's own SHA-256 so the new checks are reached instead of the hash guard: all four frozen entitlement types are accepted as positives, `AI_SECONDS`→`EVIL` is rejected, a one-character `productCode` `"X"` is rejected, and the two-character `"XY"` lower boundary is accepted.
+
+### AGG-01 anchors
+
+- Unit (`corruptSnapshotAndRowFactsMapDetail404`): from one fully agreeing row/snapshot pair, six **one-at-a-time** snapshot mismatches (`catalogVersionId`, `catalogOfferId`, `channel` `WEB`→`MINIAPP`, `amountCents` `123`→`124`, `currency` `CNY`→`USD`, `snapshotSha256` `a×64`→`b×64`) each map detail to empty/404. each iteration clears prior invocations and then `verify(snapshots).read("stored", "a".repeat(64))` proves the seam was consulted with the row's own stored snapshot and hash, so every case had already passed the purchase-consent, payment-shape and issuance gates and the row↔snapshot comparison - not an earlier short-circuit - produced the 404; a fully agreeing control then asserts presence, and the pre-existing `InvalidSnapshotException`/`IllegalStateException` canaries still map to 404/500.
+- IT detail-vs-list anchor (`corruptSummaryIs500AndCorruptDetailIs404WithNoWrites`): a **legal** DB row whose stored snapshot is hash-consistent (detail 200 positive control proves the seam re-validation passes; `md5(snapshot::text)||'|'||snapshot_sha256` is asserted invariant across the mutation) is rewritten so only `amount_cents` disagrees (`124|123` in DB facts). Detail becomes 404 while list stays 200 and still projects the row amount `124`; the personal row count is asserted `1` and metadata inventory is unchanged.
+- IT cursor anchor (`stablePostgresUuidOrderAndPagingBoundariesAreExact`): the fixed five-order fixture traversal is derived from PostgreSQL itself (`string_agg(id ORDER BY created_at DESC, id DESC)`). Traversal A pages `limit=2`, then continues the same cursor at `limit=4`: first page SQL has no seek clause and exactly `ORDER BY o.created_at DESC, o.id DESC LIMIT ?`; second page SQL has exactly one keyset seek `(o.created_at, o.id) < (CAST(? AS timestamptz), CAST(? AS uuid))`, no `OFFSET`, exactly one order SELECT and one issuance SELECT; `hasMore` goes `true`→`false` and `nextCursor` non-null→null; the union is `doesNotHaveDuplicates().containsExactlyElementsOf(expected)`. Traversal B then deletes the page-1 anchor row and inserts an older row between requests, asserting the fixed traversal still yields exactly six unique members (`expected[0]`, anchor, `expected[2]`, `expected[3]`, `expected[4]`, inserted) with `hasMore` `true`→`false` and a null tail cursor - no duplicate and no skip.
+
+### In-memory mutation evidence
+
+Mutants were compiled into `/tmp/pa42-aggregate-fix1-mut/<id>/out`, applied with `ByteBuddyAgent` + `Instrumentation.redefineClasses` inside a disposable JShell JVM and restored from `target/classes`; repository source, `target/` bytes and surefire/failsafe artifacts were never edited. Each mutant was first verified to keep an identical JVMTI member set (`javap -p -s` diff empty), so redefinition is legal and no member was added or removed.
+
+| Mutant | Single behavioural change | Result |
+| --- | --- | --- |
+| M1 seam domain checks deleted | AGG-02 entitlement/product-code guards replaced by a never-true condition | `13 / 12 / 1 / 0`; the one failure is exactly `missingExtraMalformedAndMismatchedFactsAreRejected` ("Expecting code to raise a throwable") |
+| M2 row↔snapshot comparisons deleted | six field comparisons removed, `snapshot == null` guard retained | `13 / 12 / 1 / 0`; the one failure is exactly `corruptSnapshotAndRowFactsMapDetail404` on the first mismatched snapshot, proving the comparison chain - not a gate - is load-bearing |
+| M3 keyset seek neutralised | seek clause kept at identical bind arity but `OR 1=1` appended | `16 / 14 / 2 / 0`; failures are `stablePostgresUuidOrderAndPagingBoundariesAreExact` and the pre-existing `tiedTimestampsUseUnsignedPostgresUuidOrderAcrossPages`, both 500/INTERNAL because ignoring the cursor re-selects rows the monotonicity guard rejects |
+| M4 `hasMore` boundary weakened | `rows.size() > effectiveLimit()` replaced by `>=` | `16 / 15 / 1 / 0`; the single failure is exactly `stablePostgresUuidOrderAndPagingBoundariesAreExact` "Expecting value to be false but was true", i.e. the added tail `hasMore`/null-cursor assertions |
+
+Baselines in the same harness: the two focused classes `13 / 13 / 0` before the unit mutants and `13 / 13 / 0` again after restoring them, and unmutated `CustomerOrdersReadIT` `16 / 16 / 0` in each probe JVM; the later clean full builds re-ran the same 16 container methods green, so no mutant byte survived its JVM. Raw logs: `/tmp/pa42-aggregate-fix1-in-memory-mutations-unit.log` (1,483 bytes; SHA256 `02acaf590900b6c6598eda2e1807740d938740ce334a40eafe08256c1907e65e`) and `/tmp/pa42-aggregate-fix1-in-memory-mutations-it.log` (230,225 bytes; SHA256 `9b7b5af3af931ce9d76674e481a01a0e199a6e0686753d4388bc32336f21498a`).
+
+### Aggregate deterministic-pin drift caused by the authorized AGG-02 edit (blocker)
+
+Three guard literals hash the **entire** `src/main/java` + `src/main/resources` tree, so the authorized production edit necessarily invalidates them; those three guard files are not in this task's allowed-write list and were not touched. `/tmp/pa42-aggregate-fix1-pin-diagnosis2.py` reconstructs each manifest exactly as the guard computes it (per-path `path + ' ' + sha256(LF-normalized bytes)`, sorted, joined with a trailing LF) and proves three facts: at checkpoint HEAD the reconstruction reproduces all three pinned literals, with final bytes it reproduces the three observed failures, and the **sole** differing entry in every manifest is `backend/src/main/java/com/onecall/core/catalog_order/internal/customerorder/DefaultCustomerOrderSnapshotReader.java` (seam `33633c742a99021c…` → `96ed7333d8bb50ce…`).
+
+| Manifest (entries) | Guard identities | Pinned / HEAD-reproduced | Final bytes |
+| --- | --- | --- | --- |
+| `src/main/java` + `src/main/resources` excluding V019/V020 (353) | `CustomerCatalogOfferReadAclBoundaryTests.frozenContractsAndV001ThroughV018RemainByteIdentical:95` and delegating `CustomerOrderCreationBoundaryTests.frozenContractsMigrationsAndPa25RemainByteIdentical:87` | `93764e87e85a318753f98a20dfaaa46bde76a0e6e4113cd856ca1172b03cdbae` | `ad4662b82014ee9a79c9342be68102c8a26f3041e82c46620c17addf702b7898` |
+| same tree with no exclusions (355) | `CustomerCatalogOfferReadAclBoundaryTests.migrationOnlyAddsOnePackagedResource:130` | `7d7346e43c1c6d744ec803e4746d9b33b42ca33aa7e89c8beff317cc0cf3910d` | `d722d31a2c0a35e26243ab40380464c94d15edbfc769c72567fa1e07ad844433` |
+| excluding V018/V019/V020 (352) | `EvidenceRoleIvrAssociationAclBoundaryTests.v001ThroughV017AndPublicContractsRemainByteFrozen:102` | `9bb26c371439c984615b885ef1f854e7a86cc561176b693646ba6108c2568d79` | `8f4ca11a2270169fda716622238e18ea0f4af64e943c7c1e2cf672bb39951818` |
+
+This is exactly the §10 → §11 precedent: the only admissible remedy is a Controller-authorized **pin-only** update of the three literals above in the three guard files (no assertion weakened, no other byte changed). Until that authorization exists, required validations 3 and 4 cannot reach zero failures, and the green-only workflow identity script cannot certify the run. All other **134** guards and all **1,160** remaining units pass with the AGG-02 edit in place.
+
+### Final validation, in required order
+
+| Validation | Result | Evidence |
+| --- | --- | --- |
+| 1. Focused `CustomerOrderSnapshotReaderTests,CustomerOrderQueryServiceTests` | **13 / 0 / 0 / 0**, BUILD SUCCESS | `it-targeted.log`, `focused.log` |
+| 2. PostgreSQL `CustomerOrdersReadIT,CustomerOrderReadPrivilegesIT` (`-Pcontainer-smoke`) | reads **16 / 0 / 0 / 0**, privileges **10 / 0 / 0 / 0**, zero failures/errors/skips | `it-targeted.log`, `read-it-rerun.log` |
+| 3. Exact 138-test architecture/module/PA25 guard command (§4 line 74 class list, sanctioned Maven) | **138 / 4 / 0 / 0**, BUILD FAILURE - the four failures are only the stale aggregate pins above; no other guard regressed | `guards.log` |
+| 4. Mandated `/opt/maven-3.9.9/bin/mvn -B -ntp -Pcontainer-smoke clean verify` | Surefire **1,164 / 4 / 0 / 0** (122 classes), Failsafe **not reached**, BUILD FAILURE in 06:31 min; required **1,164 / 0 / 0 / 0** + BUILD SUCCESS is unattainable without the pin-only authorization | `full.log`, 410,417/`eddc64992179da51b048969fb7f4fa0d4e7bdf17ec17d778ae8e72f196a44d49` (2,328 lines) |
+| 4b. Diagnostic `-Pcontainer-smoke -Dmaven.test.failure.ignore=true clean verify` | Surefire **1,164 / 4 / 0 / 0**; Failsafe **764 / 0 / 0 / 0** across 46 classes; BUILD SUCCESS in 01:22 h | `full-diagnostic.log`, `full-totals.json` |
+| 5. Workflow identity | verbatim `workflow-identity.py` exits non-green on the four documented pin identities; the byte-identical adjacent copy proves **122 / 1,164** + **46 / 764** = **168 / 1,928**, 1,929 annotation lines, 1,928 unique XML identities, **46** POM includes, zero skips/errors | `workflow-identity.log`, `workflow-identity-adjacent.log` |
+| 5. Packaged parity | **811 / 811** complete compiled class entries byte-identical with no duplicates; exact **20** packaged migration paths/bytes with V020 once; **23 / 23** source resource bytes exact; final build's own JAR is 40,192,842 bytes with SHA256 `15bf8f05d7cf97e605338f1d13e8d0154c13d0c978e3611581828e7a5abcf58a`, which is the artifact the HTTP and firewall probes exercised | `packaged-parity.log` |
+| 5. HTTP smoke | **212 / 212** probes pass (default startup plus both web/error-path configurations), all problem bodies shaped `type/title/status/code/traceId` with unique trace IDs and no leaked material | `jar-smoke.log` |
+| 5. Firewall | **116 / 116** adversarial dependency/packaging probes pass (`baseline37/34, ssm72/65, counterparts64, dependency-only8, packager1; deltas35/0 and 31/0`) | `firewall.log` |
+| 5. Frozen bytes/scope | **33 / 33** raw-byte equal; 85-path membership has exactly the 4 authorized differing members | `frozen-scope-manifest.log` |
+| 5. `git diff --check` | pass; configured line-ending conversion warnings only | `diff-check.log` |
+
+### Revised manifest and report integrity
+
+The revised **85-path** product/bookkeeping manifest, recomputed from final LF-normalized bytes with the unchanged frozen membership, is `/tmp/pa42-aggregate-fix1-final-manifest.txt` = **85 lines / 13,160 bytes**, SHA256 **`5904446ad87ae9731e0db9baaaad3e75fbdd58f88427db9e559131e6de7be689`**. No member was added or dropped; exactly the **4** authorized aggregate-fix members differ from the §12 manifest (`DefaultCustomerOrderSnapshotReader.java`, `CustomerOrderSnapshotReaderTests.java`, `CustomerOrderQueryServiceTests.java`, `CustomerOrdersReadIT.java`) and the other **81** are LF-byte-identical. Scoped to those same 85 paths `git diff --name-status origin/main` still reports exactly **16 added + 69 modified = 85**, so no member entered or left the product scope; this report and Control stay outside that membership, and `git diff --name-status` from the accepted-slice checkpoint `7cd6fd2cb9ba04d548d92d5be5aaacd17febe2a6` shows only the six locally modified files (the five allowed paths plus the pre-existing Control edit). Recomputation is deterministic from final LF-normalized bytes with the existing frozen membership; whole-JAR reproducibility is **not** claimed. Report line/byte/SHA256 after the last edit are recorded externally in `/tmp/pa42-aggregate-fix1-report-integrity.log` and in the handoff response, because a file cannot honestly contain its own final checksum.
+
+**Blockers:** the three stale aggregate pin literals described above (353/355/352-entry manifests) require a Controller-authorized pin-only update in three guard files outside this task's allowed writes; until then required validations 3 and 4 and the green-only identity script cannot pass. No scope drift, no identity/count change, no frozen-byte change and no other failing required test was found.
+
+**No staging, commit, push, PR, merge, approval, ready marking, reviewer request, external comment, gate advancement or other remote action occurred.**
+
+### Final local evidence ledger
+
+| Evidence file (`/tmp/pa42-aggregate-fix1-` prefix) | Bytes | Raw SHA256 |
+| --- | ---: | --- |
+| `focused.log` (initial fallback pass) | 3,648 | `44c6855e7c715d1542c4190d107e7fd09fbda6d6bad186fbd3e985faa62b0c7a` |
+| `read-it.log` (initial fallback pass, full surefire abort) | 405,162 | `5c3af9450497f6962964f34423fd06dd0c382764025ffecc4e71bd882141a556` |
+| `it-targeted.log` (13 units + privileges 10 + reads 16/1 defective anchor) | 114,179 | `05d6345ec4254e1eec25cf1393fdb249acc4190e045b9da3dd0b83db9ee9bab1` |
+| `read-it-rerun.log` (corrected anchor, reads 16 / 0 / 0 / 0) | 55,899 | `c13d25704eccd8c7d2f00a483d99e28e0c80992952fe41bc9cbcdf4ebf708d4f` |
+| `pin-drift.log` (three-manifest HEAD reproduction and sole-delta proof) | 1,587 | `7d58b2296afa62b82da1412900d193d705eda3f3539050b9f0d9e7215203a421` |
+| `guards.log` | 15,508 | `bea805cff98ebef7df7170d2295e0152a153016a793bf9ef75616433bf9d040a` |
+| `full.log` (mandated exact command) | 410,417 | `eddc64992179da51b048969fb7f4fa0d4e7bdf17ec17d778ae8e72f196a44d49` |
+| `full-diagnostic.log` | 1,901,729 | `e960a89988155a5aa4af58449de2bdbf48b248fb62d72661421edb988818474d` |
+| `full-totals.json`, `fresh-xml.log` | 852 / 717 | `7b9e376a3db3f685f30653704f6b4869287c92a51d2fa2d7f9cfe83b3dea5488` / `06e1b1657ee88f604ceaabb773d55dcb403c3c2679310b5d8267364737aa7e3f` |
+| `workflow-identity.log` (verbatim, non-green) | 66 | `9cbd5d51d4d659a73d9a301ae01cb20a92b3ec443109808b522e02e52ccc1a8c` |
+| `workflow-identity-adjacent.log` | 1,226 | `94739f0781e6f28fa549a5abf208549ed15a852d8dbde0194f5e0599f788e998` |
+| `packaged-parity.log`, `packaged-parity.json` | 381 / 249 | `cceec2ad8b98605b5d9f30225aa42d77817c67cf9e254715fc6ab689b41e0389` / `c449e5e1bd3856ba2d339fcc9b779bebf1ace894ba88447813960e7707232ec9` |
+| `jar-smoke.log` | 18,494 | `956b89f7e846dab69f57b57322411af23f44f96838a01d9001f7941909920dff` |
+| `firewall.log`, `runtime-dependencies.log` | 550 / 705 | `36da837b113f9d6020881386c75bf754261089b8931cce61f3e513e736b9676f` / `c9bb695d4eddef8f1f4538c1f5ae32ce38b0be15a8650441b9a7ad738385fab4` |
+| `in-memory-mutations-unit.log`, `in-memory-mutations-it.log` | 1,483 / 230,225 | `02acaf590900b6c6598eda2e1807740d938740ce334a40eafe08256c1907e65e` / `9b7b5af3af931ce9d76674e481a01a0e199a6e0686753d4388bc32336f21498a` |
+| `frozen-scope-manifest.log`, `diff-check.log`, `final-manifest.txt` | 444 / 0 / 13,160 | `c19897157ca0fb352269af86ba67a2261af05776c3ffce9350b416e27d78b263` / `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` / `5904446ad87ae9731e0db9baaaad3e75fbdd58f88427db9e559131e6de7be689` |
+
+Only the five allowed paths changed in this task: the seam production file, the three test classes above and this report. No other production, test, bookkeeping, control or review path was written; the three guard files holding the stale aggregate pins were deliberately left untouched.
+
+### Controller-authorized pin finalization — resolved November 26, 2026
+
+Task **`pa42-aggregate-fix1-pin-gpt-20261126-140825`** supersedes only the unresolved pin-blocker disposition above. The earlier failed guard/full runs, diagnostic failure-ignore run, adjacent identity diagnosis, prior artifact hash and prior manifest remain historical evidence, not the final acceptance run. Controller explicitly authorized the three hash-literal replacements; no list, exclusion, count, identity, delegation or assertion strength changed.
+
+The only repository paths written during this pin-finalization task are:
+
+- `backend/src/test/java/com/onecall/archtests/architecture/CustomerCatalogOfferReadAclBoundaryTests.java` — two hash literals.
+- `backend/src/test/java/com/onecall/archtests/architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java` — one hash literal.
+- `docs/gateflow/pa42-customer-order-read-and-unknown-recovery-foundation-implementation.md` — this §13 continuation.
+
+`CustomerOrderCreationBoundaryTests.java` has no duplicate old literal and was not edited; its existing delegation passes with the updated catalog assertion. The aggregate implementation and its tests were left untouched. Production, V020, PA25, CI/POM, plan, Control, review artifacts and private prompts were not written. Control remains raw SHA256 **`a354a7daf210ee3b04f724b352961789a067bd6e7c881cb3d0d0b885e62c919b`**.
+
+#### Independently reconstructed pin evidence
+
+Before applying replacements, every file in `backend/src/main/java` and `backend/src/main/resources` was compared against its actual checkpoint HEAD bytes, not merely an assumed historical seam substitution. After the replacements and final build, the same manifests were recomputed from final bytes. Each row uses the guard's exact existing path representation, LF normalization, exclusions, sorted `path + ' ' + SHA256` lines and trailing LF. Before/after final manifest bytes are identical; guard edits cannot enter these production/resource manifests.
+
+| Exact existing manifest | Entries / manifest bytes | Independently reproduced checkpoint HEAD SHA256 | Final SHA256, identical before/after literal edits |
+| --- | --- | --- | --- |
+| Exclude V019/V020 | 353 / 55,041 | `93764e87e85a318753f98a20dfaaa46bde76a0e6e4113cd856ca1172b03cdbae` | `ad4662b82014ee9a79c9342be68102c8a26f3041e82c46620c17addf702b7898` |
+| No exclusions | 355 / 55,325 | `7d7346e43c1c6d744ec803e4746d9b33b42ca33aa7e89c8beff317cc0cf3910d` | `d722d31a2c0a35e26243ab40380464c94d15edbfc769c72567fa1e07ad844433` |
+| Exclude V018/V019/V020 | 352 / 54,888 | `9bb26c371439c984615b885ef1f854e7a86cc561176b693646ba6108c2568d79` | `8f4ca11a2270169fda716622238e18ea0f4af64e943c7c1e2cf672bb39951818` |
+
+The **sole differing production entry** against HEAD in all three manifests is `backend/src/main/java/com/onecall/core/catalog_order/internal/customerorder/DefaultCustomerOrderSnapshotReader.java`; the other production/resource entries match. Evidence: `/tmp/pa42-aggregate-fix1-pin-before.log`, plus `/tmp/pa42-aggregate-fix1-pin-{353,355,352}-{before,after}.manifest`. Independently reversing exactly the three approved literal replacements restores both guard files' original **raw-byte** SHA256 values (`7a7d6d4dde967ec45593e5b21f67c5dcac3e7dad32483fdcd6fda9476c4c5a66` and `98340d9be68683498a12cfa53b2ef10faf34712e31053bde961ce79532dd2ab0`); even their pre-existing mixed CRLF/LF endings are preserved. Evidence: `/tmp/pa42-aggregate-fix1-pin-raw-literal-only.log`.
+
+#### Final acceptance validations
+
+All Maven commands ran from `backend` using `JAVA_HOME=/opt/jdk21`, `/opt/jdk21/bin` first on `PATH`, and `/opt/maven-3.9.9/bin/mvn`. The exact unchanged 20-class guard selection in §4 ran first. The mandatory full command was then `/opt/maven-3.9.9/bin/mvn -B -ntp -Pcontainer-smoke clean verify 2>&1 | tee /tmp/pa42-aggregate-fix1-pin-final-full.log`, under `pipefail`, with **no timeout, test filter, test-failure-ignore or kill**. It completed naturally from **2026-11-26 14:16:27 +08:00** to **15:41:21 +08:00** (Maven reports **01:24 h**); XML totals were independently checked after completion.
+
+| Validation | Final result | Evidence (`/tmp/pa42-aggregate-fix1-pin-` prefix) |
+| --- | --- | --- |
+| Exact architecture/module/PA25 guards | **138 / 0 / 0 / 0**, 20 classes, BUILD SUCCESS | `final-guards.log`, `final-guard-totals.log` |
+| Unfiltered clean full Surefire | **1,164 / 0 / 0 / 0**, 122 classes | `final-full.log`, `final-full-totals.json` |
+| Unfiltered clean full Failsafe | **764 / 0 / 0 / 0**, 46 classes, **BUILD SUCCESS** | `final-full.log`, `final-full-totals.json` |
+| Actual workflow identity | **122 / 1,164 + 46 / 764 = 168 / 1,928**; 1,929 annotation lines, 1,928 exact XML identities, 46 POM includes; zero failures/errors/skips | `final-workflow-identity.log` |
+| Packaged/resource parity | **811 / 811** complete compiled entries byte-identical, no duplicate entries; **23 / 23** source resources exact; **20 / 20** migration paths and bytes exact, V020 once | `final-packaged-parity.json` |
+| Final-build JAR HTTP smoke | **212 / 212**, actual default startup and both web/error-path configurations pass | `final-jar-smoke.log` |
+| Final-build dependency/packaging firewall | **116 / 116** adversarial probes; baseline37/34, ssm72/65, counterparts64, dependency-only8, packager1; deltas35/0 and31/0 | `final-firewall.log`, `final-runtime-dependencies.log` |
+| Frozen inputs / scope | **33 / 33** raw-byte equal; unchanged 85-path membership; exactly two authorized pin guard members differ from the aggregate-fix manifest | `final-frozen-scope-manifest.log` |
+| `git diff --check` | **pass**, exit 0; only configured LF-to-CRLF conversion warnings | `final-diff-check.log` |
+
+Identity, HTTP and firewall Python were extracted **verbatim from the actual current `.github/workflows/ci.yml`**, not the diagnostic adjacent copy: extracted script SHA256 values are respectively `f4376c86ee73b19550f3b51e68cb561932a0eb14b4932ecede53dabce6163e46`, `1ec05cf38bbdf61b59463cd720ecda83d00f088785765e7d60dd267c1a8eed42` and `d850e23541b1032dc2ecb4b331c68dfad95676fa3d9cdc47e215d66e092cc886`. The clean build's own final JAR, used by all subsequent package/HTTP/firewall checks, is **40,192,842 bytes**, SHA256 **`20a3d3e57ca290180ab86181ec78e5bc0ce57cf279ae7b5e832f9fe463890b1e`**. No whole-JAR reproducibility claim is made.
+
+#### Final manifest and evidence integrity
+
+The final manifest is `/tmp/pa42-aggregate-fix1-pin-final-manifest.txt`: **85 lines / 13,160 bytes / SHA256 `623e04f24d0fdedde5b87140caf7603e51f0d1949b184d5f90d89993b713bfba`**, recomputed from final LF-normalized bytes using the unchanged frozen 85-path membership. Relative to the aggregate-fix manifest `5904446ad87ae9731e0db9baaaad3e75fbdd58f88427db9e559131e6de7be689`, only the two authorized pin guard members differ; **83** members are unchanged. Relative to §12, the four aggregate implementation/test members plus those two guards differ; **79** members are unchanged. Scoped `git diff --name-status origin/main` remains **16 added + 69 modified = 85**; this report and Control remain outside the manifest.
+
+| Final evidence (`/tmp/pa42-aggregate-fix1-pin-` prefix) | Bytes | Raw SHA256 |
+| --- | --- | --- |
+| `before.log` | 980 | `a37097297afb088949d1efeac698d93fb2573fa3761e60b42099bb80203e9540` |
+| `raw-literal-only.log` | 496 | `352e6d95a62608b9da155cd386881233f3312f26ac11c363a1a4a657349818d7` |
+| `final-guards.log` | 12,701 | `a9aa03b45bf9ca310962bf48ffea2ed8675d2154d37ca4e60663a031cefe2ca1` |
+| `final-full.log` | 1,898,013 (10,353 lines) | `e74f30056f3b80915f6c70b4ce339eb2a67d2e8121806961cba0dfa070c470dc` |
+| `final-full-totals.json` | 203 | `e3159d55531d8dbc1c945247a9327db0eafddbe523650466ede7f6f44413b6da` |
+| `final-workflow-identity.log` | 1,155 | `f415e075942cf47d10b332eee6e5585f7d7b121404bbb20a3aa8e4320cd0b0b5` |
+| `final-packaged-parity.json` | 249 | `a51df64a059bd2d74048fbe7bc9073056f3dbca99eee7764d8c5a0a481862fd0` |
+| `final-jar-smoke.log` | 18,477 | `5589ef3dec5dc78eef3de5617939b59a38ba2cbbb2205a3e1a5c685bfa508394` |
+| `final-firewall.log` | 534 | `981d7f7af1b485a8f7906a8177949d6bd87bc0bee66eb0724cf072593704c150` |
+| `final-runtime-dependencies.log` | 682 | `fcba228231c32ec4ab000c1abe727fbbe877b1d2fee954db1b2f95c4f333a2de` |
+| `final-frozen-scope-manifest.log` | 1,554 | `158b955e7d38d30732080bec71bcba61237c6829ed1b4332278003d6ed8094cb` |
+| `final-diff-check.log` | 1,500 | `cfe2480d1a1fb027b19e11b615ab6d6323641d3318b5c23f2e632e66aefb4474` |
+| `final-manifest.txt` | 13,160 | `623e04f24d0fdedde5b87140caf7603e51f0d1949b184d5f90d89993b713bfba` |
+
+Final report line/byte/SHA256 is measured **after the last report edit**, recorded externally in `/tmp/pa42-aggregate-fix1-pin-final-report-integrity.log` and the final handoff; embedding its own final checksum in this file would be self-referential. The final post-report scope, manifest, artifact and whitespace recheck is recorded in `/tmp/pa42-aggregate-fix1-pin-final-post-report.log`.
+
+**Final blockers: none.** The four stale-pin assertion failures are resolved without weakening any guard. Historical failures above are preserved. No additional path drift, identity/count change, frozen-input change or validation failure occurred. A pre-build local scope helper initially used `backend` as `GIT_WORK_TREE`, causing only its origin/main path-count assertion to fail; correcting the helper to the explicitly required repository-root worktree proved 16 + 69 = 85 before the full run and again afterward, with no repository change for that diagnostic. No commit, stage, push, PR, merge, approval, ready marking, reviewer request, external comment or other remote action was performed.

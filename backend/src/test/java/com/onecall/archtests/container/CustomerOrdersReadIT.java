@@ -145,6 +145,68 @@ public class CustomerOrdersReadIT {
             suffix = "?limit=2&cursor=" + page.get("nextCursor").asString();
         } while (seen.size() <= 5);
         assertThat(seen).containsExactlyInAnyOrderElementsOf(identities).doesNotHaveDuplicates();
+        List<String> expected = java.util.Arrays.asList(fixture.value("""
+                SELECT string_agg(id::text, ',' ORDER BY created_at DESC, id DESC) FROM catalog_order.customer_order
+                WHERE account_id=?::uuid AND owner_organization_id IS NULL""", fixture.account).split(","));
+        assertThat(expected).containsExactlyInAnyOrderElementsOf(identities);
+        List<String> limitChanged = new ArrayList<>();
+        queries.clear();
+        var opened = success("?limit=2");
+        assertThat(opened.get("items").size()).isEqualTo(2);
+        assertThat(opened.get("hasMore").asBoolean()).isTrue();
+        assertThat(opened.get("nextCursor").isNull()).isFalse();
+        assertThat(queries.stream().filter(sql -> sql.contains("FROM catalog_order.customer_order"))).hasSize(1)
+                .allSatisfy(sql -> assertThat(sql).doesNotContain("(o.created_at, o.id) <")
+                        .contains("ORDER BY o.created_at DESC, o.id DESC LIMIT ?"));
+        opened.get("items").forEach(item -> limitChanged.add(item.get("orderId").asString()));
+        assertThat(limitChanged).containsExactlyElementsOf(expected.subList(0, 2));
+        queries.clear();
+        var closed = success("?limit=4&cursor=" + opened.get("nextCursor").asString());
+        assertThat(closed.get("items").size()).isEqualTo(3);
+        assertThat(closed.get("hasMore").asBoolean()).isFalse();
+        assertThat(closed.get("nextCursor").isNull()).isTrue();
+        assertThat(queries.stream().filter(sql -> sql.contains("FROM catalog_order.customer_order"))).hasSize(1)
+                .allSatisfy(sql -> assertThat(sql)
+                        .contains("(o.created_at, o.id) < (CAST(? AS timestamptz), CAST(? AS uuid))").doesNotContain("OFFSET"));
+        assertThat(queries.stream().filter(sql -> sql.contains("FROM entitlement_metering.entitlement_issuance"))).hasSize(1);
+        closed.get("items").forEach(item -> limitChanged.add(item.get("orderId").asString()));
+        assertThat(limitChanged).doesNotHaveDuplicates().containsExactlyElementsOf(expected);
+        List<String> anchorMutated = new ArrayList<>();
+        var head = success("?limit=2");
+        head.get("items").forEach(item -> anchorMutated.add(item.get("orderId").asString()));
+        assertThat(anchorMutated).containsExactlyElementsOf(expected.subList(0, 2));
+        String anchor = anchorMutated.get(1);
+        String inserted = UUID.randomUUID().toString();
+        fixture.sql("""
+                INSERT INTO catalog_order.customer_order(id,order_no,account_id,owner_organization_id,subject_id,channel,
+                    catalog_version_id,catalog_offer_id,purchase_consent_id,amount_cents,currency,payment_status,snapshot,
+                    snapshot_sha256,version_token,idempotency_key,request_fingerprint,created_at)
+                SELECT ?::uuid,'PA42-INSERT-'||?::text,account_id,owner_organization_id,subject_id,channel,
+                    catalog_version_id,catalog_offer_id,purchase_consent_id,amount_cents,currency,payment_status,snapshot,
+                    snapshot_sha256,version_token,'pa42-inserted-'||?::text,request_fingerprint,
+                    '2025-01-01T00:00:00Z'::timestamptz FROM catalog_order.customer_order WHERE id=?::uuid
+                """, inserted, inserted, inserted, anchor);
+        fixture.sql("DELETE FROM catalog_order.customer_order WHERE id=?::uuid", anchor);
+        assertThat(fixture.value("SELECT count(*)::int FROM catalog_order.customer_order WHERE id=?::uuid", anchor)).isEqualTo("0");
+        queries.clear();
+        var middle = success("?limit=2&cursor=" + head.get("nextCursor").asString());
+        assertThat(middle.get("items").size()).isEqualTo(2);
+        assertThat(middle.get("hasMore").asBoolean()).isTrue();
+        assertThat(queries.stream().filter(sql -> sql.contains("FROM catalog_order.customer_order"))).hasSize(1)
+                .allSatisfy(sql -> assertThat(sql)
+                        .contains("(o.created_at, o.id) < (CAST(? AS timestamptz), CAST(? AS uuid))").doesNotContain("OFFSET"));
+        middle.get("items").forEach(item -> anchorMutated.add(item.get("orderId").asString()));
+        assertThat(middle.get("items").get(0).get("orderId").asString()).isEqualTo(expected.get(2));
+        assertThat(middle.get("items").get(1).get("orderId").asString()).isEqualTo(expected.get(3));
+        var tail = success("?limit=2&cursor=" + middle.get("nextCursor").asString());
+        assertThat(tail.get("items").size()).isEqualTo(2);
+        assertThat(tail.get("hasMore").asBoolean()).isFalse();
+        assertThat(tail.get("nextCursor").isNull()).isTrue();
+        tail.get("items").forEach(item -> anchorMutated.add(item.get("orderId").asString()));
+        assertThat(tail.get("items").get(0).get("orderId").asString()).isEqualTo(expected.get(4));
+        assertThat(tail.get("items").get(1).get("orderId").asString()).isEqualTo(inserted);
+        assertThat(anchorMutated).doesNotHaveDuplicates().hasSize(6)
+                .containsExactly(expected.get(0), anchor, expected.get(2), expected.get(3), expected.get(4), inserted);
         assertThat(fixture.databaseInventory()).isEqualTo(before); clean();
     }
     @Test void missingAndForeignDetailsAreIndistinguishable() throws Exception {
@@ -338,6 +400,28 @@ public class CustomerOrdersReadIT {
         fixture.problem(get("", "web"), 500, "INTERNAL");
         fixture.problem(get("/" + identity, "web"), 404, "NOT_FOUND");
         assertThat(fixture.databaseInventory()).isEqualTo(before); clean();
+        String agreement = create("agreement");
+        fixture.sql("DELETE FROM catalog_order.customer_order WHERE id=?::uuid", identity);
+        var consistent = success("/" + agreement);
+        assertThat(consistent.get("amountCents").asLong()).isEqualTo(123L);
+        assertThat(consistent.get("snapshot").get("amountCents").asLong()).isEqualTo(123L);
+        String storedFacts = fixture.value("""
+                SELECT md5(snapshot::text)||'|'||snapshot_sha256 FROM catalog_order.customer_order WHERE id=?::uuid""", agreement);
+        before = fixture.databaseInventory();
+        identity = replaceFixtureOrder(agreement, UUID.randomUUID().toString(),
+                "(snapshot->>'priceCents')::bigint+1", "snapshot_sha256", "created_at");
+        assertThat(fixture.value("SELECT md5(snapshot::text)||'|'||snapshot_sha256 FROM catalog_order.customer_order WHERE id=?::uuid", identity))
+                .isEqualTo(storedFacts);
+        assertThat(fixture.value("SELECT amount_cents::text||'|'||(snapshot->>'priceCents') FROM catalog_order.customer_order WHERE id=?::uuid", identity))
+                .isEqualTo("124|123");
+        assertThat(fixture.value("SELECT count(*)::int FROM catalog_order.customer_order WHERE account_id=?::uuid AND owner_organization_id IS NULL", fixture.account)).isEqualTo("1");
+        fixture.problem(get("/" + identity, "web"), 404, "NOT_FOUND");
+        var page = success("");
+        assertThat(page.get("items").size()).isEqualTo(1);
+        assertThat(page.get("items").get(0).get("orderId").asString()).isEqualTo(identity);
+        assertThat(page.get("items").get(0).get("amountCents").asLong()).isEqualTo(124L);
+        assertThat(fixture.databaseInventory()).isEqualTo(before);
+        clean();
     }
     @Test void readsAndInTransactionFailuresHaveZeroWriteDelta() throws Exception {
         create("dependency");

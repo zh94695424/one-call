@@ -99,7 +99,7 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
         for (String line : FROZEN.strip().split("\n")) { String[] fields = line.split(" "); byte[] bytes = Files.readAllBytes(Path.of("..").resolve(fields[0])); assertThat(hash(bytes)).as(fields[0]).isIn(fields[1], fields[2]); assertThat(hash(lf(bytes))).isEqualTo(fields[2]); }
         List<Path> files = new ArrayList<>(); for (String root : List.of("src/main/java", "src/main/resources")) try (var paths = Files.walk(Path.of(root))) { files.addAll(paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V018) && !path.getFileName().toString().equals("V019__customer_catalog_offer_read_privileges.sql") && !path.getFileName().toString().equals("V020__customer_order_read_privileges.sql")).toList()); }
         List<String> manifest = new ArrayList<>(); for (Path file : files) manifest.add(file.toString().replace('\\', '/') + " " + hash(lf(Files.readAllBytes(file)))); Collections.sort(manifest);
-        assertThat(manifest).hasSize(352); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("9bb26c371439c984615b885ef1f854e7a86cc561176b693646ba6108c2568d79");
+        assertThat(manifest).hasSize(352); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("8f4ca11a2270169fda716622238e18ea0f4af64e943c7c1e2cf672bb39951818");
     }
     @Test
     void pa25UsesExactEighteenHistoryAndIndependent410TupleOracle() throws Exception {

@@ -93,6 +93,25 @@ class CustomerOrderQueryServiceTests {
     }
     @Test void corruptSnapshotAndRowFactsMapDetail404() {
         detail(); assertThat(service.getCustomerOrder(caller, identity)).isPresent();
+        List<Benefit> agreed = List.of(new Benefit("AI_SECONDS", 1, 1, 0));
+        String agreedHash = "a".repeat(64);
+        for (Snapshot mismatch : List.of(
+                new Snapshot(1, UUID.randomUUID(), offer, "WEB", "token", "SYNTHETIC", "ONE_TIME", "PERSONAL", 123L, "CNY", "ONCE", 1, agreed, agreedHash),
+                new Snapshot(1, version, UUID.randomUUID(), "WEB", "token", "SYNTHETIC", "ONE_TIME", "PERSONAL", 123L, "CNY", "ONCE", 1, agreed, agreedHash),
+                new Snapshot(1, version, offer, "MINIAPP", "token", "SYNTHETIC", "ONE_TIME", "PERSONAL", 123L, "CNY", "ONCE", 1, agreed, agreedHash),
+                new Snapshot(1, version, offer, "WEB", "token", "SYNTHETIC", "ONE_TIME", "PERSONAL", 124L, "CNY", "ONCE", 1, agreed, agreedHash),
+                new Snapshot(1, version, offer, "WEB", "token", "SYNTHETIC", "ONE_TIME", "PERSONAL", 123L, "USD", "ONCE", 1, agreed, agreedHash),
+                new Snapshot(1, version, offer, "WEB", "token", "SYNTHETIC", "ONE_TIME", "PERSONAL", 123L, "CNY", "ONCE", 1, agreed, "b".repeat(64)))) {
+            clearInvocations(snapshots);
+            when(snapshots.read(any(), any())).thenReturn(mismatch);
+            assertThat(service.getCustomerOrder(caller, identity)).as("mismatched snapshot %s", mismatch).isEmpty();
+            verify(snapshots).read("stored", agreedHash);
+        }
+        clearInvocations(snapshots);
+        when(snapshots.read(any(), any())).thenReturn(new Snapshot(1, version, offer, "WEB", "token", "SYNTHETIC",
+                "ONE_TIME", "PERSONAL", 123L, "CNY", "ONCE", 1, agreed, agreedHash));
+        assertThat(service.getCustomerOrder(caller, identity)).as("fully agreeing row and snapshot").isPresent();
+        verify(snapshots).read("stored", agreedHash);
         when(snapshots.read(any(), any())).thenThrow(new CustomerOrderSnapshotReader.InvalidSnapshotException());
         assertThat(service.getCustomerOrder(caller, identity)).isEmpty();
         doThrow(new IllegalStateException("private runtime canary")).when(snapshots).read(any(), any());

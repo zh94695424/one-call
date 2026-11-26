@@ -92,7 +92,7 @@ class CustomerCatalogOfferReadAclBoundaryTests {
         }
         assertThat(count).isEqualTo(353);
         var lines = manifest.toString().lines().sorted().toList();
-        assertThat(hash((String.join("\n",lines)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("93764e87e85a318753f98a20dfaaa46bde76a0e6e4113cd856ca1172b03cdbae");
+        assertThat(hash((String.join("\n",lines)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("ad4662b82014ee9a79c9342be68102c8a26f3041e82c46620c17addf702b7898");
         currentMigrationProof();
     }
     @Test void pa25PinsNineteenHistoryAndIndependent432TupleOracle() throws Exception {
@@ -127,7 +127,7 @@ class CustomerCatalogOfferReadAclBoundaryTests {
         String ci = Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("entries.count('BOOT-INF/classes/db/migration/"+V019+"') == 1");
         List<String> manifest=new ArrayList<>();
         for(String directory:List.of("src/main/java","src/main/resources")) try(var files=Files.walk(Path.of(directory))) { for(Path file:files.filter(Files::isRegularFile).toList()) manifest.add(file.toString().replace('\\','/')+" "+hash(lf(Files.readAllBytes(file)))); }
-        Collections.sort(manifest); assertThat(manifest).hasSize(355); assertThat(hash((String.join("\n",manifest)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("7d7346e43c1c6d744ec803e4746d9b33b42ca33aa7e89c8beff317cc0cf3910d");
+        Collections.sort(manifest); assertThat(manifest).hasSize(355); assertThat(hash((String.join("\n",manifest)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("d722d31a2c0a35e26243ab40380464c94d15edbfc769c72567fa1e07ad844433");
     }
     @Test void sourceCiPomAndXmlIdentitiesMatchExactly() throws Exception {
         Set<String> identities = new TreeSet<>(); int annotations=0, unit=0, integration=0;

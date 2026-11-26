@@ -59,6 +59,18 @@ class CustomerOrderSnapshotReaderTests {
         for (String corrupt : java.util.List.of("", "F".repeat(64), "a".repeat(63)))
             assertThatThrownBy(() -> reader.read(value, corrupt)).isInstanceOf(InvalidSnapshotException.class);
         assertThatThrownBy(() -> reader.read(null, null)).isInstanceOf(InvalidSnapshotException.class);
+        for (String frozen : java.util.List.of("RECORDING_SECONDS", "AI_SECONDS", "EVIDENCE_COUNT", "STORAGE_BYTES")) {
+            String allowed = value.replace("AI_SECONDS", frozen);
+            assertThat(reader.read(allowed, hash(allowed)).benefitLines().getFirst().entitlementType()).isEqualTo(frozen);
+        }
+        String unknownEntitlement = value.replace("AI_SECONDS", "EVIL");
+        assertThatThrownBy(() -> reader.read(unknownEntitlement, hash(unknownEntitlement)))
+                .isInstanceOf(InvalidSnapshotException.class);
+        String oneCharacterProduct = value.replace("\"productCode\":\"SYNTHETIC\"", "\"productCode\":\"X\"");
+        assertThatThrownBy(() -> reader.read(oneCharacterProduct, hash(oneCharacterProduct)))
+                .isInstanceOf(InvalidSnapshotException.class);
+        String twoCharacterProduct = value.replace("\"productCode\":\"SYNTHETIC\"", "\"productCode\":\"XY\"");
+        assertThat(reader.read(twoCharacterProduct, hash(twoCharacterProduct)).productCode()).isEqualTo("XY");
     }
     @Test void safeIntegerBoundariesAreEnforced() {
         String maximum = stored().replace("\"priceCents\":123", "\"priceCents\":9007199254740991");
