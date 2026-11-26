@@ -32,7 +32,8 @@ class CustomerCatalogOfferReadAclBoundaryTests {
             "V016__customer_subject_detail_read_privileges.sql",
             "V017__customer_evidence_read_privileges.sql",
             "V018__evidence_role_ivr_association_read_privileges.sql",
-            "V019__customer_catalog_offer_read_privileges.sql");
+            "V019__customer_catalog_offer_read_privileges.sql",
+            "V020__customer_order_read_privileges.sql");
     private static final Path ROOT = Path.of("..");
     private static String hash(byte[] bytes) throws Exception { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
     private static byte[] lf(byte[] bytes) { return new String(bytes, StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8); }
@@ -46,11 +47,12 @@ class CustomerCatalogOfferReadAclBoundaryTests {
         method.setAccessible(true); return (String) method.invoke(null);
     }
     static void assertCurrentMigrationNames(Collection<String> names) {
-        assertThat(names).hasSize(19); assertThat(new HashSet<>(names)).hasSize(19).isEqualTo(MIGRATIONS);
+        assertThat(names).hasSize(20); assertThat(new HashSet<>(names)).hasSize(20).isEqualTo(MIGRATIONS);
     }
     static void currentMigrationProof() throws Exception {
         try (var files = Files.list(Path.of("src/main/resources/db/migration"))) { assertCurrentMigrationNames(files.map(path -> path.getFileName().toString()).toList()); }
-        var historical = new TreeSet<>(MIGRATIONS); historical.remove(V019); assertThat(historical).hasSize(18).noneMatch(name -> name.startsWith("V019"));
+        var historical = new TreeSet<>(MIGRATIONS); historical.remove("V020__customer_order_read_privileges.sql"); assertThat(historical).hasSize(19);
+        historical.remove(V019); assertThat(historical).hasSize(18).noneMatch(name -> name.startsWith("V019"));
         for (String extra : List.of("V020__unexpected.sql", "V019__unexpected.sql")) { var hostile = new ArrayList<>(MIGRATIONS); hostile.add(extra); assertThatThrownBy(() -> assertCurrentMigrationNames(hostile)).isInstanceOf(AssertionError.class); }
         var missing = new ArrayList<>(historical); assertThatThrownBy(() -> assertCurrentMigrationNames(missing)).isInstanceOf(AssertionError.class);
         missing.add("V019__unexpected.sql"); assertThatThrownBy(() -> assertCurrentMigrationNames(missing)).isInstanceOf(AssertionError.class);
@@ -86,15 +88,18 @@ class CustomerCatalogOfferReadAclBoundaryTests {
     @Test void frozenContractsAndV001ThroughV018RemainByteIdentical() throws Exception {
         var manifest = new StringBuilder(); int count=0;
         for (String directory : List.of("src/main/java", "src/main/resources")) try (var paths = Files.walk(Path.of(directory))) {
-            for (Path path : paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V019)).sorted().toList()) { manifest.append(path.toString().replace('\\','/')).append(' ').append(hash(lf(Files.readAllBytes(path)))).append('\n'); count++; }
+            for (Path path : paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V019) && !path.getFileName().toString().equals("V020__customer_order_read_privileges.sql")).sorted().toList()) { manifest.append(path.toString().replace('\\','/')).append(' ').append(hash(lf(Files.readAllBytes(path)))).append('\n'); count++; }
         }
-        assertThat(count).isEqualTo(346);
+        assertThat(count).isEqualTo(353);
         var lines = manifest.toString().lines().sorted().toList();
-        assertThat(hash((String.join("\n",lines)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("5c24e8a1751d15594a429910caaa51067ed3e94e213d1d3fa9bb948525d969fe");
+        assertThat(hash((String.join("\n",lines)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("ad4662b82014ee9a79c9342be68102c8a26f3041e82c46620c17addf702b7898");
         currentMigrationProof();
     }
     @Test void pa25PinsNineteenHistoryAndIndependent432TupleOracle() throws Exception {
         String source = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
+        assertThat(tuples(source,"frozen")).hasSize(449);
+        var historicalMethod = Class.forName("com.onecall.archtests.container.CustomerCatalogOfferReadPrivilegesIT").getDeclaredMethod("historicalV019Pa25Script");
+        historicalMethod.setAccessible(true); source = (String) historicalMethod.invoke(null);
         assertThat(tuples(source,"frozen")).hasSize(432).isEqualTo(oracle("current432Oracle"));
         var history = tagged(source,"history"); assertThat(history.size()).isEqualTo(19);
         CRC32 crc = new CRC32(); for (String line : sql().lines().toList()) crc.update(line.getBytes(StandardCharsets.UTF_8));
@@ -112,17 +117,17 @@ class CustomerCatalogOfferReadAclBoundaryTests {
     @Test void currentDocsPreserveHistoricalBoundaries() throws Exception {
         for (String name : List.of("backend/README.md", "docs/operations/pa25-production-database-identity-provisioning-runbook.md")) {
             String text = Files.readString(ROOT.resolve(name)); int marker = text.indexOf("\n<!-- PA36 HISTORICAL BODY -->");
-            assertThat(text.substring(0,marker)).contains("PA36 Current Runtime Boundary", "PA40A Current Provisioning Boundary", "**19**", "**432**", "NOT EXECUTED", "not RLS", "operations_login");
+            assertThat(text.substring(0,marker)).contains("PA36 Current Runtime Boundary", "PA42 Current Provisioning Boundary", "**20**", "**449**", "**92**", "seven schema USAGE", "85 column SELECT", "NOT EXECUTED", "not RLS", "operations_login");
             new EvidenceRoleIvrAssociationAclBoundaryTests().currentSecurityAndRunbookBoundariesAgreeWithoutRewritingHistory();
         }
     }
     @Test void migrationOnlyAddsOnePackagedResource() throws Exception {
         currentMigrationProof();
-        try (var source=Files.walk(Path.of("src/main/java")); var resources=Files.walk(Path.of("src/main/resources"))) { assertThat(source.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(325); assertThat(resources.filter(Files::isRegularFile).count()).isEqualTo(22); }
+        try (var source=Files.walk(Path.of("src/main/java")); var resources=Files.walk(Path.of("src/main/resources"))) { assertThat(source.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(332); assertThat(resources.filter(Files::isRegularFile).count()).isEqualTo(23); }
         String ci = Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("entries.count('BOOT-INF/classes/db/migration/"+V019+"') == 1");
         List<String> manifest=new ArrayList<>();
         for(String directory:List.of("src/main/java","src/main/resources")) try(var files=Files.walk(Path.of(directory))) { for(Path file:files.filter(Files::isRegularFile).toList()) manifest.add(file.toString().replace('\\','/')+" "+hash(lf(Files.readAllBytes(file)))); }
-        Collections.sort(manifest); assertThat(manifest).hasSize(347); assertThat(hash((String.join("\n",manifest)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("cbbec23a8dd5a2b8947a5d1f80fb9c5b6298e0db67daac65534175c19fb0f5b9");
+        Collections.sort(manifest); assertThat(manifest).hasSize(355); assertThat(hash((String.join("\n",manifest)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("d722d31a2c0a35e26243ab40380464c94d15edbfc769c72567fa1e07ad844433");
     }
     @Test void sourceCiPomAndXmlIdentitiesMatchExactly() throws Exception {
         Set<String> identities = new TreeSet<>(); int annotations=0, unit=0, integration=0;
@@ -134,9 +139,9 @@ class CustomerCatalogOfferReadAclBoundaryTests {
                 while(matcher.find()) { assertThat(identities.add(fqcn+"#"+matcher.group(1))).isTrue(); if(path.getFileName().toString().endsWith("IT.java")) integration++;else unit++; }
             }
         }
-        assertThat(unit).isEqualTo(1127); assertThat(integration).isEqualTo(738); assertThat(annotations).isEqualTo(1866);
-        assertThat(hash((String.join("\n",identities)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("fe2162716b64a413ed8d118f64299d4fd49b1f8d60051f7c93d67b1b7aefc8dd");
-        String ci=Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("pa40a_unit_additions", "pa40a_container_additions", "method_totals == [1127, 738]", "line_scan_total == 1866");
+        assertThat(unit).isEqualTo(1164); assertThat(integration).isEqualTo(764); assertThat(annotations).isEqualTo(1929);
+        assertThat(hash((String.join("\n",identities)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("0af27da2f85f6239d0e04a3a694fd4bbde7b325208a7771fbf359db80c056ae8");
+        String ci=Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("pa40a_unit_additions", "pa40a_container_additions", "method_totals == [1127, 738]", "line_scan_total == 1866", "current_method_totals == [1164, 764]", "current_line_scan_total == 1929");
         assertThat(Files.readString(Path.of("pom.xml"))).contains("<include>**/CustomerCatalogOfferReadPrivilegesIT.java</include>", "<include>**/CustomerCatalogOffersIT.java</include>");
     }
 }

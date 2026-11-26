@@ -42,7 +42,9 @@ class CustomerOrdersWebTests {
             });
             beans.registerSingleton("adapter", new CustomerOrderCommandService(beans.getBeanProvider(CustomerOrderCreationService.class)));
             var writer = new CustomerProblemWriter();
-            mvc = MockMvcBuilders.standaloneSetup(new CustomerOrdersController(beans.getBeanProvider(CustomerOrderCommandService.class), writer))
+            mvc = MockMvcBuilders.standaloneSetup(new CustomerOrdersController(beans.getBeanProvider(CustomerOrderCommandService.class),
+                    beans.getBeanProvider(com.onecall.core.customer_iam.internal.application.CustomerOrderQueryService.class),
+                    beans.getBeanProvider(com.onecall.core.customer_iam.internal.web.CustomerOrderCursorCodec.class), writer))
                     .addFilters(new CustomerBoundaryFilter(new CustomerBearerAuthenticator(beans.getBeanProvider(CustomerSessionVerifier.class)), writer)).build();
         }
         MockHttpServletResponse send(MockHttpServletRequestBuilder request) throws Exception { return mvc.perform(request).andReturn().getResponse(); }
@@ -109,10 +111,121 @@ class CustomerOrdersWebTests {
             var response = fixture.send(); problem(response, status, code.name()); if (status == 401) assertThat(response.getHeader("WWW-Authenticate")).isEqualTo("Bearer");
         }
     }
-    @Test void ordersRouteDoesNotAdmitReadOrAliasEndpoints() throws Exception {
+    @Test void ordersRoutesAdmitExactReadsAndRejectAliases() throws Exception {
         var fixture = new Fixture();
         for (String path : List.of(ROUTE + "/", ROUTE + ";x", ROUTE + "/id", "/api/v1/customer/%6frders")) problem(fixture.send(post(path).with(servlet -> { servlet.setServletPath(path); return servlet; })), 404, "NOT_FOUND");
-        problem(fixture.send(get(ROUTE).servletPath(ROUTE)), 404, "NOT_FOUND"); assertThat(fixture.commands).isEmpty();
+        problem(fixture.send(get(ROUTE).servletPath(ROUTE)), 401, "UNAUTHENTICATED");
+        problem(fixture.send(get(ROUTE).servletPath(ROUTE).header("Authorization", "Bearer valid")), 503, "SERVICE_UNAVAILABLE");
+        problem(fixture.send(get(ROUTE + "/not-a-uuid").servletPath(ROUTE + "/not-a-uuid").header("Authorization", "Bearer valid")), 422, "VALIDATION_FAILED");
+        assertThat(fixture.commands).isEmpty();
+    }
+    @Test void limitCursorKeyAndLifecyclePrecedenceIsExact() throws Exception {
+        var fixture = new Fixture();
+        problem(fixture.send(get(ROUTE).servletPath(ROUTE).header("Authorization", "Bearer valid").param("limit", "0").param("cursor", "bad")), 422, "VALIDATION_FAILED");
+        problem(fixture.send(get(ROUTE).servletPath(ROUTE).header("Authorization", "Bearer valid").param("cursor", "bad")), 400, "CURSOR_INVALID");
+        problem(fixture.send(get(ROUTE).servletPath(ROUTE).header("Authorization", "Bearer valid").param("cursor", "", "")), 400, "CURSOR_INVALID");
+        for (String limit : List.of("101", "-1", "1.0", "text"))
+            problem(fixture.send(readRequest("").param("limit", limit)), 422, "VALIDATION_FAILED");
+        problem(fixture.send(readRequest("").param("limit", "1", "2")), 422, "VALIDATION_FAILED");
+        var service = org.mockito.Mockito.mock(CustomerOrderQueryService.class);
+        fixture.beans.registerSingleton("query", service);
+        problem(fixture.send(readRequest("")), 503, "SERVICE_UNAVAILABLE");
+        var properties = new CustomerCatalogOfferCursorProperties();
+        properties.setCursorHmacKey(Base64.getEncoder().encodeToString(new byte[32]));
+        var codec = new CustomerOrderCursorCodec(properties);
+        String cursor = codec.encode(new com.onecall.core.catalog_order.customerquery.CustomerOrderReader.Scope(ACCOUNT, null),
+                new com.onecall.core.catalog_order.customerquery.CustomerOrderReader.Anchor(ORDER.createdAt(), ORDER.orderId()));
+        problem(fixture.send(readRequest("").param("cursor", cursor)), 503, "SERVICE_UNAVAILABLE");
+        org.mockito.Mockito.verifyNoInteractions(service);
+        fixture.beans.registerSingleton("cursor", codec);
+        org.mockito.Mockito.when(service.listCustomerOrders(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new CustomerContextException(CustomerContextException.Code.FORBIDDEN));
+        problem(fixture.send(readRequest("")), 403, "FORBIDDEN");
+        assertThat(fixture.commands).isEmpty();
+    }
+    static MockHttpServletRequestBuilder readRequest(String suffix) {
+        return get(ROUTE + suffix).servletPath(ROUTE + suffix).header("Authorization", "Bearer valid");
+    }
+    static CustomerOrderQueryService.Summary summary(String payment) {
+        return new CustomerOrderQueryService.Summary(ORDER.orderId(), ORDER.orderNo(), SUBJECT, "WEB", VERSION,
+                OFFER, 123, "CNY", payment, "NONE", ORDER.createdAt());
+    }
+    static CustomerOrderQueryService readService(Fixture fixture, String payment) {
+        var service = org.mockito.Mockito.mock(CustomerOrderQueryService.class);
+        org.mockito.Mockito.when(service.listCustomerOrders(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new CustomerOrderQueryService.Page(List.of(summary(payment)), Optional.empty(), false));
+        org.mockito.Mockito.when(service.getCustomerOrder(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(new CustomerOrderQueryService.Detail(summary(payment), ORDER.snapshotSha256(),
+                        ORDER.snapshot(), ORDER.purchaseConsentId(), null, null)));
+        fixture.beans.registerSingleton("query", service);
+        var properties = new CustomerCatalogOfferCursorProperties();
+        properties.setCursorHmacKey(Base64.getEncoder().encodeToString(new byte[32]));
+        fixture.beans.registerSingleton("cursor", new CustomerOrderCursorCodec(properties));
+        return service;
+    }
+    @Test void exactGetRoutesAndFrozenJsonShape() throws Exception {
+        var fixture = new Fixture(); readService(fixture, "UNPAID");
+        var mapper = JsonMapper.builder().build();
+        var response = fixture.send(readRequest(""));
+        assertThat(response.getStatus()).isEqualTo(200);
+        var page = mapper.readTree(response.getContentAsString());
+        assertThat(page.propertyNames()).containsExactlyInAnyOrder("items", "nextCursor", "hasMore");
+        assertThat(page.get("nextCursor").isNull()).isTrue();
+        assertThat(page.get("hasMore").asBoolean()).isFalse();
+        assertThat(page.get("items").get(0).propertyNames()).containsExactlyInAnyOrder("orderId", "orderNo",
+                "subjectId", "channel", "catalogVersionId", "catalogOfferId", "amountCents", "currency",
+                "paymentStatus", "issuanceStatus", "createdAt");
+        response = fixture.send(readRequest("/" + ORDER.orderId()));
+        assertThat(response.getStatus()).isEqualTo(200);
+        var detail = mapper.readTree(response.getContentAsString());
+        assertThat(detail.propertyNames()).containsExactlyInAnyOrder("orderId", "orderNo", "subjectId", "channel",
+                "catalogVersionId", "catalogOfferId", "amountCents", "currency", "paymentStatus", "issuanceStatus",
+                "createdAt", "paidAt", "closedAt", "snapshotSha256", "snapshot", "purchaseConsentId");
+        assertThat(detail.get("snapshot").propertyNames()).containsExactlyInAnyOrder("schemaVersion", "catalogVersionId",
+                "catalogOfferId", "channel", "versionToken", "productCode", "offerType", "audience",
+                "amountCents", "currency", "billingCycle", "installments", "benefitLines", "snapshotSha256");
+        assertThat(detail.get("snapshot").get("benefitLines").get(0).propertyNames())
+                .containsExactlyInAnyOrder("entitlementType", "quantity", "validityDays", "grantIntervalMonths");
+        assertThat(fixture.commands).isEmpty();
+    }
+    @Test void unknownPaymentStatusIsVisibleInListAndDetail() throws Exception {
+        var fixture = new Fixture(); readService(fixture, "UNKNOWN");
+        var mapper = JsonMapper.builder().build();
+        var page = mapper.readTree(fixture.send(readRequest("")).getContentAsString());
+        var detail = mapper.readTree(fixture.send(readRequest("/" + ORDER.orderId())).getContentAsString());
+        assertThat(page.get("items").get(0).get("paymentStatus").asString()).isEqualTo("UNKNOWN");
+        assertThat(detail.get("paymentStatus").asString()).isEqualTo("UNKNOWN");
+        assertThat(detail.get("issuanceStatus").asString()).isEqualTo("NONE");
+        assertThat(detail.get("paidAt").isNull()).isTrue();
+        assertThat(detail.get("closedAt").isNull()).isTrue();
+        assertThat(fixture.commands).isEmpty();
+    }
+    @Test void invisibleMissingAndCorruptDetailsHaveIdenticalNotFound() throws Exception {
+        var fixture = new Fixture(); var service = readService(fixture, "UNPAID");
+        org.mockito.Mockito.when(service.getCustomerOrder(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.empty());
+        var mapper = JsonMapper.builder().build();
+        tools.jackson.databind.JsonNode expected = null;
+        for (int scenario = 0; scenario < 3; scenario++) {
+            var response = fixture.send(readRequest("/" + UUID.randomUUID()));
+            problem(response, 404, "NOT_FOUND");
+            var body = (tools.jackson.databind.node.ObjectNode) mapper.readTree(response.getContentAsString());
+            body.remove("traceId");
+            if (expected == null) expected = body; else assertThat(body).isEqualTo(expected);
+        }
+        assertThat(fixture.commands).isEmpty();
+    }
+    @Test void detailNeverResolvesCursorKey() throws Exception {
+        var fixture = new Fixture(); var service = readService(fixture, "UNPAID");
+        fixture.beans.destroySingleton("cursor");
+        fixture.beans.registerBeanDefinition("cursor", org.springframework.beans.factory.support.BeanDefinitionBuilder
+                .genericBeanDefinition(CustomerOrderCursorCodec.class, () -> { throw new AssertionError("cursor key resolved"); })
+                .setLazyInit(true).getBeanDefinition());
+        assertThat(fixture.send(readRequest("/" + ORDER.orderId())).getStatus()).isEqualTo(200);
+        org.mockito.Mockito.verify(service).getCustomerOrder(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(ORDER.orderId()));
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.never()).listCustomerOrders(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat(fixture.commands).isEmpty();
     }
     @Test void unavailableOwnersAndUnexpectedFailuresAreSanitized() throws Exception {
         var transport = new Fixture();

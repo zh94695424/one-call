@@ -242,7 +242,7 @@ class EvidenceMediaReadIT {
             postgres.start();
             url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/evidence_media_read";
             flyway = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(flyway.migrate().migrationsExecuted).isEqualTo(19);
+            assertThat(flyway.migrate().migrationsExecuted).isEqualTo(20);
             flyway.validate();
         }
 

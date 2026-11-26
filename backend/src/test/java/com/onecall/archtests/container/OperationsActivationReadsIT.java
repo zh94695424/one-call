@@ -23,7 +23,7 @@ class OperationsActivationReadsIT {
     @BeforeEach void reset() throws Exception { fixture.reset(); }
     @Test
     void postgres16UsesExactlyFrozenSeventeenMigrations() throws Exception {
-        try (var connection = fixture.admin()) { assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999); assertThat(one(connection, "SHOW server_encoding")).isEqualTo("UTF8"); assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("19"); }
+        try (var connection = fixture.admin()) { assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999); assertThat(one(connection, "SHOW server_encoding")).isEqualTo("UTF8"); assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("20"); }
         var manifest = java.nio.file.Files.readString(java.nio.file.Path.of("../docs/gateflow/pa34-operations-activation-history-read-foundation-plan.md"));
         var entries = java.util.regex.Pattern.compile("(?m)^([0-9a-f]{64})  (.+)$").matcher(manifest).results().toList(); assertThat(entries).hasSize(21);
         var hashes = Map.ofEntries(
@@ -55,7 +55,7 @@ class OperationsActivationReadsIT {
             assertThat(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(historicalBytes(entry.group(2), java.nio.file.Files.readAllBytes(java.nio.file.Path.of("..").resolve(entry.group(2))))))).as(entry.group(2)).isIn((Object[]) hashes.get(entry.group(2)));
         }
         try (var files = java.nio.file.Files.list(java.nio.file.Path.of("src/main/resources/db/migration"))) {
-            assertThat(files.map(path -> path.getFileName().toString()).toList()).hasSize(19).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(hashes.keySet().stream().filter(path -> path.contains("/migration/")).map(path -> java.nio.file.Path.of(path).getFileName().toString()), java.util.stream.Stream.of("V018__evidence_role_ivr_association_read_privileges.sql", "V019__customer_catalog_offer_read_privileges.sql")).toList());
+            assertThat(files.map(path -> path.getFileName().toString()).toList()).hasSize(20).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(hashes.keySet().stream().filter(path -> path.contains("/migration/")).map(path -> java.nio.file.Path.of(path).getFileName().toString()), java.util.stream.Stream.of("V018__evidence_role_ivr_association_read_privileges.sql", "V019__customer_catalog_offer_read_privileges.sql", "V020__customer_order_read_privileges.sql")).toList());
         }
     }
     @Test

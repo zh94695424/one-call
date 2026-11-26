@@ -39,7 +39,7 @@ class CustomerSubjectClaimsIT {
     @Test
     void postgres16FrozenSeventeenMigrationChainAndDedicatedLoginAreUsed() throws Exception {
         fixture.preflight(); assertThat(fixture.value("SHOW server_version")).startsWith("16.");
-        fixture.flyway().validate(); assertThat(fixture.flyway().info().applied()).hasSize(19);
+        fixture.flyway().validate(); assertThat(fixture.flyway().info().applied()).hasSize(20);
         assertThat(fixture.value("SELECT count(*) FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=?)", fixture.login)).isEqualTo("1");
         fixture.cleanPool();
     }

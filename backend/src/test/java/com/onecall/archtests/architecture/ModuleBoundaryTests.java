@@ -39,7 +39,7 @@ class ModuleBoundaryTests {
             "operations_audit", "platform_reliability");
 
     private static final Map<String, Set<String>> EXPECTED_ALLOWED = Map.ofEntries(
-            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission", "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query", "catalog_order::customer-order-command")),
+            Map.entry("customer_iam", Set.of("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission", "subject_number::customer-business-number-query", "activation_consent::customer-activation-query", "subject_number::customer-subject-query", "evidence::customer-subject-count-query", "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query", "catalog_order::customer-order-command", "catalog_order::customer-order-query")),
             Map.entry("organization_access", Set.of("customer_iam")),
             Map.entry("operations_iam", Set.of("operations_audit")),
             Map.entry("subject_number", Set.of("operations_iam::operations-subject-read")),
@@ -128,7 +128,7 @@ class ModuleBoundaryTests {
         for (String name : java.util.List.of(PA38_COMMAND_INTERFACE, "employee-authority-read")) assertThat(iam.getByName(name)).isPresent();
         var allowed = modules.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(modules);
-        assertThat(allowed).hasSize(14);
+        assertThat(allowed).hasSize(15);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
@@ -139,7 +139,7 @@ class ModuleBoundaryTests {
                         org.assertj.core.api.Assertions.tuple("activation_consent", "customer-activation-query"),
                         org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-query"),
                         org.assertj.core.api.Assertions.tuple("evidence", "customer-subject-count-query"),
-                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-command"));
+                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-query"));
         var sharing = modules.getModuleByName("sharing").orElseThrow().getNamedInterfaces();
         assertThat(sharing.stream().filter(NamedInterface::isNamed).map(NamedInterface::getName))
                 .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
@@ -229,7 +229,7 @@ class ModuleBoundaryTests {
                 .containsExactlyInAnyOrder("customer-query", "customer-command", "public-query", "public-admission");
         var allowed = production.getModuleByName("customer_iam").orElseThrow()
                 .getAllowedDependencies(production);
-        assertThat(allowed).hasSize(14);
+        assertThat(allowed).hasSize(15);
         assertThat(allowed).extracting(dependency -> dependency.getTargetModule().getIdentifier().toString(),
                 dependency -> dependency.getTargetNamedInterface().getName()).containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("sharing", "customer-query"),
@@ -240,6 +240,6 @@ class ModuleBoundaryTests {
                         org.assertj.core.api.Assertions.tuple("activation_consent", "customer-activation-query"),
                         org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-query"),
                         org.assertj.core.api.Assertions.tuple("evidence", "customer-subject-count-query"),
-                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-command"));
+                        org.assertj.core.api.Assertions.tuple("catalog_order", "customer-subject-count-query"), org.assertj.core.api.Assertions.tuple("evidence", "customer-evidence-query"), org.assertj.core.api.Assertions.tuple("subject_number", "customer-subject-claim-command"), org.assertj.core.api.Assertions.tuple("activation_consent", "customer-subject-activation-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-catalog-offer-query"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-command"), org.assertj.core.api.Assertions.tuple("catalog_order", "customer-order-query"));
     }
 }

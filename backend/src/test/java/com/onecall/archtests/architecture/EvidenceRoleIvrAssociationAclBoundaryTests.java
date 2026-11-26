@@ -97,9 +97,9 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
     @Test
     void v001ThroughV017AndPublicContractsRemainByteFrozen() throws Exception {
         for (String line : FROZEN.strip().split("\n")) { String[] fields = line.split(" "); byte[] bytes = Files.readAllBytes(Path.of("..").resolve(fields[0])); assertThat(hash(bytes)).as(fields[0]).isIn(fields[1], fields[2]); assertThat(hash(lf(bytes))).isEqualTo(fields[2]); }
-        List<Path> files = new ArrayList<>(); for (String root : List.of("src/main/java", "src/main/resources")) try (var paths = Files.walk(Path.of(root))) { files.addAll(paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V018) && !path.getFileName().toString().equals("V019__customer_catalog_offer_read_privileges.sql")).toList()); }
+        List<Path> files = new ArrayList<>(); for (String root : List.of("src/main/java", "src/main/resources")) try (var paths = Files.walk(Path.of(root))) { files.addAll(paths.filter(Files::isRegularFile).filter(path -> !path.getFileName().toString().equals(V018) && !path.getFileName().toString().equals("V019__customer_catalog_offer_read_privileges.sql") && !path.getFileName().toString().equals("V020__customer_order_read_privileges.sql")).toList()); }
         List<String> manifest = new ArrayList<>(); for (Path file : files) manifest.add(file.toString().replace('\\', '/') + " " + hash(lf(Files.readAllBytes(file)))); Collections.sort(manifest);
-        assertThat(manifest).hasSize(345); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("9e780264acf2fba2d98760f967de83727e1c708f4a76b17f9f4d4ac0b16a9c29");
+        assertThat(manifest).hasSize(352); assertThat(hash((String.join("\n", manifest) + "\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("8f4ca11a2270169fda716622238e18ea0f4af64e943c7c1e2cf672bb39951818");
     }
     @Test
     void pa25UsesExactEighteenHistoryAndIndependent410TupleOracle() throws Exception {
@@ -108,10 +108,10 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
         assertThat(source).contains("expected_resolved) <> 410", "history) <> 18"); var history = tagged(source, "history"); assertThat(history.size()).isEqualTo(18);
         int index = 0; for (String line : HISTORY.strip().split("\n")) { List<String> actual = new ArrayList<>(); for (var value : history.get(index)) actual.add(value.isIntegralNumber() ? Integer.toString(value.asInt()) : value.asString()); assertThat(String.join("|", actual)).isEqualTo(line); index++; }
         assertThat(history.get(17).get(0).asString()).isEqualTo("018"); assertThat(history.get(17).get(1).asString()).isEqualTo(V018); assertThat(history.get(17).get(2).asInt()).isEqualTo(CHECKSUM); assertThat(history.get(17).get(3).asString()).isEqualTo("evidence role ivr association read privileges");
-        Set<String> currentExpected = CustomerCatalogOfferReadAclBoundaryTests.oracle("current432Oracle");
-        assertThat(tuples(current, "frozen")).hasSize(432).isEqualTo(currentExpected);
-        Set<String> recovered = new TreeSet<>(currentExpected); recovered.removeAll(CustomerCatalogOfferReadAclBoundaryTests.oracle("catalogDeltaOracle")); assertThat(recovered).isEqualTo(expected);
-        assertThat(tagged(current,"history").size()).isEqualTo(19);
+        Set<String> currentExpected = CustomerOrderReadBoundaryTests.oracle("current449Oracle");
+        assertThat(tuples(current, "frozen")).hasSize(449).isEqualTo(currentExpected);
+        Set<String> recovered = new TreeSet<>(currentExpected); recovered.removeAll(CustomerOrderReadBoundaryTests.oracle("orderReadDeltaOracle")); assertThat(recovered).isEqualTo(CustomerCatalogOfferReadAclBoundaryTests.oracle("current432Oracle")); recovered.removeAll(CustomerCatalogOfferReadAclBoundaryTests.oracle("catalogDeltaOracle")); assertThat(recovered).isEqualTo(expected);
+        assertThat(tagged(current,"history").size()).isEqualTo(20);
     }
     @Test
     void pa25DefinesOnlyTheElevenApprovedNonInheritingEdges() throws Exception {
@@ -129,19 +129,21 @@ class EvidenceRoleIvrAssociationAclBoundaryTests {
             String current = text.substring(0, offset); assertThat(current).contains("PA36 Current Runtime Boundary (V018)", "16→18", "408→410", "288→290", "operations_login", "operations_ivr_read", "effective_roles=9 means exact-ACL-monitored roles", "capability boundary13", "full boundary17", "role-wide", "explicit SET is not a read-only privilege sandbox", "JooqOperationsEvidenceCounter", "NOT EXECUTED", "PA35 code is added", Integer.toString(CHECKSUM), "892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817");
             assertThat(current).contains("signed Flyway checksum **1606293398**", "repository-canonical LF SHA256 **892c607787c7bfeb0e8eed0a6235f14563fab515872ee6558263e2feada84817**", "a standard CRLF-materialized checkout has raw SHA256 **ea2911ea92fa4b3d043f7fe63777d8cf35fb0733202784952886ac7978a4b37c**", "Checkout bytes depend on the line-ending representation.");
             var paths = Pattern.compile("`(backend/src/main/java/[^`]+\\.java)`").matcher(current); int consumers = 0; while (paths.find()) { Path path = Path.of("..").resolve(paths.group(1)); assertThat(path).exists(); assertThat(Files.readString(path)).contains(path.getFileName().toString().replace(".java", "")); consumers++; } assertThat(consumers).isEqualTo(4);
+            if (!fields[0].equals("docs/17-production-security-design-spec.md"))
+                assertThat(current).contains("PA42 Current Provisioning Boundary", "**20**", "**449**", "**92**", "seven schema USAGE", "85 column SELECT");
         }
         byte[] docs = Files.readAllBytes(Path.of("../docs/17-production-security-design-spec.md")); assertThat(hash(lf(docs))).isEqualTo("4e7df589380f70ba7e9e1a5b7e9c1542ca6ed89313a775dacfc91e109852ceb6");
     }
     @Test
     void pa36HasNoApplicationApiPoolOrDependencyExpansion() throws Exception {
         String pom = Files.readString(Path.of("pom.xml")).replace("\r\n", "\n"); var pattern = Pattern.compile("(?s)<dependencies>.*?</dependencies>").matcher(pom); List<String> dependencies = new ArrayList<>(); while (pattern.find()) dependencies.add(pattern.group()); assertThat(hash(String.join("\n", dependencies).getBytes(StandardCharsets.UTF_8))).isEqualTo("e2e2547a79447555b7bf4c42ca4bf3c967a84124987eea62c3435112c3ee4445");
-        try (var paths = Files.list(MIGRATIONS)) { assertThat(paths.map(path -> path.getFileName().toString()).toList()).hasSize(19).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(FROZEN.lines().filter(line -> line.contains("/migration/")).map(line -> Path.of(line.split(" ")[0]).getFileName().toString()), java.util.stream.Stream.of(V018, "V019__customer_catalog_offer_read_privileges.sql")).toList()); }
+        try (var paths = Files.list(MIGRATIONS)) { assertThat(paths.map(path -> path.getFileName().toString()).toList()).hasSize(20).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(FROZEN.lines().filter(line -> line.contains("/migration/")).map(line -> Path.of(line.split(" ")[0]).getFileName().toString()), java.util.stream.Stream.of(V018, "V019__customer_catalog_offer_read_privileges.sql", "V020__customer_order_read_privileges.sql")).toList()); }
         String ci = Files.readString(Path.of("../.github/workflows/ci.yml")); assertThat(ci).contains("entries.count('BOOT-INF/classes/db/migration/" + V018 + "') == 1", "pa25-runtime-identities", "{probes} adversarial probes");
     }
     @Test
     void ciPomAndOrdinaryMethodInventoryMatchExactly() throws Exception {
         String ci = Files.readString(Path.of("../.github/workflows/ci.yml")); String pom = Files.readString(Path.of("pom.xml"));
-        assertThat(ci).contains("pa36_unit_additions", "pa36_container_additions", "[788, 556]", "pa36_start_totals == [704, 504]", "pa36_start_line_scan_total == 1209", "pa35_start_totals == [712, 520]", "pa35_start_line_scan_total == 1233", "== 1345", "len(unit_expected) == 116", "len(container_expected) == 44", "len(includes) == 44", "pa38_unit_additions", "pa38_container_additions", "pa38_start_totals == [848, 592]", "pa38_start_line_scan_total == 1441", "method_totals == [1127, 738]", "line_scan_total == 1866");
+        assertThat(ci).contains("pa36_unit_additions", "pa36_container_additions", "[788, 556]", "pa36_start_totals == [704, 504]", "pa36_start_line_scan_total == 1209", "pa35_start_totals == [712, 520]", "pa35_start_line_scan_total == 1233", "== 1345", "len(unit_expected) == 122", "len(container_expected) == 46", "len(includes) == 46", "pa38_unit_additions", "pa38_container_additions", "pa38_start_totals == [848, 592]", "pa38_start_line_scan_total == 1441", "method_totals == [1127, 738]", "line_scan_total == 1866", "current_method_totals == [1164, 764]", "current_line_scan_total == 1929");
         String include = "<include>**/EvidenceRoleIvrAssociationAclIT.java</include>"; assertThat(pom.indexOf(include)).isGreaterThan(0); assertThat(pom.indexOf(include, pom.indexOf(include) + 1)).isEqualTo(-1);
         for (var entry : Map.of("architecture/EvidenceRoleIvrAssociationAclBoundaryTests.java", UNIT, "container/EvidenceRoleIvrAssociationAclIT.java", CONTAINER).entrySet()) {
             String source = Files.readString(Path.of("src/test/java/com/onecall/archtests").resolve(entry.getKey())); assertThat(methods(source)).hasSize(entry.getValue().size()).containsExactlyInAnyOrderElementsOf(entry.getValue()); assertThat(source).doesNotContain("@" + "ParameterizedTest", "@" + "TestFactory", "@" + "Disabled", "Assumptions" + ".", "@" + "RepeatedTest"); for (String name : entry.getValue()) assertThat(ci).contains("'" + name + "'");

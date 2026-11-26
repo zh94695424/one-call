@@ -86,7 +86,7 @@ class OperationsIvrSessionReadsIT {
                 if (path.equals("backend/ops/postgresql/pa25-runtime-identities.sql")) return CustomerCatalogOfferReadPrivilegesIT.historicalV018Pa25Script().replace("\r\n","\n").getBytes(charset);
                 String text = java.nio.file.Files.readString(java.nio.file.Path.of("..").resolve(path), charset).replace("\r\n","\n");
                 if (path.equals("backend/README.md") || path.equals("docs/operations/pa25-production-database-identity-provisioning-runbook.md")) {
-                    int addendum = text.indexOf("## PA40A Current Provisioning Boundary");
+                    int addendum = text.indexOf("## PA42 Current Provisioning Boundary");
                     int marker = text.indexOf("<!-- PA36 HISTORICAL BODY -->", addendum);
                     assertThat(addendum).isPositive(); assertThat(marker).isGreaterThan(addendum);
                     text = text.substring(0, addendum) + text.substring(marker);
@@ -157,7 +157,7 @@ class OperationsIvrSessionReadsIT {
                 assertThat(migrations).hasSize(18);
                 for (int index = 0; index < 18; index++) assertThat(migrations.get(index)).startsWith("V%03d__".formatted(index + 1));
                 try (var files = java.nio.file.Files.list(root.resolve("backend/src/main/resources/db/migration"))) {
-                    assertThat(files.map(path -> path.getFileName().toString()).filter(name -> !root.equals(java.nio.file.Path.of("..")) || !name.equals("V019__customer_catalog_offer_read_privileges.sql")).sorted().toList()).isEqualTo(migrations);
+                    assertThat(files.map(path -> path.getFileName().toString()).filter(name -> !root.equals(java.nio.file.Path.of("..")) || !Set.of("V019__customer_catalog_offer_read_privileges.sql", "V020__customer_order_read_privileges.sql").contains(name)).sorted().toList()).isEqualTo(migrations);
                 }
             } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
         };
@@ -243,6 +243,14 @@ class OperationsIvrSessionReadsIT {
         currentPins.put("backend/README.md", List.of("95e6e5e042792ddd5878817f4536b5901fc74749a0bd49095ec2161c49a2f70d", "95e6e5e042792ddd5878817f4536b5901fc74749a0bd49095ec2161c49a2f70d"));
         currentPins.put("backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql", List.of("32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e", "32fc494347cb88acca8b8f3d882cef5d357d76195e501df45cad056f9b50659e"));
         assertThat(currentPins).hasSize(27);
+        var historicalCurrentBinary = new java.io.ByteArrayOutputStream();
+        for(var entry:currentPins.entrySet()) { historicalCurrentBinary.writeBytes(entry.getKey().getBytes(charset)); historicalCurrentBinary.write(0); historicalCurrentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(0))); historicalCurrentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(1))); }
+        assertThat(sha256.apply(historicalCurrentBinary.toByteArray())).isEqualTo("738652e487145167e32c07fc315ed0bb2dbdf4f4f4e2295712eb11a4b57cb75e");
+        currentPins.put("backend/ops/postgresql/pa25-runtime-identities.sql", List.of("b1cd2e464810e00d69482be2dff26d5cf5c9dc23dd098fbc1cf2ec26417e0853", "b1cd2e464810e00d69482be2dff26d5cf5c9dc23dd098fbc1cf2ec26417e0853"));
+        currentPins.put("docs/operations/pa25-production-database-identity-provisioning-runbook.md", List.of("f4df098d569ffe2dd7fc55d710af4cdbeb01e7add276227366889cd5d38a2830", "f4df098d569ffe2dd7fc55d710af4cdbeb01e7add276227366889cd5d38a2830"));
+        currentPins.put("backend/README.md", List.of("d6674a369a3d8e2f682a5e28926ca9cbf72fa7d9a3b4e644ef11d4a82d47a418", "d6674a369a3d8e2f682a5e28926ca9cbf72fa7d9a3b4e644ef11d4a82d47a418"));
+        currentPins.put("backend/src/main/resources/db/migration/V020__customer_order_read_privileges.sql", List.of("804c46dda94cdfdf609b16057200fe5a9a526f288ef291ad82fc71edeeaf19dd", "804c46dda94cdfdf609b16057200fe5a9a526f288ef291ad82fc71edeeaf19dd"));
+        assertThat(currentPins).hasSize(28);
         StringBuilder currentTable = new StringBuilder(), currentBare = new StringBuilder();
         for (var entry : currentPins.entrySet()) {
             currentTable.append("| `").append(entry.getKey()).append("` | `").append(entry.getValue().get(0)).append("` | `").append(entry.getValue().get(1)).append("` |\n");
@@ -255,7 +263,7 @@ class OperationsIvrSessionReadsIT {
             while(tableRows.find()) { currentTableCount++; assertThat(table.put(tableRows.group(1),List.of(tableRows.group(2),tableRows.group(3)))).isNull(); }
             var bareRows = java.util.regex.Pattern.compile("(?m)^([0-9a-f]{64})  (.+)$").matcher(bareText);
             while(bareRows.find()) { currentBareCount++; assertThat(bare.put(bareRows.group(2),bareRows.group(1))).isNull(); }
-            assertThat(currentTableCount).isEqualTo(27); assertThat(currentBareCount).isEqualTo(27);
+            assertThat(currentTableCount).isEqualTo(28); assertThat(currentBareCount).isEqualTo(28);
             assertThat(table.keySet()).isEqualTo(currentPins.keySet()); assertThat(bare.keySet()).isEqualTo(currentPins.keySet()); assertThat(table).isEqualTo(currentPins);
             for(var entry:currentPins.entrySet()) assertThat(bare.get(entry.getKey())).isEqualTo(entry.getValue().get(0));
         };
@@ -264,7 +272,7 @@ class OperationsIvrSessionReadsIT {
         for(String text:List.of(currentBare+currentBare.toString().lines().findFirst().orElseThrow()+"\n", currentBare.toString().substring(currentBare.indexOf("\n")+1), currentBare+"0".repeat(64)+"  fake-path\n", currentBare.toString().replaceFirst("[0-9a-f]{64}","0".repeat(64)))) assertThatThrownBy(() -> verifyCurrentRepresentations.accept(currentTable.toString(),text)).isInstanceOf(AssertionError.class);
         var currentBinary = new java.io.ByteArrayOutputStream();
         for(var entry:currentPins.entrySet()) { currentBinary.writeBytes(entry.getKey().getBytes(charset)); currentBinary.write(0); currentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(0))); currentBinary.writeBytes(HexFormat.of().parseHex(entry.getValue().get(1))); }
-        assertThat(sha256.apply(currentBinary.toByteArray())).isEqualTo("738652e487145167e32c07fc315ed0bb2dbdf4f4f4e2295712eb11a4b57cb75e");
+        assertThat(sha256.apply(currentBinary.toByteArray())).isEqualTo("59ec9b3298ab2675d63a993aae3b742d5db6ee01ba77088e92be9eeebb2a1e6a");
         java.util.function.Consumer<java.nio.file.Path> verifyCurrentBytes = root -> {
             try {
                 for(var entry:currentPins.entrySet()) {
@@ -273,7 +281,7 @@ class OperationsIvrSessionReadsIT {
                     assertThat(actualLf).as(entry.getKey()).isEqualTo(entry.getValue().get(0)).isEqualTo(entry.getValue().get(1));
                 }
                 var expectedNames=currentPins.keySet().stream().filter(name -> name.startsWith("backend/src/main/resources/db/migration/")).map(name -> java.nio.file.Path.of(name).getFileName().toString()).sorted().toList();
-                assertThat(expectedNames).hasSize(19);
+                assertThat(expectedNames).hasSize(20);
                 try(var paths=java.nio.file.Files.list(root.resolve("backend/src/main/resources/db/migration"))) { assertThat(paths.map(path -> path.getFileName().toString()).sorted().toList()).isEqualTo(expectedNames); }
             } catch(java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
         };
@@ -289,17 +297,17 @@ class OperationsIvrSessionReadsIT {
             }
             var migration=currentProjection.resolve("backend/src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql"); byte[] original=java.nio.file.Files.readAllBytes(migration);
             java.nio.file.Files.delete(migration); assertThatThrownBy(() -> verifyCurrentBytes.accept(currentProjection)).isInstanceOf(java.io.UncheckedIOException.class); java.nio.file.Files.write(migration,original);
-            for(String name:List.of("V020__unexpected.sql","V019__unexpected.sql")) { var hostile=migration.resolveSibling(name); java.nio.file.Files.writeString(hostile,"unexpected"); assertThatThrownBy(() -> verifyCurrentBytes.accept(currentProjection)).isInstanceOf(AssertionError.class); java.nio.file.Files.delete(hostile); }
+            for(String name:List.of("V021__unexpected.sql","V020__unexpected.sql","V019__unexpected.sql")) { var hostile=migration.resolveSibling(name); java.nio.file.Files.writeString(hostile,"unexpected"); assertThatThrownBy(() -> verifyCurrentBytes.accept(currentProjection)).isInstanceOf(AssertionError.class); java.nio.file.Files.delete(hostile); }
             java.nio.file.Files.move(migration,migration.resolveSibling("V019__unexpected.sql")); assertThatThrownBy(() -> verifyCurrentBytes.accept(currentProjection)).isInstanceOf(java.io.UncheckedIOException.class);
         } finally { try(var paths=java.nio.file.Files.walk(currentProjection)) { for(var path:paths.sorted(Comparator.reverseOrder()).toList()) java.nio.file.Files.delete(path); } }
         try (var connection = fixture.admin()) {
             assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999);
             assertThat(one(connection, "SHOW server_encoding")).isEqualTo("UTF8");
-            assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("19");
+            assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("20");
             assertThat(one(connection, "SELECT checksum FROM flyway_schema_history WHERE version='018' AND success")).isEqualTo("1606293398");
             var migrations = currentPins.keySet().stream().filter(path -> path.startsWith("backend/src/main/resources/db/migration/")).sorted().toList();
             try (var statement = connection.createStatement(); var history = statement.executeQuery("SELECT installed_rank, version, description, type, script, checksum, success FROM flyway_schema_history ORDER BY installed_rank")) {
-                for (int index = 0; index < 19; index++) {
+                for (int index = 0; index < 20; index++) {
                     assertThat(history.next()).isTrue();
                     var migration = java.nio.file.Path.of("..").resolve(migrations.get(index));
                     String name = migration.getFileName().toString();

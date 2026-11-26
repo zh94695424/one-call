@@ -224,6 +224,8 @@
                 <include>**/CustomerCatalogOffersIT.java</include>
                 <include>**/CustomerOrdersIT.java</include>
                 <include>**/CustomerOrderRoleLeastPrivilegeIT.java</include>
+                <include>**/CustomerOrdersReadIT.java</include>
+                <include>**/CustomerOrderReadPrivilegesIT.java</include>
               </includes>
               <failIfNoTests>true</failIfNoTests>
             </configuration>

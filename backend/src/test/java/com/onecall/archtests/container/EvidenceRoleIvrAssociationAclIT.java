@@ -555,7 +555,7 @@ public class EvidenceRoleIvrAssociationAclIT {
         try { pa25Rejects(); } finally { try (var connection = fixture.admin()) { execute(connection, undo); } }
     }
     private void provision() throws Exception {
-        int expected = latest().info().applied().length == 18 ? 1 : 0; assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().migrate().migrationsExecuted).isEqualTo(expected); success("apply"); success("check");
+        int expected = 20 - latest().info().applied().length; assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("020").load().migrate().migrationsExecuted).isEqualTo(expected); success("apply"); success("check");
         try (var connection = fixture.admin()) { for (String login : LOGINS) { String password = UUID.randomUUID().toString(); passwords.put(login, password); execute(connection, "ALTER ROLE " + login + " PASSWORD '" + password + "'"); } }
     }
     private Connection login(String name) throws Exception { return DriverManager.getConnection(fixture.url, name, passwords.get(name)); }
@@ -614,7 +614,7 @@ public class EvidenceRoleIvrAssociationAclIT {
         assertThat(latest().info().pending()[0].getChecksum()).isEqualTo(1606293398); upgrade();
         try (var connection = fixture.admin()) { assertThat(strings(connection, "SELECT (to_jsonb(fact)-'installed_on')::text FROM public.flyway_schema_history fact WHERE installed_rank<=17 ORDER BY installed_rank")).isEqualTo(before); }
         assertThat(latest().info().applied()).hasSize(18); assertThat(latest().migrate().migrationsExecuted).isZero();
-        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start("018"); latest().validate(); assertThat(latest().info().applied()).hasSize(18); assertThat(acls()).isEqualTo(currentOracle()); Flyway.configure().dataSource(fixture.url,"fixture_admin",fixture.password).locations("classpath:db/migration").target("019").load().migrate(); assertThat(acls()).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle()); fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start(null); assertThat(acls()).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle());
+        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start("018"); latest().validate(); assertThat(latest().info().applied()).hasSize(18); assertThat(acls()).isEqualTo(currentOracle()); Flyway.configure().dataSource(fixture.url,"fixture_admin",fixture.password).locations("classpath:db/migration").target("019").load().migrate(); assertThat(acls()).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle()); fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start(null); assertThat(acls()).isEqualTo(CustomerOrderReadPrivilegesIT.current449Oracle());
     }
     @Test
     void v018AddsExactlyTwoOwnerIssuedTuplesAndMatches410Oracle() throws Exception {
@@ -647,8 +647,8 @@ public class EvidenceRoleIvrAssociationAclIT {
             } finally { connection.rollback(savepoint); }
             connection.rollback();
         }
-        assertThat(acls()).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle());
-        Set<String> recovered=new TreeSet<>(acls()); recovered.removeAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); assertThat(recovered).isEqualTo(currentOracle());
+        assertThat(acls()).isEqualTo(CustomerOrderReadPrivilegesIT.current449Oracle());
+        Set<String> recovered=new TreeSet<>(acls()); recovered.removeAll(CustomerOrderReadPrivilegesIT.orderReadDeltaOracle()); recovered.removeAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); assertThat(recovered).isEqualTo(currentOracle());
     }
     @Test
     void v018ReplaysOnlyExactCleanOrCompleteStatesWithoutDrift() throws Exception {
@@ -706,8 +706,8 @@ public class EvidenceRoleIvrAssociationAclIT {
     }
     @Test
     void pa25RequiresV018AndExact410OracleInBothModes() throws Exception {
-        pa25Rejects(); upgrade(); assertThat(acls()).isEqualTo(currentOracle()); pa25Rejects(); provision(); assertThat(acls()).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle());
-        for (String tuple : CustomerCatalogOfferReadPrivilegesIT.current432Oracle()) {
+        pa25Rejects(); upgrade(); assertThat(acls()).isEqualTo(currentOracle()); pa25Rejects(); provision(); assertThat(acls()).isEqualTo(CustomerOrderReadPrivilegesIT.current449Oracle());
+        for (String tuple : CustomerOrderReadPrivilegesIT.current449Oracle()) {
             String[] fields = tuple.split("\\|", -1); String capability = switch (fields[1]) {
                 case "schema" -> fields[4] + " ON SCHEMA " + fields[2];
                 case "routine" -> "EXECUTE ON FUNCTION " + fields[2];
@@ -725,11 +725,11 @@ public class EvidenceRoleIvrAssociationAclIT {
             }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE installed_rank=18; INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,?::jsonb)", row); } }
         }
-        Set<String> recovered=new TreeSet<>(acls()); recovered.removeAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); assertThat(recovered).isEqualTo(currentOracle());
+        Set<String> recovered=new TreeSet<>(acls()); recovered.removeAll(CustomerOrderReadPrivilegesIT.orderReadDeltaOracle()); recovered.removeAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); assertThat(recovered).isEqualTo(currentOracle());
     }
     @Test
     void pa25UpgradesThreeSlotsToFourAndPreservesExistingCredentialBytes() throws Exception {
-        oldGraph(); upgrade(); Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().migrate();
+        oldGraph(); upgrade(); Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("020").load().migrate();
         String before; try (var connection = fixture.admin()) { before = one(connection, "SELECT jsonb_agg(to_jsonb(fact) ORDER BY oid)::text FROM pg_authid fact WHERE rolname IN ('pa27_query','pa27_customer','pa27_command')"); }
         success("apply"); success("check"); success("apply");
         try (var connection = fixture.admin()) {
@@ -741,7 +741,7 @@ public class EvidenceRoleIvrAssociationAclIT {
     }
     @Test
     void pa25RejectsInvalidOperationsInputAndCollidingProvenance() throws Exception {
-        upgrade(); Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().migrate();
+        upgrade(); Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("020").load().migrate();
         for (String mode : List.of("apply", "check")) {
             var missing = fixture.postgres.execInContainer("psql", "-X", "-w", "-U", "fixture_admin", "-d", "pa27", "-v", "mode=" + mode, "-v", "sharing_login=pa27_query", "-v", "customer_login=pa27_customer", "-v", "command_login=pa27_command", "-f", "/tmp/pa27-identities.sql");
             assertThat(missing.getExitCode()).isNotZero(); assertThat(missing.getStdout() + missing.getStderr()).contains("PA25_INPUT_REJECTED").doesNotContain(fixture.password);
@@ -837,7 +837,7 @@ public class EvidenceRoleIvrAssociationAclIT {
     }
     @Test
     void pa25FailuresAreAtomicSanitizedAndNeverAdoptOrRestamp() throws Exception {
-        upgrade(); Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().migrate();
+        upgrade(); Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("020").load().migrate();
         String verifier = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql")).replace("\r\n", "\n");
         String anchor = "    END LOOP;\nEXCEPTION WHEN OTHERS";
         assertThat(verifier.indexOf(anchor)).isGreaterThan(0);

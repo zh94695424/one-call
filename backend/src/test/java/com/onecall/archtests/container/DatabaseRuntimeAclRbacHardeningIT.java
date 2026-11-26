@@ -125,9 +125,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
             assertOracle();
             assertThat(identities().equals(privateBefore)).isTrue();
             var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(5);
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(6);
             current.validate();
-            assertThat(current.info().applied()).hasSize(19);
+            assertThat(current.info().applied()).hasSize(20);
             psql("apply"); psql("check");
         }
     }
@@ -324,9 +324,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
             }
             assertThat(latest.migrate().migrationsExecuted).isZero(); latest.validate();
             var current = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(5);
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(6);
             current.validate();
-            assertThat(current.info().applied()).hasSize(19);
+            assertThat(current.info().applied()).hasSize(20);
             psql("apply"); psql("check"); psql("apply"); psql("check");
         }
     }
@@ -603,7 +603,9 @@ class DatabaseRuntimeAclRbacHardeningIT {
     private static void assertFrozen() throws Exception {
         try (var paths = Files.list(MIGRATIONS)) {
             var resources = paths.filter(path -> path.getFileName().toString().matches("V\\d{3}__.*\\.sql")).sorted().toList();
-            assertThat(resources).hasSize(19);
+            assertThat(resources).hasSize(20);
+            assertThat(resources.stream().map(path -> path.getFileName().toString().substring(1, 4)).toList())
+                    .containsExactlyElementsOf(java.util.stream.IntStream.rangeClosed(1, 20).mapToObj(version -> "%03d".formatted(version)).toList());
             for (Path path : resources) {
                 String version = path.getFileName().toString().substring(1, 4);
                 if (FROZEN.containsKey(version)) assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readString(path, StandardCharsets.UTF_8)

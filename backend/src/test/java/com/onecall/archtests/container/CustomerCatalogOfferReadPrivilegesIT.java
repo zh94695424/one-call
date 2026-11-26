@@ -21,7 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 public class CustomerCatalogOfferReadPrivilegesIT {
     private static final Path SCRIPT = Path.of("src/main/resources/db/migration/V019__customer_catalog_offer_read_privileges.sql");
-    private static final String ACL = """
+    static final String ACL = """
             WITH objects AS (
                 SELECT 'schema' AS kind,n.oid,0 AS subid,n.nspname::text AS identity,'' AS column_name,n.nspacl AS acl FROM pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema'
                 UNION ALL
@@ -76,8 +76,42 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         assertThat(recovered).isEqualTo(baseline);
         return Set.copyOf(result);
     }
-    static String historicalV018Pa25Script() throws Exception {
+    static String historicalV019Pa25Script() throws Exception {
         String current = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql")).replace("\r\n", "\n");
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        int frozenStart = current.indexOf("$frozen$") + "$frozen$".length();
+        int frozenEnd = current.indexOf("$frozen$", frozenStart);
+        String frozen = current.substring(frozenStart, frozenEnd);
+        var rows = mapper.readTree(frozen);
+        assertThat(rows.size()).isEqualTo(449);
+        Set<String> appended = new TreeSet<>();
+        for (int index = 432; index < 449; index++) {
+            var row = rows.get(index);
+            appended.add(row.get(0).asString()+"|"+row.get(1).asString()+"|"+row.get(2).asString()+"|"+row.get(3).asString()+"|"+row.get(4).asString()+"|"+row.get(5).asString()+"|"+row.get(6).asBoolean());
+        }
+        assertThat(appended).isEqualTo(CustomerOrderReadPrivilegesIT.orderReadDeltaOracle());
+        int deltaStart = frozen.indexOf(",\n  [\"customer_iam_role\",\"column\",\"catalog_order.customer_order\"");
+        assertThat(deltaStart).isPositive();
+        String historical = current.substring(0, frozenStart) + frozen.substring(0, deltaStart) + "\n]" + current.substring(frozenEnd);
+        int historyStart = historical.indexOf("$history$") + "$history$".length();
+        int historyEnd = historical.indexOf("$history$", historyStart);
+        String history = historical.substring(historyStart, historyEnd);
+        var historyRows = mapper.readTree(history);
+        assertThat(historyRows.size()).isEqualTo(20);
+        assertThat(historyRows.get(19).get(0).asString()).isEqualTo("020");
+        assertThat(historyRows.get(19).get(1).asString()).isEqualTo("V020__customer_order_read_privileges.sql");
+        int selfStart = history.indexOf(",\n  [\"020\",");
+        assertThat(selfStart).isPositive();
+        historical = historical.substring(0, historyStart) + history.substring(0, selfStart) + "\n]" + historical.substring(historyEnd);
+        for (String token : List.of("jsonb_array_length(expected_resolved) <> 449", "count(DISTINCT value) FROM jsonb_array_elements(expected_resolved)) <> 449", "jsonb_array_length(coalesce(actual_acls, '[]'::jsonb)) <> 449", "count(*) FROM public.flyway_schema_history) <> 20")) {
+            assertThat(historical.indexOf(token)).isEqualTo(historical.lastIndexOf(token)).isNotNegative();
+            historical = historical.replace(token, token.endsWith("449") ? token.substring(0, token.length()-3)+"432" : token.substring(0, token.length()-2)+"19");
+        }
+        assertThat(sha(historical.getBytes(StandardCharsets.UTF_8))).isEqualTo("ae0261bf90f916323bd387ca5dc314ab425576b6a17560408e9bf9fee2db7e47");
+        return historical.replace("\n", "\r\n");
+    }
+    static String historicalV018Pa25Script() throws Exception {
+        String current = historicalV019Pa25Script().replace("\r\n", "\n");
         var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
         int frozenStart = current.indexOf("$frozen$") + "$frozen$".length();
         int frozenEnd = current.indexOf("$frozen$", frozenStart);
@@ -129,6 +163,10 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         fixture.postgres.copyFileToContainer(Transferable.of(historicalV018Pa25Script().getBytes(StandardCharsets.UTF_8)), "/tmp/pa40a-old.sql");
         for (String mode : List.of("apply", "check")) assertThat(fixture.postgres.execInContainer("psql", "-X", "-w", "-v", "ON_ERROR_STOP=1", "-U", "fixture_admin", "-d", "pa27", "-v", "mode="+mode, "-v", "sharing_login=pa27_query", "-v", "customer_login=pa27_customer", "-v", "command_login=pa27_command", "-v", "operations_login=pa36_operations", "-f", "/tmp/pa40a-old.sql").getExitCode()).isZero();
         try (var connection = fixture.admin()) { execute(connection, "ALTER ROLE pa27_customer PASSWORD '"+fixture.password+"'"); }
+    }
+    private void provisionV019() throws Exception {
+        fixture.postgres.copyFileToContainer(Transferable.of(historicalV019Pa25Script().getBytes(StandardCharsets.UTF_8)), "/tmp/pa27-identities.sql");
+        fixture.provision();
     }
     private Connection customer() throws Exception {
         Connection connection = fixture.runtime(); connection.setAutoCommit(false);
@@ -262,7 +300,7 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         provisionHistorical(); upgrade();
         Set<String> upgraded = acls(); assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().info().applied()).hasSize(19);
         assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().migrate().migrationsExecuted).isZero();
-        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start(null);
+        fixture.close(); fixture = new CustomerBusinessNumbersFixture(); fixture.start("019");
         assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load().info().applied()).hasSize(19); assertThat(acls()).isEqualTo(upgraded);
     }
     @Test void v019AddsOnlyTwentyTwoOwnerIssuedTuplesAndMatches432Oracle() throws Exception {
@@ -271,7 +309,7 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         assertThat(delta).isEqualTo(catalogDeltaOracle()); assertThat(acls()).containsAll(before);
     }
     @Test void customerLoginReadsEveryApprovedColumnAndExactStoredProjection() throws Exception {
-        upgrade(); fixture.provision(); seed();
+        upgrade(); provisionV019(); seed();
         String projection="""
             SELECT row_to_json(projection)::text FROM (
                 SELECT product.id AS product_id,product.product_code,version.id AS version_id,
@@ -300,7 +338,7 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         }
     }
     @Test void customerLoginDeniesEveryAdjacentColumnWith42501() throws Exception {
-        upgrade(); fixture.provision(); int allowed = 0, denied = 0;
+        upgrade(); provisionV019(); int allowed = 0, denied = 0;
         try (var connection = customer(); var admin = fixture.admin()) {
             for (var table : approved().entrySet()) {
                 assertThat(one(admin, "SELECT has_table_privilege('customer_iam_role','"+table.getKey()+"','SELECT')")).isEqualTo("f");
@@ -314,7 +352,7 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         assertThat(allowed).isEqualTo(22); assertThat(denied).isEqualTo(12);
     }
     @Test void customerLoginDeniesWritesDdlSequencesRoutinesAndUnrelatedObjects() throws Exception {
-        upgrade(); fixture.provision(); seed();
+        upgrade(); provisionV019(); seed();
         String business = fixture.businessSnapshot(); String invariants; try(var admin=fixture.admin()) { invariants=invariantSnapshot(admin); }
         try (var admin = fixture.admin()) { execute(admin, "SET ROLE catalog_order_owner; CREATE SEQUENCE catalog_order.pa40a_sequence; RESET ROLE"); }
         try (var connection = customer()) {
@@ -343,7 +381,7 @@ public class CustomerCatalogOfferReadPrivilegesIT {
         assertThat(fixture.businessSnapshot().equals(business)).isTrue(); try(var admin=fixture.admin()) { assertThat(invariantSnapshot(admin).equals(invariants)).isTrue(); }
     }
     @Test void customerLoginCannotEscalateOrGrantPrivileges() throws Exception {
-        upgrade(); fixture.provision();
+        upgrade(); provisionV019();
         try (var connection = fixture.runtime()) { connection.setAutoCommit(false); for (var table : approved().entrySet()) denied(connection, "SELECT "+table.getValue().iterator().next()+" FROM "+table.getKey()); }
         try (var connection = customer()) {
             try(var admin=fixture.admin()) { for(String role:strings(admin,"SELECT quote_ident(rolname) FROM pg_roles WHERE rolname NOT IN ('pa27_customer','customer_iam_role') ORDER BY rolname")) denied(connection,"SET LOCAL ROLE "+role); }
@@ -410,25 +448,28 @@ public class CustomerCatalogOfferReadPrivilegesIT {
     }
     @Test void pa25ApplyAndCheckRequireNineteenHistoryAndExact432Oracle() throws Exception {
         for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero();
-        upgrade(); fixture.provision();
-        for (String tuple : current432Oracle()) {
+        upgrade();
+        assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(1);
+        fixture.provision();
+        for (String tuple : CustomerOrderReadPrivilegesIT.current449Oracle()) {
             String[] fields = tuple.split("\\|", -1);
             String target = switch (fields[1]) { case "schema" -> "USAGE ON SCHEMA "+fields[2]; case "column" -> fields[4]+" ("+fields[3]+") ON "+fields[2]; case "routine" -> "EXECUTE ON FUNCTION "+fields[2]; default -> fields[4]+" ON "+fields[2]; };
             try (var connection = fixture.admin()) { execute(connection, "SET ROLE "+fields[5]); execute(connection, "REVOKE "+target+" FROM "+fields[0]); }
             try { for (String mode : List.of("apply", "check")) { String before; try (var connection = fixture.admin()) { before = snapshot(connection); } assertThat(fixture.psql(mode).getExitCode()).isNotZero(); try (var connection = fixture.admin()) { assertThat(snapshot(connection).equals(before)).isTrue(); } } }
             finally { try (var connection = fixture.admin()) { execute(connection, "SET ROLE "+fields[5]); execute(connection, "GRANT "+target+" TO "+fields[0]); } }
         }
-        assertThat(acls()).isEqualTo(current432Oracle());
+        assertThat(acls()).isEqualTo(CustomerOrderReadPrivilegesIT.current449Oracle());
     }
     @Test void allSevenLoginsElevenMembershipEdgesAndCredentialsRemainUnchanged() throws Exception {
         provisionHistorical(); String before;
         try (var connection = fixture.admin()) { before = one(connection, "SELECT jsonb_agg(to_jsonb(role) ORDER BY oid)::text FROM pg_authid role")+one(connection, "SELECT jsonb_agg(to_jsonb(edge) ORDER BY oid)::text FROM pg_auth_members edge"); }
         upgrade();
+        assertThat(Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(1);
         for (String mode : List.of("apply", "check", "apply", "check")) { var result = fixture.psql(mode); assertThat(result.getExitCode()).isZero(); assertThat(result.getStdout().strip()).isEqualTo("PA25_"+mode.toUpperCase(Locale.ROOT)+"_OK logins=7 effective_roles=9 memberships=11"); }
         try (var connection = fixture.admin()) { assertThat((one(connection, "SELECT jsonb_agg(to_jsonb(role) ORDER BY oid)::text FROM pg_authid role")+one(connection, "SELECT jsonb_agg(to_jsonb(edge) ORDER BY oid)::text FROM pg_auth_members edge")).equals(before)).isTrue(); }
     }
     @Test void customerPoolRestoresRoleTransactionAndSettingsOnSuccessAndFailure() throws Exception {
-        upgrade(); fixture.provision(); fixture.web();
+        upgrade(); provisionV019(); fixture.web();
         var transaction = fixture.context.getBean("customerQueryTransactionTemplate", TransactionTemplate.class);
         for (boolean fail : List.of(false, true)) {
             try { transaction.execute(status -> { var pool=fixture.context.getBean("customerQueryDataSource",com.zaxxer.hikari.HikariDataSource.class); var connection=org.springframework.jdbc.datasource.DataSourceUtils.getConnection(pool); try { execute(connection,"SET LOCAL ROLE customer_iam_role"); assertThat(one(connection,"SELECT current_user||'|'||session_user")).isEqualTo("customer_iam_role|pa27_customer"); execute(connection,"SET LOCAL statement_timeout='2s'; SET LOCAL lock_timeout='1s'"); } catch(Exception failure) { throw new IllegalStateException(failure); } finally { org.springframework.jdbc.datasource.DataSourceUtils.releaseConnection(connection,pool); } if (fail) throw new IllegalStateException("synthetic"); return null; }); }

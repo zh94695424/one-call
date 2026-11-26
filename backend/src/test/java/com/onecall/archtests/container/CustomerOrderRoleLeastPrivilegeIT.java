@@ -25,7 +25,7 @@ class CustomerOrderRoleLeastPrivilegeIT {
     }
     @Test void postgres16Flyway19AndExactPa25TopologyAreUsed() throws Exception {
         assertThat(Integer.parseInt(fixture.value("SHOW server_version_num"))).isBetween(160000, 169999);
-        assertThat(fixture.value("SELECT count(*) FROM flyway_schema_history WHERE success")).isEqualTo("19");
+        assertThat(fixture.value("SELECT count(*) FROM flyway_schema_history WHERE success")).isEqualTo("20");
         var check = fixture.base.psql("check"); assertThat(check.getExitCode()).as(check.getStderr()).isZero(); assertThat(check.getStdout()).contains("PA25_CHECK_OK logins=7 effective_roles=9 memberships=11");
         org.flywaydb.core.Flyway.configure().dataSource(fixture.base.url, "fixture_admin", fixture.base.password).locations("classpath:db/migration").load().validate();
     }
@@ -40,7 +40,19 @@ class CustomerOrderRoleLeastPrivilegeIT {
     @Test void customerAndActivationPoolsCannotSubstituteForLoTransaction() throws Exception {
         try (var connection = fixture.base.runtime()) {
             connection.setAutoCommit(false); execute(connection, "SET LOCAL ROLE customer_iam_role");
-            assertThatThrownBy(() -> execute(connection, "SELECT id FROM catalog_order.customer_order")).isInstanceOfSatisfying(SQLException.class, failure -> assertThat(failure.getSQLState()).isEqualTo("42501")); connection.rollback();
+            execute(connection, "SELECT id FROM catalog_order.customer_order");
+            for (String sql : List.of("SELECT revision FROM catalog_order.customer_order",
+                    "SELECT id FROM catalog_order.customer_order FOR UPDATE",
+                    "INSERT INTO catalog_order.customer_order DEFAULT VALUES",
+                    "UPDATE catalog_order.customer_order SET payment_status='UNKNOWN'",
+                    "SET LOCAL ROLE catalog_order_role", "SET LOCAL ROLE catalog_order_owner")) {
+                var savepoint = connection.setSavepoint();
+                try {
+                    assertThatThrownBy(() -> execute(connection, sql)).isInstanceOfSatisfying(SQLException.class,
+                            failure -> assertThat(failure.getSQLState()).isEqualTo("42501"));
+                } finally { connection.rollback(savepoint); }
+            }
+            connection.rollback();
         }
         var owner = fixture.context.getBean(PurchaseConsentService.class);
         assertThatThrownBy(() -> owner.lockServiceActivation(fixture.subject, new PurchaseConsentService.TransactionWitness("pa36_operations", 1, 1))).isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
@@ -172,6 +184,6 @@ class CustomerOrderRoleLeastPrivilegeIT {
         fixture.success(fixture.post("no-ddl"), 201);
         assertThat(fixture.databaseInventory()).as("inventory after request").isEqualTo(before);
         assertThat(fixture.base.psql("check").getExitCode()).isZero();
-        assertThat(fixture.value("SELECT count(*) FROM flyway_schema_history WHERE success")).isEqualTo("19");
+        assertThat(fixture.value("SELECT count(*) FROM flyway_schema_history WHERE success")).isEqualTo("20");
     }
 }

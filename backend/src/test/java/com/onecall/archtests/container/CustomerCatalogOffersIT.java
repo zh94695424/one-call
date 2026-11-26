@@ -46,7 +46,7 @@ class CustomerCatalogOffersIT {
     void postgres16FullChainAndCustomerRuntimeRoleAreUsed() throws Exception {
         try (var connection = fixture.admin()) {
             assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999);
-            assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE success")).isEqualTo("19");
+            assertThat(one(connection, "SELECT count(*) FROM public.flyway_schema_history WHERE success")).isEqualTo("20");
             assertThat(one(connection, "SELECT rolinherit FROM pg_roles WHERE rolname='pa27_customer'")).isEqualTo("f");
         }
         fixture.json("personal", "", 200); fixture.cleanPool();

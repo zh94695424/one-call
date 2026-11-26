@@ -51,7 +51,7 @@ class CustomerEvidenceBoundaryTests {
                 .containsExactlyInAnyOrder("sharing::customer-query", "sharing::customer-command", "sharing::public-query", "sharing::public-admission",
                         "subject_number::customer-business-number-query", "activation_consent::customer-activation-query",
                         "subject_number::customer-subject-query", "evidence::customer-subject-count-query",
-                        "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query", "catalog_order::customer-order-command");
+                        "catalog_order::customer-subject-count-query", "evidence::customer-evidence-query", "subject_number::customer-subject-claim-command", "activation_consent::customer-subject-activation-command", "catalog_order::customer-catalog-offer-query", "catalog_order::customer-order-command", "catalog_order::customer-order-query");
         assertThat(CustomerSubjectAccessReader.class.getDeclaredMethods()).hasSize(4);
         signature(CustomerSubjectAccessReader.class, "findOwnedSubject", "java.util.Optional<java.util.UUID>", "java.util.UUID", "java.util.UUID", "java.util.UUID");
         signature(CustomerSubjectAccessReader.class, "hasOpenRisk", "boolean", "java.util.UUID");
@@ -188,14 +188,14 @@ class CustomerEvidenceBoundaryTests {
         for (String line : migration.replace("\uFEFF", "").lines().toList()) checksum.update(line.getBytes(StandardCharsets.UTF_8));
         assertThat((int) checksum.getValue()).isEqualTo(V017_CHECKSUM);
         String pa25 = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(pa25).contains("expected_resolved) <> 432", "history) <> 19");
+        assertThat(pa25).contains("expected_resolved) <> 449", "history) <> 20");
         Set<String> provisioned = tuples(pa25, "frozen");
-        assertThat(provisioned).hasSize(432).containsAll(expected);
-        assertThat(provisioned.stream().filter(value -> value.startsWith("customer_iam_role|"))).hasSize(75);
+        assertThat(provisioned).hasSize(449).containsAll(expected);
+        assertThat(provisioned.stream().filter(value -> value.startsWith("customer_iam_role|"))).hasSize(92);
         assertThat(provisioned.stream().filter(value -> value.startsWith("evidence_role|"))).hasSize(18);
         assertThat(provisioned.stream().filter(value -> !value.startsWith("customer_iam_role|") && !value.startsWith("evidence_role|") && !value.startsWith("operations_iam_role|") && !value.startsWith("ivr_role|"))).hasSize(219);
         JsonNode history = tagged(pa25, "history");
-        assertThat(history.size()).isEqualTo(19);
+        assertThat(history.size()).isEqualTo(20);
         assertThat(history.get(17).get(0).asString()).isEqualTo("018");
         assertThat(history.get(17).get(2).asInt()).isEqualTo(1606293398);
         assertThat(history.get(15).get(2).asInt()).isEqualTo(1669606497);

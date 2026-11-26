@@ -116,7 +116,7 @@ class SubjectClaimRoleLeastPrivilegeIT {
     }
     @Test
     void frozenAclsHistoryAndCustomerQueryPrincipalRemainUnchanged() throws Exception {
-        fixture.flyway().validate(); assertThat(fixture.flyway().info().applied()).hasSize(19);
+        fixture.flyway().validate(); assertThat(fixture.flyway().info().applied()).hasSize(20);
         assertThat(fixture.value("SELECT has_table_privilege('subject_number_role','subject_number.subject_claim','SELECT,INSERT')")).isEqualTo("t");
         assertThat(fixture.value("SELECT has_table_privilege('subject_number_role','subject_number.subject_claim','UPDATE,DELETE,TRUNCATE')")).isEqualTo("f");
         try (var connection = fixture.base.runtime()) {

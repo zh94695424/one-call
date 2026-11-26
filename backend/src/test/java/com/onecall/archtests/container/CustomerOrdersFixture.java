@@ -57,6 +57,9 @@ final class CustomerOrdersFixture implements AutoCloseable {
         }
     }
     void start() throws Exception {
+        start(Map.of());
+    }
+    void start(Map<String, Object> overrides) throws Exception {
         base.postgres.withEnv("POSTGRES_INITDB_ARGS", "--encoding=UTF8 --lc-collate=C --lc-ctype=C");
         base.start(null);
         try (var connection = admin()) {
@@ -79,6 +82,7 @@ final class CustomerOrdersFixture implements AutoCloseable {
         properties.put("onecall.persistence.password", base.password);
         properties.put("onecall.customer.business-numbers.cursor-hmac-key", Base64.getEncoder().encodeToString(new byte[32]));
         properties.put("onecall.customer.evidence.cursor-hmac-key", Base64.getEncoder().encodeToString(new byte[32]));
+        properties.put("onecall.customer.catalog-offers.cursor-hmac-key", Base64.getEncoder().encodeToString(new byte[32]));
         properties.put("onecall.sharing-command.enabled", "false");
         properties.put("onecall.sharing-admission.datasource.enabled", "false");
         properties.put("onecall.evidence-media-read.datasource.enabled", "false");
@@ -86,6 +90,10 @@ final class CustomerOrdersFixture implements AutoCloseable {
         properties.put("onecall.purchase-consent.current.policy-version", "1");
         properties.put("onecall.purchase-consent.current.prompt-version", "1");
         properties.put("onecall.purchase-consent.current.content-sha256", CONTENT);
+        overrides.forEach((name, value) -> {
+            if (value == null) properties.remove(name);
+            else properties.put(name, value);
+        });
         context = new SpringApplicationBuilder(OneCallApplication.class, SessionBeans.class).profiles("web", "persistence")
                 .initializers(application -> application.getEnvironment().getPropertySources().addFirst(new MapPropertySource("pa41-synthetic", properties)))
                 .run("--server.port=0", "--spring.main.banner-mode=off");

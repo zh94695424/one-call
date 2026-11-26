@@ -3543,7 +3543,24 @@ DECLARE
     "SELECT",
     "catalog_order_owner",
     false
-  ]
+  ],
+  ["customer_iam_role","column","catalog_order.customer_order","id","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","order_no","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","channel","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","catalog_version_id","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","catalog_offer_id","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","purchase_consent_id","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","amount_cents","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","currency","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","payment_status","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","snapshot","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","snapshot_sha256","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","created_at","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","paid_at","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","catalog_order.customer_order","closed_at","SELECT","catalog_order_owner",false],
+  ["customer_iam_role","column","entitlement_metering.entitlement_issuance","order_id","SELECT","entitlement_metering_owner",false],
+  ["customer_iam_role","column","entitlement_metering.entitlement_issuance","status","SELECT","entitlement_metering_owner",false],
+  ["customer_iam_role","schema","entitlement_metering","","USAGE","entitlement_metering_owner",false]
 ]$frozen$::jsonb;
     expected_owners jsonb := $owners${
   "platform": "platform_reliability_owner",
@@ -3673,7 +3690,8 @@ DECLARE
     "V019__customer_catalog_offer_read_privileges.sql",
     -1794072022,
     "customer catalog offer read privileges"
-  ]
+  ],
+  ["020","V020__customer_order_read_privileges.sql",207560051,"customer order read privileges"]
 ]$history$::jsonb;
     expected_routines jsonb := $routines${
   "platform.idempotency_begin": {
@@ -4019,7 +4037,7 @@ BEGIN
             )
             SELECT 1 FROM ((SELECT * FROM expected EXCEPT SELECT * FROM actual)
                 UNION ALL (SELECT * FROM actual EXCEPT SELECT * FROM expected)) difference
-        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 19 THEN
+        ) OR (SELECT count(*) FROM public.flyway_schema_history) <> 20 THEN
             RAISE EXCEPTION 'rejected';
         END IF;
         failure_category := 'PA25_SETTINGS_REJECTED';
@@ -4114,8 +4132,8 @@ BEGIN
                 WHERE attrelid = to_regclass(item->>2) AND attname = item->>3 AND NOT attisdropped) ELSE 0 END,
             item->>4, to_regrole(item->>5)::oid, false)) INTO expected_resolved
         FROM jsonb_array_elements(expected_acls) item;
-        IF jsonb_array_length(expected_resolved) <> 432
-            OR (SELECT count(DISTINCT value) FROM jsonb_array_elements(expected_resolved)) <> 432 OR EXISTS (
+        IF jsonb_array_length(expected_resolved) <> 449
+            OR (SELECT count(DISTINCT value) FROM jsonb_array_elements(expected_resolved)) <> 449 OR EXISTS (
             SELECT 1 FROM jsonb_array_elements(expected_resolved) item WHERE item->>2 IS NULL OR item->>3 IS NULL OR item->>5 IS NULL
         ) THEN
             RAISE EXCEPTION 'rejected';
@@ -4145,7 +4163,7 @@ BEGIN
         SELECT jsonb_agg(jsonb_build_array(coalesce(grantee::regrole::text, 'public'), kind, oid, subid,
             privilege_type, grantor, is_grantable)) INTO actual_acls
         FROM expanded WHERE grantee = ANY(managed_oids) OR grantee = 0 OR grantor = ANY(boundary_oids);
-        IF jsonb_array_length(coalesce(actual_acls, '[]'::jsonb)) <> 432 OR EXISTS (
+        IF jsonb_array_length(coalesce(actual_acls, '[]'::jsonb)) <> 449 OR EXISTS (
             SELECT 1 FROM ((SELECT value FROM jsonb_array_elements(expected_resolved)
                     EXCEPT SELECT value FROM jsonb_array_elements(coalesce(actual_acls, '[]'::jsonb)))
                 UNION ALL (SELECT value FROM jsonb_array_elements(coalesce(actual_acls, '[]'::jsonb))

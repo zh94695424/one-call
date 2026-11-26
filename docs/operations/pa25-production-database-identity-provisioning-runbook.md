@@ -60,29 +60,33 @@ Stop on any sanitized rejection; check never repairs, apply only creates missing
 
 Current test inventory: Surefire77/712 + Failsafe32/520 =109 classes/1232 ordinary methods; annotation lines1233 with one historical comment. PA25 remains20 methods; PA36 adds8+16. POM includes32. XML must show failures0/errors0/skipped0; source/static assertions are not runtime evidence. Controller owns full PostgreSQL16/Docker/packaging validation and external production acceptance; production readiness NOT CLAIMED. No dependencies, wrappers, OpenAPI, V001–V017 or application code change.
 
-## PA40A Current Provisioning Boundary — 2026-11-23
+## PA42 Current Provisioning Boundary — 2026-11-25
 
-PA40A is the latest numeric provisioning boundary: exactly **19** successful
-migrations through V019, **432** effective ACL tuples, including customer **75**
-(six schema USAGE and 69 column SELECT), and the unchanged seven-login,
+PA42 is the latest numeric provisioning boundary: exactly **20** successful
+migrations through V020, **449** effective ACL tuples, including customer **92**
+(seven schema USAGE and 85 column SELECT), and the unchanged seven-login,
 eleven-membership-edge, nine-monitored-role graph. The PA36 prefix above is an
 older 18/410 boundary retained as historical evidence, not the current deploy target.
 
-Apply migrations through `V019__customer_catalog_offer_read_privileges.sql`
+Apply migrations through `V020__customer_order_read_privileges.sql`
 **before** current PA25 apply/check. Supply all four external-name inputs:
 `sharing_login`, `customer_login`, `command_login`, and `operations_login`.
 The success markers remain `PA25_APPLY_OK logins=7 effective_roles=9 memberships=11`
 and `PA25_CHECK_OK logins=7 effective_roles=9 memberships=11`.
-PA25 never repairs missing catalog privileges; V018-only targets fail closed.
+PA25 never repairs missing privileges; V019-only and V018-only targets fail closed.
 
 The existing customer identity still SETs only customer_iam_role; Operations
-retains its separate login and seven SET targets. V019 grants only 22
+retains its separate login and seven SET targets. Historical V019 grants only 22
 owner-issued, non-grantable scalar column SELECT privileges across catalog
 product/version/offer/benefit tables (2/10/5/5), with all 12 adjacent columns denied.
 These role-wide reads include DRAFT/OFFSALE and other-channel rows: column ACLs
-are not RLS, row visibility or endpoint authority. No HTTP endpoint, cursor,
-new pool, identity, membership, write privilege or production secret is added.
-Application ACTIVE/channel/customer predicates remain future PA40 work.
+are not RLS, row visibility or endpoint authority. V020 adds exactly 17
+owner-issued, non-grantable tuples: 14 order-column SELECTs, issuance order_id/status
+SELECTs and entitlement_metering schema USAGE. No table SELECT, write privilege,
+new pool, identity, membership or secret is added. PA42 GET list/detail require
+ACTIVE account/workspace and account plus workspace ownership. Historical snapshots
+are validated, UNKNOWN is visible, and issuance status is computed without writes.
+Orders reuse the catalog-offers cursor key; rotation invalidates both families.
 
 Production acceptance is **NOT EXECUTED**. Controller must validate fresh,
 provisioned upgrade, raw replay, rejection atomicity, all-business-table no-write
