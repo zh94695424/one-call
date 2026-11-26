@@ -19,7 +19,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class CustomerOrderConfigurationTests {
-    static Method factory() throws Exception { Method method = Class.forName("com.onecall.core.catalog_order.internal.customerorder.CustomerOrderConfiguration").getDeclaredMethods()[0]; method.setAccessible(true); return method; }
+    static Method factory() throws Exception { Method method = Class.forName("com.onecall.core.catalog_order.internal.customerorder.CustomerOrderConfiguration").getDeclaredMethod("customerOrderCreationService", TransactionTemplate.class, DataSourceTransactionManager.class, DataSource.class, DSLContext.class, com.onecall.core.activation_consent.purchaseconsent.PurchaseConsentService.class); method.setAccessible(true); return method; }
     static TrustedCustomerCaller caller() { return new TrustedCustomerCaller(UUID.randomUUID(), TrustedCustomerCaller.Channel.WEB, new SelectedCustomerWorkspace(CustomerContext.WorkspaceType.PERSONAL, null)); }
     @Test void reusesOnlyExistingLoPoolManagerAndDsl() throws Exception {
         String source = Files.readString(Path.of("src/main/java/com/onecall/core/catalog_order/internal/customerorder/CustomerOrderConfiguration.java"));

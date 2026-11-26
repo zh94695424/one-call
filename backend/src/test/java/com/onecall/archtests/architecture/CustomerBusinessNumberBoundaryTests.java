@@ -43,7 +43,7 @@ class CustomerBusinessNumberBoundaryTests {
             }
         }
         var modules = ApplicationModules.of(OneCallApplication.class);
-        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(14);
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(15);
         modules.verify();
     }
 
@@ -72,7 +72,7 @@ class CustomerBusinessNumberBoundaryTests {
                 .hasSize(2).noneMatch(line -> line.contains("WITH GRANT OPTION"));
         assertThat(migration).contains("V015_AUTHORITY_REJECTED", "V015_ACL_REJECTED", "SET LOCAL ROLE %I", "GRANT SELECT (%I)");
         String pa25 = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(pa25).contains("V015__customer_business_number_read_privileges.sql", "expected_resolved) <> 432", "history) <> 19");
+        assertThat(pa25).contains("V015__customer_business_number_read_privileges.sql", "expected_resolved) <> 449", "history) <> 20");
         Map<String, String> frozen = Map.ofEntries(
                 Map.entry("../api/openapi/onecall-v1.openapi.yaml", "ce8de66d9bbc3c3e2fbbc6469f146e6d7e9b58223d3fd7c2187e95c26a6e7e30"),
                 Map.entry("src/main/resources/db/migration/V001__platform_schemas_roles_idempotency_outbox_audit.sql", "946a0a13e07a4bfe583587a8cf5b1a24c56e3dcfb8cfeca2e28e84427cf81045"),

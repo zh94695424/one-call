@@ -111,7 +111,7 @@ class OperationsCatalogProductReadRoleLeastPrivilegeIT {
         assertThat(matrix()).hasSize(42); String before = matrix().toString(); fixture.get(BASE); assertThat(matrix().toString()).isEqualTo(before);
         var field = EvidenceRoleIvrAssociationAclIT.class.getDeclaredField("ACL"); field.setAccessible(true);
         try (var connection = fixture.admin(); var statement = connection.createStatement(); var rows = statement.executeQuery((String) field.get(null))) {
-            var actual = new TreeSet<String>(); while (rows.next()) actual.add(rows.getString(1)); assertThat(actual).hasSize(432).isEqualTo(CustomerCatalogOfferReadPrivilegesIT.current432Oracle());
+            var actual = new TreeSet<String>(); while (rows.next()) actual.add(rows.getString(1)); assertThat(actual).hasSize(449).isEqualTo(CustomerOrderReadPrivilegesIT.current449Oracle());
         }
     }
     @Test void assertsNoNewRole() throws Exception { String before = fixture.catalog(); fixture.get(BASE); assertThat(fixture.catalog()).isEqualTo(before); }

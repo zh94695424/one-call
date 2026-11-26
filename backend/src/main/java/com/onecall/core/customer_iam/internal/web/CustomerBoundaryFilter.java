@@ -85,7 +85,9 @@ public final class CustomerBoundaryFilter implements Filter {
                 || servletPath != null && servletPath.matches("/api/v1/customer/subjects/[^/;%]+")
                 || "/api/v1/customer/shares".equals(servletPath)
                 || "/api/v1/customer/business-numbers".equals(servletPath)
-                || "/api/v1/customer/catalog/offers".equals(servletPath);
+                || "/api/v1/customer/catalog/offers".equals(servletPath)
+                || "/api/v1/customer/orders".equals(servletPath)
+                || servletPath != null && servletPath.matches("/api/v1/customer/orders/[^/;%]+");
         boolean order = "POST".equals(request.getMethod()) && "/api/v1/customer/orders".equals(servletPath);
         boolean create = "POST".equals(request.getMethod()) && "/api/v1/customer/shares".equals(servletPath);
         boolean activation = "POST".equals(request.getMethod()) && servletPath != null

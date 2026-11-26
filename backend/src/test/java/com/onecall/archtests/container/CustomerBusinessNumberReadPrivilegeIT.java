@@ -44,7 +44,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private void latest() {
         var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(4); latest.validate(); assertThat(latest.info().applied()).hasSize(19);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(5); latest.validate(); assertThat(latest.info().applied()).hasSize(20);
     }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -156,7 +156,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
             if (!currentPhase) approved.keySet().removeAll(Set.of("catalog_order.catalog_product", "catalog_order.catalog_version", "catalog_order.catalog_offer", "catalog_order.catalog_benefit_line"));
             else {
                 latest(); fixture.provision();
-                for (String tuple : EvidenceRoleIvrAssociationAclIT.currentOracle()) {
+                for (String tuple : CustomerOrderReadPrivilegesIT.current449Oracle()) {
                     String[] fields = tuple.split("\\|", -1);
                     if (fields[0].equals("customer_iam_role") && fields[1].equals("column")) {
                         var projected = new ArrayList<>(approved.getOrDefault(fields[2], List.of()));
@@ -164,7 +164,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
                         approved.put(fields[2], List.copyOf(projected));
                     }
                 }
-                assertThat(approved.values().stream().mapToInt(List::size).sum()).isEqualTo(69);
+                assertThat(approved.values().stream().mapToInt(List::size).sum()).isEqualTo(85);
             }
 
 
@@ -262,7 +262,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
                 execute(connection, "GRANT SELECT (number_hmac) ON subject_number.caller_number_binding TO customer_iam_role");
             }
             Set<String> widenedAcls = acls();
-            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(313);
+            assertThat(widenedAcls).containsAll(cleanAcls).hasSize(330);
             assertThat(widenedAcls).contains("customer_iam_role|column|subject_number.caller_number_binding|number_hmac|SELECT|subject_number_owner|false");
             String widenedCatalog; try (var connection = fixture.admin()) { widenedCatalog = catalog(connection); }
             for (String mode : List.of("apply", "check")) {
@@ -286,7 +286,7 @@ class CustomerBusinessNumberReadPrivilegeIT {
             try { for (String mode : List.of("apply", "check")) assertThat(fixture.psql(mode).getExitCode()).isNotZero(); }
             finally { try (var connection = fixture.admin()) { execute(connection, "DELETE FROM public.flyway_schema_history WHERE version IN ('015','15')"); execute(connection, "INSERT INTO public.flyway_schema_history SELECT * FROM jsonb_populate_record(NULL::public.flyway_schema_history,?::jsonb)", history); } }
         }
-        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(312);
+        assertThat(fixture.psql("apply").getExitCode()).isZero(); assertThat(fixture.psql("check").getExitCode()).isZero(); assertThat(acls()).hasSize(329);
     }
 
     @Test

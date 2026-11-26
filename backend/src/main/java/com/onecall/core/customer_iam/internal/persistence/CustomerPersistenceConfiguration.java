@@ -46,6 +46,34 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class CustomerPersistenceConfiguration {
     @Bean
     @Lazy
+    TransactionTemplate customerOrderTransactionTemplate(
+            @Qualifier("customerQueryTransactionManager") DataSourceTransactionManager manager) {
+        TransactionTemplate template = new TransactionTemplate(manager);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template;
+    }
+
+    @Bean
+    @Lazy
+    com.onecall.core.customer_iam.internal.application.CustomerOrderQueryService customerOrderQueryService(
+            @Qualifier("customerOrderTransactionTemplate") TransactionTemplate template,
+            @Qualifier("customerQueryDsl") DSLContext context,
+            @Qualifier("customerBusinessNumberAccessRepository") JooqCustomerBusinessNumberAccessRepository repository,
+            @Qualifier("customerOrderReader") com.onecall.core.catalog_order.customerquery.CustomerOrderReader reader,
+            @Qualifier("customerOrderSnapshotReader") com.onecall.core.catalog_order.customerorder.CustomerOrderSnapshotReader snapshots) {
+        return new com.onecall.core.customer_iam.internal.application.CustomerOrderQueryService(template, context, repository, reader, snapshots);
+    }
+
+    @Bean
+    @Lazy
+    com.onecall.core.customer_iam.internal.web.CustomerOrderCursorCodec customerOrderCursorCodec(CustomerCatalogOfferCursorProperties properties) {
+        return new com.onecall.core.customer_iam.internal.web.CustomerOrderCursorCodec(properties);
+    }
+
+    @Bean
+    @Lazy
     TransactionTemplate customerCatalogOfferTransactionTemplate(
             @Qualifier("customerQueryTransactionManager") DataSourceTransactionManager manager) {
         TransactionTemplate template = new TransactionTemplate(manager);

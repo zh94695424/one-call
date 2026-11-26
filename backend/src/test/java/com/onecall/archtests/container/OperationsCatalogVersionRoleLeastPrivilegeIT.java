@@ -41,8 +41,22 @@ public final class OperationsCatalogVersionRoleLeastPrivilegeIT {
         for (String sql : List.of("DELETE FROM catalog_order.catalog_version", "INSERT INTO audit.audit_fact(id) VALUES (gen_random_uuid())", "INSERT INTO platform.outbox_event(id) VALUES (gen_random_uuid())", "UPDATE operations_iam.employee_account SET revision=revision+1")) denied("catalog_order_role", sql, "42501");
         try (var connection = fixture.admin()) { for (String routine : List.of("platform.outbox_append(text,text,text,uuid,text,jsonb,text,text)", "audit.append_fact(timestamp with time zone,text,uuid,text,text,uuid,text,jsonb,jsonb,text,text)")) assertThat(one(connection, "SELECT has_function_privilege('catalog_order_role',?,'EXECUTE')", routine)).isEqualTo("t"); }
     }
-    @Test void v001ThroughV018ProvideAllRequiredObjects() throws Exception { assertThat(fixture.value("SELECT count(*) FROM public.flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("19"); for (String object : List.of("catalog_order.catalog_version", "operations_iam.employee_account", "audit.audit_fact", "platform.outbox_event")) assertThat(fixture.value("SELECT to_regclass(?) IS NOT NULL", object)).isEqualTo("t"); assertThat(fixture.value("SELECT version()")).contains("PostgreSQL 16."); }
-    @Test void noV019IsNeededOrPresent() throws Exception { try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) { var names = paths.map(path -> path.getFileName().toString()).sorted().toList(); assertThat(names).hasSize(19); assertThat(names).contains("V019__customer_catalog_offer_read_privileges.sql"); var historical = names.stream().filter(name -> !name.equals("V019__customer_catalog_offer_read_privileges.sql")).toList(); assertThat(historical).hasSize(18).noneMatch(name -> name.startsWith("V019")); assertThat(names).noneMatch(name -> name.startsWith("V020")); } assertThat(fixture.value("SELECT count(*) FROM public.flyway_schema_history WHERE version='019'")).isEqualTo("1"); }
+    @Test void v001ThroughV018ProvideAllRequiredObjects() throws Exception { assertThat(fixture.value("SELECT count(*) FROM public.flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("20"); for (String object : List.of("catalog_order.catalog_version", "operations_iam.employee_account", "audit.audit_fact", "platform.outbox_event")) assertThat(fixture.value("SELECT to_regclass(?) IS NOT NULL", object)).isEqualTo("t"); assertThat(fixture.value("SELECT version()")).contains("PostgreSQL 16."); }
+    @Test void noV019IsNeededOrPresent() throws Exception {
+        try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) {
+            var names = paths.map(path -> path.getFileName().toString()).sorted().toList();
+            assertThat(names).hasSize(20);
+            var manifest = Class.forName("com.onecall.archtests.architecture.CustomerCatalogOfferReadAclBoundaryTests")
+                    .getDeclaredMethod("assertCurrentMigrationNames", Collection.class);
+            manifest.setAccessible(true); manifest.invoke(null, names);
+            assertThat(names).contains("V019__customer_catalog_offer_read_privileges.sql", "V020__customer_order_read_privileges.sql");
+            var historical = names.stream().filter(name -> !name.equals("V019__customer_catalog_offer_read_privileges.sql") && !name.equals("V020__customer_order_read_privileges.sql")).toList();
+            assertThat(historical).hasSize(18).noneMatch(name -> name.startsWith("V019") || name.startsWith("V020"));
+            assertThat(names).noneMatch(name -> name.startsWith("V021"));
+        }
+        assertThat(fixture.value("SELECT count(*) FROM public.flyway_schema_history WHERE version='019'")).isEqualTo("1");
+        assertThat(fixture.value("SELECT count(*) FROM public.flyway_schema_history WHERE version='020'")).isEqualTo("1");
+    }
     @Test void setLocalRoleIsExactAndRestored() throws Exception {
         fixture.success(fixture.request(fixture.draft(), true, null, 1)); var switches = fixture.calls("SET LOCAL ROLE"); assertThat(switches).extracting(OperationsCatalogVersionLifecycleFixture.Entry::sql).containsExactly("SET LOCAL ROLE operations_iam_role", "SET LOCAL ROLE catalog_order_role", "SET LOCAL ROLE NONE");
         assertThat(fixture.entries).extracting(OperationsCatalogVersionLifecycleFixture.Entry::pid).containsOnly(switches.getFirst().pid()); assertThat(fixture.entries).extracting(OperationsCatalogVersionLifecycleFixture.Entry::transaction).containsOnly(switches.getFirst().transaction()); assertThat(switches.getLast().role()).isEqualTo(fixture.shared.login);

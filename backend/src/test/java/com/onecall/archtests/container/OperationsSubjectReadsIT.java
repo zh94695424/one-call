@@ -38,7 +38,7 @@ class OperationsSubjectReadsIT {
     void postgres16AppliesExactlyFrozenSeventeenMigrations() throws Exception {
         try (var connection = fixture.admin()) {
             assertThat(Integer.parseInt(one(connection, "SHOW server_version_num"))).isBetween(160000, 169999);
-            assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("19");
+            assertThat(one(connection, "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")).isEqualTo("20");
             assertThat(one(connection, "SHOW server_encoding")).isEqualTo("UTF8");
         }
     }

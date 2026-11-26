@@ -47,7 +47,7 @@ class CustomerEvidenceReadPrivilegeIT {
     @BeforeEach void start() throws Exception { fixture = new CustomerBusinessNumbersFixture(); fixture.start("016"); }
     @AfterEach void stop() { if (fixture != null) fixture.close(); }
     private Flyway current() { return Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("017").load(); }
-    private void latest() { var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("019").load(); assertThat(latest.migrate().migrationsExecuted).isEqualTo(2); latest.validate(); }
+    private void latest() { var latest = Flyway.configure().dataSource(fixture.url, "fixture_admin", fixture.password).locations("classpath:db/migration").target("020").load(); assertThat(latest.migrate().migrationsExecuted).isEqualTo(3); latest.validate(); }
     private void upgrade() { assertThat(current().migrate().migrationsExecuted).isEqualTo(1); current().validate(); }
     private List<String> strings(Connection connection, String sql) throws SQLException {
         List<String> values = new ArrayList<>(); try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) { while (rows.next()) values.add(rows.getString(1)); } return values;
@@ -415,7 +415,7 @@ class CustomerEvidenceReadPrivilegeIT {
         Set<String> result = new TreeSet<>(oracle()); result.addAll(expectedDelta());
         assertThat(result).hasSize(288); return result;
     }
-    private Set<String> latestOracle() { Set<String> expected = new TreeSet<>(currentOracle()); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); expected.addAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); return expected; }
+    private Set<String> latestOracle() { Set<String> expected = new TreeSet<>(currentOracle()); expected.addAll(EvidenceRoleIvrAssociationAclIT.associationDelta()); expected.addAll(CustomerCatalogOfferReadPrivilegesIT.catalogDeltaOracle()); expected.addAll(CustomerOrderReadPrivilegesIT.orderReadDeltaOracle()); return expected; }
     private void history() throws Exception {
         current().validate(); assertThat(current().info().applied()).hasSize(17); assertThat(current().info().pending()).isEmpty();
         try (var connection = fixture.admin()) {
@@ -520,7 +520,8 @@ class CustomerEvidenceReadPrivilegeIT {
             if (!currentPhase) approved.keySet().removeAll(Set.of("catalog_order.catalog_product", "catalog_order.catalog_version", "catalog_order.catalog_offer", "catalog_order.catalog_benefit_line"));
             else {
                 latest(); fixture.provision();
-                assertThat(approved.values().stream().mapToInt(List::size).sum()).isEqualTo(69);
+                approved = CustomerOrderReadPrivilegesIT.approvedColumns();
+                assertThat(approved.values().stream().mapToInt(List::size).sum()).isEqualTo(85);
             }
 
 
@@ -688,7 +689,7 @@ class CustomerEvidenceReadPrivilegeIT {
             try (var connection = fixture.admin()) { assertThat(catalog(connection)).isEqualTo(before); }
             assertThat(acls()).isEqualTo(latestOracle());
         }
-        assertThat(current().info().applied()).hasSize(19);
+        assertThat(current().info().applied()).hasSize(20);
     }
 
     @Test

@@ -54,7 +54,7 @@ class CustomerSubjectDetailBoundaryTests {
         assertThat(CustomerSubjectOrderCountReader.class.getMethod("countForWorkspace", UUID.class, UUID.class, UUID.class).getReturnType()).isEqualTo(long.class);
         for (var entry : Map.of("subject_number", "customer-subject-query", "evidence", "customer-subject-count-query", "catalog_order", "customer-subject-count-query").entrySet())
             assertThat(modules.getModuleByName(entry.getKey()).orElseThrow().getNamedInterfaces().getByName(entry.getValue())).isPresent();
-        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(14);
+        assertThat(modules.getModuleByName("customer_iam").orElseThrow().getAllowedDependencies(modules)).hasSize(15);
     }
 
     @Test
@@ -85,7 +85,7 @@ class CustomerSubjectDetailBoundaryTests {
         assertThat(complete).containsAll(old);
         assertThat(migration).contains("namespace.nspname = 'evidence'", "NOT IN (15, 16)", "installed_rank <= 15", "V016_RECONCILIATION_REJECTED");
         String pa25 = Files.readString(Path.of("ops/postgresql/pa25-runtime-identities.sql"));
-        assertThat(pa25).contains("expected_resolved) <> 432", "history) <> 19", "V017__customer_evidence_read_privileges.sql");
+        assertThat(pa25).contains("expected_resolved) <> 449", "history) <> 20", "V017__customer_evidence_read_privileges.sql");
     }
     private Set<String> tuples(String source, String tag) {
         String marker = "$" + tag + "$";

@@ -63,7 +63,7 @@ final class CustomerBusinessNumbersFixture implements AutoCloseable {
         var configuration = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration");
         if (target != null) configuration.target(target);
         var flyway = configuration.load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(target == null ? 19 : Integer.parseInt(target));
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(target == null ? 20 : Integer.parseInt(target));
         flyway.validate();
         postgres.copyFileToContainer(MountableFile.forHostPath(Path.of("ops/postgresql/pa25-runtime-identities.sql").toAbsolutePath()), "/tmp/pa27-identities.sql");
         if (target == null) provision();

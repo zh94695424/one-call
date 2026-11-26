@@ -64,7 +64,7 @@ final class CustomerCatalogOffersFixture implements AutoCloseable {
         postgres.start();
         url = "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/pa27";
         var flyway = Flyway.configure().dataSource(url, "fixture_admin", password).locations("classpath:db/migration").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(19);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(20);
         flyway.validate();
         postgres.copyFileToContainer(MountableFile.forHostPath(Path.of("ops/postgresql/pa25-runtime-identities.sql").toAbsolutePath()), "/tmp/pa27-identities.sql");
         assertThat(psql("apply").getExitCode()).isZero();

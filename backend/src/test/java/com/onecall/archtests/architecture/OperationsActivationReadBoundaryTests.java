@@ -97,7 +97,7 @@ class OperationsActivationReadBoundaryTests {
             byte[] bytes = historicalBytes(entry.group(2), Files.readAllBytes(Path.of("..").resolve(entry.group(2))));
             assertThat(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))).as(entry.group(2)).isIn((Object[]) hashes.get(entry.group(2)));
         }
-        try (var files = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet())).hasSize(19).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(entries.stream().map(entry -> entry.group(2)).filter(path -> path.contains("/migration/")).map(path -> Path.of(path).getFileName().toString()), java.util.stream.Stream.of("V018__evidence_role_ivr_association_read_privileges.sql", "V019__customer_catalog_offer_read_privileges.sql")).toList()); }
+        try (var files = Files.list(Path.of("src/main/resources/db/migration"))) { assertThat(files.map(path -> path.getFileName().toString()).collect(java.util.stream.Collectors.toSet())).hasSize(20).containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(entries.stream().map(entry -> entry.group(2)).filter(path -> path.contains("/migration/")).map(path -> Path.of(path).getFileName().toString()), java.util.stream.Stream.of("V018__evidence_role_ivr_association_read_privileges.sql", "V019__customer_catalog_offer_read_privileges.sql", "V020__customer_order_read_privileges.sql")).toList()); }
     }
     @Test
     void employeeVerifierAndFilterLockstepStayIndependentAndExact() throws Exception {
