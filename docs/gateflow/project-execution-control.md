@@ -12,12 +12,21 @@
 
 ## Active resume checkpoint - PA43
 
-### PA43 next work unit - goal confirmation pending
+### PA43 operations order read foundation - goal confirmation accepted
 
 - Merge intake verified on 2026-11-26: PR #54 is `MERGED` with merge commit `29e715a3dccd8bc3fbedb4a094555294b7482a67`; local `origin/main`, remote `refs/heads/main`, and the new worktree HEAD all resolve that exact commit. PR head was `d5cf6ff66fc0eff2e53958eb8d6b5a17acad91ba`.
 - New managed worktree: `C:\Users\Administrator\.codex\worktrees\pa43-next-work-unit\codex-call`; branch `codex/pa43-next-work-unit`; based exactly on merged `main`; clean and with no copied `.pa42-*`, `.codex`, generated or private helper files. Earlier managed worktrees and their private helpers remain preserved.
-- Active work unit is not yet named. Phaseflow is at `goal confirmation`; no design authorization, plan, implementation, review, commit beyond this merge-intake bookkeeping, push, PR or external action may start until the user supplies and confirms the next ONECALL goal, motivation, success signal, non-goals and scope boundary.
-- Current gate / next entry point: `goal confirmation`.
+- Active work unit: `PA43-operations-order-read-foundation`; type: employee-facing read-only API feature. Goal confirmed by the user on 2026-11-26.
+- Binding capability: implement only `GET /api/v1/operations/orders` / `listOperationsOrders` and `GET /api/v1/operations/orders/{orderId}` / `getOperationsOrder`.
+- Binding authority: trusted employee session with fixed `ADMIN` or `OPS` role. No customer-session reuse, manual payment marking, refund, invoice, provider payload or business/audit/Outbox/idempotency write.
+- Binding list contract: `cursor`, `limit`, optional structured `subjectId` and `paymentStatus`; cursor bound to the normalized filter digest; stable `createdAt desc, orderId desc`; response `OrderPage` with order summaries, payment status and computed issuance status.
+- Binding detail contract: return the frozen `Order` projection with immutable snapshot, current payment status and computed issuance status; unavailable/nonexistent order returns frozen 404. Source facts are `catalog_order.customer_order`, optional `catalog_order.payment_order`, and `entitlement_metering.entitlement_issuance`.
+- Binding database boundary: preserve V001–V020, OpenAPI and docs12/14/15/17. Do not add a migration unless direct privilege evidence proves the existing owner-role paths and employee orchestration cannot execute the read; in that case the plan must isolate the minimum exact ACL delta and its owner. No writes or privilege widening.
+- Success signal: HTTP/PostgreSQL16 tests prove ADMIN/OPS versus forbidden-role behavior, validation/error precedence, cursor/filter binding, stable paging, exact summary/detail projection, computed issuance status, read-only role restoration, zero business/audit/Outbox/idempotency delta, and green existing regressions/architecture guards.
+- Non-goals: no operations audit/trial-policy APIs, payment callback/reconciliation, payment mutation, refund/invoice, customer endpoints, frontend, cache/search/read model, new contract fields/filters, or unrelated refactoring.
+- Direct evidence: `api/openapi/onecall-v1.openapi.yaml` defines O15 `listOperationsOrders` and O16 `getOperationsOrder` with exact roles/filters/paging/response/errors; no Java route or implementation currently references either operation ID. Existing operations read slices and `JooqOperationsOrderCounter` prove the employee/owner-read pattern but only expose a subject order count today.
+- Slice principle: one end-to-end read-only behavioral slice covering both endpoint operations, employee authorization, filters/cursor, frozen projections and database proof. Splitting controller/read-port/tests into artificial layer slices is prohibited.
+- Current gate / next entry point: `plan`. GPT `gpt-6.1-sol` / high must produce `docs/gateflow/pa43-operations-order-read-plan.md`, with no source or other product-file edits. After Controller intake, dispatch independent A/DeepSeek and B/Qwen `planreview`.
 
 ## Previous resume checkpoint - PA42
 
