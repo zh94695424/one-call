@@ -4,13 +4,22 @@
 >
 > Design source: `docs/12-technology-stack-and-system-architecture.md`
 >
-> Branch: `codex/pa42-customer-order-read-and-unknown-recovery-foundation`
+> Branch: `codex/pa43-next-work-unit`
 >
 > Dispatch protocol: `sub-agents` via one-shot runner processes
 >
 > Dispatch providers: ONECALL planning, implementation, fixes and the **Code Primary Judge** role are routed to GPT `gpt-6.1-sol` / `high` through `codex-agent-run`. Independent Reviewer A's primary is `ds` / DeepSeek. Reviewer B's current route is Qwen3.8 Flash `qwen38flash`. A/B use fresh isolated inputs, submit before the Controller reads either conclusion, and never mutate source or remote state. All artifacts and adjudications follow the current confirmed goal and accepted plan.
 
-## Active resume checkpoint - PA42
+## Active resume checkpoint - PA43
+
+### PA43 next work unit - goal confirmation pending
+
+- Merge intake verified on 2026-11-26: PR #54 is `MERGED` with merge commit `29e715a3dccd8bc3fbedb4a094555294b7482a67`; local `origin/main`, remote `refs/heads/main`, and the new worktree HEAD all resolve that exact commit. PR head was `d5cf6ff66fc0eff2e53958eb8d6b5a17acad91ba`.
+- New managed worktree: `C:\Users\Administrator\.codex\worktrees\pa43-next-work-unit\codex-call`; branch `codex/pa43-next-work-unit`; based exactly on merged `main`; clean and with no copied `.pa42-*`, `.codex`, generated or private helper files. Earlier managed worktrees and their private helpers remain preserved.
+- Active work unit is not yet named. Phaseflow is at `goal confirmation`; no design authorization, plan, implementation, review, commit beyond this merge-intake bookkeeping, push, PR or external action may start until the user supplies and confirms the next ONECALL goal, motivation, success signal, non-goals and scope boundary.
+- Current gate / next entry point: `goal confirmation`.
+
+## Previous resume checkpoint - PA42
 
 ### PA42 customer order read and UNKNOWN visibility foundation - goal confirmation accepted
 
