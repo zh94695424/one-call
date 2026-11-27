@@ -24,8 +24,16 @@ public final class OperationsBoundaryFilter implements Filter {
         var request = (HttpServletRequest) incoming;
         var response = (HttpServletResponse) outgoing;
         if (request.getDispatcherType() == DispatcherType.ERROR) {
-            if ((request.getContextPath() + "/api/v1/operations/activations").equals(request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI))
-                    && "TRACE".equals(request.getAttribute(RequestDispatcher.ERROR_METHOD))) {
+            if ("TRACE".equals(request.getAttribute(RequestDispatcher.ERROR_METHOD))
+                    && (request.getContextPath() + "/api/v1/operations/activations").equals(request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI))
+                    || request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI) instanceof String errorUri
+                    && errorUri.matches(java.util.regex.Pattern.quote(request.getContextPath()) + "/api/v1/operations/orders([/;%].*)?")
+                    && (request.getAttribute(RequestDispatcher.ERROR_METHOD) instanceof String errorMethod && !"GET".equals(errorMethod)
+                    || "GET".equals(request.getAttribute(RequestDispatcher.ERROR_METHOD))
+                    && !errorUri.equals(request.getContextPath() + "/api/v1/operations/orders")
+                    && !errorUri.matches(java.util.regex.Pattern.quote(request.getContextPath()) + "/api/v1/operations/orders/[^/;%]+")
+                    && (Integer.valueOf(400).equals(request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE))
+                    || Integer.valueOf(405).equals(request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE))))) {
                 problems.write(response, Code.NOT_FOUND, UUID.randomUUID());
             } else {
                 chain.doFilter(incoming, outgoing);
@@ -42,7 +50,9 @@ public final class OperationsBoundaryFilter implements Filter {
                 || "/api/v1/operations/catalog/products".equals(path)
                 || path.matches("/api/v1/operations/catalog/products/[^/;%]+")
                 || path.matches("/api/v1/operations/ivr-sessions/[^/;%]+")
-                || path.matches("/api/v1/operations/subjects/[^/;%]+"));
+                || path.matches("/api/v1/operations/subjects/[^/;%]+")
+                || "/api/v1/operations/orders".equals(path)
+                || path.matches("/api/v1/operations/orders/[^/;%]+"));
         boolean catalog = "POST".equals(request.getMethod()) && path != null
                 && path.matches("/api/v1/operations/catalog/versions/[^/;%]+/(publications|offsales)")
                 && (request.getContextPath() + path).equals(request.getRequestURI());

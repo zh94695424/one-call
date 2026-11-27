@@ -97,7 +97,7 @@ class CustomerOrderCreationBoundaryTests {
     @Test void productionAndTestAllowlistIsExact() throws Exception {
         assertThat(PRODUCTION).hasSize(18).doesNotHaveDuplicates(); assertThat(CURRENT_PRODUCTION).hasSize(20).doesNotHaveDuplicates(); for (String path : CURRENT_PRODUCTION) assertThat(MAIN.resolve(path)).isRegularFile();
         try (var production = Files.walk(Path.of("src/main/java")); var tests = Files.walk(Path.of("src/test/java"))) {
-            assertThat(production.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(332); assertThat(tests.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(216);
+            assertThat(production.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(341); assertThat(tests.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(228);
         }
         for (String directory : List.of("catalog_order/internal/customerorder", "activation_consent/internal/purchase", "catalog_order/customerorder", "activation_consent/purchaseconsent")) {
             try (var files = Files.list(MAIN.resolve(directory))) { assertThat(files.filter(Files::isRegularFile).map(path -> MAIN.relativize(path).toString().replace('\\', '/')).toList()).containsExactlyInAnyOrderElementsOf(CURRENT_PRODUCTION.stream().filter(path -> path.startsWith(directory + "/")).toList()); }
@@ -105,7 +105,7 @@ class CustomerOrderCreationBoundaryTests {
     }
     @Test void sourceCiPomAndXmlInventoryIsExact() throws Exception {
         new CustomerCatalogOfferReadAclBoundaryTests().sourceCiPomAndXmlIdentitiesMatchExactly();
-        String pom = Files.readString(Path.of("pom.xml")); assertThat(Pattern.compile("<include>\\*\\*/[^<]+IT.java</include>").matcher(pom).results().count()).isEqualTo(46);
+        String pom = Files.readString(Path.of("pom.xml")); assertThat(Pattern.compile("<include>\\*\\*/[^<]+IT.java</include>").matcher(pom).results().count()).isEqualTo(48);
         String ci = Files.readString(Path.of("../.github/workflows/ci.yml")); assertThat(ci).contains("pa41_start_totals == [1071, 701]", "pa41_start_line_scan_total == 1773", "method_totals == [1127, 738]", "line_scan_total == 1866");
     }
 }
