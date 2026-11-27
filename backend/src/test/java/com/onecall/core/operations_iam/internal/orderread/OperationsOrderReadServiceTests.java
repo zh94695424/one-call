@@ -6,15 +6,23 @@ import static org.mockito.ArgumentMatchers.*;
 import static com.onecall.archtests.operations.OperationsOrderReadTestProviders.*;
 
 import com.onecall.archtests.operations.OperationsOrderReadTestProviders;
+import com.onecall.core.operations_iam.internal.subjectread.OperationsSubjectReadProperties;
 import com.onecall.core.operations_iam.subjectread.OperationsOrderReadPorts.*;
 import com.onecall.core.operations_iam.subjectread.OperationsSubjectReadService.Code;
 import com.onecall.core.operations_iam.subjectread.OperationsSubjectReadService.Failure;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.Test;
 
 class OperationsOrderReadServiceTests {
     private void fails(Runnable action, Code code) {
         assertThatThrownBy(action::run).isInstanceOfSatisfying(Failure.class, failure -> assertThat(failure.code()).isEqualTo(code));
+    }
+    private DefaultOperationsOrderReadService timed(OperationsOrderReadTestProviders graph, LongSupplier clock) {
+        return new DefaultOperationsOrderReadService(graph.transaction, graph.dsl, graph.scope,
+                graph.beans.getBeanProvider(OperationsSubjectReadProperties.class),
+                graph.beans.getBeanProvider(OrderReader.class), graph.beans.getBeanProvider(IssuanceReader.class), clock);
     }
     @Test void authorityPrecedesParsingPropertiesAndOwners() throws Exception {
         var graph = new OperationsOrderReadTestProviders();
@@ -139,5 +147,70 @@ class OperationsOrderReadServiceTests {
         doThrow(new IllegalArgumentException("issuance defect")).when(graph.issuances).fetchIssuances(anyList());
         fails(() -> graph.service.list(graph.caller, raw(Map.of())), Code.INTERNAL);
         fails(() -> graph.service.detail(graph.caller, detail()), Code.INTERNAL);
+    }
+    @Test void budgetExhaustionAtListDetailIssuanceAndCompletionNeverEmitsPartialPageOrContinuation() throws Exception {
+        var sentinel = new OrderFacts(new UUID(0, 1), null, SUBJECT, null, null, null, null, null, null, TIME.minusSeconds(1));
+        for (String stage : List.of("entry", "authority", "orders", "issuance", "detail", "detailIssuance", "exit", "commit")) {
+            var graph = new OperationsOrderReadTestProviders();
+            var elapsed = new AtomicLong();
+            var service = timed(graph, elapsed::get);
+            when(graph.orders.fetchOrders(any(), any(), anyInt())).thenAnswer(invocation -> {
+                if ("orders".equals(stage)) elapsed.set(5_000_000_000L);
+                return List.of(order(), sentinel);
+            });
+            when(graph.orders.fetchOrder(ORDER)).thenAnswer(invocation -> {
+                if ("detail".equals(stage)) elapsed.set(5_000_000_000L);
+                return Optional.of(facts());
+            });
+            when(graph.issuances.fetchIssuances(anyList())).thenAnswer(invocation -> {
+                if (Set.of("issuance", "detailIssuance").contains(stage)) elapsed.set(5_000_000_000L);
+                return List.of();
+            });
+            switch (stage) {
+                case "entry" -> doAnswer(invocation -> { elapsed.set(5_000_000_000L); return null; }).when(graph.scope).enter();
+                case "authority" -> when(graph.dsl.fetchOne(anyString(), any(Object[].class))).thenAnswer(invocation -> {
+                    elapsed.set(5_000_000_000L); return graph.employee;
+                });
+                case "exit" -> doAnswer(invocation -> { elapsed.set(5_000_000_000L); return null; }).when(graph.scope).exit();
+                case "commit" -> doAnswer(invocation -> { elapsed.set(5_000_000_000L); return null; }).when(graph.connection).commit();
+                default -> { }
+            }
+            if (Set.of("detail", "detailIssuance").contains(stage)) fails(() -> service.detail(graph.caller, detail()), Code.SERVICE_UNAVAILABLE);
+            else fails(() -> service.list(graph.caller, raw(Map.of("limit", List.of("1")))), Code.SERVICE_UNAVAILABLE);
+            verify(graph.scope).exit();
+            if (Set.of("exit", "commit").contains(stage)) {
+                verify(graph.connection).commit();
+                verify(graph.connection, never()).rollback();
+            } else {
+                verify(graph.connection).rollback();
+                verify(graph.connection, never()).commit();
+            }
+            if (Set.of("entry", "authority").contains(stage)) verifyNoInteractions(graph.orders, graph.issuances);
+            if (Set.of("orders", "detail").contains(stage)) verifyNoInteractions(graph.issuances);
+        }
+    }
+    @Test void fiveSecondRequestBudgetIsExactAndStrictAtTheListFetchCheckpoint() throws Exception {
+        var withinGraph = new OperationsOrderReadTestProviders();
+        var withinElapsed = new AtomicLong();
+        var within = timed(withinGraph, withinElapsed::get);
+        when(withinGraph.orders.fetchOrders(any(), any(), anyInt())).thenAnswer(invocation -> {
+            withinElapsed.set(4_999_999_999L); return List.of(order());
+        });
+        var page = within.list(withinGraph.caller, raw(Map.of()));
+        assertThat(page.items()).hasSize(1);
+        assertThat(page.hasMore()).isFalse();
+        assertThat(page.nextCursor()).isNull();
+        verify(withinGraph.connection).commit();
+        verify(withinGraph.connection, never()).rollback();
+        var exhaustedGraph = new OperationsOrderReadTestProviders();
+        var exhaustedElapsed = new AtomicLong();
+        var exhausted = timed(exhaustedGraph, exhaustedElapsed::get);
+        when(exhaustedGraph.orders.fetchOrders(any(), any(), anyInt())).thenAnswer(invocation -> {
+            exhaustedElapsed.set(5_000_000_000L); return List.of(order());
+        });
+        fails(() -> exhausted.list(exhaustedGraph.caller, raw(Map.of())), Code.SERVICE_UNAVAILABLE);
+        verifyNoInteractions(exhaustedGraph.issuances);
+        verify(exhaustedGraph.connection).rollback();
+        verify(exhaustedGraph.connection, never()).commit();
     }
 }

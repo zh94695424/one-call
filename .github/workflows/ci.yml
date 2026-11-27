@@ -162,8 +162,8 @@ jobs:
           if len(case_names) != 64 or len(cases) != 64 or cases != expected:
               sys.exit(f"container IT methods differ from PA9 V009 S3: {sorted(cases)}")
           unit_suites = suites("target/surefire-reports/TEST-*.xml")
-          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 1200:
-              sys.exit("expected exactly 1200 Surefire unit/module tests")
+          if sum(int(unit.get("tests", "0")) for unit in unit_suites) != 1202:
+              sys.exit("expected exactly 1202 Surefire unit/module tests")
           for surefire in unit_suites:
               if any(int(surefire.get(result, "0")) != 0 for result in ("skipped", "failures", "errors")):
                   sys.exit("a unit/module test was skipped or failed")
@@ -2644,7 +2644,9 @@ jobs:
                   "emptyPageAndMissingDetailNeverResolveIssuance", "allStatusSetsAreIndependentOfPaymentAndDuplicateRowsAreLegitimate",
                   "malformedFactsSeparateListInternalDetailNotFoundAndDependencyUnavailable", "sentinelOnlyDeterminesOrderingAndHasMore",
                   "transactionCompletionAndRoleCleanupOverrideDomainOrSuccess", "detailDoesNotResolveCursorPropertiesAndFilterDisagreementIsInternal",
-                  "ownerPortContractRejectionIsServiceUnavailableNotInternal", "nonPortIllegalArgumentFailuresRemainInternalNotServiceUnavailable"},
+                  "ownerPortContractRejectionIsServiceUnavailableNotInternal", "nonPortIllegalArgumentFailuresRemainInternalNotServiceUnavailable",
+                  "budgetExhaustionAtListDetailIssuanceAndCompletionNeverEmitsPartialPageOrContinuation",
+                  "fiveSecondRequestBudgetIsExactAndStrictAtTheListFetchCheckpoint"},
               "com.onecall.core.catalog_order.internal.operationsread.JooqOperationsOrderReaderTests": {
                   "allPredicatesAreBoundAndOwnerScopeIsRestoredByContext", "invalidPortInputsNeverEnterOwnerScope"},
               "com.onecall.core.entitlement_metering.internal.operationsread.JooqOperationsOrderIssuanceReaderTests": {
@@ -2992,8 +2994,8 @@ jobs:
           assert [len(names) for names in pa42_unit_additions.values()] == [5, 4, 5, 5, 5, 8, 5]
           assert [len(names) for names in pa42_container_additions.values()] == [16, 10]
           assert pa43_start_totals == [1164, 764] and pa43_start_line_scan_total == 1929
-          assert current_method_totals == [1200, 775] and sum(current_method_totals) == 1975
-          assert current_line_scan_total == 1976
+          assert current_method_totals == [1202, 775] and sum(current_method_totals) == 1977
+          assert current_line_scan_total == 1978
           assert len(unit_expected) == 130
           assert len(container_expected) == 48
           pom = ET.parse("pom.xml").getroot()
@@ -3008,9 +3010,9 @@ jobs:
           assert len(unit_expected["com.onecall.archtests.architecture.SharingQueryBoundaryTests"]) == 8
           assert len(unit_expected["com.onecall.archtests.sharing.MediaPlaybackCredentialAuthorityTests"]) == 24
           assert len(container_expected["com.onecall.archtests.container.SharingAdmissionRoleLeastPrivilegeIT"]) == 9
-          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 1200)
+          exact_inventory("target/surefire-reports/TEST-*.xml", unit_expected, 1202)
           exact_inventory("target/failsafe-reports/TEST-*.xml", container_expected, 775)
-          print("PA43 exact source=CI=POM=XML inventory passed: 130/1200 + 48/775 = 178/1975; annotation lines1976; POM48; historical PA42 122/1164 + 46/764 and all older identities retained; zero skips/errors/failures")
+          print("PA43 exact source=CI=POM=XML inventory passed: 130/1202 + 48/775 = 178/1977; annotation lines1978; POM48; historical PA42 122/1164 + 46/764 and all older identities retained; zero skips/errors/failures")
           print("PA41 exact source=CI=POM=XML inventory passed: 116/1127 + 44/738 = 160/1865; historical 112+178=290 -> PA19-start 128+192=320 -> PA20-start 162+198=360 -> PA21-start 196+204=400 -> PA22-start 231+214=445 -> PA23-start 266+214=480 -> PA25-start 309+214=523 -> PA26-start 309+234=543 -> PA27-start 309+246=555 -> PA28-start 341+272=613 -> PA29-start 375+302=677 -> PA30-start 417+336=753 -> PA31-start 468+370=838 -> PA32-start 520+404=924 -> PA33-start 574+440=1014 -> PA34-start 644+476=1120 -> PA36-start 704+504=1208 -> PA35-start 712+520=1232 -> PA37-start 788+556=1344 -> PA38-start 848+592=1440 -> PA39-start 934+630=1564 -> PA40A-start 1018+666=1684 -> PA40B-start 1026+682=1708 -> PA41-start 1071+701=1772 -> current 1127+738=1865; line scans 291 -> 321 -> 361 -> 401 -> 446 -> 481 -> 524 -> 544 -> 556 -> 614 -> 678 -> 754 -> 839 -> 925 -> 1015 -> 1121 -> 1209 -> 1233 -> 1345 -> 1441 -> 1565 -> 1685 -> 1709 -> 1773 -> 1866; POM 44 includes; zero skips/errors/failures")
           PY
       - name: default and opt-in web jar smokes

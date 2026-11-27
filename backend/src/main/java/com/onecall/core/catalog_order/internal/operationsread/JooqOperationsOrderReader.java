@@ -42,7 +42,7 @@ public final class JooqOperationsOrderReader implements OrderReader {
     @Override public List<OrderFacts> fetchOrders(Filters filters, Optional<Anchor> anchor, int fetchLimit) {
         if (filters == null || anchor == null || fetchLimit < 2 || fetchLimit > 101
                 || filters.paymentStatus() != null && !OperationsOrderReadPorts.PAYMENT_STATUSES.contains(filters.paymentStatus())
-                || anchor.isPresent() && (!validInstant(anchor.get().createdAt()) || anchor.get().orderId() == null))
+                || anchor.isPresent() && (!OperationsOrderReadPorts.validInstant(anchor.get().createdAt()) || anchor.get().orderId() == null))
             throw new ContractRejectionException("Invalid order query");
         var predicates = new ArrayList<String>();
         var parameters = new ArrayList<Object>();
@@ -90,10 +90,5 @@ public final class JooqOperationsOrderReader implements OrderReader {
     private static Instant instant(Record row, String column) {
         var value = row.get(column, OffsetDateTime.class);
         return value == null ? null : value.toInstant();
-    }
-    private static boolean validInstant(Instant value) {
-        return value != null && value.getNano() % 1000 == 0
-                && !value.isBefore(Instant.parse("0001-01-01T00:00:00Z"))
-                && !value.isAfter(Instant.parse("9999-12-31T23:59:59.999999Z"));
     }
 }

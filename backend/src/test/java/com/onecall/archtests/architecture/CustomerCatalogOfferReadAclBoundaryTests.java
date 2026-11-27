@@ -92,7 +92,7 @@ class CustomerCatalogOfferReadAclBoundaryTests {
         }
         assertThat(count).isEqualTo(362);
         var lines = manifest.toString().lines().sorted().toList();
-        assertThat(hash((String.join("\n",lines)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("36e4bf3bdfdbeaaf93521fe03eed5ed5673a2791d00e45a0a3eb756c95241eba");
+        assertThat(hash((String.join("\n",lines)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("dbc82998c9be2742cd05954abc13d592f8aefd7035746dc8bdfa782a15c8e1b6");
         currentMigrationProof();
     }
     @Test void pa25PinsNineteenHistoryAndIndependent432TupleOracle() throws Exception {
@@ -127,7 +127,7 @@ class CustomerCatalogOfferReadAclBoundaryTests {
         String ci = Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("entries.count('BOOT-INF/classes/db/migration/"+V019+"') == 1");
         List<String> manifest=new ArrayList<>();
         for(String directory:List.of("src/main/java","src/main/resources")) try(var files=Files.walk(Path.of(directory))) { for(Path file:files.filter(Files::isRegularFile).toList()) manifest.add(file.toString().replace('\\','/')+" "+hash(lf(Files.readAllBytes(file)))); }
-        Collections.sort(manifest); assertThat(manifest).hasSize(364); assertThat(hash((String.join("\n",manifest)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("cbeed5adbd2b3d57cd43c425df60ba1ce0a1048fd1f89ea1a702bf610fd22b23");
+        Collections.sort(manifest); assertThat(manifest).hasSize(364); assertThat(hash((String.join("\n",manifest)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("e081165c7dbd31aecd3dfd4da9b5b6e8d73bbd788c6451ab2ff02619fdc75e9f");
     }
     @Test void sourceCiPomAndXmlIdentitiesMatchExactly() throws Exception {
         Set<String> identities = new TreeSet<>(); int annotations=0, unit=0, integration=0;
@@ -139,9 +139,9 @@ class CustomerCatalogOfferReadAclBoundaryTests {
                 while(matcher.find()) { assertThat(identities.add(fqcn+"#"+matcher.group(1))).isTrue(); if(path.getFileName().toString().endsWith("IT.java")) integration++;else unit++; }
             }
         }
-        assertThat(unit).isEqualTo(1200); assertThat(integration).isEqualTo(775); assertThat(annotations).isEqualTo(1976);
-        assertThat(hash((String.join("\n",identities)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("f8c75479e759e048c57962aac7e011ac2fe77c5030364d26ccba5d511921816d");
-        String ci=Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("pa40a_unit_additions", "pa40a_container_additions", "method_totals == [1127, 738]", "line_scan_total == 1866", "current_method_totals == [1200, 775]", "current_line_scan_total == 1976");
+        assertThat(unit).isEqualTo(1202); assertThat(integration).isEqualTo(775); assertThat(annotations).isEqualTo(1978);
+        assertThat(hash((String.join("\n",identities)+"\n").getBytes(StandardCharsets.UTF_8))).isEqualTo("d38b6bbf4afad52b1c9568a374bb5ada5d212b13adbfe11645c1c99f66b52bd0");
+        String ci=Files.readString(ROOT.resolve(".github/workflows/ci.yml")); assertThat(ci).contains("pa40a_unit_additions", "pa40a_container_additions", "method_totals == [1127, 738]", "line_scan_total == 1866", "current_method_totals == [1202, 775]", "current_line_scan_total == 1978");
         assertThat(Files.readString(Path.of("pom.xml"))).contains("<include>**/CustomerCatalogOfferReadPrivilegesIT.java</include>", "<include>**/CustomerCatalogOffersIT.java</include>");
     }
 }

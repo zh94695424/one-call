@@ -60,7 +60,7 @@ public final class DefaultOperationsOrderReadService implements OperationsOrderR
             var identities = new HashSet<UUID>();
             Anchor previous = anchor.orElse(null);
             for (var root : roots) {
-                require(root != null && root.orderId() != null && OperationsOrderCursorCodec.validInstant(root.createdAt()), Code.INTERNAL);
+                require(root != null && root.orderId() != null && OperationsOrderReadPorts.validInstant(root.createdAt()), Code.INTERNAL);
                 var current = new Anchor(root.createdAt(), root.orderId());
                 require(identities.add(root.orderId()) && (previous == null || compare(previous, current) > 0), Code.INTERNAL);
                 require((request.filters().subjectId() == null || request.filters().subjectId().equals(root.subjectId()))
@@ -101,8 +101,8 @@ public final class DefaultOperationsOrderReadService implements OperationsOrderR
                     && root.currency().equals(snapshot.currency()) && detail.snapshotSha256().equals(snapshot.snapshotSha256()), Code.NOT_FOUND);
             require("PAID".equals(root.paymentStatus()) == (detail.paidAt() != null)
                     && "CLOSED".equals(root.paymentStatus()) == (detail.closedAt() != null)
-                    && (detail.paidAt() == null || OperationsOrderCursorCodec.validInstant(detail.paidAt()) && !detail.paidAt().isBefore(root.createdAt()))
-                    && (detail.closedAt() == null || OperationsOrderCursorCodec.validInstant(detail.closedAt()) && !detail.closedAt().isBefore(root.createdAt())), Code.NOT_FOUND);
+                    && (detail.paidAt() == null || OperationsOrderReadPorts.validInstant(detail.paidAt()) && !detail.paidAt().isBefore(root.createdAt()))
+                    && (detail.closedAt() == null || OperationsOrderReadPorts.validInstant(detail.closedAt()) && !detail.closedAt().isBefore(root.createdAt())), Code.NOT_FOUND);
             String issuance = issuance(List.of(identity), Code.NOT_FOUND, deadline).get(identity);
             return new Order(root.orderId(), root.orderNo(), root.subjectId(), root.channel(), root.catalogVersionId(), root.catalogOfferId(),
                     root.amountCents(), root.currency(), root.paymentStatus(), issuance, root.createdAt(), detail.snapshotSha256(),
@@ -179,7 +179,7 @@ public final class DefaultOperationsOrderReadService implements OperationsOrderR
                 && Set.of("WEB", "MINIAPP").contains(root.channel()) && root.amountCents() != null && root.amountCents() >= 0
                 && root.amountCents() <= 9007199254740991L && "CNY".equals(root.currency()) && root.paymentStatus() != null
                 && OperationsOrderReadPorts.PAYMENT_STATUSES.contains(root.paymentStatus())
-                && OperationsOrderCursorCodec.validInstant(root.createdAt()), invalid);
+                && OperationsOrderReadPorts.validInstant(root.createdAt()), invalid);
     }
     private static OrderSummary summary(OrderFacts root, String issuance) {
         return new OrderSummary(root.orderId(), root.orderNo(), root.subjectId(), root.channel(), root.catalogVersionId(), root.catalogOfferId(),

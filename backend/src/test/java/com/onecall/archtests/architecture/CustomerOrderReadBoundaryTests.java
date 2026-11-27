@@ -70,8 +70,8 @@ class CustomerOrderReadBoundaryTests {
     @Test void finalSourceCiPomXmlAndJarInventoriesAreExact() throws Exception {
         String ci = Files.readString(Path.of("../.github/workflows/ci.yml"));
         String pom = Files.readString(Path.of("pom.xml"));
-        assertThat(ci).contains("current_method_totals == [1200, 775]", "current_line_scan_total == 1976",
-                "exact_inventory(\"target/surefire-reports/TEST-*.xml\", unit_expected, 1200)",
+        assertThat(ci).contains("current_method_totals == [1202, 775]", "current_line_scan_total == 1978",
+                "exact_inventory(\"target/surefire-reports/TEST-*.xml\", unit_expected, 1202)",
                 "exact_inventory(\"target/failsafe-reports/TEST-*.xml\", container_expected, 775)",
                 "V020__customer_order_read_privileges.sql", "len(unit_expected) == 130",
                 "len(container_expected) == 48", "len(includes) == 48");

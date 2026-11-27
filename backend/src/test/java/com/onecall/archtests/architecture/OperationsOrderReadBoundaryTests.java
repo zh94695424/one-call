@@ -579,6 +579,24 @@ public final class OperationsBoundaryFilter implements Filter {
         var moved = new HashMap<>(sources);
         moved.put(readerPath, sources.get(readerPath).replace("OperationsOrderReadPorts.PAYMENT_STATUSES", "PAYMENT_STATUSES"));
         assertThatThrownBy(() -> paymentStatusSingleTruth(moved)).as("unqualified consumer reference is killed").isInstanceOf(AssertionError.class);
+        instantRangeSingleTruth(sources);
+        String codecPath = productionFile("OperationsOrderCursorCodec.java");
+        var reinlined = new HashMap<>(sources);
+        reinlined.put(readerPath, sources.get(readerPath).replace(
+                "OperationsOrderReadPorts.validInstant(anchor.get().createdAt())",
+                "anchor.get().createdAt() != null && anchor.get().createdAt().getNano() % 1000 == 0"
+                        + " && !anchor.get().createdAt().isBefore(Instant.parse(\"0001-01-01T00:00:00Z\"))"
+                        + " && !anchor.get().createdAt().isAfter(Instant.parse(\"9999-12-31T23:59:59.999999Z\"))"));
+        assertThatThrownBy(() -> instantRangeSingleTruth(reinlined)).as("owner instant-range re-duplication is killed").isInstanceOf(AssertionError.class);
+        var rangeDrift = new HashMap<>(sources);
+        rangeDrift.put(portsPath, sources.get(portsPath).replace("\"9999-12-31T23:59:59.999999Z\"", "\"9999-12-31T23:59:59.999998Z\""));
+        assertThatThrownBy(() -> instantRangeSingleTruth(rangeDrift)).as("contract instant-range drift is killed").isInstanceOf(AssertionError.class);
+        var precisionDrift = new HashMap<>(sources);
+        precisionDrift.put(portsPath, sources.get(portsPath).replace("value.getNano() % 1000 == 0", "value.getNano() % 100 == 0"));
+        assertThatThrownBy(() -> instantRangeSingleTruth(precisionDrift)).as("contract microsecond-precision drift is killed").isInstanceOf(AssertionError.class);
+        var unqualifiedInstant = new HashMap<>(sources);
+        unqualifiedInstant.put(codecPath, sources.get(codecPath).replace("OperationsOrderReadPorts.validInstant", "validInstant"));
+        assertThatThrownBy(() -> instantRangeSingleTruth(unqualifiedInstant)).as("unqualified instant-range consumer reference is killed").isInstanceOf(AssertionError.class);
     }
     private static void paymentStatusSingleTruth(Map<String, String> sources) {
         var consumers = List.of("operations_iam/internal/orderread/OperationsOrderReadRequest.java",
@@ -603,6 +621,40 @@ public final class OperationsBoundaryFilter implements Filter {
             unpaidLiterals += (int) tokens(source).stream().filter(token -> token.literal() && token.text().equals("\"UNPAID\"")).count();
         }
         assertThat(unpaidLiterals).as("\"UNPAID\" literal appears only in the contract definition across PA43 production sources").isEqualTo(1);
+    }
+    private static void instantRangeSingleTruth(Map<String, String> sources) {
+        var consumers = Map.of("operations_iam/internal/orderread/OperationsOrderCursorCodec.java", 2,
+                "catalog_order/internal/operationsread/JooqOperationsOrderReader.java", 1,
+                "operations_iam/internal/orderread/DefaultOperationsOrderReadService.java", 4);
+        int lowerLiterals = 0, upperLiterals = 0, microsecondRules = 0;
+        for (var entry : sources.entrySet()) {
+            String path = entry.getKey();
+            String source = entry.getValue();
+            int references = countPredicate(source, "validInstant");
+            if (path.equals(productionFile("OperationsOrderReadPorts.java"))) {
+                assertThat(countPredicate(source, "static boolean validInstant(Instant value)"))
+                        .as("sole PA43 API instant-range truth defined in the operations contract").isEqualTo(1);
+                assertThat(countPredicate(source, "value != null && value.getNano() % 1000 == 0"))
+                        .as("contract microsecond-precision rule pinned").isEqualTo(1);
+                assertThat(countPredicate(source, "!value.isBefore(Instant.parse(\"0001-01-01T00:00:00Z\"))"))
+                        .as("contract lower instant bound pinned").isEqualTo(1);
+                assertThat(countPredicate(source, "!value.isAfter(Instant.parse(\"9999-12-31T23:59:59.999999Z\"))"))
+                        .as("contract upper instant bound pinned").isEqualTo(1);
+                assertThat(references).as("contract declares validInstant exactly once").isEqualTo(1);
+            } else if (consumers.containsKey(path)) {
+                assertThat(references).as("exact instant-range reference count in intended consumer " + path).isEqualTo(consumers.get(path));
+                assertThat(countPredicate(source, "OperationsOrderReadPorts.validInstant"))
+                        .as("consumer references the contract instant-range truth " + path).isEqualTo(consumers.get(path));
+            } else {
+                assertThat(references).as("no instant-range redefinition outside contract and intended consumers " + path).isZero();
+            }
+            lowerLiterals += (int) tokens(source).stream().filter(token -> token.literal() && token.text().equals("\"0001-01-01T00:00:00Z\"")).count();
+            upperLiterals += (int) tokens(source).stream().filter(token -> token.literal() && token.text().equals("\"9999-12-31T23:59:59.999999Z\"")).count();
+            microsecondRules += countPredicate(source, "getNano() % 1000 == 0");
+        }
+        assertThat(lowerLiterals).as("\"0001-01-01T00:00:00Z\" literal appears only in the contract definition across PA43 production sources").isEqualTo(1);
+        assertThat(upperLiterals).as("\"9999-12-31T23:59:59.999999Z\" literal appears only in the contract definition across PA43 production sources").isEqualTo(1);
+        assertThat(microsecondRules).as("microsecond-precision rule appears only in the contract definition across PA43 production sources").isEqualTo(1);
     }
     private static List<String> methodNames(Class<?> type) {
         return java.util.Arrays.stream(type.getDeclaredMethods()).map(java.lang.reflect.Method::getName).toList();

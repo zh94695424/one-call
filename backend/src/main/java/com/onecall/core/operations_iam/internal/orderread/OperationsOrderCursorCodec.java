@@ -1,6 +1,7 @@
 package com.onecall.core.operations_iam.internal.orderread;
 
 import com.onecall.core.operations_iam.internal.subjectread.OperationsSubjectReadProperties;
+import com.onecall.core.operations_iam.subjectread.OperationsOrderReadPorts;
 import com.onecall.core.operations_iam.subjectread.OperationsOrderReadPorts.Anchor;
 import com.onecall.core.operations_iam.subjectread.OperationsSubjectReadService.*;
 import java.io.ByteArrayOutputStream;
@@ -49,7 +50,7 @@ public final class OperationsOrderCursorCodec {
         catch (RuntimeException malformed) { throw invalid(); }
     }
     public String encode(Anchor anchor, OperationsOrderReadRequest request) {
-        if (anchor == null || anchor.orderId() == null || !validInstant(anchor.createdAt())) throw new Failure(Code.INTERNAL);
+        if (anchor == null || anchor.orderId() == null || !OperationsOrderReadPorts.validInstant(anchor.createdAt())) throw new Failure(Code.INTERNAL);
         try {
             byte[] keyId = activeKey.getBytes(StandardCharsets.US_ASCII);
             byte[] header = ByteBuffer.allocate(2 + keyId.length).put((byte) 1).put((byte) keyId.length).put(keyId).array();
@@ -82,16 +83,11 @@ public final class OperationsOrderCursorCodec {
             if (nanos < 0 || nanos > 999999999) throw invalid();
             Instant instant = Instant.ofEpochSecond(seconds, nanos);
             UUID identity = new UUID(payload.getLong(), payload.getLong());
-            if (payload.hasRemaining() || !validInstant(instant)) throw invalid();
+            if (payload.hasRemaining() || !OperationsOrderReadPorts.validInstant(instant)) throw invalid();
             if (!MessageDigest.isEqual(digest, request.digest())) throw new Failure(Code.CURSOR_FILTER_MISMATCH);
             return new Anchor(instant, identity);
         } catch (Failure known) { throw known; }
         catch (GeneralSecurityException | RuntimeException malformed) { throw invalid(); }
-    }
-    static boolean validInstant(Instant value) {
-        return value != null && value.getNano() % 1000 == 0
-                && !value.isBefore(Instant.parse("0001-01-01T00:00:00Z"))
-                && !value.isAfter(Instant.parse("9999-12-31T23:59:59.999999Z"));
     }
     private static byte[] crypt(int mode, byte[] key, byte[] nonce, byte[] header, byte[] payload) throws GeneralSecurityException {
         var aad = new ByteArrayOutputStream();
