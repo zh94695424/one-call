@@ -70,7 +70,9 @@ public final class CustomerBoundaryFilter implements Filter {
                 || "/api/v1/operations/catalog/products".equals(operationsPath)
                 || operationsPath.matches("/api/v1/operations/catalog/products/[^/;%]+")
                 || operationsPath.matches("/api/v1/operations/ivr-sessions/[^/;%]+")
-                || operationsPath.matches("/api/v1/operations/subjects/[^/;%]+"))
+                || operationsPath.matches("/api/v1/operations/subjects/[^/;%]+")
+                || "/api/v1/operations/orders".equals(operationsPath)
+                || operationsPath.matches("/api/v1/operations/orders/[^/;%]+"))
                 && (request.getContextPath() + operationsPath).equals(request.getRequestURI())) {
             chain.doFilter(request, response);
             return;

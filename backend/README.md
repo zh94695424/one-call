@@ -113,6 +113,41 @@ Pagination is a mixed keyset (productCode ASC, versionNo DESC, catalogOfferId AS
 
 CustomerCatalogOffersController is admitted by the existing customer boundary filter for GET only; default and web-only runtime remain fail-closed without a verified session. Production acceptance is **NOT EXECUTED**: TLS/pg_hba, credential custody/rotation for the new cursor key, pool drain and rollback ownership remain Platform/Security/Operations prerequisites. Column ACLs are not RLS; the ACTIVE/channel/audience predicates are the application row control.
 
+## PA43 Operations Order Read Foundation — 2026-11-27
+
+The employee-only operations capability adds exactly GET
+`/api/v1/operations/orders` and GET `/api/v1/operations/orders/{orderId}`.
+Trusted employee sessions are reauthorized against the current ACTIVE
+ADMIN/OPS database row before request parsing or owner reads. No customer
+workspace or caller-supplied role grants authority.
+
+OperationsOrderReadService orchestrates owner-local JooqOperationsOrderReader
+and JooqOperationsOrderIssuanceReader through the existing named interface,
+operations read pool, read-only REQUIRES_NEW/REPEATABLE_READ transaction and
+ORDER/TRIAL role scopes. Historical snapshots use the existing stateless
+validator directly within the catalog owner. Payment status is read from the
+order; payment workflow/provider records are not read or changed.
+
+The list exposes only the frozen eleven-field summary and the detail the
+sixteen-field Order. Paging uses descending creation time/order UUID with an
+authenticated, endpoint-isolated cursor bound only to normalized subject and
+payment filters, not employee, page size or time-to-live. Missing/unrepresentable
+detail is404; malformed list facts are500; dependency failures are503.
+
+PA42 remains the current provisioning boundary: V001–V020, the449-tuple oracle,
+customer92 privileges, all seven logins and eleven graph edges are unchanged.
+PA43 adds no migration, index, grant, identity, role, membership, pool, write,
+audit event, Outbox event or idempotency operation. The customer filter's sole
+change is the exact two canonical operations GET pass-through alternatives.
+
+Validation inventory is measured from source/CI/POM/XML rather than inferred
+from route count. New production layout is nine Java files; test layout is
+eight unit suites, two PostgreSQL16 IT suites and two non-suite helpers.
+Execution status and exact measured results belong to the PA43 implementation
+artifact; this capability description is not a production-readiness claim.
+Production provisioning, key custody/rotation, TLS and live validation remain
+Platform/Security/Operations responsibilities and are NOT EXECUTED here.
+
 <!-- PA36 HISTORICAL BODY -->
 
 # onecall-runtime（PA0–PA9 foundations / PA10-S1 query / PA11-S1 and PA12 customer API）

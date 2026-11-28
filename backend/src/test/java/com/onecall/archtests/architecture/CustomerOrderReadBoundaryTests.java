@@ -70,19 +70,19 @@ class CustomerOrderReadBoundaryTests {
     @Test void finalSourceCiPomXmlAndJarInventoriesAreExact() throws Exception {
         String ci = Files.readString(Path.of("../.github/workflows/ci.yml"));
         String pom = Files.readString(Path.of("pom.xml"));
-        assertThat(ci).contains("current_method_totals == [1164, 764]", "current_line_scan_total == 1929",
-                "exact_inventory(\"target/surefire-reports/TEST-*.xml\", unit_expected, 1164)",
-                "exact_inventory(\"target/failsafe-reports/TEST-*.xml\", container_expected, 764)",
-                "V020__customer_order_read_privileges.sql", "len(unit_expected) == 122",
-                "len(container_expected) == 46", "len(includes) == 46");
+        assertThat(ci).contains("current_method_totals == [1202, 775]", "current_line_scan_total == 1978",
+                "exact_inventory(\"target/surefire-reports/TEST-*.xml\", unit_expected, 1202)",
+                "exact_inventory(\"target/failsafe-reports/TEST-*.xml\", container_expected, 775)",
+                "V020__customer_order_read_privileges.sql", "len(unit_expected) == 130",
+                "len(container_expected) == 48", "len(includes) == 48");
         assertThat(pom).contains("<include>**/CustomerOrdersReadIT.java</include>",
                 "<include>**/CustomerOrderReadPrivilegesIT.java</include>");
         assertThat(ci).contains("source/CI inventory mismatch", "XML/CI inventory mismatch");
         try (var files = Files.walk(Path.of("src/main/java"))) {
-            assertThat(files.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(332);
+            assertThat(files.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(341);
         }
         try (var files = Files.walk(Path.of("src/test/java"))) {
-            assertThat(files.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(216);
+            assertThat(files.filter(path -> path.toString().endsWith(".java")).count()).isEqualTo(228);
         }
     }
 }
